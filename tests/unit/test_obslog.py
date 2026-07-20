@@ -219,6 +219,37 @@ def test_redact_url_query_style_param(raw: str, expected: str) -> None:
     assert redact(raw) == expected
 
 
+@pytest.mark.parametrize(
+    ("raw", "expected"),
+    [
+        # Critical fix（reviewer 实证的三个真实漏网形态）：关键词与分隔符/值之间
+        # 插入引号会打断原正则的 `\s*:\s*`/`(=)` 紧邻匹配。
+        ('{"token": "abc123456"}', '{"token": "***"}'),
+        ("{'Cookie': 'session=abc123456'}", "{'Cookie': '***'}"),
+        ("{'Authorization': 'Bearer abc123456'}", "{'Authorization': '***'}"),
+        # 单引号 + 等号形态（query-style 的引号变体）。
+        ("\"token\"='abc123456'", "\"token\"='***'"),
+    ],
+)
+def test_redact_quoted_json_or_dict_repr_forms(raw: str, expected: str) -> None:
+    """Closes: AC-0.4 Critical —— JSON 体/Python dict repr 的引号包裹形态必须脱敏。"""
+    assert redact(raw) == expected
+
+
+def test_redact_multiline_text_only_affects_matching_line() -> None:
+    """回归防护：reviewer 已验证的"多行 Set-Cookie"通过项——不得被引号修复带跑偏。"""
+    raw = "before\nSet-Cookie: session=abc123456\nafter"
+    expected = "before\nSet-Cookie: ***\nafter"
+    assert redact(raw) == expected
+
+
+def test_redact_url_fragment_token() -> None:
+    """回归防护：reviewer 已验证的"URL fragment #token="通过项——不得被引号修复带跑偏。"""
+    raw = "https://mock.local/page#token=abc123456"
+    expected = "https://mock.local/page#token=***"
+    assert redact(raw) == expected
+
+
 def test_redact_leaves_normal_text_untouched() -> None:
     text = "fetched 10 papers for venue jfe volume 160 issue 2"
     assert redact(text) == text
@@ -229,12 +260,85 @@ def test_redact_empty_string_returns_empty() -> None:
 
 
 # ---------------------------------------------------------------------------
+# **extra 的结构化值递归脱敏（Important 修复：dict/list/tuple 此前绕过 redact()）
+# ---------------------------------------------------------------------------
+
+
+def test_log_event_redacts_nested_dict_extra_by_key_name(tmp_path: Path) -> None:
+    """reviewer 指定用例：response_headers={"Cookie": "..."} → 该值整体变 ***。"""
+    setup_logging(tmp_path)
+    log_event(
+        "INFO",
+        "fetch",
+        response_headers={"Cookie": "session=abc123456", "X-Request-Id": "r-001"},
+    )
+
+    record = json.loads(_jsonl_path(tmp_path).read_text(encoding="utf-8").strip())
+
+    assert record["response_headers"]["Cookie"] == "***"
+    assert record["response_headers"]["X-Request-Id"] == "r-001"  # 非敏感键不受影响
+
+
+def test_log_event_redacts_deeply_nested_dict_extra() -> None:
+    """嵌套深度不限：dict 套 dict，敏感键在第二层也要被找到。"""
+    from paper_crawler.obslog import _redact_leaf
+
+    result = _redact_leaf({"outer": {"token": "zzzzzz999999", "ok": "fine"}})
+
+    assert result == {"outer": {"token": "***", "ok": "fine"}}
+
+
+def test_log_event_redacts_string_leaf_inside_list_extra(tmp_path: Path) -> None:
+    """list 元素里内联的凭证形态字符串也要过 redact()。"""
+    setup_logging(tmp_path)
+    log_event(
+        "INFO",
+        "fetch",
+        headers_list=["Set-Cookie: session=abc123456", "X-Foo: bar"],
+    )
+
+    record = json.loads(_jsonl_path(tmp_path).read_text(encoding="utf-8").strip())
+
+    assert record["headers_list"] == ["Set-Cookie: ***", "X-Foo: bar"]
+
+
+def test_log_event_redacts_tuple_extra_and_preserves_type() -> None:
+    from paper_crawler.obslog import _redact_leaf
+
+    result = _redact_leaf(("normal", {"Authorization": "Bearer abc123456"}))
+
+    assert result == ("normal", {"Authorization": "***"})
+    assert isinstance(result, tuple)
+
+
+def test_log_event_non_string_leaves_survive_untouched() -> None:
+    """非字符串标量（int/float/bool/None）原样返回，不被误伤。"""
+    from paper_crawler.obslog import _redact_leaf
+
+    result = _redact_leaf({"http_status": 200, "ok": True, "ratio": 0.5, "note": None})
+
+    assert result == {"http_status": 200, "ok": True, "ratio": 0.5, "note": None}
+
+
+def test_log_event_top_level_extra_kwarg_named_like_sensitive_key(tmp_path: Path) -> None:
+    """extra 的顶层 kwarg 名本身就是敏感关键词（如 cookie=<raw>）：整值替换。"""
+    setup_logging(tmp_path)
+    log_event("INFO", "fetch", cookie="raw_secret_value_123456")
+
+    record = json.loads(_jsonl_path(tmp_path).read_text(encoding="utf-8").strip())
+
+    assert record["cookie"] == "***"
+
+
+# ---------------------------------------------------------------------------
 # AC-0.4：日志与报告中无未脱敏的 cookie/token（正则扫描断言）
 # ---------------------------------------------------------------------------
 
 
 def test_ac_0_4_no_unredacted_credentials_survive_in_jsonl(tmp_path: Path) -> None:
-    """Closes: AC-0.4 —— 写出的 jsonl 全文不得残留 (session|token|key)=[A-Za-z0-9]{6,} 形态。"""
+    """Closes: AC-0.4 —— 写出的 jsonl 全文不得残留 (session|token|key) 的
+    key=value 或引号变体（"key": "value" / 'key'='value' 等）形态。
+    """
     setup_logging(tmp_path, console_level="CRITICAL")  # 静音控制台，避免测试输出噪音
 
     log_event(
@@ -254,13 +358,24 @@ def test_ac_0_4_no_unredacted_credentials_survive_in_jsonl(tmp_path: Path) -> No
         error_class="auth_expired",
         raw_header="Set-Cookie: token=qwerty123456; Password: hunter22222",
     )
+    log_event(
+        "ERROR",
+        'response body: {"token": "abc123456"}',
+        venue="mock_journal",
+        stage="resolve",
+        raw_headers_repr=("{'Cookie': 'session=abc123456'}; {'Authorization': 'Bearer abc123456'}"),
+        response_headers={"Cookie": "session=abc123456", "X-Request-Id": "r-002"},
+    )
 
     full_text = _jsonl_path(tmp_path).read_text(encoding="utf-8")
 
-    leak_pattern = re.compile(r"(session|token|key)=[A-Za-z0-9]{6,}")
+    # 引号变体纳入扫描：关键词与分隔符之间、值前允许可选的单/双引号。
+    leak_pattern = re.compile(
+        r"(session|token|key)['\"]?\s*[:=]\s*['\"]?[A-Za-z0-9]{6,}", re.IGNORECASE
+    )
     assert leak_pattern.search(full_text) is None
 
     lines = [ln for ln in full_text.splitlines() if ln.strip()]
-    assert len(lines) == 2
+    assert len(lines) == 3
     for line in lines:
         json.loads(line)  # 每行仍是合法 JSON

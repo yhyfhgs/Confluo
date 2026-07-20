@@ -16,8 +16,14 @@
   `redact()`，作为纵深防御（不改变函数签名，只加固内部行为）。
 - `redact`：大小写不敏感识别 cookie/set-cookie/authorization/token/
   api_key(含下划线、短横变体)/password/secret/session_id(含短横变体) 的键值对
-  （`Key: value` 与 `key=value` 两种写法），把值替换为 `***`；不匹配的文本原样
-  返回。
+  （`Key: value`、`key=value`，以及二者的引号变体 `"Key": "value"` /
+  `'key'='value'` 等——JSON 体、Python dict repr 常见），把值替换为 `***`；
+  不匹配的文本原样返回。
+- `**extra` 中 dict/list/tuple 结构化值会递归脱敏（任意深度）：dict 的键名
+  若整体匹配敏感关键词，对应值整体替换为 `"***"`（不再逐字符扫描该值本身，
+  因为像 `"session=abc123"` 这类值单看文本不含可识别的"键=值"形态，必须靠
+  外层键名 `Cookie` 才能判定敏感）；其余键与 list/tuple 元素递归处理；字符串
+  叶子仍过 `redact()`（捕获值自身内联的凭证文本）；非字符串标量原样保留。
 """
 
 import json
@@ -34,19 +40,71 @@ _LOGGER_NAME = "paper_crawler"
 _SENSITIVE_KEYS = (
     r"set-cookie|cookie|authorization|token|api[_-]?key|password|secret|session[_-]?id"
 )
-# `Key: value` 形态（HTTP 头一类）——值取到本行末尾（值本身可含空格，如 "Bearer tok"）。
-_HEADER_STYLE = re.compile(rf"\b({_SENSITIVE_KEYS})(\s*:\s*)[^\r\n]*", re.IGNORECASE)
-# `key=value` 形态（URL query 一类）——值只取到下一个 `&`/空白，保留其余参数不动。
-_QUERY_STYLE = re.compile(rf"\b({_SENSITIVE_KEYS})(=)[^&\s]*", re.IGNORECASE)
+# extra 结构体里"键名整体等于某个敏感关键词"的判定（而非"文本中包含"）。
+_SENSITIVE_KEY_NAME = re.compile(_SENSITIVE_KEYS, re.IGNORECASE)
+
+# `Key: value` / `"Key": "value"` / `'Key': 'value'` 形态（HTTP 头、JSON 体、
+# Python dict repr 均可）——键与分隔符之间、值两侧允许可选的单/双引号：
+#   - 值带引号：只消费到与开引号匹配的闭合引号（用 \3 回引用同一种引号），
+#     结构外壳（如末尾的 `}`）留给原文，不被吞掉。
+#   - 值不带引号：取到本行末尾——值本身可能含空格（如 "Bearer tok"），没有
+#     更精确的边界可用。
+_HEADER_STYLE = re.compile(
+    rf"\b({_SENSITIVE_KEYS})(['\"]?\s*:\s*)(?:(['\"])(.*?)\3|[^\r\n]*)",
+    re.IGNORECASE,
+)
+# `key=value` / `"key"="value"` 形态（URL query 一类）：
+#   - 值带引号：同上，只消费到闭合引号。
+#   - 值不带引号：只取到下一个 `&`/空白，保留其余参数不动。
+_QUERY_STYLE = re.compile(
+    rf"\b({_SENSITIVE_KEYS})(['\"]?\s*=\s*)(?:(['\"])(.*?)\3|[^&\s]*)",
+    re.IGNORECASE,
+)
+
+
+def _sub_key_value(match: re.Match[str]) -> str:
+    """`_HEADER_STYLE`/`_QUERY_STYLE` 共用的替换：带引号保留引号包裹 `***`。"""
+    quote = match.group(3)
+    if quote:
+        return f"{match.group(1)}{match.group(2)}{quote}***{quote}"
+    return f"{match.group(1)}{match.group(2)}***"
 
 
 def redact(text: str) -> str:
     """脱敏 cookie/token/authorization/api_key/password/secret/session_id 形态内容。"""
     if not text:
         return text
-    redacted = _HEADER_STYLE.sub(lambda m: f"{m.group(1)}{m.group(2)}***", text)
-    redacted = _QUERY_STYLE.sub(lambda m: f"{m.group(1)}{m.group(2)}***", redacted)
+    redacted = _HEADER_STYLE.sub(_sub_key_value, text)
+    redacted = _QUERY_STYLE.sub(_sub_key_value, redacted)
     return redacted
+
+
+def _redact_leaf(value: object) -> object:
+    """`**extra` 值的递归脱敏（Important 修复：结构化值此前绕过 redact()）。
+
+    - `dict`：键名整体匹配敏感关键词的项，对应值整体替换为 `"***"`
+      （不管值本身是否为字符串/是否含可识别形态——外层键名已足以判定敏感，
+      如 `{"Cookie": "session=abc123"}` 的 value 单看文本并不匹配任何模式，
+      必须靠键名 `Cookie` 才能判定）；其余键递归处理其值。
+    - `list`/`tuple`：逐元素递归，任意嵌套深度。
+    - `str`：过 `redact()`（捕获值自身文本内联的凭证形态）。
+    - 其余标量（int/float/bool/None 等）：原样返回。
+    """
+    if isinstance(value, str):
+        return redact(value)
+    if isinstance(value, dict):
+        redacted_dict: dict[object, object] = {}
+        for key, sub_value in value.items():
+            if isinstance(key, str) and _SENSITIVE_KEY_NAME.fullmatch(key.strip()):
+                redacted_dict[key] = "***"
+            else:
+                redacted_dict[key] = _redact_leaf(sub_value)
+        return redacted_dict
+    if isinstance(value, list):
+        return [_redact_leaf(item) for item in value]
+    if isinstance(value, tuple):
+        return tuple(_redact_leaf(item) for item in value)
+    return value
 
 
 class _JsonlFormatter(logging.Formatter):
@@ -140,7 +198,12 @@ def log_event(
     for key, value in extra.items():
         if value is None:
             continue
-        payload[key] = redact(value) if isinstance(value, str) else value
+        if _SENSITIVE_KEY_NAME.fullmatch(key.strip()):
+            # extra kwarg 名本身就是敏感关键词（如 log_event(..., cookie=raw)）：
+            # 整值替换，不管其类型/内容是否"看起来"含凭证形态。
+            payload[key] = "***"
+        else:
+            payload[key] = _redact_leaf(value)
 
     logger.log(numeric_level, safe_msg, extra={"_event": payload})
 
