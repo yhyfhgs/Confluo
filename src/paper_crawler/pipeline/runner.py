@@ -30,8 +30,9 @@ notes 汇总，不计入 succeeded）；`failed`/`blocked` 为全阶段任务口
 判定 dry-run 行——契约）。
 
 runner 启动（`__init__`）：`config.ensure_dirs()` + `cleanup_tmp(data/tmp)`
-（§5.2 崩溃残留清理）+ 遗留 RUNNING 任务归还 PENDING（崩溃恢复，见
-`_recover_running_tasks` docstring）。
+（§5.2 崩溃残留清理）+ `queue.recover_running()`（遗留 RUNNING 归还 PENDING 的
+崩溃恢复——语义见 `TaskQueue.recover_running` docstring；2026-07-21 T7c 仲裁
+将其定为冻结件 §2.5 的公开 API）。
 """
 
 from __future__ import annotations
@@ -51,7 +52,7 @@ from paper_crawler.pipeline.stages import (
     execute_stage,
     fetched_file_ok,
 )
-from paper_crawler.tasks import EnqueueResult, TaskKind, validate_transition
+from paper_crawler.tasks import EnqueueResult, TaskKind
 from paper_crawler.types import utcnow_iso
 
 # AUTH_EXPIRED 连带 block 之外的两类"直接 BLOCKED"（design/05 §4）。
@@ -108,35 +109,16 @@ class PipelineRunner:
         removed = cleanup_tmp(ctx.config.data_dir / "tmp")
         if removed:
             log_event("WARNING", f"startup: removed {removed} stale *.part file(s)")
-        self._recover_running_tasks()
+        recovered = ctx.queue.recover_running()  # 崩溃恢复（TaskQueue 公开 API，§2.5 扩充）
+        if recovered:
+            log_event(
+                "WARNING",
+                f"startup: recovered {recovered} RUNNING task(s) to PENDING (crash leftovers)",
+            )
         # 单 venue 一旦 auth_expired，本次运行内其余 fetch 连带 block（整批 BLOCKED(auth)）。
         self._auth_blocked_venues: set[str] = set()
         # 一次运行内每任务的连续 rate_limited 计数（升级保护）。
         self._rate_limited_seen: dict[str, int] = {}
-
-    # -- 启动 ---------------------------------------------------------------
-
-    def _recover_running_tasks(self) -> None:
-        """崩溃恢复：启动时把遗留 RUNNING 任务归还 PENDING（design/05 §5 断点续爬）。
-
-        Phase 1 单进程串行：启动时刻存在 RUNNING 行只可能是上次进程被杀（kill-9）
-        的残留。RUNNING→PENDING 是状态机合法边（`LEGAL_TRANSITIONS` 的"退避重试"
-        边，逐行 `validate_transition` 守护）；`TaskQueue` 未提供公开恢复 API——
-        `fail()` 会错误消耗 attempts 重试预算——故此处经 `Database` 直接执行同语义
-        UPDATE。实现期注记，T10 收尾回填设计文档。
-        """
-        rows = self.ctx.db.query("SELECT id, state FROM task WHERE state = 'RUNNING'")
-        for row in rows:
-            validate_transition(str(row["state"]), "PENDING")
-            self.ctx.db.execute(
-                "UPDATE task SET state = 'PENDING', updated_at = ? WHERE id = ?",
-                (utcnow_iso(), str(row["id"])),
-            )
-        if rows:
-            log_event(
-                "WARNING",
-                f"startup: recovered {len(rows)} RUNNING task(s) to PENDING (crash leftovers)",
-            )
 
     # -- 公开入口（§2.7 冻结签名）-------------------------------------------
 
