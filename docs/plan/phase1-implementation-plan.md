@@ -625,7 +625,7 @@ crawler report [--last-run]
 
 ## 执行期重排记录（2026-07-21，用户指令：提高并行度）
 
-交付物与 DoD 不变，任务边界重切：**T7 拆为 T7a(fetchio)/T7b(report)/T7c(stages+runner)**，**T8 拆出 T8a(verify+dbdump 前置)**，T8b(CLI 主体) 变薄改派 sonnet（审查仍 opus）。T7a/T7b/T8a 与 T5/T6 五线并行（文件零交集）；关键路径缩为 T7c→T8b→T9。补充冻结签名：
+交付物与 DoD 不变，任务边界重切：**T7 拆为 T7a(fetchio)/T7b(report)/T7c(stages+runner)**，**T8 拆出 T8a(verify+dbdump 前置)**，T8b(CLI 主体) 变薄改派 sonnet（审查仍 opus）。模型按难度分层（2026-07-21 用户指令）：T7c 为 Phase 1 最复杂集成件，implementer 升配 **fable 档**；最终全分支审查亦用 fable 档。T7a/T7b/T8a 与 T5/T6 五线并行（文件零交集）；关键路径缩为 T7c→T8b→T9。补充冻结签名：
 
 ```python
 # pipeline/fetchio.py（T7a）
