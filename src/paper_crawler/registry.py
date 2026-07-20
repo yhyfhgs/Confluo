@@ -4,8 +4,9 @@
 - `load_dirs` 递归扫描给定目录序列下的 `*.yaml`，解析为 `VenueSpec` 并登记。
   `dirs` 的每个元素视为"一个目录"：同一元素内（递归子目录也算）id 重复=错误
   （排序后先出现的文件保留，其余被忽略并记一条 LintIssue）；不同元素之间同 id
-  = 覆盖合法，后一个元素覆盖前一个元素（用户目录覆盖项目目录的语义）。单个文件
-  的 YAML 解析失败或 VenueSpec 结构校验失败只影响该文件，不影响其余文件；本方法
+  = 覆盖合法，后一个元素覆盖前一个元素（用户目录覆盖项目目录的语义）。单个文件的
+  读取失败（非 UTF-8 编码、权限拒绝、悬空符号链接等 OSError/UnicodeDecodeError）、
+  YAML 解析失败或 VenueSpec 结构校验失败都只影响该文件，不影响其余文件；本方法
   只返回问题列表，从不 raise。每次调用都会重置之前 load_dirs 积累的状态。
 - `lint` 在已加载的 venue 上补充语义校验（引用的 adapter 是否已注册、auth 等级
   是否兼容、journal 的 issn 是否必填且格式合法），并叠加 `load_dirs` 期间发现的
@@ -127,7 +128,17 @@ class VenueRegistry:
 
     def _load_one_file(self, path: Path) -> tuple[VenueSpec | None, list[LintIssue]]:
         """解析单个 YAML 文件为 `VenueSpec`；失败时返回 `(None, issues)`。"""
-        text = path.read_text(encoding="utf-8")
+        try:
+            text = path.read_text(encoding="utf-8")
+        except (OSError, UnicodeDecodeError) as exc:
+            return None, [
+                LintIssue(
+                    file=str(path),
+                    venue_id=None,
+                    field="<yaml>",
+                    message=f"文件读取失败（{type(exc).__name__}）: {exc}",
+                )
+            ]
 
         try:
             raw = yaml.safe_load(text)

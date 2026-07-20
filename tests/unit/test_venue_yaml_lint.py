@@ -4,9 +4,10 @@
 未知 adapter / auth 等级不足 / 同目录 id 重复 / journal 缺 issn /
 issn 格式错 / YAML 解析失败 / pydantic 结构错误（含文件名-id 不一致）。
 
-结构性问题（YAML 解析失败、pydantic 校验失败、同目录 id 冲突、文件名-id 不一致）
-由 `load_dirs()` 直接返回；语义问题（未知 adapter、auth 不兼容、issn 规则）需要
-`lint()`（在已加载的 venue 上叠加校验）。三份仓库自带 YAML 必须全过 lint。
+结构性问题（文件读取失败、YAML 解析失败、pydantic 校验失败、同目录 id 冲突、
+文件名-id 不一致）由 `load_dirs()` 直接返回；语义问题（未知 adapter、auth 不兼容、
+issn 规则）需要 `lint()`（在已加载的 venue 上叠加校验）。三份仓库自带 YAML 必须
+全过 lint。
 """
 
 from pathlib import Path
@@ -334,6 +335,93 @@ def test_yaml_non_mapping_top_level_reported(
     assert len(hits) == 1
     assert hits[0].venue_id is None
     assert hits[0].field == "<yaml>"
+
+
+# -- 6b. 文件读取失败（非 UTF-8 编码 / 不可读） --------------------------------------
+#
+# 复审 Important 修复：`path.read_text(encoding="utf-8")` 此前无异常保护，非 UTF-8
+# 编码（GBK/Latin-1 误存）或不可读文件（权限/悬空符号链接）会让
+# UnicodeDecodeError/OSError 穿透 load_dirs()，违反"只返回 LintIssue、从不 raise"
+# 的契约。两个用例分别覆盖 UnicodeDecodeError 与 OSError 两条异常路径。
+
+
+def test_non_utf8_encoded_yaml_reported_not_raised(
+    adapters: dict[str, SourceAdapter], tmp_path: Path
+) -> None:
+    # GBK 编码的中文内容按 UTF-8 解码必然失败（GBK 汉字字节不是合法 UTF-8 序列）。
+    path = tmp_path / "gbk-encoded.yaml"
+    path.write_bytes("id: 测试期刊\nkind: journal\n".encode("gbk"))
+
+    reg = VenueRegistry(adapters)
+    issues = reg.load_dirs([tmp_path])  # 不应 raise
+
+    hits = [i for i in issues if i.file.endswith("gbk-encoded.yaml")]
+    assert len(hits) == 1
+    assert hits[0].venue_id is None
+    assert hits[0].field == "<yaml>"
+    assert "UnicodeDecodeError" in hits[0].message
+
+
+def test_latin1_encoded_yaml_reported_not_raised(
+    adapters: dict[str, SourceAdapter], tmp_path: Path
+) -> None:
+    path = tmp_path / "latin1-encoded.yaml"
+    path.write_bytes("notes: café\nkind: journal\n".encode("latin-1"))
+
+    reg = VenueRegistry(adapters)
+    issues = reg.load_dirs([tmp_path])
+
+    hits = [i for i in issues if i.file.endswith("latin1-encoded.yaml")]
+    assert len(hits) == 1
+    assert hits[0].venue_id is None
+    assert hits[0].field == "<yaml>"
+    assert "UnicodeDecodeError" in hits[0].message
+
+
+def test_dangling_symlink_yaml_reported_not_raised(
+    adapters: dict[str, SourceAdapter], tmp_path: Path
+) -> None:
+    # 悬空符号链接：rglob 按名字匹配会收录它，但 read_text 时目标不存在 → OSError。
+    # 比 chmod 000 更跨平台稳定（不受"以 root 运行绕过权限位"影响）。
+    broken_link = tmp_path / "dangling.yaml"
+    broken_link.symlink_to(tmp_path / "does_not_exist_target.yaml")
+
+    reg = VenueRegistry(adapters)
+    issues = reg.load_dirs([tmp_path])  # 不应 raise
+
+    hits = [i for i in issues if i.file.endswith("dangling.yaml")]
+    assert len(hits) == 1
+    assert hits[0].venue_id is None
+    assert hits[0].field == "<yaml>"
+    assert "OSError" in hits[0].message or "FileNotFoundError" in hits[0].message
+
+
+def test_unreadable_yaml_via_monkeypatched_read_text_reported_not_raised(
+    adapters: dict[str, SourceAdapter], tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # 权限拒绝的直接构造（chmod 000）在部分 CI/沙箱环境下不稳定（例如以 root 运行
+    # 会绕过权限位）。用 monkeypatch 强制 Path.read_text 抛 PermissionError，
+    # 稳定模拟"文件存在但不可读"这一支路径，与上面的悬空符号链接用例互补。
+    path = tmp_path / "permission-denied.yaml"
+    path.write_text("id: whatever\n", encoding="utf-8")
+
+    original_read_text = Path.read_text
+
+    def _raise_permission_error(self: Path, *args: object, **kwargs: object) -> str:
+        if self == path:
+            raise PermissionError(13, "Permission denied", str(self))
+        return original_read_text(self, *args, **kwargs)  # type: ignore[arg-type]
+
+    monkeypatch.setattr(Path, "read_text", _raise_permission_error)
+
+    reg = VenueRegistry(adapters)
+    issues = reg.load_dirs([tmp_path])  # 不应 raise
+
+    hits = [i for i in issues if i.file.endswith("permission-denied.yaml")]
+    assert len(hits) == 1
+    assert hits[0].venue_id is None
+    assert hits[0].field == "<yaml>"
+    assert "PermissionError" in hits[0].message
 
 
 # -- 7. pydantic 结构错误（loc 路径进 field） --------------------------------------
