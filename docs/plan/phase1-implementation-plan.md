@@ -1,6 +1,6 @@
 ---
 title: Phase 1 实施计划（核心框架）
-status: draft
+status: approved
 owner: fable5
 updated: 2026-07-21
 ---

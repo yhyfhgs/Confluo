@@ -28,7 +28,7 @@
 | 路径 | 标题 | status | updated |
 |---|---|---|---|
 | [plan/development-plan.md](plan/development-plan.md) | 开发计划（Phase 0–7） | approved | 2026-07-20 |
-| [plan/phase1-implementation-plan.md](plan/phase1-implementation-plan.md) | Phase 1 实施计划（任务切分+接口冻结） | draft | 2026-07-21 |
+| [plan/phase1-implementation-plan.md](plan/phase1-implementation-plan.md) | Phase 1 实施计划（任务切分+接口冻结） | approved | 2026-07-21 |
 | [plan/progress.md](plan/progress.md) | 项目进度跟踪 | approved | 2026-07-20 |
 | [plan/decision-log.md](plan/decision-log.md) | 架构决策记录（D-001…D-017） | approved | 2026-07-21 |
 
