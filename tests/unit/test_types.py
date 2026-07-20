@@ -150,3 +150,27 @@ def test_venue_spec_parses_nested_auth_and_rate_limit(venue_dict: dict[str, obje
     assert spec.auth.level is AuthLevel.INSTITUTIONAL
     assert spec.auth.provider_hint == "elsevier"
     assert spec.rate_limit.requests_per_minute == 10
+
+
+@pytest.mark.parametrize(
+    ("nested_field", "payload", "bad_key"),
+    [
+        ("names", {"full": "Mock Journal", "aliasess": ["MJ"]}, "aliasess"),
+        ("auth", {"level": "none", "levl": "none"}, "levl"),
+        ("rate_limit", {"requests_per_minute": 10, "rpm": 5}, "rpm"),
+    ],
+)
+def test_venue_spec_rejects_nested_unknown_key(
+    venue_dict: dict[str, object],
+    nested_field: str,
+    payload: dict[str, object],
+    bad_key: str,
+) -> None:
+    # 嵌套模型 extra="forbid"：未知键必须报错，且 loc 定位到 (nested_field, bad_key)（AC-1.6）。
+    venue_dict[nested_field] = payload
+    with pytest.raises(ValidationError) as exc_info:
+        VenueSpec(**venue_dict)
+    errors = exc_info.value.errors()
+    assert any(
+        err["loc"] == (nested_field, bad_key) and err["type"] == "extra_forbidden" for err in errors
+    ), errors

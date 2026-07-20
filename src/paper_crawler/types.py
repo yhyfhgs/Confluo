@@ -143,16 +143,22 @@ class FetchIO(Protocol):
 
 
 class VenueNames(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
     full: str
     aliases: list[str] = []
 
 
 class VenueAuth(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
     level: AuthLevel = AuthLevel.NONE
     provider_hint: str | None = None
 
 
 class VenueRateLimit(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
     requests_per_minute: float | None = None
 
 
