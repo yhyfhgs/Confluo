@@ -416,8 +416,10 @@ CREATE TABLE task (
   parent_id TEXT REFERENCES task(id),
   created_at TEXT NOT NULL, updated_at TEXT NOT NULL
 );
-CREATE UNIQUE INDEX idx_task_active_idem ON task(kind, venue_id, params_json)
+CREATE UNIQUE INDEX idx_task_active_idem ON task(kind, COALESCE(venue_id, ''), params_json)
   WHERE state IN ('PENDING','RUNNING');
+-- 2026-07-21 T5 仲裁修订：venue_id 可 NULL 而 SQL NULL≠NULL，裸列索引对 venue-less 任务不去重；
+-- COALESCE 表达式索引（SQLite/PG 均支持）恢复唯一性。schema-v1 未 tag，v1 出生前修订 0001 而非叠 0002。
 CREATE INDEX idx_task_state_kind ON task(state, kind);
 CREATE TABLE fetch_log (
   id TEXT PRIMARY KEY, asset_id TEXT REFERENCES asset(id), task_id TEXT,
@@ -493,7 +495,7 @@ CREATE TABLE schema_version (version INTEGER NOT NULL);
 **Interfaces:** Consumes §2.4 Database、§2.1 RETRY_TABLE；Produces §2.5。
 
 要点与步骤：
-- [ ] 状态机转移矩阵**全覆盖测试**：5 状态×5 目标全枚举，合法 4+2 条通过、其余 IllegalTransition（design/05 §8"含非法转移拒绝"）。
+- [ ] 状态机转移矩阵**全覆盖测试**：5 状态×5 目标全枚举，合法 **7** 条（PENDING→RUNNING；RUNNING→DONE/FAILED/BLOCKED/PENDING；FAILED→PENDING；BLOCKED→PENDING）通过、其余 IllegalTransition（design/05 §8；2026-07-21 修订：原 prose"4+2"漏计，以枚举为准）。
 - [ ] 入队去重：同 canonical_params 的 PENDING/RUNNING 存在 → `duplicate`（利用 T2 的 partial unique index，捕获 IntegrityError 转 duplicate——竞态安全）；DONE 存在且未过 FRESHNESS_TTL → `fresh_skip`（`force=True` 绕过）。
 - [ ] `fail()`：查 RETRY_TABLE；RATE_LIMITED 不增 attempts（05 §4"不计失败"）；attempts 达上限 → FAILED 落 error_class/last_error。
 - [ ] `block()` 不动 attempts；`resume` 支持单个与 `--all`；`retry_failed` 按 error_class 过滤（05 §2 `retry --class transient`）。
