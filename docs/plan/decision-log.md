@@ -144,3 +144,14 @@ updated: 2026-07-21
   2. **术语表 GLOSSARY.md 新增**（docs/ 根，与 INDEX 平级）：50+ 全库共用术语单点定义+出处链接；解决 45 篇文档专有名词无处速查的可读性缺口。
   3. **INDEX 增加"按意图导航"层**：七条任务式阅读路径（理解系统/加 venue/写 adapter/合规/开发/查决策/查勘察）前置于逐目录清单。
 - **影响**：新文档/新 FR/AC 的登记义务扩展——同步维护映射表与（若引入新术语）GLOSSARY；AGENTS.md §4 checklist 随本条更新。
+
+## D-017 Phase 1 工具链与包布局
+
+- 状态：accepted · 日期：2026-07-21
+- **背景**：D-001 确定语言与核心库（Python 3.12+ / httpx / Playwright / SQLite / Pydantic v2 / typer），但未定构建工具、测试与质量工具链、包布局。Phase 1 开工（[phase1-implementation-plan](phase1-implementation-plan.md)）需要冻结这些实现载体决策。
+- **决策**：
+  1. **包管理与构建**：`uv`（uv.lock 入库）+ hatchling 后端；dist 名 `paper-crawler`、包名 `paper_crawler`、src 布局（`src/paper_crawler/`）、CLI 入口 `crawler`。
+  2. **质量工具**：pytest + pytest-cov（core 覆盖率门禁 ≥80%，test-plan §6）、ruff（lint+format）、mypy（对 src 全量检查）。本地门禁 `make check`＝lint+type+test（test-plan §8 的 `make test` 细化）。
+  3. **依赖最小化**：Phase 1 运行时仅 `typer`、`pydantic>=2`、`pyyaml`、`python-ulid`；**httpx 推迟到 Phase 2、Playwright 推迟到 Phase 4** 首个真实需求出现时引入（Phase 1 零网络，mock adapter 本地生成语料）。SQLite 经标准库 `sqlite3` 直接执行 DDL/DML，不引入 ORM——保持 SQL 方言中性（D-001 的 PG 迁移路径）。
+  4. **FTS5 推迟**：design/06 §2 的 paper FTS5 虚表**不进 schema v1**，推迟到 Phase 6（搜索需求）以独立 migration 追加。理由：FTS5 是 SQLite 专有特性，与 06 文档"避免 SQLite 专有特性"的迁移原则冲突；推迟到需要时以附加虚表实现（可在 PG 侧以 tsvector 等价替换），主 schema 保持中性。
+- **影响**：phase1-implementation-plan §Global Constraints 与各任务以本条为准；Phase 2/4 引入 httpx/Playwright 时无需新 ADR（本条已预留），版本约束届时在 pyproject 记录。
