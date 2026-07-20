@@ -161,11 +161,16 @@ def test_canonical_dump_translates_paper_id_to_title(tmp_path: Path, venue: Venu
     dump = canonical_dump(db_path)
 
     identifier_titles = {row[0] for row in dump["identifier"]}
-    asset_titles = {row[0] for row in dump["asset"]}
     assert identifier_titles == {"Paper A", "Paper B"}
-    assert asset_titles == {"Paper A", "Paper B"}
-    # 没有 26 字符裸 ULID 泄漏到首列（title 字符串长度恒不是 26，用作简单反证）
-    assert all(len(str(title)) != 26 for title in identifier_titles | asset_titles)
+    # 没有 26 字符裸 ULID 泄漏到 identifier 首列（title 字符串长度恒不是 26，用作简单反证）
+    assert all(len(str(title)) != 26 for title in identifier_titles)
+
+    # asset 的 paper 外键翻译为复合业务键 (title, primary_identifier)，而不是裸 ULID
+    asset_paper_keys = {row[0] for row in dump["asset"]}
+    assert asset_paper_keys == {
+        ("Paper A", ("doi", "10.9999/a")),
+        ("Paper B", ("doi", "10.9999/b")),
+    }
 
 
 def test_canonical_dump_paper_issue_link_uses_business_keys(
@@ -175,12 +180,166 @@ def test_canonical_dump_paper_issue_link_uses_business_keys(
     _build_db(db_path, venue)
     dump = canonical_dump(db_path)
 
-    links_for_a = [row for row in dump["paper_issue_link"] if row[0] == "Paper A"]
+    paper_a_key = ("Paper A", ("doi", "10.9999/a"))
+    links_for_a = [row for row in dump["paper_issue_link"] if row[0] == paper_a_key]
     assert len(links_for_a) == 2
     assert {row[1] for row in links_for_a} == {
         (VENUE_ID, "1", "1", None),
         (VENUE_ID, "1", "2", None),
     }
+
+
+# -- 标题碰撞：翻译/排序键消歧（reviewer 对抗构造，回归防护） -----------------------
+
+
+def test_canonical_dump_disambiguates_asset_ownership_on_title_collision(
+    tmp_path: Path, venue: VenueSpec
+) -> None:
+    """两 paper 同标题时，若两库里"谁拥有哪个 asset"这一真实业务事实不同（此处用
+    sha256 互换构造），canonical_dump 必须能分辨——不能因为都叫同一个标题就被
+    误判为相等。这是验证 primary_identifier 消歧确实生效的正向用例。
+    """
+    db_a = tmp_path / "swap_a.sqlite"
+    db_b = tmp_path / "swap_b.sqlite"
+
+    database_a = Database(db_a)
+    database_a.migrate()
+    repo_a = Repo(database_a)
+    repo_a.upsert_venue(venue)
+    p1a = repo_a.upsert_paper(VENUE_ID, None, _stub(doi="10.9999/d1", title="Same Title"))
+    p2a = repo_a.upsert_paper(VENUE_ID, None, _stub(doi="10.9999/d2", title="Same Title"))
+    a1a = repo_a.plan_asset(p1a, _pdf_plan(), "mock_platform")
+    a2a = repo_a.plan_asset(p2a, _pdf_plan(), "mock_platform")
+    repo_a.mark_asset(a1a, state="fetched", file_path="/x", bytes_=1, sha256="hash-1")
+    repo_a.mark_asset(a2a, state="fetched", file_path="/y", bytes_=1, sha256="hash-2")
+    database_a.close()
+
+    database_b = Database(db_b)
+    database_b.migrate()
+    repo_b = Repo(database_b)
+    repo_b.upsert_venue(venue)
+    p1b = repo_b.upsert_paper(VENUE_ID, None, _stub(doi="10.9999/d1", title="Same Title"))
+    p2b = repo_b.upsert_paper(VENUE_ID, None, _stub(doi="10.9999/d2", title="Same Title"))
+    a1b = repo_b.plan_asset(p1b, _pdf_plan(), "mock_platform")
+    a2b = repo_b.plan_asset(p2b, _pdf_plan(), "mock_platform")
+    # 互换：doi=d1 的论文这次拿到 hash-2，doi=d2 的论文拿到 hash-1（真实业务差异）
+    repo_b.mark_asset(a1b, state="fetched", file_path="/x", bytes_=1, sha256="hash-2")
+    repo_b.mark_asset(a2b, state="fetched", file_path="/y", bytes_=1, sha256="hash-1")
+    database_b.close()
+
+    dump_a, dump_b = canonical_dump(db_a), canonical_dump(db_b)
+    assert dump_a != dump_b
+    # 定位到具体差异：doi=d1 的论文在两库分别持有不同的 sha256
+    key_d1 = ("Same Title", ("doi", "10.9999/d1"))
+    sha_a = next(row[7] for row in dump_a["asset"] if row[0] == key_d1)
+    sha_b = next(row[7] for row in dump_b["asset"] if row[0] == key_d1)
+    assert sha_a == "hash-1"
+    assert sha_b == "hash-2"
+
+
+def test_canonical_dump_equal_when_title_collision_only_insertion_order_differs(
+    tmp_path: Path, venue: VenueSpec
+) -> None:
+    """两 paper 同标题、asset 的 kind/version 也相同（仅靠 title/kind/version 排不出
+    确定顺序）时，若两库的业务赋值（谁拥有哪个 sha256）完全相同、只是两库的插入顺序
+    相反，canonical_dump 必须相等——kill-9 中断重跑正是典型的"插入顺序不同、业务数据
+    相同"场景（AC-1.3），这是本次修复要堵住的回归点。
+    """
+    db_a = tmp_path / "order_a.sqlite"
+    db_b = tmp_path / "order_b.sqlite"
+
+    database_a = Database(db_a)
+    database_a.migrate()
+    repo_a = Repo(database_a)
+    repo_a.upsert_venue(venue)
+    p1a = repo_a.upsert_paper(VENUE_ID, None, _stub(doi="10.9999/d1", title="Same Title"))
+    p2a = repo_a.upsert_paper(VENUE_ID, None, _stub(doi="10.9999/d2", title="Same Title"))
+    a1a = repo_a.plan_asset(p1a, _pdf_plan(), "mock_platform")
+    a2a = repo_a.plan_asset(p2a, _pdf_plan(), "mock_platform")
+    repo_a.mark_asset(a1a, state="fetched", file_path="/x", bytes_=1, sha256="hash-1")
+    repo_a.mark_asset(a2a, state="fetched", file_path="/y", bytes_=1, sha256="hash-2")
+    database_a.close()
+
+    database_b = Database(db_b)
+    database_b.migrate()
+    repo_b = Repo(database_b)
+    repo_b.upsert_venue(venue)
+    # 插入顺序相反：先建 doi=d2 的论文，再建 doi=d1 的
+    p2b = repo_b.upsert_paper(VENUE_ID, None, _stub(doi="10.9999/d2", title="Same Title"))
+    p1b = repo_b.upsert_paper(VENUE_ID, None, _stub(doi="10.9999/d1", title="Same Title"))
+    a2b = repo_b.plan_asset(p2b, _pdf_plan(), "mock_platform")
+    a1b = repo_b.plan_asset(p1b, _pdf_plan(), "mock_platform")
+    # 业务赋值与 DB A 完全相同：doi=d1 → hash-1，doi=d2 → hash-2（只是插入顺序反了）
+    repo_b.mark_asset(a1b, state="fetched", file_path="/x", bytes_=1, sha256="hash-1")
+    repo_b.mark_asset(a2b, state="fetched", file_path="/y", bytes_=1, sha256="hash-2")
+    database_b.close()
+
+    assert canonical_dump(db_a) == canonical_dump(db_b)
+
+
+def test_canonical_dump_disambiguates_paper_issue_link_on_title_collision(
+    tmp_path: Path, venue: VenueSpec
+) -> None:
+    """paper_issue_link 版的对抗用例（a）：同标题两 paper 分别链接到不同 issue，两库
+    间"谁链接到哪个 issue"互换 → 属于真实业务差异，dump 必不等。"""
+    db_a = tmp_path / "link_swap_a.sqlite"
+    db_b = tmp_path / "link_swap_b.sqlite"
+
+    database_a = Database(db_a)
+    database_a.migrate()
+    repo_a = Repo(database_a)
+    repo_a.upsert_venue(venue)
+    i1a = repo_a.upsert_issue(_issue(volume="1", number="1"), source="mock")
+    i2a = repo_a.upsert_issue(_issue(volume="1", number="2"), source="mock")
+    repo_a.upsert_paper(VENUE_ID, i1a, _stub(doi="10.9999/d1", title="Same Title"))
+    repo_a.upsert_paper(VENUE_ID, i2a, _stub(doi="10.9999/d2", title="Same Title"))
+    database_a.close()
+
+    database_b = Database(db_b)
+    database_b.migrate()
+    repo_b = Repo(database_b)
+    repo_b.upsert_venue(venue)
+    i1b = repo_b.upsert_issue(_issue(volume="1", number="1"), source="mock")
+    i2b = repo_b.upsert_issue(_issue(volume="1", number="2"), source="mock")
+    # 互换：doi=d1 这次链到 (1,2)，doi=d2 链到 (1,1)
+    repo_b.upsert_paper(VENUE_ID, i2b, _stub(doi="10.9999/d1", title="Same Title"))
+    repo_b.upsert_paper(VENUE_ID, i1b, _stub(doi="10.9999/d2", title="Same Title"))
+    database_b.close()
+
+    assert canonical_dump(db_a) != canonical_dump(db_b)
+
+
+def test_canonical_dump_paper_issue_link_equal_when_only_insertion_order_differs(
+    tmp_path: Path, venue: VenueSpec
+) -> None:
+    """paper_issue_link 版的对抗用例（b）：同标题两 paper 分别链接到不同 issue，两库
+    间的"谁链接到哪个 issue"业务赋值完全相同、只是两库的建papper/issue 顺序相反 →
+    dump 必相等。"""
+    db_a = tmp_path / "link_order_a.sqlite"
+    db_b = tmp_path / "link_order_b.sqlite"
+
+    database_a = Database(db_a)
+    database_a.migrate()
+    repo_a = Repo(database_a)
+    repo_a.upsert_venue(venue)
+    i1a = repo_a.upsert_issue(_issue(volume="1", number="1"), source="mock")
+    i2a = repo_a.upsert_issue(_issue(volume="1", number="2"), source="mock")
+    repo_a.upsert_paper(VENUE_ID, i1a, _stub(doi="10.9999/d1", title="Same Title"))
+    repo_a.upsert_paper(VENUE_ID, i2a, _stub(doi="10.9999/d2", title="Same Title"))
+    database_a.close()
+
+    database_b = Database(db_b)
+    database_b.migrate()
+    repo_b = Repo(database_b)
+    repo_b.upsert_venue(venue)
+    # 顺序相反：先建第二期与 d2 的链接，再建第一期与 d1 的链接；业务赋值不变
+    i2b = repo_b.upsert_issue(_issue(volume="1", number="2"), source="mock")
+    i1b = repo_b.upsert_issue(_issue(volume="1", number="1"), source="mock")
+    repo_b.upsert_paper(VENUE_ID, i2b, _stub(doi="10.9999/d2", title="Same Title"))
+    repo_b.upsert_paper(VENUE_ID, i1b, _stub(doi="10.9999/d1", title="Same Title"))
+    database_b.close()
+
+    assert canonical_dump(db_a) == canonical_dump(db_b)
 
 
 def test_canonical_dump_translates_era_id_when_present(tmp_path: Path, venue: VenueSpec) -> None:
