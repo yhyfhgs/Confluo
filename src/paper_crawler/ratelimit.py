@@ -7,9 +7,11 @@
   可用假时钟精确断言（连续 acquire 排队累加）。
 - `register`/`override` 对同一 domain 反复调用时，有效 rpm 单调不增——只会
   更保守，即使后续调用传入更大的 rpm 也不放宽（防止后注册覆盖掉更严格的限制）。
-- 容量（burst）只在 domain 首次 `register` 时确定：接口冻结件只对 rpm 定义了
-  "重复注册取更保守"合并语义，未提及 burst 的合并规则，故本实现保留首次注册的
-  burst 不变。
+- 容量（burst）与 rpm 同理单调不增：重复 `register` 同 domain 取更小的
+  burst（2026-07-21 仲裁：突发容量越大越激进，"最保守值"精神下应与 rpm
+  同样取 min，而非保留首次注册值——同 domain 多 adapter 声明不同 burst 时
+  不应放宽）。若合并后当前 level 超过新容量会立即下调，保持"level ≤
+  capacity"不变式随时成立。
 - 未注册 domain 的 `acquire`/`override`/`effective_rpm` 一律 fail fast，抛
   `CrawlerError(CONFIG)`——未注册即未声明限速策略，静默放行等于绕过限速。
 """
@@ -41,7 +43,7 @@ class RateLimiter:
         self._buckets: dict[str, _Bucket] = {}
 
     def register(self, domain: str, policy: RatePolicy) -> None:
-        """注册（或加固）一个 domain 的限速策略；重复注册取更保守（更小）的 rpm。"""
+        """注册（或加固）一个 domain 的限速策略；重复注册取更保守（更小）的 rpm 与 burst。"""
         existing = self._buckets.get(domain)
         if existing is None:
             now = self._clock()
@@ -53,6 +55,9 @@ class RateLimiter:
             )
             return
         existing.rpm = min(existing.rpm, policy.requests_per_minute)
+        existing.capacity = min(existing.capacity, policy.burst)
+        if existing.level > existing.capacity:
+            existing.level = float(existing.capacity)
 
     def override(self, domain: str, requests_per_minute: float) -> None:
         """VenueSpec/CLI 临时覆盖；与当前有效值取 min（只会更保守，不会放宽）。"""

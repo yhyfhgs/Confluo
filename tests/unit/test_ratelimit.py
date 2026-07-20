@@ -115,6 +115,26 @@ def test_register_repeated_takes_more_conservative_smaller_rpm() -> None:
     assert limiter.effective_rpm("mock.local") == 30
 
 
+def test_register_repeated_takes_more_conservative_smaller_burst() -> None:
+    """design/05 §3"最保守值"仲裁（2026-07-21）：burst 与 rpm 同理取更小值，且单调不放宽。"""
+    clock = FakeClock()
+    limiter = RateLimiter(clock=clock)
+    limiter.register("mock.local", RatePolicy(requests_per_minute=60, burst=5))
+    limiter.register("mock.local", RatePolicy(requests_per_minute=60, burst=2))
+
+    # 有效容量应为较小者 2，而不是首次注册的 5：前 2 次立即可用，第 3 次需等待。
+    waits = [limiter.acquire("mock.local") for _ in range(2)]
+    assert waits == [pytest.approx(0.0, abs=1e-9)] * 2
+    assert limiter.acquire("mock.local") == pytest.approx(1.0, abs=1e-9)
+
+    # 之后再注册一个更大的 burst 不应放宽已生效的更保守容量（单调不增）。
+    limiter.register("mock.local", RatePolicy(requests_per_minute=60, burst=10))
+    clock.advance(10.0)  # 让 token 完全恢复
+    waits_after = [limiter.acquire("mock.local") for _ in range(2)]
+    assert waits_after == [pytest.approx(0.0, abs=1e-9)] * 2
+    assert limiter.acquire("mock.local") == pytest.approx(1.0, abs=1e-9)
+
+
 def test_override_takes_min_with_current_effective_rpm() -> None:
     limiter = RateLimiter(clock=FakeClock())
     limiter.register("mock.local", RatePolicy(requests_per_minute=60, burst=1))
