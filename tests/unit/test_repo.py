@@ -320,6 +320,54 @@ def test_get_asset_absent_returns_none(repo: Repo) -> None:
     assert repo.get_asset("nope") is None
 
 
+# -- refresh_asset_plan（T7c 追加设计裁决：fetch 前 re-resolve 同步）----------
+
+
+def test_refresh_asset_plan_updates_planned(repo: Repo) -> None:
+    """planned 资产：url 与 auth_needed 被新 resolve 结果覆盖（其余字段不动）。"""
+    paper_id = repo.upsert_paper(VENUE_ID, None, _stub(doi="10.9999/refresh"))
+    asset_id = repo.plan_asset(
+        paper_id, _pdf_plan(url="https://mock.local/pdf/old?fail=auth_expired"), "mock_platform"
+    )
+    repo.refresh_asset_plan(asset_id, url="https://mock.local/pdf/new", auth_needed="subscription")
+    asset = repo.get_asset(asset_id)
+    assert asset is not None
+    assert asset["url"] == "https://mock.local/pdf/new"
+    assert asset["auth_needed"] == "subscription"
+    assert asset["state"] == "planned"  # 状态不被 refresh 触碰
+
+
+def test_refresh_asset_plan_does_not_touch_fetched(repo: Repo) -> None:
+    """已 fetched 的资产不回退不改（授权语义）：url/auth_needed/state 全保持。"""
+    paper_id = repo.upsert_paper(VENUE_ID, None, _stub(doi="10.9999/refreshed"))
+    asset_id = repo.plan_asset(paper_id, _pdf_plan(url="https://mock.local/pdf/a"), "mock_platform")
+    repo.mark_asset(asset_id, state="fetched", file_path="/x.pdf", bytes_=1, sha256="h")
+    repo.refresh_asset_plan(asset_id, url="https://mock.local/pdf/CHANGED", auth_needed="none")
+    asset = repo.get_asset(asset_id)
+    assert asset is not None
+    assert asset["url"] == "https://mock.local/pdf/a"
+    assert asset["auth_needed"] == "none"
+    assert asset["state"] == "fetched"
+
+
+def test_refresh_asset_plan_missing_asset_is_noop(repo: Repo) -> None:
+    """不存在的 asset id：静默零行更新，不报错（fetch 手边路由自会处理缺行）。"""
+    repo.refresh_asset_plan("no_such_asset", url="https://x", auth_needed="none")
+    assert repo.get_asset("no_such_asset") is None
+
+
+def test_refresh_asset_plan_refreshes_failed_state(repo: Repo) -> None:
+    """非 fetched 的其余状态（如 failed）同样可刷新——重试路径需要新 url。"""
+    paper_id = repo.upsert_paper(VENUE_ID, None, _stub(doi="10.9999/refail"))
+    asset_id = repo.plan_asset(paper_id, _pdf_plan(url="https://mock.local/pdf/f"), "mock_platform")
+    repo.mark_asset(asset_id, state="failed")
+    repo.refresh_asset_plan(asset_id, url="https://mock.local/pdf/f2", auth_needed="none")
+    asset = repo.get_asset(asset_id)
+    assert asset is not None
+    assert asset["url"] == "https://mock.local/pdf/f2"
+    assert asset["state"] == "failed"  # refresh 只动执行细节，不动状态机
+
+
 def test_mark_asset_fetched_sets_fields(repo: Repo) -> None:
     paper_id = repo.upsert_paper(VENUE_ID, None, _stub(doi="10.9999/mark"))
     asset_id = repo.plan_asset(paper_id, _pdf_plan(), "mock_platform")

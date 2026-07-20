@@ -294,6 +294,20 @@ class Repo:
             )
             return asset_id
 
+    def refresh_asset_plan(self, asset_id: str, *, url: str, auth_needed: str) -> None:
+        """fetch 前 re-resolve 后同步 asset 行的执行细节（T7c 追加设计裁决，phase1-plan）。
+
+        asset 的幂等身份 = (paper, kind, version) 不变；url/auth_needed 属执行细节，
+        fetch 子任务执行时现场 resolve 取最新值后经本方法落库再 fetch（signed url /
+        entitlement 时效、mock 故障注入解除等场景）。**已 fetched 的不回退不改**；
+        其余状态（planned/failed 等）只刷新这两列、不触碰状态机。asset 不存在时
+        零行更新、静默返回（缺行由 fetch 阶段自身的 CONFIG 路由处理）。
+        """
+        self.db.execute(
+            "UPDATE asset SET url = ?, auth_needed = ? WHERE id = ? AND state <> 'fetched'",
+            (url, auth_needed, asset_id),
+        )
+
     def list_assets(
         self, *, venue_id: str | None = None, state: str | None = None
     ) -> list[sqlite3.Row]:
