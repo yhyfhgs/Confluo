@@ -1,14 +1,27 @@
 # 文档索引（唯一权威清单）
 
 > 本表是全仓库文档的单一事实来源（D-008）。任何新增/改名/废弃文档必须同一提交内更新本表（AGENTS.md §4）。
-> status 取值与流转见 [process/status-workflow.md](process/status-workflow.md)。最后盘点：2026-07-20。
+> status 取值与流转见 [process/status-workflow.md](process/status-workflow.md)。最后盘点：2026-07-21。
+
+## 按意图导航（先于逐目录清单）
+
+| 你想… | 阅读路径 |
+|---|---|
+| 10 分钟理解系统 | [README](../README.md) → [design/00 需求](design/00-requirements.md) → [design/01 架构](design/01-architecture.md)（配 [图01](diagrams/01-architecture.svg)/[图02](diagrams/02-plugin-modules.svg)）；生词查 [GLOSSARY](GLOSSARY.md) |
+| 新增一个期刊/会议 | [catalog/README 登记流程](catalog/README.md) → 对应领域清单 → [publishers-platforms 平台映射](catalog/publishers-platforms.md) |
+| 设计/实现一个新 adapter | [design/02 框架](design/02-plugin-framework.md) → [adapters/README 模板](design/adapters/README.md) → 同族样例（Atypon 看 [informs](design/adapters/informs.md)，Silverchair 看 [oup](design/adapters/oup-silverchair.md)，OA 看 [pmlr](design/adapters/pmlr.md)）→ [test-plan fixture 规范](testing/test-plan.md) |
+| 理解认证与合规边界 | [design/04](design/04-auth-gated-module.md) → [design/07](design/07-auth-session.md) → [decision-log](plan/decision-log.md) D-006/D-014 → [AC-0 红线](testing/acceptance-criteria.md) |
+| 开始 Phase 1 开发 | [development-plan §Phase 1](plan/development-plan.md) → design/01/02/05/06 → [status-workflow 开工门禁](process/status-workflow.md) |
+| 查"为什么这样设计" | [plan/decision-log.md](plan/decision-log.md)（D-001…D-016） |
+| 了解某站点的实测事实 | research/site-survey/ 对应勘察（各 adapter 文档 §2 已内联引用） |
 
 ## 根文档
 
 | 路径 | 标题 | status | updated |
 |---|---|---|---|
-| [../README.md](../README.md) | 项目总览 | approved | 2026-07-20 |
+| [../README.md](../README.md) | 项目总览 | approved | 2026-07-21 |
 | [../AGENTS.md](../AGENTS.md) | AI/LLM 协作者工作规范 | approved | 2026-07-20 |
+| [GLOSSARY.md](GLOSSARY.md) | 术语表（全库速查） | review | 2026-07-21 |
 
 ## plan/ — 计划与决策
 
@@ -16,7 +29,7 @@
 |---|---|---|---|
 | [plan/development-plan.md](plan/development-plan.md) | 开发计划（Phase 0–7） | approved | 2026-07-20 |
 | [plan/progress.md](plan/progress.md) | 项目进度跟踪 | approved | 2026-07-20 |
-| [plan/decision-log.md](plan/decision-log.md) | 架构决策记录（D-001…D-014） | approved | 2026-07-20 |
+| [plan/decision-log.md](plan/decision-log.md) | 架构决策记录（D-001…D-016） | approved | 2026-07-21 |
 
 ## design/ — 核心设计（00–09）
 
@@ -113,5 +126,7 @@
 
 | 路径 | 内容 |
 |---|---|
-| logs/ | 每 session 工作日志（YYYY-MM-DD-session-NNN.md） |
-| reports/ | 阶段性报告（YYYY-MM-DD-<topic>.md） |
+| logs/ | 每 session 工作日志（YYYY-MM-DD-session-NNN.md，现有 001–004） |
+| [reports/2026-07-20-phase0-report.md](reports/2026-07-20-phase0-report.md) | Phase 0 阶段报告（DoD 判定） |
+| [reports/2026-07-20-consistency-review.md](reports/2026-07-20-consistency-review.md) | 一致性审查第 1 轮（需求矩阵 + 13 项修复，D-015） |
+| [reports/2026-07-21-audit-round2.md](reports/2026-07-21-audit-round2.md) | 深度审计第 2 轮（语义级 + 可读性增强，D-016） |

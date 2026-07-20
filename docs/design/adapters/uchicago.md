@@ -2,7 +2,7 @@
 title: Adapter 设计 · University of Chicago Press
 status: review
 owner: fable5
-updated: 2026-07-20
+updated: 2026-07-21
 ---
 
 # Adapter · `uchicago`
@@ -33,7 +33,7 @@ updated: 2026-07-20
 
 ## 4. 限速与礼貌
 
-- **串行 1 req/6s + 日配额 200 + 工作时段窗**（全局纪律）；robots/TDM ⚠ 待并入。
+- **串行 1 req/6s + 日配额默认 50（低于全局 200——本站明文"批量下载须事先许可"）+ 工作时段窗**；robots `Crawl-delay: 1` 遵守（我们的 6s 远超）；TDMRep `tdm-reservation:1` 尊重（个人检索下载非 TDM 挖掘用途，且无训练用途）；大批量需求引导用户先向出版社申请许可（§2 合规要点）。
 
 ## 5. 失败模式映射
 

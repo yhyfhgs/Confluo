@@ -2,7 +2,7 @@
 title: 架构决策记录（ADR）
 status: approved
 owner: fable5
-updated: 2026-07-20
+updated: 2026-07-21
 ---
 
 # 架构决策记录（Decision Log / ADR）
@@ -134,3 +134,13 @@ updated: 2026-07-20
   2. **CLI 增补 `grab --url`**（design/05 §6）：单篇精取支持无标准标识符的来源（ECCC、个人主页 WP 等）；identifier 相应增加开放 scheme `url`（design/06 注释同步）。理由：Econ/Fin WP 场景常见无 DOI 无平台 id 的合法直链。
   3. **adapter 总量预估修正**：D-002 原估"15~25 个"，经四域 catalog 全量盘点为 **~40 个**（首批详设 16 + planned ~24，其中 8 个为审查中补登记：ijcai/jmlr/jair/bmvc/tandf/annual_reviews/now_publishers/uwpress）。D-002 原文不改（ADR append-only），活文档（publishers-platforms、SVG-02）已按新口径更新。
 - **影响**：Phase 1 的 `venues lint` 按新校验规则实现；勘误类修复（8 项，不构成决策）清单见审查报告。
+
+## D-016 第二轮深度审计：可追溯性与可读性增强批次
+
+- 状态：accepted · 日期：2026-07-21
+- **背景**：Phase 1 开工前第二轮审计（用户指令；第一轮为结构级 D-015，本轮下沉到语义级——数值口径、术语、需求↔验收双向映射、CLI 一致性；全过程见 [reports/2026-07-21-audit-round2.md](../reports/2026-07-21-audit-round2.md)）。
+- **决策**（对 approved 文档的增补按 status-workflow §1 以本条记录，不降级）：
+  1. **FR/NFR→AC 覆盖映射总表**（acceptance-criteria.md 附表）：审计发现 7 条 FR 在需求文档之外无显式编号回引——设计文档不逐条回引 FR，可追溯性统一经该表闭环；度量型 NFR（1/2/5/7）明确为"Phase 报告实测记录"验收形态。
+  2. **术语表 GLOSSARY.md 新增**（docs/ 根，与 INDEX 平级）：50+ 全库共用术语单点定义+出处链接；解决 45 篇文档专有名词无处速查的可读性缺口。
+  3. **INDEX 增加"按意图导航"层**：七条任务式阅读路径（理解系统/加 venue/写 adapter/合规/开发/查决策/查勘察）前置于逐目录清单。
+- **影响**：新文档/新 FR/AC 的登记义务扩展——同步维护映射表与（若引入新术语）GLOSSARY；AGENTS.md §4 checklist 随本条更新。

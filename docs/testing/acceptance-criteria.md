@@ -2,7 +2,7 @@
 title: 验收标准总表
 status: approved
 owner: fable5
-updated: 2026-07-20
+updated: 2026-07-21
 ---
 
 # 验收标准（Acceptance Criteria）
@@ -97,3 +97,32 @@ updated: 2026-07-20
 | AC-0.3 | 凭证/session/PDF 不出现在 git 历史（`git log` 全历史扫描 + .gitignore 生效验证） |
 | AC-0.4 | 日志与报告中无未脱敏的 cookie/token（正则扫描断言） |
 | AC-0.5 | 各 adapter 默认限速 ≤ 其 research/site-survey 文档记载的站点要求；robots.txt 明确禁止的路径不访问（记录例外需 ADR） |
+
+## 附：FR/NFR → AC 覆盖映射（可追溯性总表，D-016）
+
+> 每条功能/非功能需求（[design/00-requirements.md](../design/00-requirements.md)）至少被一条 AC 覆盖。设计文档不逐条回引 FR 编号，追溯统一经本表。
+
+| 需求 | 覆盖 AC | 备注 |
+|---|---|---|
+| FR-01 venue 注册表 | AC-1.6, AC-1.1 | lint 校验 + 端到端 |
+| FR-02 时间轴发现 | AC-2.1, AC-8.1, AC-3.5 | 会议届数 / 多段 era / 期刊零爬取 |
+| FR-03 年度追新 | AC-8.2 | track 候选→确认→落配置 |
+| FR-04 期/届清单枚举 | AC-3.5, AC-2.1, AC-2.4 | 篇数对账（paper_count_claimed） |
+| FR-05 精确选择 + dry-run | AC-1.2, AC-2.2, AC-2.4 | limit / filter / dry-run 零副作用 |
+| FR-06 开放源下载 | AC-2.2, AC-2.5, AC-2.6, AC-5.2, AC-5.3 | 含 bulk 优先与 ACM OA 场景 |
+| FR-07 认证源下载 | AC-4.1 | 全平台 runbook 逐个执行 |
+| FR-08 会话管理 | AC-4.2, AC-4.5, AC-1.5 | 过期检测 / 登出无残留 / BLOCKED-resume |
+| FR-09 礼貌爬取 | AC-1.4, AC-4.4, AC-5.1, AC-0.5 | 限速审计 / 日配额 / robots |
+| FR-10 断点续爬 | AC-1.3, AC-3.3 | kill-9 幂等 / verify 对账 |
+| FR-11 元数据入库与合并 | AC-3.1, AC-3.2, AC-3.4 | 强合并 / 弱信号候审 / 顺序无关 |
+| FR-12 文件管理 | AC-1.1, AC-3.3 | DB↔文件双向对账 |
+| FR-13 全文抽取 | AC-7.1, AC-7.2 | GROBID 可选降级 |
+| FR-14 观测性 | AC-1.4, AC-4.2, AC-4.4 | FetchLog 为审计证据源；canary 见 test-plan §4 |
+| FR-15 订阅 DSL | AC-6.1, AC-6.3, AC-6.4, AC-2.3 | 编译下推与本地一致性 |
+| FR-16 增量与护栏 | AC-6.2, AC-2.3 | 熔断 / 无重复无遗漏 |
+| NFR-3 断点续爬 | AC-1.3 | |
+| NFR-4 限速默认值 | AC-1.4, AC-0.5 | |
+| NFR-6 离线可测 | T3 fixture 门禁（test-plan §1） | 非 AC 形态，CI 强制 |
+| NFR-8 凭证安全 | AC-0.3, AC-0.4, AC-4.5 | |
+
+> NFR-1/2（新增成本）、NFR-5（可观测定位）、NFR-7（资源）为度量型指标，验收方式=Phase 报告中实测记录（非二值判据）。

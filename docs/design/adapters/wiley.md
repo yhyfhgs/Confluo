@@ -2,7 +2,7 @@
 title: Adapter 设计 · Wiley Online Library
 status: review
 owner: fable5
-updated: 2026-07-20
+updated: 2026-07-21
 ---
 
 # Adapter · `wiley`
@@ -32,7 +32,7 @@ updated: 2026-07-20
 
 ## 4. 限速与礼貌
 
-- TDM API：按 Wiley TDM 条款声明的速率（⚠ 待并入；历史口径 ~3 req/s 上限，起步取 1 req/2s 保守）；
+- TDM API：条款速率 **~3 req/s 上限**（2026-07-20 勘察，转引口径）；本系统起步取 1 req/2s 保守，实测 429 行为后再调；
 - 页面路径：**串行 1 req/6s + 日配额 200**（全局纪律）；
 - TDM 条款要求（历史口径）：下载物仅本地挖掘用途、不再分发——与本系统红线天然一致（AC-0.1/需求§5）。
 
@@ -57,4 +57,4 @@ updated: 2026-07-20
 
 - TDM token 申请依赖机构订阅关系（Phase 4 前置外部依赖，预留申请周期）；
 - Cloudflare 策略变化：canary 周检；页面兜底路径失效不算整体失效（TDM 为主干）；
-- ⚠ 待办：subagent 勘察返回后并入 TDM 端点/配额/robots 实测，走 review→approved。
+- 勘察已并入（2026-07-20：TDM 端点/速率、robots、URL 实测）——可提交 approved 评审；剩余实现期事项：TDM 官方原文页复核（勘察时被 Cloudflare 拦截，仅转引口径）、token 申请。

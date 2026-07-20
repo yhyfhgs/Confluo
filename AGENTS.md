@@ -55,6 +55,8 @@ updated: 2026-07-20
 
 - [ ] 更新该文档 front matter 的 `updated` 日期。
 - [ ] 若新增/删除/改名文档：同步更新 [docs/INDEX.md](docs/INDEX.md)。
+- [ ] 若新增 FR/AC：同步维护 [acceptance-criteria.md](docs/testing/acceptance-criteria.md) 末尾的 FR→AC 覆盖映射表（D-016）。
+- [ ] 若引入新的全库术语：在 [docs/GLOSSARY.md](docs/GLOSSARY.md) 增补单点定义。
 - [ ] 若做出新的架构级决策：追加到 [docs/plan/decision-log.md](docs/plan/decision-log.md)（ADR 格式，编号递增）。
 - [ ] 当日工作在 `docs/logs/YYYY-MM-DD-session-NNN.md` 留痕（做了什么、改了哪些文件、遗留问题）。
 - [ ] 里程碑完成时在 `docs/reports/` 写阶段报告，并更新 [docs/plan/progress.md](docs/plan/progress.md)。

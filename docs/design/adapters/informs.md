@@ -2,7 +2,7 @@
 title: Adapter 设计 · INFORMS PubsOnline
 status: review
 owner: fable5
-updated: 2026-07-20
+updated: 2026-07-21
 ---
 
 # Adapter · `informs`
@@ -15,12 +15,12 @@ updated: 2026-07-20
 
 ## 2. 站点勘察摘要
 
-来源：[catalog/or-ms-journals.md](../../catalog/or-ms-journals.md)（INFORMS 系经 Crossref [LIVE] 核实 2026-07-20）+ 待并入出版社勘察 subagent 结果：
+来源：[catalog/or-ms-journals.md](../../catalog/or-ms-journals.md)（INFORMS 系经 Crossref [LIVE] 核实 2026-07-20）。注：pubsonline 对云 IP 在连接层拒绝（publishers-platforms §网络层现实），故其 robots/TDM 明文**无法在本设计阶段直接勘察**——列入实现期用户网络环境下的登录态勘察首项：
 
 - 平台：`pubsonline.informs.org`，**Atypon** 平台族；DOI 前缀 10.1287；
 - URL 模式（[LIVE]）：期刊主页 `/journal/{code}`；期目录 `/toc/{code}/{vol}/{issue}`；全期清单 `/loi/{code}`；文章 `/doi/full/10.1287/{code}.xxxx.xxxx`；**PDF `/doi/pdf/10.1287/...`（Atypon 规整直链）**；EPDF `/doi/epdf/...`；
 - 反爬：Cloudflare/WAF（[LIVE] 多工具连接失败）——**用户住宅/校园网络 + 登录 session 下可达**（auth_gated 模块假设成立）；
-- 认证：机构（Shibboleth/OpenAthens "Institutional Sign In"）+ 个人会员；robots/TDM 明文政策 ⚠ 待 subagent 勘察并入。
+- 认证：机构（Shibboleth/OpenAthens "Institutional Sign In"）+ 个人会员；robots/TDM 明文政策 ⚠ 实现期登录态勘察（见 §7 首项）。
 
 ## 3. 各阶段实现方案
 
@@ -31,9 +31,9 @@ updated: 2026-07-20
 
 ## 4. 限速与礼貌
 
-- **串行 1 req/6s + 日配额 200 + 工作时段窗**（auth_gated 全局纪律 design/04 §4；⚠ 待 TDM 政策勘察后若有明文再调并注明出处）；
+- **串行 1 req/6s + 日配额 200 + 工作时段窗**（auth_gated 全局纪律 design/04 §4；实现期勘察到 TDM 明文速率则按明文调整并注明出处）；
 - 不并行多 session；机构订阅方违规批量下载会连累全校——本平台为 OR 域每日主力，纪律优先级最高；
-- robots：遵守（具体条目待勘察并入）。
+- robots：默认遵守（具体条目待实现期登录态勘察，见 §7 首项）。
 
 ## 5. 失败模式映射
 
@@ -53,6 +53,6 @@ updated: 2026-07-20
 
 ## 7. 风险与维护
 
-- Atypon 平台族共性强（SAGE/UChicago 亦是/近似）——PDF 直链模式解析器可做族内基类复用，改版时一处修；
+- Atypon 平台族共性强（SAGE/SIAM/UChicago 同族已 [LIVE] 确认）——PDF 直链模式解析器做 `atypon_base` 族内基类复用，改版时一处修；
 - WAF 策略变化是主要运行风险：canary 每周 healthcheck；连续 CHALLENGED 转人工勘察；
-- ⚠ 待办：subagent 出版社勘察返回后并入 robots/TDM 条目，走 review→approved。
+- ⚠ 实现期首项：用户网络环境登录态下抓取 robots.txt 与 TDM 政策明文（设计阶段云 IP 不可达），有明文速率则按明文调整并注明出处——此项完成前本文档停留 review。

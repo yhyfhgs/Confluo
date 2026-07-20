@@ -2,7 +2,7 @@
 title: 项目进度跟踪
 status: approved
 owner: fable5
-updated: 2026-07-20
+updated: 2026-07-21
 ---
 
 # 项目进度
@@ -10,7 +10,7 @@ updated: 2026-07-20
 > 本文件是"当前状态"的单一事实来源。每次工作 session 结束时更新。
 > 历史细节见 `docs/logs/`；阶段总结见 `docs/reports/`。
 
-## 当前快照（2026-07-20）
+## 当前快照（2026-07-21）
 
 - **当前 Phase**：0 **已完成**（DoD 全项达成，见 [Phase 0 报告](../reports/2026-07-20-phase0-report.md)）→ 下一 Phase：1（核心框架）
 - **总体进度**：Phase 0 = 100%（全套设计文档、6 SVG、16 篇 adapter 详设、8 篇 catalog、9 篇调研归档、INDEX、git 初始提交）
@@ -36,3 +36,5 @@ updated: 2026-07-20
 |---|---|---|
 | 2026-07-20 | [logs/2026-07-20-session-001.md](../logs/2026-07-20-session-001.md) | 文本系统建立；核心设计 00–09；plan/testing/process；catalog 6 篇；调研 5 篇（日志为 002 补记） |
 | 2026-07-20 | [logs/2026-07-20-session-002.md](../logs/2026-07-20-session-002.md) | 6 SVG；16 篇 adapter 详设；catalog 补 2 篇；出版社/同类项目调研 4 篇归档；INDEX；Phase-0 报告；git 初始提交 |
+| 2026-07-20 | [logs/2026-07-20-session-003.md](../logs/2026-07-20-session-003.md) | 一致性审查第 1 轮：需求矩阵 17/17；13 项修复（D-015） |
+| 2026-07-21 | [logs/2026-07-21-session-004.md](../logs/2026-07-21-session-004.md) | 深度审计第 2 轮：10 项修复；GLOSSARY+INDEX 导航+FR→AC 映射表（D-016） |

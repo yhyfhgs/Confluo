@@ -2,7 +2,7 @@
 title: Adapter 设计 · OUP（Silverchair 平台）
 status: review
 owner: fable5
-updated: 2026-07-20
+updated: 2026-07-21
 ---
 
 # Adapter · `oup_silverchair`
@@ -37,7 +37,7 @@ updated: 2026-07-20
 
 - **串行 1 req/6s + 日配额 200 + 工作时段窗**（design/04 §4 全局纪律）；
 - resolve（页面解析）与 fetch（PDF 下载）计入同一 domain 桶——每篇实际 2 请求，配额按请求数记账；
-- ⚠ OUP TDM 政策待勘察：若有明文（OUP 有机构 TDM 条款传统）按明文调整并注明。
+- OUP TDM 政策已勘察（2026-07-20）：无公开 API、无明文速率数字；非商业 TDM 含在机构订阅条款内——无明文即维持全局保守纪律；实现期可选礼貌动作：向 Data.Mining@oup.com 报备用途。
 
 ## 5. 失败模式映射
 

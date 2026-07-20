@@ -1,7 +1,7 @@
 # Paper Crawler — 可插拔式学术论文获取系统
 
-> 状态：**设计阶段（Phase 0）** · 本仓库当前只包含设计文档与规划文本，尚无实现代码。
-> 最后更新：2026-07-20
+> 状态：**Phase 0（设计）已完成，Phase 1（核心框架）待开工** · 本仓库当前只包含设计文档与规划文本，尚无实现代码。
+> 最后更新：2026-07-21 · 阶段判定见 [Phase 0 报告](docs/reports/2026-07-20-phase0-report.md)
 
 ## 这是什么
 
@@ -22,7 +22,8 @@
 
 | 目录 | 内容 |
 |---|---|
-| [docs/INDEX.md](docs/INDEX.md) | **全文档索引与状态表（从这里开始）** |
+| [docs/INDEX.md](docs/INDEX.md) | **全文档索引与状态表（从这里开始，顶部有按意图导航）** |
+| [docs/GLOSSARY.md](docs/GLOSSARY.md) | 术语表（VenueSpec、era、AssetPlan、canary… 生词速查） |
 | [docs/plan/](docs/plan/) | 开发计划、进度、决策记录（ADR） |
 | [docs/design/](docs/design/) | 需求、架构、模块、pipeline、数据模型等设计文档 |
 | [docs/design/adapters/](docs/design/adapters/) | 每个站点/平台的专属爬虫设计 |
