@@ -128,9 +128,17 @@ class FetchIO(Protocol):   # pipeline 提供实现；adapter 只写流
 `VenueSpec`（Pydantic v2，`extra="forbid"`，字段与 design/02 §2.2 YAML schema v1 一一对应）：
 
 ```python
-class VenueNames(BaseModel): full: str; aliases: list[str] = []
-class VenueAuth(BaseModel): level: AuthLevel = AuthLevel.NONE; provider_hint: str | None = None
-class VenueRateLimit(BaseModel): requests_per_minute: float | None = None
+// 修订 2026-07-21（T1 实施仲裁）：三个嵌套模型同样 extra="forbid"——嵌套键拼写错静默落默认值
+// 会使 auth 兼容校验假阴性（AC-1.6 缺陷路径），故全树拒绝未知键。
+class VenueNames(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    full: str; aliases: list[str] = []
+class VenueAuth(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    level: AuthLevel = AuthLevel.NONE; provider_hint: str | None = None
+class VenueRateLimit(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    requests_per_minute: float | None = None
 
 class VenueSpec(BaseModel):
     model_config = ConfigDict(extra="forbid")
