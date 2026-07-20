@@ -309,6 +309,79 @@ def test_journal_issn_not_a_list_reported(
     assert "列表" in hits[0].message
 
 
+def test_journal_issn_lowercase_x_check_digit_rejected(
+    adapters: dict[str, SourceAdapter], tmp_path: Path
+) -> None:
+    """Closes: AC-1.6（ISSN 校验位仅接受大写 X——小写 x 不合法）。
+
+    D-015 规则 `^\\d{4}-\\d{3}[\\dX]$` 的字符类只含大写 `X`；`0304-405x`（小写）应被
+    逐字符类拒绝，定位到 `identifiers.issn[0]`。防止"看着像合法 ISSN"的小写变体漏网。
+    """
+    _write(
+        tmp_path / "lowercase-x-issn.yaml",
+        "\n".join(
+            [
+                "id: lowercase_x_issn",
+                "kind: journal",
+                "names: {full: Lowercase X Issn Journal}",
+                "field: [cs_ai]",
+                "identifiers: {issn: ['0304-405x']}",  # 小写 x 校验位
+                "metadata_source: mock_platform",
+                "fulltext_source: mock_platform",
+            ]
+        ),
+    )
+    reg = VenueRegistry(adapters)
+    reg.load_dirs([tmp_path])
+    issues = reg.lint()
+
+    hits = _issues_for_field(issues, "identifiers.issn[0]")
+    assert len(hits) == 1
+    assert hits[0].venue_id == "lowercase_x_issn"
+    assert "0304-405x" in hits[0].message
+
+
+def test_journal_mixed_issn_list_locates_each_invalid_by_index(
+    adapters: dict[str, SourceAdapter], tmp_path: Path
+) -> None:
+    """Closes: AC-1.6（同列表混合有效/无效 ISSN：逐 index 定位无效项，有效项不误报）。
+
+    `_lint_issn` 逐项 enumerate，`field=identifiers.issn[{index}]`——校验的可定位性要求
+    多个无效项各自带自己的 index，且有效项之间不"连坐"。列表
+    `['0000-0000'(有效), '12345'(短), '1234-567X'(有效,大写X), '0304-405x'(小写x)]`
+    → 仅 index 1、3 报错，index 0、2 干净。
+    """
+    _write(
+        tmp_path / "mixed-issn.yaml",
+        "\n".join(
+            [
+                "id: mixed_issn",
+                "kind: journal",
+                "names: {full: Mixed Issn Journal}",
+                "field: [cs_ai]",
+                "identifiers: {issn: ['0000-0000', '12345', '1234-567X', '0304-405x']}",
+                "metadata_source: mock_platform",
+                "fulltext_source: mock_platform",
+            ]
+        ),
+    )
+    reg = VenueRegistry(adapters)
+    reg.load_dirs([tmp_path])
+    issues = reg.lint()
+
+    # 有效项（index 0、2）不误报
+    assert _issues_for_field(issues, "identifiers.issn[0]") == []
+    assert _issues_for_field(issues, "identifiers.issn[2]") == []
+    # 无效项各自逐 index 定位（index 1 短一位、index 3 小写 x）
+    bad1 = _issues_for_field(issues, "identifiers.issn[1]")
+    bad3 = _issues_for_field(issues, "identifiers.issn[3]")
+    assert len(bad1) == 1 and "12345" in bad1[0].message
+    assert len(bad3) == 1 and "0304-405x" in bad3[0].message
+    assert bad1[0].venue_id == "mixed_issn" and bad3[0].venue_id == "mixed_issn"
+    # 全部 issn 相关问题恰好 2 条（无有效项连坐）
+    assert len([i for i in issues if i.field.startswith("identifiers.issn")]) == 2
+
+
 # -- 6. YAML 解析失败 --------------------------------------------------------------
 
 

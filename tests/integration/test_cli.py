@@ -33,6 +33,9 @@ from typer.testing import CliRunner
 from integration.test_pipeline_e2e import DEFAULT_QUIRKS, VENUE
 from paper_crawler import cli as cli_module
 from paper_crawler.cli import app
+from paper_crawler.storage.db import Database
+from paper_crawler.storage.repo import Repo
+from paper_crawler.types import IssueRef, PaperStub, VenueSpec
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 
@@ -115,6 +118,8 @@ def test_venues_lint_valid_exits_0(tmp_path: Path) -> None:
 
 
 def test_venues_lint_invalid_dir_exits_2_with_location(tmp_path: Path) -> None:
+    """Closes: AC-1.6（非法 spec 被 `venues lint` 拒绝并给定位——CLI 层：退出 2 +
+    file:venue_id:field 定位串。语义细分的七类非法见 test_venue_yaml_lint.py 单测）。"""
     home = tmp_path / "home"
     venues_dir = home / "venues"
     venues_dir.mkdir(parents=True)
@@ -178,6 +183,26 @@ def test_pull_success_exits_0_and_writes_files(tmp_path: Path) -> None:
     files = _pdf_files(home)
     assert len(files) == 10
     assert all(f.read_bytes().startswith(b"%PDF-") for f in files)
+
+
+def test_pull_year_end_to_end_report_shows_succeeded_n_failed_0(tmp_path: Path) -> None:
+    """Closes: AC-1.1（mock venue 端到端 pull 的 CLI 层判据：DB 计数符合 mock 数据、
+    data/ 文件数 = Asset(fetched) 数、报告"成功=N，失败=0"）。
+
+    三项判据全部只从 CLI 产物断言（stdout 报告 + 落盘文件），不旁路进程内 API——
+    补 `test_pipeline_e2e.test_pull_year_end_to_end`（pipeline 级 AC-1.1）缺的 CLI 端到端层。
+    """
+    home = _make_home(tmp_path)
+    result = runner.invoke(app, ["pull", VENUE, "--year", "2024", "--home", str(home)])
+
+    assert result.exit_code == 0, result.output
+    # 报告"成功=N，失败=0"（year 2024 = 2 期 × 5 篇 = 10）
+    assert "| 成功 | 10 |" in result.output
+    assert "| 失败 | 0 |" in result.output
+    # DB 中 Issue/Paper/Asset 计数符合 mock 数据（经报告 ingest 摘要断言，端到端可读）
+    assert "issues=2 papers=10 assets_fetched=10/10" in result.output
+    # data/ 下文件数 = Asset(fetched) 数（10）
+    assert len(_pdf_files(home)) == 10
 
 
 def test_pull_dry_run_exits_0_and_writes_no_files(tmp_path: Path) -> None:
@@ -289,6 +314,29 @@ def test_resume_all_then_pull_completes(tmp_path: Path) -> None:
     )
     assert rerun_result.exit_code == 0, rerun_result.output
     assert len(_pdf_files(home)) == 5
+
+
+def test_resume_task_id_and_all_together_silently_prefers_all(tmp_path: Path) -> None:
+    """TASK_ID 与 --all 同给：按现实现"静默走 --all"（M1，行为固化）。
+
+    `resume` 命令体先判 `if all_:`，为真即整批恢复并直接返回，给出的 TASK_ID 被
+    悄悄忽略（既不报用法错、也不单独校验该 id 是否存在）。这是已知 Minor（M1）：
+    更严格的实现应在二者同给时报冲突退出 2。此处按当前行为固化，防止无意回归；
+    若未来收紧为"冲突即退出 2"，改本测试并注销 M1。
+    """
+    home = _make_home(tmp_path, quirks=_fail_fetch("auth_expired", [0, 1]))
+    pull_result = runner.invoke(
+        app, ["pull", VENUE, "--volume", "1", "--issue", "1", "--home", str(home)]
+    )
+    assert pull_result.exit_code == 3, pull_result.output
+
+    # 同给一个"不存在"的 TASK_ID 与 --all：若真按 TASK_ID 走会退出 2（KeyError），
+    # 静默走 --all 则整批恢复、退出 0——以此区分两条实现路径。
+    result = runner.invoke(
+        app, ["resume", "definitely-not-a-real-task-id", "--all", "--home", str(home)]
+    )
+    assert result.exit_code == 0, result.output
+    assert "已恢复 5 个任务" in result.output  # 走了 --all 整批分支，非 TASK_ID 分支
 
 
 def test_resume_without_task_id_or_all_exits_2(tmp_path: Path) -> None:
@@ -510,6 +558,45 @@ def test_list_with_volume_and_issue_scopes_to_single_issue(tmp_path: Path) -> No
 
     assert result.exit_code == 0, result.output
     assert "Mock Paper 1.1" in result.output
+
+
+def test_papers_in_scope_dedupes_paper_shared_across_issues(
+    tmp_path: Path, venue: VenueSpec
+) -> None:
+    """`list` 的跨-issue 去重分支（cli._papers_in_scope 的 `if paper_id in seen: continue`）。
+
+    mock 语料每期 DOI 唯一、不自然产生跨期 paper；此处直接经 Repo 用**同 DOI**两次
+    `upsert_paper` 把一个 paper 链到两期（design/06 §3 强合并锚点，同 test_dbdump 手法），
+    再喂给 `_papers_in_scope`——覆盖 `list` 跨期展示时"同一 paper 只列一次"的去重路径。
+    """
+    db = Database(tmp_path / "catalog.sqlite")
+    db.migrate()
+    try:
+        repo = Repo(db)
+        repo.upsert_venue(venue)
+        i1 = repo.upsert_issue(
+            IssueRef(venue_id=venue.id, volume="1", number="1", year=2024), source="mock"
+        )
+        i2 = repo.upsert_issue(
+            IssueRef(venue_id=venue.id, volume="1", number="2", year=2024), source="mock"
+        )
+        shared = PaperStub(title="Shared Across Issues", identifiers=(("doi", "10.9999/shared"),))
+        repo.upsert_paper(venue.id, i1, shared)
+        repo.upsert_paper(venue.id, i2, shared)  # 同 DOI → 复用 paper、追加链到 i2
+        # 对照：一篇只在 i1，确保不是"全量去重"而是"跨期同 paper 去重"
+        repo.upsert_paper(
+            venue.id, i1, PaperStub(title="Only In One", identifiers=(("doi", "10.9999/only"),))
+        )
+
+        issues = repo.list_issues(venue.id, volume="1")
+        assert len(issues) == 2
+        papers = cli_module._papers_in_scope(repo, venue.id, issues)
+
+        titles = [str(p["title"]) for p in papers]
+        assert titles.count("Shared Across Issues") == 1  # 跨期只列一次（去重分支命中）
+        assert sorted(titles) == ["Only In One", "Shared Across Issues"]
+    finally:
+        db.close()
 
 
 # ---------------------------------------------------------------------------

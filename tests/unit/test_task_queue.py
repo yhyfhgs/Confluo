@@ -64,6 +64,20 @@ def test_canonical_params_non_ascii_preserved(queue: TaskQueue) -> None:
     assert queue.canonical_params({"q": "金融"}) == '{"q":"金融"}'
 
 
+def test_canonical_params_empty_dict(queue: TaskQueue) -> None:
+    """空参数 dict（如 discover 全量时间轴的 `{}`）规范化为 `{}`——幂等键稳定不崩。"""
+    assert queue.canonical_params({}) == "{}"
+
+
+def test_canonical_params_nested_dict_keys_sorted_recursively(queue: TaskQueue) -> None:
+    """嵌套 dict 的内层键也被 sort_keys 递归排序 → 入参内外层键序均不影响幂等键。"""
+    nested = queue.canonical_params({"outer": {"b": 2, "a": 1}, "k": 3})
+    assert nested == '{"k":3,"outer":{"a":1,"b":2}}'
+    assert queue.canonical_params({"outer": {"b": 2, "a": 1}}) == queue.canonical_params(
+        {"outer": {"a": 1, "b": 2}}
+    )
+
+
 # ---------------------------------------------------------------------------
 # enqueue：enqueued / duplicate / fresh_skip / force
 # ---------------------------------------------------------------------------
