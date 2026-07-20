@@ -1,0 +1,74 @@
+[project]
+name = "paper-crawler"
+version = "0.1.0"
+description = "可插拔式学术论文获取系统（个人科研用）—— 核心框架"
+readme = "README.md"
+requires-python = ">=3.12"
+license = { text = "Proprietary" }
+dependencies = [
+    "typer>=0.12",
+    "pydantic>=2",
+    "pyyaml>=6",
+    "python-ulid>=2",
+]
+
+# Phase 1 T1 修正：暂不声明 [project.scripts]（cli 模块 T8 才落地，
+# 提前声明会产生指向不存在模块的 broken entry point）。T8 补 `crawler = "paper_crawler.cli:main"`。
+
+# 内置 adapter 通过 entry point 组注册（design/02 §4）。第三方 pip 包声明同名组即可被发现。
+# stubs（crossref/openreview/elsevier_sd）由 load_adapters() 内置注册，不走 entry point（包内占位）。
+[project.entry-points."paper_crawler.adapters"]
+mock_platform = "paper_crawler.adapters.mock_platform:MockPlatformAdapter"
+
+[dependency-groups]
+dev = [
+    "pytest>=8",
+    "pytest-cov>=5",
+    "ruff>=0.6",
+    "mypy>=1.11",
+    "types-PyYAML",
+]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/paper_crawler"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py312"
+src = ["src", "tests"]
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "W", "UP", "B", "C4"]
+
+[tool.mypy]
+python_version = "3.12"
+strict = true
+files = ["src"]
+plugins = ["pydantic.mypy"]
+
+[tool.pydantic-mypy]
+init_forbid_extra = true
+init_typed = true
+warn_required_dynamic_aliases = true
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "--strict-markers"
+markers = [
+    "slow: 慢测试（kill-9 等，Phase 1 T9 引入）",
+]
+
+[tool.coverage.run]
+branch = true
+source = ["paper_crawler"]
+
+[tool.coverage.report]
+exclude_also = [
+    '^\s*\.\.\.\s*$',
+    "raise NotImplementedError",
+    "if TYPE_CHECKING:",
+]

@@ -33,3 +33,17 @@ Thumbs.db
 
 # ---- 测试快照的临时重录区（正式 fixtures 会入库）----
 tests/fixtures/_staging/
+
+# ---- Phase 1 实现阶段增补（工具产物，绝不入库）----
+.coverage
+.coverage.*
+htmlcov/
+# SQLite WAL 副本文件（journal_mode=WAL）
+*.sqlite-wal
+*.sqlite-shm
+# 质量工具缓存
+.mypy_cache/
+.ruff_cache/
+.pytest_cache/
+# subagent 工作目录
+.superpowers/
