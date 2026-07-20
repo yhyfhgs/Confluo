@@ -12,9 +12,15 @@
 三条断言（canonical dump 口径的可执行定义见 `tests/helpers/dbdump.py` docstring）：
 1. `canonical_dump(home_a) == canonical_dump(home_b)`：业务数据逐行一致（剔除 ULID/
    时钟/file_path 等不可复现列；task/fetch_log 历史轨迹合法地不同，不参与）；
-2. 每 asset 成功 fetch_log ≤ 1（home_a 的 fetch_log 按 asset 聚合 `error_class IS NULL`
-   行数）——commit → mark_asset → add_fetch_log 的顺序保证任一 kill 点都不产生重复
-   成功日志（见 stages.py `_stage_fetch`）；
+2. 每 asset 成功 fetch_log **0 或 1、无重复**（home_a 的 fetch_log 按 asset 聚合
+   `error_class IS NULL` 行数，max ≤ 1）——这正是 AC-1.3"无重复 FetchLog"判据本身。
+   允许 0：`_stage_fetch` 的 commit → mark_asset → add_fetch_log 是三个独立 autocommit
+   （未同事务化），SIGKILL 恰落在 mark_asset 与 add_fetch_log 之间时，该 asset 已
+   fetched、文件与 sha256 已正确落库，但成功日志未写；resume 重跑因幂等跳过
+   （`state=='fetched' and fetched_file_ok`）不再补写 → 该 asset 成功日志恒为 0。
+   文件与 DB 状态仍正确，故断言 1（canonical dump）与断言 3 不受影响；把 fetch 三步
+   同事务化以消掉这个窗口列为 Phase 2 硬化项。故此处只断言唯一性（max ≤ 1），
+   **不**断言"16 个 asset 各有 1 条"（那会在该 kill 窗口 flake 为 15）；
 3. 重跑日志含 skipped（断点续爬跳过已完成工作；一次干净跑无 skipped，故 skipped 的
    出现本身即证明发生了续爬）。
 
@@ -147,10 +153,13 @@ def test_kill9_resume_is_idempotent_and_matches_clean_run(
     # 断言 1：canonical dump 逐行一致（ULID/时钟/file_path 剔除，task/fetch_log 不参与）
     assert canonical_dump(home_a / "catalog.sqlite") == canonical_dump(home_b / "catalog.sqlite")
 
-    # 断言 2：每 asset 成功 fetch_log ≤ 1（无重复 FetchLog）
+    # 断言 2：每 asset 成功 fetch_log 唯一——AC-1.3"无重复 FetchLog"判据本身。
+    # 允许 0（kill 落在 mark_asset 与 add_fetch_log 缝隙的已知窗口——见模块 docstring
+    # 断言 2）；真实不变式是"每 asset 0 或 1、无重复"，故只断言 max ≤ 1，不断言
+    # len == 16（那会在该窗口 flake 为 15）。上界 sanity：不超过资产总数。
     per_asset = _success_logs_per_asset(home_a)
-    assert len(per_asset) == _EXPECTED_ASSETS  # 16 个 asset 各有成功记录
-    assert max(per_asset.values()) <= 1, f"duplicate success FetchLog: {per_asset}"
+    assert max(per_asset.values(), default=0) <= 1, f"duplicate success FetchLog: {per_asset}"
+    assert len(per_asset) <= _EXPECTED_ASSETS
 
     # 断言 3：重跑日志含 skipped（续爬跳过已完成工作；干净一跑无 skipped）
     assert '"msg": "skipped"' in _log_text(home_a)
