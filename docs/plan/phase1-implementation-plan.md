@@ -623,6 +623,38 @@ crawler report [--last-run]
 
 ---
 
+## 执行期重排记录（2026-07-21，用户指令：提高并行度）
+
+交付物与 DoD 不变，任务边界重切：**T7 拆为 T7a(fetchio)/T7b(report)/T7c(stages+runner)**，**T8 拆出 T8a(verify+dbdump 前置)**，T8b(CLI 主体) 变薄改派 sonnet（审查仍 opus）。T7a/T7b/T8a 与 T5/T6 五线并行（文件零交集）；关键路径缩为 T7c→T8b→T9。补充冻结签名：
+
+```python
+# pipeline/fetchio.py（T7a）
+class PartFileIO:                      # FetchIO 实现
+    def __init__(self, tmp_dir: Path, asset_id: str): ...
+    def write_stream(self, chunks: Iterable[bytes]) -> tuple[int, str]   # 写 {asset_id}.part，返回 (bytes, sha256)
+    @property
+    def part_path(self) -> Path
+    def commit(self, final_path: Path) -> None    # 父目录 mkdir -p + os.replace 原子落位
+    def abort(self) -> None                       # 删 .part（幂等）
+def validate_pdf_magic(path: Path) -> bool        # 头部 %PDF-
+def cleanup_tmp(tmp_dir: Path) -> int             # 启动清理 *.part（design/05 §5.2），返回清理数
+
+# verify.py（T8a；design/05 §5.4 基础版，AC-3.3 正式验收 Phase 3）
+@dataclass(frozen=True)
+class VerifyIssue:
+    kind: Literal["missing_file", "orphan_file", "hash_mismatch"]
+    asset_id: str | None
+    file_path: str
+    suggestion: Literal["re-fetch", "adopt", "quarantine"]
+def verify_store(repo: Repo, data_dir: Path) -> list[VerifyIssue]
+# missing_file→re-fetch；orphan_file→adopt；hash_mismatch→quarantine
+
+# tests/helpers/dbdump.py（T8a；AC-1.3 canonical dump 口径的可执行定义）
+def canonical_dump(db_path: Path) -> dict[str, list[tuple[object, ...]]]
+# 表集=venue/issue/paper/identifier/asset/paper_issue_link；剔除 id/created_at/updated_at/fetched_at/file_path；
+# 行序按业务键（Task 9 节口径）；task/fetch_log 不参与
+```
+
 ## 审查协议（每任务）
 
 1. Implementer 完成 → 报告（状态/提交列表/测试命令与结果/自审发现/concerns）落盘 scratchpad 报告文件。
