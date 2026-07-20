@@ -175,6 +175,24 @@ def test_ttl_zero_never_fresh(database: Database) -> None:
     assert queue.enqueue("ingest", None, {"batch": "b1"}).status == "enqueued"
 
 
+def test_null_venue_freshness_path(database: Database) -> None:
+    """venue_id=None 不影响新鲜度判定：DONE 后 23h→fresh_skip、25h→enqueued。
+
+    _fresh_skip 用 NULL-安全查询（`venue_id IS NULL`），与 COALESCE 去重索引各司其职——
+    新鲜度判定从不依赖唯一索引，故 venue-less 的 fresh_skip/enqueued 分支同样正确。
+    """
+    clock = FakeClock(datetime(2026, 1, 1, tzinfo=UTC))
+    queue = TaskQueue(database, clock=clock)
+    queue.enqueue("discover", None, {"since": "2024"})
+    done_id = _drain_to_done(queue)
+    clock.advance(timedelta(hours=23))
+    fresh = queue.enqueue("discover", None, {"since": "2024"})
+    assert fresh.status == "fresh_skip"
+    assert fresh.task_id == done_id
+    clock.advance(timedelta(hours=2))  # 累计 25h，越过 discover 24h 窗口
+    assert queue.enqueue("discover", None, {"since": "2024"}).status == "enqueued"
+
+
 def test_force_bypasses_fresh_skip(database: Database) -> None:
     """force=True 绕过 fresh_skip：新鲜 DONE 存在仍新建 PENDING。"""
     clock = FakeClock(datetime(2026, 1, 1, tzinfo=UTC))
@@ -195,17 +213,12 @@ def test_force_does_not_bypass_duplicate(queue: TaskQueue) -> None:
     assert result.task_id == first.task_id
 
 
-@pytest.mark.xfail(
-    reason="已知缺陷：venue_id=None 时 SQL 视 NULL 互不相等，部分唯一索引 idx_task_active_idem "
-    "无法约束，INSERT 不抛 IntegrityError → 第二次入队误判 enqueued。冻结契约明令"
-    "'直接 INSERT 依赖唯一索引、不做 SELECT-then-INSERT'，故留待主 agent 仲裁（NEEDS_CONTEXT）。",
-    strict=True,
-)
 def test_enqueue_null_venue_active_duplicate(queue: TaskQueue) -> None:
-    """契约要求：同 (kind, None, params) 已有活跃任务应判 duplicate（当前对 NULL venue 失效）。"""
-    queue.enqueue("ingest", None, {"batch": "b1"})
+    """venue_id=None 同键活跃任务判 duplicate（COALESCE 索引归一 NULL；C1 仲裁方案 a）。"""
+    first = queue.enqueue("ingest", None, {"batch": "b1"})
     second = queue.enqueue("ingest", None, {"batch": "b1"})
     assert second.status == "duplicate"
+    assert second.task_id == first.task_id
 
 
 def test_enqueue_bad_parent_id_raises_not_masked_as_duplicate(queue: TaskQueue) -> None:
