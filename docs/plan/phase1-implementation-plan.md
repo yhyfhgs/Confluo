@@ -657,6 +657,10 @@ def canonical_dump(db_path: Path) -> dict[str, list[tuple[object, ...]]]
 # 行序按业务键（Task 9 节口径）；task/fetch_log 不参与
 ```
 
+### T7c 追加设计裁决（2026-07-21，T6 审查情报驱动）
+
+**fetch 前 re-resolve**：fetch 子任务执行时现场调用 `resolve_assets` 取该 paper 最新 AssetPlan，经新增 `Repo.refresh_asset_plan(asset_id, url, auth_needed)`（授权 T7c 增补 repo 方法）同步 asset 行后再 fetch。理由：(1) mock 故障注入编译于 url，resume 修复场景须以新 resolve 为准，否则 AC-1.5 卡死；(2) 真实 adapter 的 signed url/entitlement 本就有时效，fetch 前刷新与行业常态同构；(3) asset 幂等身份=(paper,kind,version) 不变，url 属执行细节，"阶段间经持久化实体通信"不变式保持。T10 收尾时把此语义作为实现期注记回填 design/05。
+
 ## 审查协议（每任务）
 
 1. Implementer 完成 → 报告（状态/提交列表/测试命令与结果/自审发现/concerns）落盘 scratchpad 报告文件。
