@@ -1,0 +1,35 @@
+# ---- 凭证与会话（绝不入库）----
+credentials/
+*.credential
+*.secret
+storage_state*.json
+auth_profiles/
+.env
+.env.*
+
+# ---- 下载产物（体积大且有版权，绝不入库）----
+data/
+downloads/
+*.pdf
+!docs/**/*.pdf-placeholder
+
+# ---- 运行时 ----
+*.log
+*.sqlite
+*.sqlite3
+*.db
+__pycache__/
+*.pyc
+.venv/
+venv/
+node_modules/
+
+# ---- 系统与编辑器 ----
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
+*.swp
+
+# ---- 测试快照的临时重录区（正式 fixtures 会入库）----
+tests/fixtures/_staging/

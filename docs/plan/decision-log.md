@@ -1,0 +1,126 @@
+---
+title: 架构决策记录（ADR）
+status: approved
+owner: fable5
+updated: 2026-07-20
+---
+
+# 架构决策记录（Decision Log / ADR）
+
+> 格式：每条决策一节，编号 D-NNN 单调递增，永不复用。推翻旧决策时新增一条并注明 `supersedes: D-XXX`，旧条目标注 `superseded-by`。
+> 状态：`accepted`（生效）/ `proposed`（待定）/ `superseded`（被取代）。
+
+---
+
+## D-001 目标技术栈假设：Python 3.12+ / httpx / Playwright / SQLite→PostgreSQL
+
+- 状态：accepted · 日期：2026-07-20
+- **背景**：设计文档需要一个具体技术底座假设，否则接口与伪代码无从谈起。
+- **决策**：实现语言 Python 3.12+；HTTP 层 `httpx`（异步）；浏览器自动化 `Playwright`；存储初期 `SQLite`（WAL 模式），预留升级 `PostgreSQL` 的迁移路径；数据模型用 `Pydantic v2`；CLI 用 `typer`。
+- **理由**：学术数据生态（arxiv.py、pyalex、openreview-py、habanero、semanticscholar）几乎全部是 Python；Playwright 的 `storage_state` 与 persistent context 是维持登录会话最成熟的方案；单机个人工具 SQLite 足够且零运维。
+- **影响**：所有设计伪代码按 Python 风格书写；但 adapter 协议、pipeline 语义与语言无关，若未来换栈设计仍成立。
+
+## D-002 可插拔核心：Platform Adapter × Venue Spec 两层结构
+
+- 状态：accepted · 日期：2026-07-20
+- **背景**：目标 venue 数量为几百（期刊+会议），逐站写爬虫不可维护。观察到学术出版高度平台化：JF/ECMA→Wiley，QJE/RFS/REStud/RF→OUP(Silverchair)，JFE/JME/JET→Elsevier ScienceDirect，MS/OR/MSOM→INFORMS PubsOnline，ICML/AISTATS/COLT→PMLR，CVPR/ICCV→CVF，ACL 系→ACL Anthology，KDD/WWW/STOC/EC→ACM DL，ICASSP/ICRA→IEEE Xplore。
+- **决策**：代码级插件按**平台**组织（PlatformAdapter，预计 15~25 个）；每个期刊/会议是平台上的一条**声明式配置**（VenueSpec，YAML），声明其平台、标识符（ISSN/DBLP key/OpenReview id）、URL 参数、认证需求、限速覆盖。特殊站点（arXiv、SSRN、NBER、AEA、Econometric Society）各自独占一个 adapter。
+- **理由**：新增期刊的边际成本从"写一个爬虫"降为"写 30 行 YAML"；平台改版只修一个 adapter；与 Zotero translators 的实践一致（per-site 逻辑 + 通用框架）。
+- **影响**：注册表、能力声明、测试组织都按两层设计（见 design/02）。
+
+## D-003 双模块划分：open_access 与 auth_gated 共享同一 Adapter 协议
+
+- 状态：accepted · 日期：2026-07-20
+- **背景**：需求要求区分"开源直接可下载"与"需登录/SSO"两类站点。
+- **决策**：两个获取模块不是两套接口，而是同一 `SourceAdapter` 协议的两种 **fetcher backend 绑定**：`open_access` 绑定 httpx 直连（无认证），`auth_gated` 绑定 `AuthProvider` + （必要时）Playwright 浏览器上下文。Adapter 通过 `capabilities()` 声明自己需要哪种 backend 与认证等级（`none / free_account / subscription / institutional`）。
+- **理由**：pipeline、数据模型、任务调度对两类源完全同构，仅"怎么发请求"不同；单一协议避免上层出现 if/else 分叉。
+- **影响**：SSRN 这类"匿名可下载但受限、登录后更稳"的站点可声明双等级，运行时按可用凭证降级/升级。
+
+## D-004 六阶段 Pipeline：discover → enumerate → resolve → fetch → extract → ingest
+
+- 状态：accepted · 日期：2026-07-20
+- **决策**：pipeline 固定六阶段，每阶段幂等、以持久化任务为边界、可独立重跑：
+  1. `discover`：获取 venue 的出版时间轴（卷/期/届清单，VenueEra）；
+  2. `enumerate`：展开某期/届的论文清单（元数据级）；
+  3. `resolve`：把每篇论文解析为可下载资产列表（PDF/SI/HTML 的最终 URL + 所需认证）；
+  4. `fetch`：按资产下载落盘（限速、断点、校验）；
+  5. `extract`：本地解析（PDF 元数据核对、全文文本抽取，GROBID 为可选后端）；
+  6. `ingest`：入库（去重合并、identifier 关联、索引更新）。
+- **理由**：阶段边界即断点续爬边界；"清单先行、下载置后"支持 dry-run 计数与选择性下载（需求 FR 明确要求指定期数/文章）。
+- **影响**：任务表按 (stage, venue, params) 建幂等键；CLI 动词与阶段对应。
+
+## D-005 元数据主干走聚合 API，官网站点只做全文与补充
+
+- 状态：accepted · 日期：2026-07-20
+- **背景**：出版社 HTML 页面反爬强、易改版；而 Crossref/OpenAlex/DBLP/Semantic Scholar/OpenReview 提供稳定结构化元数据。
+- **决策**：`discover/enumerate` 阶段**优先**走聚合 API（期刊：Crossref 按 ISSN 枚举 DOI + OpenAlex 补充；会议：DBLP 卷目录 + OpenReview/PMLR/CVF 官方结构）；出版社站点 adapter 主要承担 `resolve/fetch`（拿全文）与少数聚合源缺失的字段。每个 VenueSpec 声明其 `metadata_source` 与 `fulltext_source` 可以不同。
+- **理由**：把"脆弱的爬取面"压缩到最小；历史期数枚举在 Crossref/DBLP 一次 API 调用可完成，无需翻页爬 archive。
+- **影响**：数据模型必须支持同一 venue 的元数据与全文来自不同 source（见 D-007 去重）。
+- **2026-07-20 修订（依据 research/site-survey/metadata-apis.md 实测）**：原设想以 OpenAlex 为免费主干，但 OpenAlex 已于 2026-02-13 取消免费 polite pool 改为信用计费制。故主干调整为：**期刊 = Crossref（ISSN+日期，仍免费 polite pool 10 req/s）**；**会议 = DBLP（conf XML 卷目录，CC0）**；OpenAlex 降为补充层（摘要倒排重建、OA 链接发现、topics），按信用预算受控调用；Semantic Scholar 作次级补充（需申请 key，1 req/s）。三源分工表见 metadata-apis.md。
+
+## D-006 认证设计：人在回路首次登录 + storage_state 复用 + 绝不对抗风控
+
+- 状态：accepted · 日期：2026-07-20
+- **决策**：`AuthProvider` 抽象四种实现：`CookieSession`（Playwright 有头首登→加密保存 storage_state→headless 复用）、`EZProxy`（URL 重写 + 一次登录）、`SSOFlow`（Shibboleth/OpenAthens，首登人工完成含 MFA）、`APIKey`（Elsevier/Wiley TDM 官方 API）。凭证存 OS keyring 或加密文件，永不入 git。检测到 CAPTCHA/风控页一律转 `BLOCKED` 状态待人工，不做自动破解。官方 API 存在时优先于页面爬取。
+- **理由**：合法、稳定、可维护；学术出版社对机构订阅的自动化下载有明确 ToS 约束，保守策略是长期可用的前提。
+- **影响**：pipeline 必须有 `BLOCKED` 任务状态与人工介入 CLI；测试计划包含"session 过期→重登"场景。
+
+## D-007 跨源同文合并：Identifier 图 + preprint_of 关系
+
+- 状态：accepted · 日期：2026-07-20
+- **背景**：同一研究常同时存在 arXiv 预印本、SSRN 工作论文、期刊正式版。
+- **决策**：`Paper` 不以单一外部 ID 为主键，内部 ULID 主键 + `Identifier` 多值表（doi/arxiv_id/ssrn_id/openalex_id/s2_id/dblp_key…）。合并策略：强标识符（DOI 精确匹配、arXiv id）自动合并；弱信号（标题+作者模糊匹配）只建 `candidate_duplicate` 边待确认。预印本与正式版默认**不合并为一条**，以 `preprint_of` 关系互联，两版全文都保留。
+- **理由**：金融/经济领域 working paper 与刊发版差异巨大（标题都会改），激进合并会丢信息。
+- **影响**：查询层需提供"按研究聚合"视图；ingest 阶段含 candidate 审核队列。
+
+## D-008 文本系统：docs-as-code + front matter 状态机 + INDEX 单一索引
+
+- 状态：accepted · 日期：2026-07-20
+- **决策**：所有非代码文本（计划/进度/设计/测试记录/日志/报告）以 markdown 存于 `docs/` 树，随 git 版本化；每篇文档带 YAML front matter（title/status/owner/updated）；`docs/INDEX.md` 是唯一权威索引；日志按 session 追加于 `docs/logs/`，阶段报告于 `docs/reports/`。
+- **理由**：与代码同库同 PR 演进，LLM/人类都可全文检索；状态机让"哪些设计已定稿可开工"机器可判。
+- **影响**：AGENTS.md 把 INDEX 同步、日志留痕定为硬义务。
+
+## D-009 Git 流程：trunk-based 轻量变体，设计阶段直提 main，实现阶段强制分支
+
+- 状态：accepted · 日期：2026-07-20
+- **决策**：单人+AI 协作项目采用 trunk-based：`main` 始终可用；实现阶段一律 `feat/*`、`fix/*`、`docs/*`、`adapter/*` 短分支 + PR 自查清单合入；conventional commits；阶段完成打 tag `phase-N`。设计阶段（无代码）允许直接提交 main。敏感产物由 .gitignore 硬隔离。
+- **理由**：流程成本与项目规模匹配；分支语义为未来多 agent 并行（每 adapter 一分支）预留。
+
+## D-010 双状态机：文档 status 与模块 dev-status 联动
+
+- 状态：accepted · 日期：2026-07-20
+- **决策**：文档状态机 `draft→review→approved→implemented→deprecated`；代码模块状态机 `planned→spec_approved→in_dev→testing→stable→deprecated`。联动规则：模块进入 `in_dev` 的前置条件是对应设计文档 `approved`；模块 `stable` 后设计文档转 `implemented`；文档实质变更需评估是否把关联模块打回 `testing`。
+- **理由**：把"文档先行"从口号变成可检查的门禁（未来可做 CI 校验脚本）。
+
+## D-011 SSRN 定位：预印本主源之一，匿名+免费账号双模式，严格限速
+
+- 状态：accepted · 日期：2026-07-20
+- **背景**：Econ/Fin 领域 SSRN 地位等同 arXiv 之于 CS，但 SSRN 无官方 API、有 Cloudflare 防护、下载路径含一次性 token。
+- **决策**：SSRN 独立 adapter，归 open_access 模块但声明 `auth_level: free_account_preferred`；枚举走其 eLibrary 浏览页与 RSS；下载用 Playwright 上下文（复用匿名或免费账号 session）；限速默认 1 req/5s，日配额上限可配；被 Cloudflare 挑战即 BLOCKED 转人工。
+- **理由**：SSRN 是 Fin/Econ working paper 不可替代的源，值得为其承担浏览器自动化成本；保守限速换长期可用。
+
+## D-012 会议历年网址漂移：VenueEra 表 + DBLP 为历史主干 + 年度探测任务
+
+- 状态：accepted · 日期：2026-07-20
+- **决策**：每个会议每届一条 `VenueEra` 记录（year、official_site、proceedings_url、metadata_source、状态）。历史届用 DBLP conf 目录一次性回填；新一届靠年度定时探测任务（官网、DBLP 新卷、OpenReview 新 venue id、CFP 站点）生成候选，人工确认后入 registry。Wayback Machine 作为死链兜底。
+- **理由**：会议官网域名年年变（thewebconf、各届 aaai.org/Conferences 子页），但 DBLP key（`conf/nips/2024`）与 proceedings 平台稳定——以稳定锚点组织历史，以探测任务追新。
+
+## D-013 ACM DL 按 2026 全面 OA 新政归入 open_access 族
+
+- 状态：accepted · 日期：2026-07-20
+- **背景**：调研证实 ACM 自 2026-01-01 起全面开放获取（官方公告 acm.org/articles/bulletins/2026/january/acm-open-access），dl.acm.org 全部会议论文集免费全文；同时证实 SODA 出版方为 SIAM（epubs.siam.org，订阅制），不在 ACM DL。
+- **决策**：`acm_dl` adapter 归 open_access 族（auth 能力保留为兜底开关）；新增 `siam` adapter（auth_gated）承接 SODA；受影响 venue（KDD、WWW、WSDM、CIKM、SIGIR、RecSys、STOC、SOSP、EC、SIGMOD/PACMMOD）auth.level 一律 `none`。
+- **影响**：Phase 2 的 open_access MVP 范围可纳入 ACM 系会议；Phase 4 出版社清单相应缩减；catalog 与 adapter 文档按此口径撰写。同批调研亦确认 Papers With Code 已于 2025-07 关闭——从候选索引源中移除。
+
+## D-014 尊重站点 AI-bot 指令：诚实 UA + robots/Content-Signal 遵守 + 敏感站白名单式抓取
+
+- 状态：accepted · 日期：2026-07-20
+- **背景**：调研[LIVE]发现多站在 robots.txt 用具名方式封禁 AI 爬虫——ScienceDirect 禁 20+ 个（含 `claude-code`、ClaudeBot、GPTBot…）、**CEPR 明确点名 ClaudeBot 且设 `ai-train=no`**、SSRN 禁 GPTBot/ChatGPT-User/Google-Extended。同时出现两个"可绕过软门"的经验发现（SSRN 内部 API、NBER 静态 PDF 路径）。
+- **决策**：
+  1. UA **诚实标明身份与用途**（`PaperCrawler/<ver> (personal research; mailto:<user>)`），不伪装成通用浏览器或搜索引擎 bot；
+  2. **遵守 robots.txt 与 Content-Signal**：明确 `Disallow` 的路径不访问；`ai-train=no` 站点不做任何训练性用途（本系统本就只做个人检索下载，无训练用途）；
+  3. **敏感站（CEPR 等点名禁止者）默认只取合法开放的元数据（经 RePEc 等第三方 bulk），不自动抓其全文**；需要全文时引导用户在其订阅内手动获取；
+  4. **禁止依赖未文档化/软门绕过通道**（SSRN 内部 API、NBER 软门），写入 AC-0 与相关 adapter 文档 quirks 禁区；
+  5. 合法机构订阅内容的获取（auth_gated 模块）不受本条限制——那是用户在自有权限内经正规登录的访问，与"无授权 AI 爬取"性质不同；但同样遵守各站 TDM/速率政策。
+- **理由**：合规与长期可用性优先于覆盖率最大化；诚实身份+尊重站点声明是个人科研工具可持续的前提，也符合 AGENTS.md §6 红线。
+- **影响**：各 adapter 文档必须记录目标站 robots/AI-bot/TDM 现状与本 adapter 的合规姿态；catalog 对敏感站标注获取边界。

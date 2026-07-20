@@ -1,0 +1,154 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1160" height="880" viewBox="0 0 1160 880" font-family="Helvetica, Arial, 'PingFang SC', 'Microsoft YaHei', sans-serif">
+  <!-- Paper Crawler · 认证与会话生命周期 · 对应 docs/design/07-auth-session.md · 2026-07-20 -->
+  <defs>
+    <marker id="f" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M 0 0 L 10 5 L 0 10 z" fill="#546e7a"/>
+    </marker>
+    <marker id="fr" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M 0 0 L 10 5 L 0 10 z" fill="#c62828"/>
+    </marker>
+    <marker id="fg" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M 0 0 L 10 5 L 0 10 z" fill="#2e7d32"/>
+    </marker>
+  </defs>
+  <rect x="0" y="0" width="1160" height="880" fill="#fafbfc"/>
+  <text x="40" y="42" font-size="22" font-weight="bold" fill="#263238">认证与会话：人在回路首登 + storage_state 复用 + 绝不对抗（D-006）</text>
+  <text x="40" y="64" font-size="12" fill="#78909c">对应 design/07-auth-session.md · 2026-07-20</text>
+
+  <!-- ===== 泳道1：首次登录（人工） ===== -->
+  <g>
+    <rect x="40" y="88" width="1080" height="130" rx="8" fill="#fff8e1" stroke="#ffca28" stroke-width="1.5"/>
+    <text x="56" y="112" font-size="14" font-weight="bold" fill="#e65100">① 首次登录（人在回路，一次性）</text>
+    <rect x="56" y="128" width="170" height="70" rx="6" fill="#ffffff" stroke="#ffb300"/>
+    <text x="141" y="154" font-size="12.5" text-anchor="middle" fill="#263238" font-family="Menlo, monospace">crawler auth login</text>
+    <text x="141" y="172" font-size="12.5" text-anchor="middle" fill="#263238" font-family="Menlo, monospace">elsevier</text>
+    <rect x="266" y="128" width="190" height="70" rx="6" fill="#ffffff" stroke="#ffb300"/>
+    <text x="361" y="150" font-size="12.5" text-anchor="middle" fill="#263238">启动有头 Playwright</text>
+    <text x="361" y="168" font-size="12.5" text-anchor="middle" fill="#263238">persistent context</text>
+    <text x="361" y="186" font-size="11" text-anchor="middle" fill="#78909c">打开平台登录页</text>
+    <rect x="496" y="128" width="200" height="70" rx="6" fill="#ffecb3" stroke="#ff8f00" stroke-width="1.8"/>
+    <text x="596" y="150" font-size="12.5" font-weight="bold" text-anchor="middle" fill="#e65100">用户人工登录</text>
+    <text x="596" y="168" font-size="11.5" text-anchor="middle" fill="#6d4c41">机构选择 / IdP / MFA / DUO</text>
+    <text x="596" y="186" font-size="11.5" text-anchor="middle" fill="#6d4c41">完成后回车确认</text>
+    <rect x="736" y="128" width="170" height="70" rx="6" fill="#ffffff" stroke="#ffb300"/>
+    <text x="821" y="154" font-size="12.5" text-anchor="middle" fill="#263238">访问探针 URL 验证</text>
+    <text x="821" y="172" font-size="11" text-anchor="middle" fill="#78909c">不跳 login 且含账号标识</text>
+    <rect x="946" y="128" width="158" height="70" rx="6" fill="#e8f5e9" stroke="#66bb6a"/>
+    <text x="1025" y="150" font-size="12.5" text-anchor="middle" fill="#1b5e20">storage_state</text>
+    <text x="1025" y="168" font-size="12.5" text-anchor="middle" fill="#1b5e20">加密落盘</text>
+    <text x="1025" y="186" font-size="11" text-anchor="middle" fill="#558b2f">AES-GCM · 0600</text>
+    <g stroke="#546e7a" stroke-width="1.6" fill="none">
+      <line x1="226" y1="163" x2="266" y2="163" marker-end="url(#f)"/>
+      <line x1="456" y1="163" x2="496" y2="163" marker-end="url(#f)"/>
+      <line x1="696" y1="163" x2="736" y2="163" marker-end="url(#f)"/>
+      <line x1="906" y1="163" x2="946" y2="163" marker-end="url(#f)"/>
+    </g>
+  </g>
+
+  <!-- ===== 泳道2：日常复用（自动） ===== -->
+  <g>
+    <rect x="40" y="238" width="1080" height="216 " rx="8" fill="#e3f2fd" stroke="#90caf9" stroke-width="1.5"/>
+    <text x="56" y="262" font-size="14" font-weight="bold" fill="#1565c0">② 日常复用（headless 自动，批量下载期间循环）</text>
+    <rect x="56" y="280" width="160" height="64" rx="6" fill="#ffffff" stroke="#90caf9"/>
+    <text x="136" y="304" font-size="12.5" text-anchor="middle" fill="#263238">fetch 批任务启动</text>
+    <text x="136" y="322" font-size="11" text-anchor="middle" fill="#78909c">ensure_session()</text>
+    <rect x="256" y="280" width="180" height="64" rx="6" fill="#ffffff" stroke="#90caf9"/>
+    <text x="346" y="304" font-size="12.5" text-anchor="middle" fill="#263238">headless 加载 state</text>
+    <text x="346" y="322" font-size="11" text-anchor="middle" fill="#78909c">或 cookie jar 给 httpx</text>
+    <rect x="476" y="280" width="150" height="64" rx="6" fill="#ffffff" stroke="#90caf9"/>
+    <text x="551" y="304" font-size="12.5" text-anchor="middle" fill="#263238">health_check</text>
+    <text x="551" y="322" font-size="11" text-anchor="middle" fill="#78909c">OK | EXPIRED | CHALLENGED</text>
+    <rect x="666" y="280" width="180" height="64" rx="6" fill="#e8f5e9" stroke="#66bb6a"/>
+    <text x="756" y="304" font-size="12.5" text-anchor="middle" fill="#1b5e20">限速下载（串行 1/6s）</text>
+    <text x="756" y="322" font-size="11" text-anchor="middle" fill="#558b2f">日配额 · 工作时段窗</text>
+    <rect x="886" y="280" width="218" height="64" rx="6" fill="#ffffff" stroke="#90caf9"/>
+    <text x="995" y="304" font-size="12.5" text-anchor="middle" fill="#263238">每 20 篇 / 15 分钟</text>
+    <text x="995" y="322" font-size="12.5" text-anchor="middle" fill="#263238">强制 health_check（防轰炸）</text>
+    <g stroke="#546e7a" stroke-width="1.6" fill="none">
+      <line x1="216" y1="312" x2="256" y2="312" marker-end="url(#f)"/>
+      <line x1="436" y1="312" x2="476" y2="312" marker-end="url(#f)"/>
+      <line x1="626" y1="312" x2="666" y2="312" marker-end="url(#fg)"/>
+      <line x1="846" y1="312" x2="886" y2="312" marker-end="url(#f)"/>
+      <path d="M 995 344 C 995 372 700 372 592 344" marker-end="url(#f)"/>
+    </g>
+    <text x="640" y="308" font-size="10.5" fill="#2e7d32">OK</text>
+    <text x="770" y="368" font-size="10.5" fill="#78909c">循环（批未完）</text>
+    <!-- EXPIRED / CHALLENGED 分支 -->
+    <g stroke="#c62828" stroke-width="1.6" fill="none">
+      <line x1="551" y1="344" x2="551" y2="392" marker-end="url(#fr)"/>
+    </g>
+    <rect x="410" y="394" width="150" height="48" rx="6" fill="#ffffff" stroke="#ef9a9a"/>
+    <text x="485" y="414" font-size="12" text-anchor="middle" fill="#263238">EXPIRED → refresh()</text>
+    <text x="485" y="432" font-size="10.5" text-anchor="middle" fill="#78909c">SSO：IdP 尚存则静默续期</text>
+    <rect x="600" y="394" width="230" height="48" rx="6" fill="#ffebee" stroke="#e57373"/>
+    <text x="715" y="414" font-size="12" text-anchor="middle" fill="#b71c1c">CHALLENGED（CAPTCHA/风控）</text>
+    <text x="715" y="432" font-size="10.5" text-anchor="middle" fill="#c62828">不重试不对抗 → BLOCKED + 冷却 24h</text>
+    <g stroke="#2e7d32" stroke-width="1.4" fill="none">
+      <path d="M 485 394 C 485 366 500 356 520 344" marker-end="url(#fg)"/>
+    </g>
+    <text x="430" y="372" font-size="10.5" fill="#2e7d32">续期成功</text>
+  </g>
+
+  <!-- BLOCKED 汇合 -->
+  <g stroke="#c62828" stroke-width="1.6" fill="none">
+    <line x1="485" y1="442" x2="485" y2="472" marker-end="url(#fr)"/>
+    <line x1="715" y1="442" x2="715" y2="472" marker-end="url(#fr)"/>
+  </g>
+  <rect x="410" y="474" width="420" height="56" rx="8" fill="#fff8e1" stroke="#ffb300" stroke-width="1.8"/>
+  <text x="620" y="497" font-size="13.5" font-weight="bold" text-anchor="middle" fill="#e65100">整批暂停 → Task BLOCKED（不占重试、不自动恢复）</text>
+  <text x="620" y="518" font-size="12" text-anchor="middle" fill="#6d4c41">CLI 提示：crawler auth login &lt;provider&gt; → 人工处理 → crawler resume</text>
+  <path d="M 830 502 C 1010 502 1060 260 1035 200" stroke="#546e7a" stroke-width="1.4" stroke-dasharray="5,4" fill="none" marker-end="url(#f)"/>
+  <text x="900" y="470" font-size="10.5" fill="#78909c">重登回到 ①</text>
+
+  <!-- ===== 四种 Provider ===== -->
+  <g>
+    <rect x="40" y="560" width="640" height="180" rx="8" fill="#f3e5f5" stroke="#ce93d8" stroke-width="1.5"/>
+    <text x="56" y="586" font-size="14" font-weight="bold" fill="#6a1b9a">四种 AuthProvider（统一协议：ensure_session / health_check / refresh / rewrite_url）</text>
+    <rect x="56" y="600" width="146" height="124" rx="6" fill="#ffffff" stroke="#ce93d8"/>
+    <text x="129" y="622" font-size="12.5" font-weight="bold" text-anchor="middle" fill="#4a148c">CookieSession</text>
+    <text x="129" y="644" font-size="10.8" text-anchor="middle" fill="#546e7a">出版社直接账号 /</text>
+    <text x="129" y="660" font-size="10.8" text-anchor="middle" fill="#546e7a">校内已认证态</text>
+    <text x="129" y="682" font-size="10.8" text-anchor="middle" fill="#78909c">Silverchair / INFORMS</text>
+    <text x="129" y="698" font-size="10.8" text-anchor="middle" fill="#78909c">/ AEA / Cambridge</text>
+    <rect x="216" y="600" width="146" height="124" rx="6" fill="#ffffff" stroke="#ce93d8"/>
+    <text x="289" y="622" font-size="12.5" font-weight="bold" text-anchor="middle" fill="#4a148c">EZProxy</text>
+    <text x="289" y="644" font-size="10.8" text-anchor="middle" fill="#546e7a">URL 重写为</text>
+    <text x="289" y="660" font-size="10.8" text-anchor="middle" fill="#546e7a">www-xxx-com.proxy.edu</text>
+    <text x="289" y="682" font-size="10.8" text-anchor="middle" fill="#78909c">adapter 不感知代理</text>
+    <text x="289" y="698" font-size="10.8" text-anchor="middle" fill="#78909c">（L2 统一 rewrite_url）</text>
+    <rect x="376" y="600" width="146" height="124" rx="6" fill="#ffffff" stroke="#ce93d8"/>
+    <text x="449" y="622" font-size="12.5" font-weight="bold" text-anchor="middle" fill="#4a148c">SSOFlow</text>
+    <text x="449" y="644" font-size="10.8" text-anchor="middle" fill="#546e7a">Shibboleth / OpenAthens</text>
+    <text x="449" y="660" font-size="10.8" text-anchor="middle" fill="#546e7a">WAYF → IdP → SAML 回跳</text>
+    <text x="449" y="682" font-size="10.8" text-anchor="middle" fill="#78909c">IdP session 尚存时</text>
+    <text x="449" y="698" font-size="10.8" text-anchor="middle" fill="#78909c">可静默续期</text>
+    <rect x="536" y="600" width="128" height="124" rx="6" fill="#ffffff" stroke="#ce93d8"/>
+    <text x="600" y="622" font-size="12.5" font-weight="bold" text-anchor="middle" fill="#4a148c">APIKey</text>
+    <text x="600" y="644" font-size="10.8" text-anchor="middle" fill="#546e7a">Elsevier Article API</text>
+    <text x="600" y="660" font-size="10.8" text-anchor="middle" fill="#546e7a">Wiley TDM token</text>
+    <text x="600" y="682" font-size="10.8" text-anchor="middle" fill="#78909c">OS keyring 存储</text>
+    <text x="600" y="698" font-size="10.8" text-anchor="middle" fill="#78909c">配额探测端点校验</text>
+  </g>
+
+  <!-- ===== 三种机构访问形态 + 安全 ===== -->
+  <g>
+    <rect x="700" y="560" width="420" height="180" rx="8" fill="#eceff1" stroke="#b0bec5" stroke-width="1.5"/>
+    <text x="716" y="586" font-size="14" font-weight="bold" fill="#37474f">机构访问三形态 × 安全存储</text>
+    <g font-size="12" fill="#455a64">
+      <text x="716" y="612">A 校园网 IP 直连　→ 无需登录，探测受限 URL 判定在网</text>
+      <text x="716" y="634">B 校外 EZProxy　　→ 一次登录得 proxy cookie</text>
+      <text x="716" y="656">C Shibboleth/OpenAthens → 首登人工（MFA），复用 state</text>
+    </g>
+    <line x1="716" y1="672" x2="1104" y2="672" stroke="#cfd8dc"/>
+    <g font-size="11.5" fill="#546e7a">
+      <text x="716" y="694">~/.paper-crawler/auth/：profiles.toml（无明文密钥）</text>
+      <text x="716" y="712">state/ 加密会话（keyring 主密钥 · AES-GCM · 0600）</text>
+      <text x="716" y="730">多 profile：elsevier@campus / elsevier@ezproxy 运行时切换</text>
+    </g>
+  </g>
+
+  <!-- 底注 -->
+  <text x="40" y="782" font-size="12" fill="#78909c">安全红线：凭证/session 永不入 git（.gitignore 双保险）；日志与 FetchLog 全脱敏（cookie/token → ***）；auth logout 彻底删除（AC-4.5 取证式检查）。</text>
+  <text x="40" y="802" font-size="12" fill="#78909c">架构性合规保证：无凭证即无闭源获取路径——系统结构上不存在"绕过付费墙"的分支（威胁模型 design/07 §7）。</text>
+  <text x="40" y="822" font-size="12" fill="#78909c">API 优先原则：Elsevier/Wiley 有官方全文 API 时绝不爬页面（D-006）；页面型平台在 session 有效期内 httpx 直取或浏览器上下文内下载。</text>
+</svg>
