@@ -123,11 +123,15 @@ def test_declared_stub_methods_are_not_implemented(
         adapters["openreview"].enumerate_issue(venue, IssueRef(venue_id=venue.id))
 
 
-def test_mock_platform_methods_not_implemented_until_t6(
+def test_mock_platform_methods_are_implemented_after_t6(
     adapters: dict[str, SourceAdapter], venue: VenueSpec
 ) -> None:
-    with pytest.raises(NotImplementedError):
-        adapters["mock_platform"].discover_timeline(venue)
+    # T6 落地：mock_platform 不再 NotImplementedError（区别于仍是 stub 的
+    # crossref/openreview，见 test_declared_stub_methods_are_not_implemented）。
+    # 语料细节（quirks 派生、故障注入等）见 tests/unit/test_mock_platform.py；
+    # 这里只验证经 load_adapters() 拿到的实例确实可用。
+    issues = list(adapters["mock_platform"].discover_timeline(venue))
+    assert issues
 
 
 class _NullIO:
