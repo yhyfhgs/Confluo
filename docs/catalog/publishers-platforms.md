@@ -7,7 +7,7 @@ updated: 2026-07-20
 
 # 平台 → Adapter 映射总表
 
-> D-002 的骨架：期刊/会议高度平台化，一个 adapter 服务一族 venue。本表是"为什么只需 ~25 个 adapter 就能覆盖数百 venue"的证据。
+> D-002 的骨架：期刊/会议高度平台化，一个 adapter 服务一族 venue。本表是"为什么只需 ~40 个 adapter（首批实现 16 个 + planned）就能覆盖数百 venue"的证据。（D-002 原估 15~25，经全量 catalog 盘点后修正为 ~40，见 D-015。）
 > 反爬列来自 research/site-survey [LIVE] 勘察（2026-07-20）。
 
 ## Open-Access 平台（无需认证）

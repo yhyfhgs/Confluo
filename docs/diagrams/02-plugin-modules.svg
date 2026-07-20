@@ -81,7 +81,7 @@
   <!-- open_access -->
   <g>
     <rect x="400" y="360" width="360" height="180" rx="8" fill="#e8f5e9" stroke="#66bb6a" stroke-width="1.5"/>
-    <text x="416" y="386" font-size="14" font-weight="bold" fill="#1b5e20">open_access 族（无认证，17）</text>
+    <text x="416" y="386" font-size="14" font-weight="bold" fill="#1b5e20">open_access 族（无认证，~20）</text>
     <text x="416" y="412" font-size="12" fill="#37474f">arxiv · ssrn* · openreview · pmlr · cvf</text>
     <text x="416" y="434" font-size="12" fill="#37474f">acl_anthology · neurips_proceedings · aaai_ojs</text>
     <text x="416" y="456" font-size="12" fill="#37474f">acm_dl（2026 全面 OA，D-013）· lipics · usenix</text>
@@ -92,7 +92,7 @@
   <!-- auth_gated -->
   <g>
     <rect x="790" y="360" width="330" height="180" rx="8" fill="#ffebee" stroke="#ef9a9a" stroke-width="1.5"/>
-    <text x="806" y="386" font-size="14" font-weight="bold" fill="#b71c1c">auth_gated 族（自有凭证，14）</text>
+    <text x="806" y="386" font-size="14" font-weight="bold" fill="#b71c1c">auth_gated 族（自有凭证，~18）</text>
     <text x="806" y="412" font-size="12" fill="#37474f">elsevier_sd（API 优先）· wiley（TDM API）</text>
     <text x="806" y="434" font-size="12" fill="#37474f">oup_silverchair · uchicago · informs · siam</text>
     <text x="806" y="456" font-size="12" fill="#37474f">ieee_xplore（browser）· aea · cambridge</text>
@@ -129,6 +129,6 @@
   </g>
 
   <!-- 底注 -->
-  <text x="40" y="832" font-size="12" fill="#78909c">杠杆效应（NFR-1/2）：~37 个 adapter 覆盖数百 venue —— oup_silverchair 一个 adapter 服务 QJE/RFS/REStud/RF/EJ；informs 服务 MS/OR/MSOM/IJOC/MOR。</text>
+  <text x="40" y="832" font-size="12" fill="#78909c">杠杆效应（NFR-1/2）：~40 个 adapter（含 planned）覆盖数百 venue —— oup_silverchair 一个服务 QJE/RFS/REStud/RF/EJ；informs 服务 MS/OR/MSOM/IJOC/MOR。</text>
   <text x="40" y="852" font-size="12" fill="#78909c">能力缺失即路由：adapter 无 DISCOVER（如 uchicago）时，Registry 自动把 discover/enumerate 路由给 metadata_source（crossref），resolve/fetch 才到该平台。</text>
 </svg>

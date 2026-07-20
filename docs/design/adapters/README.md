@@ -81,18 +81,23 @@ updated: YYYY-MM-DD
 | neurips_proceedings | open_access | NeurIPS(正式) | [neurips-proceedings.md](neurips-proceedings.md) | review |
 | aaai_ojs | open_access | AAAI、AIES | [aaai-ojs.md](aaai-ojs.md) | review（⚠ OAI-PMH/分页核验中） |
 | acm_dl | open_access(D-013) | KDD、WWW、STOC、EC、SIGIR… | [acm-dl.md](acm-dl.md) | review |
-| ieee_xplore | auth_gated | ICASSP、ICRA、ICDM、FOCS、IEEE 刊 | [ieee-xplore.md](ieee-xplore.md) | review（⚠ 勘察待并入） |
-| aggregators | aggregator | Crossref/OpenAlex/DBLP/S2/Unpaywall | [aggregators.md](aggregators.md) | review |
-| elsevier_sd | auth_gated | JFE、JME、JET、EJOR… | [elsevier-sd.md](elsevier-sd.md) | review（⚠ API 配额待并入） |
-| wiley | auth_gated | JF、ECMA、RAND | [wiley.md](wiley.md) | review（⚠ TDM 端点待并入） |
-| oup_silverchair | auth_gated | QJE、RFS、REStud、RF | [oup-silverchair.md](oup-silverchair.md) | review（⚠ 勘察待并入） |
-| uchicago | auth_gated | JPE、JOLE | [uchicago.md](uchicago.md) | review（⚠ 平台栈待辨） |
-| informs | auth_gated | MS、OR、MSOM、IJOC | [informs.md](informs.md) | review（⚠ TDM 待并入） |
+| ieee_xplore | auth_gated | ICASSP、ICRA、ICDM、FOCS、IEEE 刊 | [ieee-xplore.md](ieee-xplore.md) | review（勘察已并入 2026-07-20） |
+| aggregators | aggregator | Crossref/OpenAlex/DBLP/S2/Unpaywall/CORE | [aggregators.md](aggregators.md) | review |
+| elsevier_sd | auth_gated | JFE、JME、JET、EJOR… | [elsevier-sd.md](elsevier-sd.md) | review（API 配额已并入） |
+| wiley | auth_gated | JF、ECMA、RAND | [wiley.md](wiley.md) | review（TDM 端点已并入） |
+| oup_silverchair | auth_gated | QJE、RFS、REStud、RF | [oup-silverchair.md](oup-silverchair.md) | review（勘察已并入） |
+| uchicago | auth_gated | JPE、JOLE | [uchicago.md](uchicago.md) | review（平台栈=Atypon 已确认） |
+| informs | auth_gated | MS、OR、MSOM、IJOC | [informs.md](informs.md) | review（⚠ TDM 明文待登录态勘察） |
 | sage | auth_gated | POM | （待建，见 catalog 备注 SAGE 归属） | planned |
-| aea | auth_gated | AER、AEJ 系 | （待建） | planned |
+| aea | auth_gated | AER、AEJ 系（JEP 免费） | （待建） | planned |
 | econsoc | open_access | TE、QE、ECMA(部分) | （待建） | planned |
 | nber | open_access | NBER WP | （待建） | planned |
-| siam | auth_gated | SODA | （待建） | planned |
-| cambridge / springer / mit_press / jstor / pm_research | auth_gated | JFQA、MathProg、REStat… | （待建） | planned |
+| siam | auth_gated | SODA（book 结构）、SIFIN | （待建） | planned |
+| ijcai | open_access | IJCAI（ijcai.org 自出版 2017+） | （待建） | planned |
+| jmlr | open_access | JMLR（jmlr.org 静态卷页；TMLR 走 openreview） | （待建） | planned |
+| jair | open_access | JAIR（jair.org，OJS 类） | （待建） | planned |
+| bmvc | open_access | BMVC（三段域名史，DBLP 导航） | （待建，T3） | planned |
+| cambridge / springer / mit_press / jstor / pm_research | auth_gated | JFQA、MathProg、REStat…（mit_press 仅按需单篇） | （待建） | planned |
+| tandf / annual_reviews / now_publishers / uwpress | auth_gated | QuantFin、ARFE、FnT ML、JHR（均 T2/T3 暂缓） | （待建） | planned |
 
 > 首批（本设计阶段）撰写详设的代表性 adapter：arxiv、openreview、pmlr、acl_anthology、elsevier_sd、oup_silverchair、informs、ssrn、aggregators、ieee_xplore、acm_dl、cvf、neurips_proceedings、aaai_ojs。其余在对应 Phase 开工前补齐。

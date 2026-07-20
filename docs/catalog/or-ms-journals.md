@@ -21,7 +21,8 @@ updated: 2026-07-20
 | moor | Mathematics of Operations Research | T1 | moor | 0364-765X | 1526-5471 | crossref | institutional |
 | ijoc | INFORMS Journal on Computing | T2 | ijoc | 0899-1499 ⚠(存疑,前身ORSA) | 1526-5528 | crossref | institutional |
 | mksc | Marketing Science | T2 | mksc | 0732-2399 ⚠核验 | — | crossref | institutional |
-| ijaa/orsc… | Organization Science、Information Systems Research 等其他 INFORMS 刊 | T3 | — | ⚠核验 | — | crossref | institutional |
+| orsc | Organization Science | T3 | orsc | ⚠核验 | — | crossref | institutional |
+| isre | Information Systems Research | T3 | isre | ⚠核验 | — | crossref | institutional |
 
 > fulltext_source 全部 = `informs`；metadata_source 全部 = `crossref`（按 ISSN 枚举，避开 Cloudflare 页面）。
 

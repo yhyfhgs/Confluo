@@ -34,7 +34,7 @@ updated: 2026-07-20
 
 ## 4. 限速与礼貌
 
-- **1 req/5s**（robots crawl-delay 5 的两倍保守 → 实际执行 1 req/5s 即 robots 下限，浏览器操作间隔另加 2–5s 随机抖动）；**日配额默认 100 篇/日**（可配）；并发 1；
+- **1 req/5s 为底线**（= robots crawl-delay 5s），实际执行时叠加 2–5s 随机抖动 → 有效间隔 5–10s（既守下限又不呈机械节律）；**日配额默认 100 篇/日**（可配）；并发 1；
 - 遇 Cloudflare 挑战：**立即 BLOCKED(challenge) + 平台冷却 24h**，绝不自动过挑战（AC-0.2）；人工在有头浏览器过一次后 session 复用（D-006）；
 - 尊重 robots：不访问其 Disallow 路径；不使用未文档化内部 API（AC-0 静态扫描项）。
 

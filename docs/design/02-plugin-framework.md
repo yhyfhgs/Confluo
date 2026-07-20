@@ -42,6 +42,8 @@ updated: 2026-07-20
 | open_access | `pvldb` | VLDB（2008+ 期刊化 OA） |
 | open_access | `isca` | INTERSPEECH（ISCA Archive OA） |
 | open_access | `rss_proceedings` | RSS（roboticsproceedings.org） |
+| open_access | `ijcai` | IJCAI（2017+ 自出版；此前年代经 era 路由） |
+| open_access | `jmlr` / `jair` | JMLR、JAIR（OA 独立刊轻 adapter；TMLR 复用 `openreview`，TACL 复用 `acl_anthology`） |
 | aggregator | `crossref` / `openalex` / `dblp` / `s2` / `unpaywall` | （元数据主干，见 D-005） |
 | auth_gated | `elsevier_sd` | JFE、JME、JET、JBF、EJOR… |
 | auth_gated | `wiley` | JF、ECMA、RAND、JEEA(部分)… |
@@ -104,7 +106,7 @@ quirks:
 status: active
 ```
 
-校验规则（Registry 加载时强制）：id 唯一；metadata_source/fulltext_source 必须是已注册 adapter；auth.level 与 adapter 能力兼容（如 `elsevier_sd` 不接受 `none`）；期刊必须有 issn 或 openalex_source 之一。
+校验规则（Registry 加载时强制）：id 唯一；metadata_source/fulltext_source 必须是已注册 adapter；auth.level 与 adapter 能力兼容（如 `elsevier_sd` 不接受 `none`）；**期刊必须有 issn**（D-015 修订：OpenAlex 改信用计费后 openalex_source 降为可选补充字段，不再可替代 issn——Crossref 按 ISSN 枚举是期刊元数据主干的硬前提）。
 
 ## 3. SourceAdapter 协议（设计伪代码）
 

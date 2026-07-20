@@ -30,7 +30,6 @@ updated: 2026-07-20
 | jfineco_acct | Journal of Accounting and Economics | `elsevier_sd` | 0165-4101 | 10.1016 | institutional |
 | raps | Review of Asset Pricing Studies | `oup_silverchair` | 2045-9920 | 10.1093 | institutional |
 | rcfs | Review of Corporate Finance Studies | `oup_silverchair` | 2046-9128 | 10.1093 | institutional |
-| jffr | J. Financial and Quantitative（见 jfqa） | — | — | — | — |
 
 ## 量化 / 数理金融（tier T1/T2）
 

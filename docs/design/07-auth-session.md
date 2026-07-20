@@ -7,7 +7,7 @@ updated: 2026-07-20
 
 # 07 · 认证与会话管理
 
-> 决策依据：D-006。配图：[diagrams/04-auth-flow.svg](../../docs/diagrams/04-auth-flow.svg)。
+> 决策依据：D-006。配图：[diagrams/04-auth-flow.svg](../diagrams/04-auth-flow.svg)。
 > 红线（AGENTS.md §6）：只用用户自有合法凭证；不对抗风控；凭证与 session 永不入 git。
 
 ## 1. 功能说明

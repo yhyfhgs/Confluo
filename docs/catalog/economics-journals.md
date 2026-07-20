@@ -55,7 +55,12 @@ updated: 2026-07-20
 |---|---|---|---|---|---|
 | te | Theoretical Economics | T1 | econsoc | 1933-6837 | **完全 OA** |
 | qe | Quantitative Economics | T1 | econsoc | 1759-7323 | **完全 OA** |
-| et | Econometric Theory | T2 | `cambridge` | 0266-4666 | Cambridge Core，订阅 |
+
+## 计量理论刊（订阅制）
+
+| id | 名称 | tier | 平台/fulltext | ISSN ⚠ | DOI 前缀 | auth |
+|---|---|---|---|---|---|---|
+| et | Econometric Theory | T2 | `cambridge` | 0266-4666 | 10.1017 | institutional |
 
 ## 枚举与获取策略
 

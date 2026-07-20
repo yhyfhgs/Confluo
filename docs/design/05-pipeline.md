@@ -80,7 +80,7 @@ crawler timeline <venue> [--refresh]                   # 时间轴（discover）
 crawler list <venue> --volume V [--issue I] | --year Y # 清单预览（enumerate，不下载）
 crawler pull <venue> (--volume V [--issue I] | --year Y | --doi D...)
              [--filter EXPR] [--limit N] [--dry-run] [--extract]
-crawler grab --doi D | --arxiv ID | --ssrn ID          # 单篇跨 venue 精取
+crawler grab --doi D | --arxiv ID | --ssrn ID | --url U # 单篇跨 venue 精取（--url 供无标准 id 的 WP/ECCC 类，D-015）
 crawler backfill <venue> --from YEAR [--to YEAR]       # 历史回填（低优先级队列）
 crawler watch <subscription-name> | --all              # 订阅增量（cron 入口）
 crawler auth login <provider> / status / logout        # 认证（design/07）

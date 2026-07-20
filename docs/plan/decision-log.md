@@ -124,3 +124,13 @@ updated: 2026-07-20
   5. 合法机构订阅内容的获取（auth_gated 模块）不受本条限制——那是用户在自有权限内经正规登录的访问，与"无授权 AI 爬取"性质不同；但同样遵守各站 TDM/速率政策。
 - **理由**：合规与长期可用性优先于覆盖率最大化；诚实身份+尊重站点声明是个人科研工具可持续的前提，也符合 AGENTS.md §6 红线。
 - **影响**：各 adapter 文档必须记录目标站 robots/AI-bot/TDM 现状与本 adapter 的合规姿态；catalog 对敏感站标注获取边界。
+
+## D-015 Phase-0 收官一致性审查的三项设计修正
+
+- 状态：accepted · 日期：2026-07-20
+- **背景**：Phase 0 完成后、Phase 1 开工前的全库一致性审查（用户指令触发；全过程见 [reports/2026-07-20-consistency-review.md](../reports/2026-07-20-consistency-review.md)）。对 `approved` 文档的实质修改按 status-workflow §1 规则以本条 ADR 记录理由，不降级文档状态。
+- **决策**：
+  1. **VenueSpec 校验收紧**（design/02 §2.2）：期刊 **issn 必填**；`openalex_source` 降为可选补充字段，不再可替代 issn。理由：D-005 修订后 Crossref（按 ISSN）是期刊元数据主干，OpenAlex 信用计费制下不能作为枚举依赖。
+  2. **CLI 增补 `grab --url`**（design/05 §6）：单篇精取支持无标准标识符的来源（ECCC、个人主页 WP 等）；identifier 相应增加开放 scheme `url`（design/06 注释同步）。理由：Econ/Fin WP 场景常见无 DOI 无平台 id 的合法直链。
+  3. **adapter 总量预估修正**：D-002 原估"15~25 个"，经四域 catalog 全量盘点为 **~40 个**（首批详设 16 + planned ~24，其中 8 个为审查中补登记：ijcai/jmlr/jair/bmvc/tandf/annual_reviews/now_publishers/uwpress）。D-002 原文不改（ADR append-only），活文档（publishers-platforms、SVG-02）已按新口径更新。
+- **影响**：Phase 1 的 `venues lint` 按新校验规则实现；勘误类修复（8 项，不构成决策）清单见审查报告。

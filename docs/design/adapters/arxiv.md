@@ -10,7 +10,7 @@ updated: 2026-07-20
 ## 1. 定位
 
 - **family**: `open_access`
-- **服务 venue**：arXiv 全站，按 category 切分为 `preprint_channel` 型 venue（`arxiv-cs-lg`、`arxiv-q-fin-pr`…，覆盖 cs.*/stat.ML/econ.*/q-fin.*，见 [catalog/preprint-platforms.md](../../catalog/preprint-platforms.md)）
+- **服务 venue**：arXiv 全站，按 category 切分为 `preprint_channel` 型 venue（`arxiv-cs-lg`、`arxiv-q-fin-pr`…，白名单覆盖 cs.*/stat.ML/econ.*/q-fin.*/math.OC——完整清单以 [catalog/preprint-platforms.md](../../catalog/preprint-platforms.md) §1 为准）
 - **capabilities**: `DISCOVER | ENUMERATE | RESOLVE | FETCH | SEARCH`（五项全能力，SEARCH 是订阅 DSL 的主执行端）
 - 元数据/全文分工：本 adapter 同时承担元数据与全文；历史回填元数据优先走 Kaggle bulk（非在线接口）。
 

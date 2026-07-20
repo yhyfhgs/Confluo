@@ -76,7 +76,7 @@ CREATE TABLE paper (
 
 CREATE TABLE identifier (
   paper_id TEXT REFERENCES paper,
-  scheme TEXT NOT NULL,             -- doi|arxiv|ssrn|openalex|s2|dblp|anthology|pmlr|ieee|acm
+  scheme TEXT NOT NULL,             -- doi|arxiv|ssrn|openalex|s2|dblp|anthology|pmlr|ieee|acm|openreview|cvf|neurips|repec|url（开放枚举，adapter 注册时声明）
   value TEXT NOT NULL,              -- '10.1016/j.jfineco...' / '2401.12345'
   is_primary INTEGER DEFAULT 0,
   PRIMARY KEY (scheme, value)       -- 全局唯一 → 天然强合并锚点
