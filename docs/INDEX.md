@@ -20,7 +20,7 @@
 | 路径 | 标题 | status | updated |
 |---|---|---|---|
 | [../README.md](../README.md) | 项目总览 | approved | 2026-07-21 |
-| [../AGENTS.md](../AGENTS.md) | AI/LLM 协作者工作规范 | approved | 2026-07-20 |
+| [../AGENTS.md](../AGENTS.md) | AI/LLM 协作者工作规范 | approved | 2026-07-21 |
 | [GLOSSARY.md](GLOSSARY.md) | 术语表（全库速查） | review | 2026-07-21 |
 
 ## plan/ — 计划与决策

@@ -1,11 +1,11 @@
 # AGENTS.md — AI/LLM 协作者工作规范
 
 > 适用对象：所有在本仓库工作的 AI 助手（Claude Code、其他 LLM agent）及其 subagent。
-> 人类维护者同样建议遵循。最后更新：2026-07-20。
+> 人类维护者同样建议遵循。最后更新：2026-07-21。
 
 ## 0. 一句话定位
 
-本仓库是"Paper Crawler"论文获取系统的**设计与知识库**（docs-as-code）。当前处于设计阶段：产出是文档与图，不是代码。进入实现阶段后，代码与文档同库演进。
+本仓库是"Paper Crawler"论文获取系统的**设计知识库与实现代码库**（docs-as-code）。当前处于实现阶段（Phase 1 起）：代码与文档同库演进，设计仍先行——实现代码只依据 `approved`（或更高）状态的设计文档开工。
 
 ## 1. 开始任何工作之前
 
@@ -29,7 +29,10 @@
 | `docs/diagrams/` | SVG 源文件 | 位图；文档内嵌 base64 |
 | `docs/logs/` | 每个工作 session 的日志 | — |
 | `docs/reports/` | 阶段性汇总报告 | 日常流水（去 logs） |
-| （未来）`src/`、`tests/`、`venues/` | 代码、测试、venue 配置 | 现阶段不建 |
+| `src/paper_crawler/` | 实现代码（对应 `approved` 设计；src 布局，D-017） | 未定稿设计的代码 |
+| `tests/` | 测试树（`unit`/`contract`/`integration`，见 [test-plan](docs/testing/test-plan.md)） | 下载产物、fixture 之外的大二进制 |
+| `venues/` | VenueSpec YAML 声明（`<field>/<venue_id>.yaml`，design/02 §2.2） | 爬取策略细节（去 design/adapters） |
+| `pyproject.toml`/`Makefile`/`uv.lock` | 构建与工具链（uv + hatchling，D-017） | — |
 
 ## 3. 文档状态机与 front matter（必须遵守）
 
