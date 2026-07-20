@@ -37,12 +37,12 @@
 | 路径 | 标题 | status | updated |
 |---|---|---|---|
 | [design/00-requirements.md](design/00-requirements.md) | 需求规格与边界（FR/NFR/红线） | approved | 2026-07-20 |
-| [design/01-architecture.md](design/01-architecture.md) | 总体架构（六层） | approved | 2026-07-20 |
-| [design/02-plugin-framework.md](design/02-plugin-framework.md) | 可插拔框架（Adapter × VenueSpec） | approved | 2026-07-20 |
+| [design/01-architecture.md](design/01-architecture.md) | 总体架构（六层） | implemented | 2026-07-21 |
+| [design/02-plugin-framework.md](design/02-plugin-framework.md) | 可插拔框架（Adapter × VenueSpec） | implemented | 2026-07-21 |
 | [design/03-open-access-module.md](design/03-open-access-module.md) | Open-Access 获取模块 | approved | 2026-07-20 |
 | [design/04-auth-gated-module.md](design/04-auth-gated-module.md) | Auth-Gated 获取模块 | approved | 2026-07-20 |
-| [design/05-pipeline.md](design/05-pipeline.md) | 六阶段 Pipeline 与任务系统 | approved | 2026-07-20 |
-| [design/06-data-model.md](design/06-data-model.md) | 数据模型与入库设计 | approved | 2026-07-20 |
+| [design/05-pipeline.md](design/05-pipeline.md) | 六阶段 Pipeline 与任务系统 | implemented | 2026-07-21 |
+| [design/06-data-model.md](design/06-data-model.md) | 数据模型与入库设计 | implemented | 2026-07-21 |
 | [design/07-auth-session.md](design/07-auth-session.md) | 认证与会话管理 | approved | 2026-07-20 |
 | [design/08-venue-tracking.md](design/08-venue-tracking.md) | Venue 时间轴与年度追踪 | approved | 2026-07-20 |
 | [design/09-search-filter.md](design/09-search-filter.md) | 主题订阅与精确搜索 | approved | 2026-07-20 |
@@ -89,6 +89,7 @@
 | [testing/test-plan.md](testing/test-plan.md) | 测试计划与测试类型（T1–T6） | approved | 2026-07-20 |
 | [testing/acceptance-criteria.md](testing/acceptance-criteria.md) | 验收标准总表（AC-0…AC-8） | approved | 2026-07-20 |
 | testing/records/ | 测试执行留痕（目录，随执行追加） | — | — |
+| [testing/records/2026-07-21-phase1-acceptance.md](testing/records/2026-07-21-phase1-acceptance.md) | Phase 1 验收记录（AC-1 全过） | — | 2026-07-21 |
 
 ## process/ — 流程规范
 
@@ -127,7 +128,8 @@
 
 | 路径 | 内容 |
 |---|---|
-| logs/ | 每 session 工作日志（YYYY-MM-DD-session-NNN.md，现有 001–004） |
+| logs/ | 每 session 工作日志（YYYY-MM-DD-session-NNN.md，现有 001–005） |
 | [reports/2026-07-20-phase0-report.md](reports/2026-07-20-phase0-report.md) | Phase 0 阶段报告（DoD 判定） |
 | [reports/2026-07-20-consistency-review.md](reports/2026-07-20-consistency-review.md) | 一致性审查第 1 轮（需求矩阵 + 13 项修复，D-015） |
 | [reports/2026-07-21-audit-round2.md](reports/2026-07-21-audit-round2.md) | 深度审计第 2 轮（语义级 + 可读性增强，D-016） |
+| [reports/2026-07-21-phase1-report.md](reports/2026-07-21-phase1-report.md) | Phase 1 阶段报告（DoD 判定 + 终审 + Phase 2 检查单） |

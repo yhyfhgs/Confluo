@@ -1,8 +1,8 @@
 ---
 title: 总体架构
-status: approved
+status: implemented
 owner: fable5
-updated: 2026-07-20
+updated: 2026-07-21
 ---
 
 # 01 · 总体架构

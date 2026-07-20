@@ -1,8 +1,8 @@
 ---
 title: 数据模型与入库设计
-status: approved
+status: implemented
 owner: fable5
-updated: 2026-07-20
+updated: 2026-07-21
 ---
 
 # 06 · 数据模型与入库设计
@@ -61,6 +61,11 @@ CREATE TABLE issue (
   source TEXT NOT NULL,             -- 该行来自哪个 adapter（crossref/dblp/...）
   paper_count_claimed INTEGER,      -- 源头宣称数（对账 enumerate 完整性）
   UNIQUE(venue_id, volume, number, label)
+);
+
+CREATE TABLE paper_issue_link (      -- 勘误补全 2026-07-21：§1 ER 总览已声明本表，v1 草案漏列 DDL；实现（schema v1）已含
+  paper_id TEXT REFERENCES paper, issue_id TEXT REFERENCES issue,
+  PRIMARY KEY (paper_id, issue_id)
 );
 
 CREATE TABLE paper (

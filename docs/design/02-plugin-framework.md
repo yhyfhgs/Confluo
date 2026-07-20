@@ -1,8 +1,8 @@
 ---
 title: 可插拔框架（Platform Adapter × Venue Spec）
-status: approved
+status: implemented
 owner: fable5
-updated: 2026-07-20
+updated: 2026-07-21
 ---
 
 # 02 · 可插拔框架设计

@@ -1,8 +1,8 @@
 ---
 title: 六阶段 Pipeline 与任务系统
-status: approved
+status: implemented
 owner: fable5
-updated: 2026-07-20
+updated: 2026-07-21
 ---
 
 # 05 · 六阶段 Pipeline 与任务系统
@@ -19,7 +19,7 @@ updated: 2026-07-20
 | 2 enumerate | Issue | `Paper` 行（metadata_only）+ `Identifier` | (source, source_key)，如 (crossref, doi) | `enumerate_issue` |
 | 3 resolve | Paper | `Asset` 行（planned，含 URL/auth 需求/类型） | (paper, asset_kind) | `resolve_assets` |
 | 4 fetch | Asset(planned) | 文件落盘 + Asset(fetched) + `FetchLog` | asset_id（文件存在且校验通过=完成） | `fetch_asset` |
-| 5 extract | Asset(fetched, pdf) | `Fulltext` 行 / Paper 字段补全 | (asset, extractor_ver) | —（本地） |
+| 5 extract | Asset(fetched, pdf) | `Fulltext` 行 / Paper 字段补全 | (asset, extractor_ver)（Phase 1 noop 抽取按 paper 粒度落 fulltext——其 PK=paper_id；asset 级键随 Phase 7 真实抽取启用） | —（本地） |
 | 6 ingest | Paper/Identifier 增量 | 合并关系（same_as/preprint_of/candidate）+ 索引 | 确定性合并规则版本 | —（本地） |
 
 阶段可单独执行（`crawler run enumerate --venue jfe --volume 160`），默认编排器按需级联（`pull` = 1→4，`--extract` 加 5，6 每次运行尾部自动跑）。
@@ -40,6 +40,7 @@ Task {
 ```
 
 - **入队去重**：同幂等键的 PENDING/RUNNING 任务不重复入队；DONE 任务重新请求时按"新鲜度策略"决定跳过或刷新（timeline 类 24h、清单类 7d、asset 永久，`--force` 覆盖）。
+- **实现注记（Phase 1，勘误性补全）**：① `kind` 枚举含编排父任务 `pull`（本节 parent_id 一段所述"pull 任务"的机制化）；② 幂等唯一索引用 `COALESCE(venue_id,'')` 表达式（SQL NULL≠NULL，venue-less 任务需此保证去重）；③ 队列提供 `recover_running()`：进程启动时孤儿 RUNNING→PENDING（不占 attempts），是 §5 断点续爬的崩溃恢复入口；④ fetch 执行前**现场 re-resolve**（重新调 `resolve_assets` 刷新 asset 的 url/auth_needed 再下载）——资产幂等身份 (paper, kind) 不变，url 属易变执行细节（签名 URL/entitlement 时效的常态化处理），也是"认证修复后 resume 即可继续"语义的前提。
 - **BLOCKED 语义**：不占重试次数、不自动恢复；`crawler status --blocked` 列出并给出人工动作提示（如 `auth login elsevier`）；人工处理后 `crawler resume <task|--all>` 转回 PENDING。
 - **FAILED 语义**：按错误分类决定是否可重试（见 §4）；`crawler retry --class transient` 批量重试。
 
@@ -55,7 +56,7 @@ Task {
 | error_class | 例 | 重试策略 | 升级路径 |
 |---|---|---|---|
 | `transient` | 超时、连接重置、5xx | 指数退避 3 次（2/8/30s） | 3 败转 FAILED，可批量 retry |
-| `rate_limited` | 429、Retry-After | 按 Retry-After 或退避重试，不计失败 | 连续 3 次 → domain 冷却 1h |
+| `rate_limited` | 429、Retry-After | 按 Retry-After 或退避重试，不计失败 | 连续 3 次 → domain 冷却 1h（Phase 1 近似：连续 >3 次转按 `transient` 处置防串行 drain 挂死；domain 冷却机制随 Phase 2 真实站点落地） |
 | `auth_expired` | 401/302→login、healthcheck 失败 | 不重试 | 整批 BLOCKED(auth) |
 | `no_entitlement` | 403 且 session 健康、entitlement 预检否 | 不重试 | 标记 + OA fallback（Unpaywall） |
 | `challenge` | CAPTCHA/Cloudflare 特征 | 不重试 | BLOCKED(challenge) + 平台冷却 24h |
