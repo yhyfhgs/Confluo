@@ -1,0 +1,15 @@
+# venues/cs_ai/iclr.yaml —— 会议示例
+id: iclr
+kind: conference
+names: {full: International Conference on Learning Representations, aliases: [ICLR]}
+field: [cs_ai]
+tier: T1
+identifiers:
+  dblp_key: conf/iclr
+metadata_source: openreview
+fulltext_source: openreview
+auth: {level: none}
+quirks:
+  openreview_venue_template: "ICLR.cc/{year}/Conference"
+  first_year: 2013
+status: active

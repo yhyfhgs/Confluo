@@ -1,0 +1,23 @@
+# venues/_mock/mock-journal.yaml —— Phase 1 mock venue（AC-1.x 端到端驱动，D-017：零网络）
+id: mock_journal
+kind: journal
+names:
+  full: Mock Journal
+  aliases: [MJ]
+field: [cs_ai]
+tier: T1
+identifiers:
+  issn: ["0000-0000"]
+metadata_source: mock_platform
+fulltext_source: mock_platform
+auth:
+  level: none
+quirks:
+  volumes: 3
+  issues_per_volume: 2
+  papers_per_issue: 5
+  seed: 42
+status: active
+notes: >
+  mock_platform 程序内确定性生成语料（无真实站点，零网络）；quirks 精确规格见
+  phase1-implementation-plan.md Task 6。

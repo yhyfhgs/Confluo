@@ -1,0 +1,441 @@
+"""VenueSpec YAML 校验规则单测（design/02 §2.2 校验段；AC-1.6）。
+
+七类非法各至少一例，断言 LintIssue.field 与 message 内容：
+未知 adapter / auth 等级不足 / 同目录 id 重复 / journal 缺 issn /
+issn 格式错 / YAML 解析失败 / pydantic 结构错误（含文件名-id 不一致）。
+
+结构性问题（YAML 解析失败、pydantic 校验失败、同目录 id 冲突、文件名-id 不一致）
+由 `load_dirs()` 直接返回；语义问题（未知 adapter、auth 不兼容、issn 规则）需要
+`lint()`（在已加载的 venue 上叠加校验）。三份仓库自带 YAML 必须全过 lint。
+"""
+
+from pathlib import Path
+
+import pytest
+
+from paper_crawler.adapter import SourceAdapter, load_adapters
+from paper_crawler.registry import LintIssue, VenueRegistry
+
+REPO_VENUES_DIR = Path(__file__).resolve().parents[2] / "venues"
+
+
+@pytest.fixture
+def adapters() -> dict[str, SourceAdapter]:
+    return load_adapters()
+
+
+def _issues_for_field(issues: list[LintIssue], field: str) -> list[LintIssue]:
+    return [issue for issue in issues if issue.field == field]
+
+
+def _write(path: Path, content: str) -> None:
+    path.write_text(content, encoding="utf-8")
+
+
+# -- 三份仓库自带 YAML 全过 lint（design/02 §6 验收前提） -----------------------
+
+
+def test_shipped_venues_pass_lint_cleanly(adapters: dict[str, SourceAdapter]) -> None:
+    reg = VenueRegistry(adapters)
+    load_issues = reg.load_dirs([REPO_VENUES_DIR])
+    assert load_issues == []
+    assert reg.lint() == []
+    assert {spec.id for spec in reg.all()} == {"mock_journal", "jfe", "iclr"}
+
+
+@pytest.mark.parametrize("venue_id", ["mock_journal", "jfe", "iclr"])
+def test_each_shipped_venue_is_routable(adapters: dict[str, SourceAdapter], venue_id: str) -> None:
+    reg = VenueRegistry(adapters)
+    reg.load_dirs([REPO_VENUES_DIR])
+    route = reg.route(venue_id)
+    assert route.venue.id == venue_id
+
+
+# -- 1. 未知 adapter -----------------------------------------------------------
+
+
+def test_unknown_metadata_adapter_reported(
+    adapters: dict[str, SourceAdapter], tmp_path: Path
+) -> None:
+    _write(
+        tmp_path / "unknown-adapter.yaml",
+        "\n".join(
+            [
+                "id: unknown_adapter",
+                "kind: conference",
+                "names: {full: Unknown Adapter Venue}",
+                "field: [cs_ai]",
+                "metadata_source: totally_made_up_adapter",
+                "fulltext_source: mock_platform",
+            ]
+        ),
+    )
+    reg = VenueRegistry(adapters)
+    reg.load_dirs([tmp_path])
+    issues = reg.lint()
+
+    hits = _issues_for_field(issues, "metadata_source")
+    assert len(hits) == 1
+    assert hits[0].venue_id == "unknown_adapter"
+    assert "totally_made_up_adapter" in hits[0].message
+
+
+def test_unknown_fulltext_adapter_reported(
+    adapters: dict[str, SourceAdapter], tmp_path: Path
+) -> None:
+    _write(
+        tmp_path / "unknown-fulltext.yaml",
+        "\n".join(
+            [
+                "id: unknown_fulltext",
+                "kind: conference",
+                "names: {full: Unknown Fulltext Venue}",
+                "field: [cs_ai]",
+                "metadata_source: mock_platform",
+                "fulltext_source: nope_not_registered",
+            ]
+        ),
+    )
+    reg = VenueRegistry(adapters)
+    reg.load_dirs([tmp_path])
+    issues = reg.lint()
+
+    hits = _issues_for_field(issues, "fulltext_source")
+    assert len(hits) == 1
+    assert hits[0].venue_id == "unknown_fulltext"
+    assert "nope_not_registered" in hits[0].message
+
+
+# -- 2. auth 等级不足 -----------------------------------------------------------
+
+
+def test_auth_level_insufficient_for_fulltext_adapter(
+    adapters: dict[str, SourceAdapter], tmp_path: Path
+) -> None:
+    _write(
+        tmp_path / "under-authed.yaml",
+        "\n".join(
+            [
+                "id: under_authed",
+                "kind: conference",
+                "names: {full: Under Authed Venue}",
+                "field: [cs_ai]",
+                "metadata_source: crossref",
+                "fulltext_source: elsevier_sd",  # 需要 institutional
+                "auth: {level: none}",
+            ]
+        ),
+    )
+    reg = VenueRegistry(adapters)
+    reg.load_dirs([tmp_path])
+    issues = reg.lint()
+
+    hits = _issues_for_field(issues, "auth.level")
+    assert len(hits) == 1
+    assert hits[0].venue_id == "under_authed"
+    assert "institutional" in hits[0].message
+
+
+def test_auth_level_equal_to_requirement_is_not_an_error(
+    adapters: dict[str, SourceAdapter], tmp_path: Path
+) -> None:
+    _write(
+        tmp_path / "properly-authed.yaml",
+        "\n".join(
+            [
+                "id: properly_authed",
+                "kind: conference",
+                "names: {full: Properly Authed Venue}",
+                "field: [cs_ai]",
+                "metadata_source: crossref",
+                "fulltext_source: elsevier_sd",
+                "auth: {level: institutional}",
+            ]
+        ),
+    )
+    reg = VenueRegistry(adapters)
+    reg.load_dirs([tmp_path])
+    issues = reg.lint()
+    assert _issues_for_field(issues, "auth.level") == []
+
+
+# -- 3. 同目录 id 重复 -----------------------------------------------------------
+
+
+def test_duplicate_id_in_same_directory_reported(
+    adapters: dict[str, SourceAdapter], tmp_path: Path
+) -> None:
+    _write(
+        tmp_path / "dup-venue.yaml",
+        "\n".join(
+            [
+                "id: dup_venue",
+                "kind: conference",
+                "names: {full: First}",
+                "field: [cs_ai]",
+                "metadata_source: mock_platform",
+                "fulltext_source: mock_platform",
+            ]
+        ),
+    )
+    # 第二个文件名刻意排到字母序更后（避免 '-' < '.' 的 ASCII 陷阱让它排到前面抢注，
+    # 从而和 filename-mismatch 规则混淆断言）。
+    _write(
+        tmp_path / "zz-dup-venue-copy.yaml",
+        "\n".join(
+            [
+                "id: dup_venue",
+                "kind: conference",
+                "names: {full: Second}",
+                "field: [cs_ai]",
+                "metadata_source: mock_platform",
+                "fulltext_source: mock_platform",
+            ]
+        ),
+    )
+    reg = VenueRegistry(adapters)
+    issues = reg.load_dirs([tmp_path])
+
+    hits = [i for i in issues if i.venue_id == "dup_venue"]
+    assert len(hits) == 1
+    assert hits[0].field == "id"
+    assert "dup_venue" in hits[0].message
+
+
+# -- 4. journal 缺 issn ---------------------------------------------------------
+
+
+def test_journal_missing_issn_reported(adapters: dict[str, SourceAdapter], tmp_path: Path) -> None:
+    _write(
+        tmp_path / "no-issn.yaml",
+        "\n".join(
+            [
+                "id: no_issn",
+                "kind: journal",
+                "names: {full: No Issn Journal}",
+                "field: [cs_ai]",
+                "metadata_source: mock_platform",
+                "fulltext_source: mock_platform",
+            ]
+        ),
+    )
+    reg = VenueRegistry(adapters)
+    reg.load_dirs([tmp_path])
+    issues = reg.lint()
+
+    hits = _issues_for_field(issues, "identifiers.issn")
+    assert len(hits) == 1
+    assert hits[0].venue_id == "no_issn"
+
+
+def test_conference_without_issn_is_not_an_error(
+    adapters: dict[str, SourceAdapter], tmp_path: Path
+) -> None:
+    _write(
+        tmp_path / "conf-no-issn.yaml",
+        "\n".join(
+            [
+                "id: conf_no_issn",
+                "kind: conference",
+                "names: {full: Conference No Issn}",
+                "field: [cs_ai]",
+                "metadata_source: mock_platform",
+                "fulltext_source: mock_platform",
+            ]
+        ),
+    )
+    reg = VenueRegistry(adapters)
+    reg.load_dirs([tmp_path])
+    issues = reg.lint()
+    assert _issues_for_field(issues, "identifiers.issn") == []
+
+
+# -- 5. issn 格式错 ---------------------------------------------------------------
+
+
+def test_journal_bad_issn_format_reported(
+    adapters: dict[str, SourceAdapter], tmp_path: Path
+) -> None:
+    _write(
+        tmp_path / "bad-issn.yaml",
+        "\n".join(
+            [
+                "id: bad_issn",
+                "kind: journal",
+                "names: {full: Bad Issn Journal}",
+                "field: [cs_ai]",
+                "identifiers: {issn: ['12345']}",
+                "metadata_source: mock_platform",
+                "fulltext_source: mock_platform",
+            ]
+        ),
+    )
+    reg = VenueRegistry(adapters)
+    reg.load_dirs([tmp_path])
+    issues = reg.lint()
+
+    hits = _issues_for_field(issues, "identifiers.issn[0]")
+    assert len(hits) == 1
+    assert hits[0].venue_id == "bad_issn"
+    assert "12345" in hits[0].message
+
+
+def test_journal_issn_not_a_list_reported(
+    adapters: dict[str, SourceAdapter], tmp_path: Path
+) -> None:
+    # identifiers.issn 是裸字符串而非列表——同一 D-015 规则的另一种畸形输入。
+    _write(
+        tmp_path / "issn-not-list.yaml",
+        "\n".join(
+            [
+                "id: issn_not_list",
+                "kind: journal",
+                "names: {full: Issn Not List Journal}",
+                "field: [cs_ai]",
+                "identifiers: {issn: '0304-405X'}",
+                "metadata_source: mock_platform",
+                "fulltext_source: mock_platform",
+            ]
+        ),
+    )
+    reg = VenueRegistry(adapters)
+    reg.load_dirs([tmp_path])
+    issues = reg.lint()
+
+    hits = _issues_for_field(issues, "identifiers.issn")
+    assert len(hits) == 1
+    assert hits[0].venue_id == "issn_not_list"
+    assert "列表" in hits[0].message
+
+
+# -- 6. YAML 解析失败 --------------------------------------------------------------
+
+
+def test_yaml_parse_failure_reported(adapters: dict[str, SourceAdapter], tmp_path: Path) -> None:
+    _write(tmp_path / "broken-syntax.yaml", "id: broken\nfield: [cs_ai\n")
+    reg = VenueRegistry(adapters)
+    issues = reg.load_dirs([tmp_path])
+
+    hits = [i for i in issues if i.file.endswith("broken-syntax.yaml")]
+    assert len(hits) == 1
+    assert hits[0].venue_id is None
+    assert hits[0].field == "<yaml>"
+
+
+def test_yaml_non_mapping_top_level_reported(
+    adapters: dict[str, SourceAdapter], tmp_path: Path
+) -> None:
+    # 合法 YAML，但顶层是列表而非映射——无法喂给 VenueSpec(**raw)。
+    _write(tmp_path / "not-a-mapping.yaml", "- a\n- b\n- c\n")
+    reg = VenueRegistry(adapters)
+    issues = reg.load_dirs([tmp_path])
+
+    hits = [i for i in issues if i.file.endswith("not-a-mapping.yaml")]
+    assert len(hits) == 1
+    assert hits[0].venue_id is None
+    assert hits[0].field == "<yaml>"
+
+
+# -- 7. pydantic 结构错误（loc 路径进 field） --------------------------------------
+
+
+def test_pydantic_structural_error_reported_with_loc_in_field(
+    adapters: dict[str, SourceAdapter], tmp_path: Path
+) -> None:
+    _write(
+        tmp_path / "extra-field.yaml",
+        "\n".join(
+            [
+                "id: extra_field_venue",
+                "kind: conference",
+                "names: {full: Extra Field Venue}",
+                "field: [cs_ai]",
+                "metadata_source: mock_platform",
+                "fulltext_source: mock_platform",
+                "this_field_does_not_exist: 1",
+            ]
+        ),
+    )
+    reg = VenueRegistry(adapters)
+    issues = reg.load_dirs([tmp_path])
+
+    hits = _issues_for_field(issues, "this_field_does_not_exist")
+    assert len(hits) == 1
+    assert hits[0].venue_id == "extra_field_venue"
+    assert hits[0].file.endswith("extra-field.yaml")
+    assert "extra" in hits[0].message.lower() or "permitted" in hits[0].message.lower()
+
+
+def test_pydantic_nested_structural_error_loc_joined_into_field(
+    adapters: dict[str, SourceAdapter], tmp_path: Path
+) -> None:
+    _write(
+        tmp_path / "bad-kind.yaml",
+        "\n".join(
+            [
+                "id: bad_kind_venue",
+                "kind: magazine",  # 不在 journal|conference|preprint_channel 枚举内
+                "names: {full: Bad Kind Venue}",
+                "field: [cs_ai]",
+                "metadata_source: mock_platform",
+                "fulltext_source: mock_platform",
+            ]
+        ),
+    )
+    reg = VenueRegistry(adapters)
+    issues = reg.load_dirs([tmp_path])
+
+    hits = _issues_for_field(issues, "kind")
+    assert len(hits) == 1
+    assert hits[0].venue_id == "bad_kind_venue"
+
+
+# -- 8. 文件名 stem 与 id 不一致 -----------------------------------------------------
+
+
+def test_filename_id_mismatch_reported(adapters: dict[str, SourceAdapter], tmp_path: Path) -> None:
+    _write(
+        tmp_path / "totally-different-name.yaml",
+        "\n".join(
+            [
+                "id: proper_id",
+                "kind: conference",
+                "names: {full: Mismatched Venue}",
+                "field: [cs_ai]",
+                "metadata_source: mock_platform",
+                "fulltext_source: mock_platform",
+            ]
+        ),
+    )
+    reg = VenueRegistry(adapters)
+    issues = reg.load_dirs([tmp_path])
+
+    hits = [i for i in issues if i.venue_id == "proper_id" and i.field == "id"]
+    assert len(hits) == 1
+    assert "totally-different-name" in hits[0].message
+    assert "proper_id" in hits[0].message
+    # 仍应正常注册（lint 报告问题，但不阻塞加载）。
+    assert reg.get("proper_id").id == "proper_id"
+
+
+def test_kebab_case_filename_matches_snake_case_id(
+    adapters: dict[str, SourceAdapter], tmp_path: Path
+) -> None:
+    # mock-journal.yaml ↔ id: mock_journal 是合法归一（不是 mismatch）。
+    _write(
+        tmp_path / "mock-journal.yaml",
+        "\n".join(
+            [
+                "id: mock_journal",
+                "kind: journal",
+                "names: {full: Mock Journal}",
+                "field: [cs_ai]",
+                "identifiers: {issn: ['0000-0000']}",
+                "metadata_source: mock_platform",
+                "fulltext_source: mock_platform",
+            ]
+        ),
+    )
+    reg = VenueRegistry(adapters)
+    issues = reg.load_dirs([tmp_path])
+    assert issues == []
