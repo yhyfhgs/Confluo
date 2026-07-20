@@ -381,7 +381,7 @@ Wave F: T10(closeout, fable5 主 agent)
 **Interfaces:** Produces = §2.1/2.2/2.3/2.7-Config 全部签名（逐字落盘）。
 
 要点与步骤：
-- [ ] `uv init` 风格 pyproject：`name="paper-crawler"`、`requires-python=">=3.12"`、deps `typer`,`pydantic>=2`,`pyyaml`,`python-ulid`；dev-group `pytest`,`pytest-cov`,`ruff`,`mypy`,`types-PyYAML`；`[project.scripts] crawler = "paper_crawler.cli:main"`（cli 模块 T8 才有——入口先指向占位 `main()` 打印版本，T8 替换）；entry point 组 `[project.entry-points."paper_crawler.adapters"]` 注册 `mock_platform`。`uv.lock` 入库。
+- [ ] `uv init` 风格 pyproject：`name="paper-crawler"`、`requires-python=">=3.12"`、deps `typer`,`pydantic>=2`,`pyyaml`,`python-ulid`；dev-group `pytest`,`pytest-cov`,`ruff`,`mypy`,`types-PyYAML`；`[project.scripts]` **T1 不声明**（cli 模块 T8 才有，避免 broken entry point；T8 增补 `crawler = "paper_crawler.cli:main"`——2026-07-21 派发修正，与实现一致）；entry point 组 `[project.entry-points."paper_crawler.adapters"]` 注册 `mock_platform`。`uv.lock` 入库。
 - [ ] `Makefile`：`make test`(pytest T1–T4 目录 + 覆盖率门禁 80)、`make lint`(ruff check + ruff format --check)、`make type`(mypy src)、`make check`(三者)。
 - [ ] `.gitignore` 增补：`.venv/`、`__pycache__/`、`.coverage`、`*.sqlite*`、`data/`、`.superpowers/`。
 - [ ] errors/types/adapter/config 按 §2 逐字实现；`utcnow_iso()`、`new_ulid()` 工具函数进 `types.py`。
