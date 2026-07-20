@@ -488,3 +488,61 @@ def test_by_state_lists_and_orders(database: Database) -> None:
     queue.claim_next()
     assert len(queue.by_state("PENDING")) == 2
     assert len(queue.by_state("RUNNING")) == 1
+
+
+# ---------------------------------------------------------------------------
+# recover_running（崩溃恢复；2026-07-21 T7c 仲裁增补的冻结件 §2.5 扩充）
+# ---------------------------------------------------------------------------
+
+
+def test_recover_running_returns_zero_when_no_running(queue: TaskQueue) -> None:
+    queue.enqueue("discover", "jfe", {})  # PENDING，不受影响
+    assert queue.recover_running() == 0
+
+
+def test_recover_running_requeues_without_touching_attempts(queue: TaskQueue) -> None:
+    """RUNNING→PENDING；attempts 与 error_class 均不动（崩溃不是失败，不耗重试预算）。"""
+    task_id = str(queue.enqueue("fetch", "jfe", {"asset": "a1"}).task_id)
+    assert queue.claim_next() is not None
+    # 先经历一次退避（attempts=1 回 PENDING）再领取——模拟带预算痕迹的崩溃现场
+    assert queue.fail(task_id, ErrorClass.TRANSIENT, "boom") == "PENDING"
+    claimed = queue.claim_next()
+    assert claimed is not None and str(claimed["state"]) == "RUNNING"
+
+    assert queue.recover_running() == 1
+
+    row = queue.get(task_id)
+    assert row is not None
+    assert row["state"] == "PENDING"
+    assert row["attempts"] == 1  # 不动 attempts
+    assert row["error_class"] == "transient"  # 不动 error_class（保留崩溃前诊断）
+
+
+def test_recover_running_leaves_other_states_untouched(queue: TaskQueue) -> None:
+    """只动 RUNNING：DONE/BLOCKED/PENDING 原样保持。"""
+    done_id = str(queue.enqueue("discover", "jfe", {}).task_id)
+    assert queue.claim_next() is not None
+    queue.complete(done_id)
+
+    blocked_id = str(queue.enqueue("fetch", "jfe", {"asset": "b"}).task_id)
+    assert queue.claim_next() is not None
+    queue.block(blocked_id, "auth")
+
+    running_id = str(queue.enqueue("fetch", "jfe", {"asset": "d"}).task_id)
+    assert queue.claim_next() is not None  # 领取的是当下唯一 PENDING（"d"）
+
+    pending_id = str(queue.enqueue("fetch", "jfe", {"asset": "c"}).task_id)
+
+    assert queue.recover_running() == 1
+
+    states = {
+        task_id: str(row["state"])
+        for task_id in (done_id, blocked_id, running_id, pending_id)
+        if (row := queue.get(task_id)) is not None
+    }
+    assert states == {
+        done_id: "DONE",
+        blocked_id: "BLOCKED",
+        running_id: "PENDING",
+        pending_id: "PENDING",
+    }

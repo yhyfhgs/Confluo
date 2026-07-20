@@ -287,6 +287,28 @@ class TaskQueue:
             )
         return len(rows)
 
+    def recover_running(self) -> int:
+        """进程启动时对孤儿 RUNNING 任务的崩溃恢复（design/05 §5 断点续爬）：
+        全部 RUNNING → PENDING，返回恢复数。
+
+        Phase 1 单进程串行下，启动时刻存在的 RUNNING 必为上次进程崩溃（kill-9 等）
+        的遗留——正常退出不会留下 RUNNING 行。RUNNING→PENDING 是状态机合法边
+        （`LEGAL_TRANSITIONS` 中与"退避重试"同边；WHERE 子句保证源状态合法，同
+        `resume(all_blocked=True)` 的批量先例）。**不动 attempts**（崩溃不是失败，
+        不消耗重试预算）、不动 error_class（保留崩溃前的最后诊断信息）。
+
+        2026-07-21 T7c 仲裁增补（冻结件 §2.5 扩充）：恢复语义属队列状态机职责，
+        runner 启动路径经本 API 调用而非直写 task 表。
+        """
+        rows = self.db.query("SELECT id FROM task WHERE state = 'RUNNING'")
+        now = self._now_iso()
+        for r in rows:
+            self.db.execute(
+                "UPDATE task SET state = 'PENDING', updated_at = ? WHERE id = ?",
+                (now, str(r["id"])),
+            )
+        return len(rows)
+
     # -- 查询 ---------------------------------------------------------------
 
     def get(self, task_id: str) -> sqlite3.Row | None:
