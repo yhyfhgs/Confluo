@@ -164,7 +164,8 @@ CREATE TABLE task (
   updated_at TEXT NOT NULL
 );
 -- 活跃任务幂等键（部分唯一索引；SQLite 与 PostgreSQL 均支持 WHERE 子句，非专有特性）。
-CREATE UNIQUE INDEX idx_task_active_idem ON task(kind, venue_id, params_json)
+-- COALESCE(venue_id,'') 归一 NULL：SQL 视 NULL 互不相等，否则 venue-less 活跃任务无法去重；C1 仲裁 2026-07-21 方案 a（索引层修 NULL），表达式唯一索引 SQLite/PG 均支持、方言中性。
+CREATE UNIQUE INDEX idx_task_active_idem ON task(kind, COALESCE(venue_id, ''), params_json)
   WHERE state IN ('PENDING', 'RUNNING');
 CREATE INDEX idx_task_state_kind ON task(state, kind);
 
