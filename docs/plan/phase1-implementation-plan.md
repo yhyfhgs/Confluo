@@ -255,6 +255,9 @@ class TaskQueue:
     def block(self, task_id: str, reason: str) -> None  # 不动 attempts（design/05 §2）
     def resume(self, task_id: str | None = None, *, all_blocked: bool = False) -> int
     def retry_failed(self, error_class: ErrorClass | None = None) -> int
+    def recover_running(self) -> int
+        # 2026-07-21 T7c 仲裁扩充：进程启动时孤儿 RUNNING→PENDING（不动 attempts），
+        # 返回恢复数——kill-9 崩溃恢复的一等公民 API（design/05 §5；封装完整性优于后门 UPDATE）
     def get(self, task_id: str) -> sqlite3.Row | None
     def by_state(self, state: TaskState) -> list[sqlite3.Row]
 ```
