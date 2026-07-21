@@ -8,7 +8,7 @@
 | DoD 项 | 判定 | 证据 |
 |---|---|---|
 | mock adapter 走通六阶段端到端 | **PASS** | AC-1.1 测试 + CLI 端到端（dry-run 10 → 实跑 成功 10/失败 0 → verify 一致）；主 agent 与终审 agent 双独立复现 |
-| 断点续爬（kill -9 重跑不重复不遗漏） | **PASS** | AC-1.3：SIGKILL×4 真实命中，canonical dump 与一次跑完逐行一致，成功 FetchLog 每 asset ≤1，重跑含 skipped |
+| 断点续爬（kill -9 重跑不重复不遗漏） | **PASS** | AC-1.3：SIGKILL×4 真实命中，canonical dump 与一次跑完逐行一致，成功 FetchLog 每 asset ≤1（Phase 2 T1 后 ==1，见 §5），重跑含 skipped |
 | 单测覆盖核心 ≥80% | **PASS** | 覆盖率 99.13%（门禁 80%），519 passed / 12 skipped（stub 占位），`make check` 全绿 |
 | 文档 01/02/05/06 转 implemented | **PASS** | 本次收尾完成（含 7 处实现期勘误回填），INDEX 同步 |
 
@@ -41,7 +41,7 @@
 
 ## 5. 已知限制（如实记录）
 
-- fetch 收尾三步（commit/mark_asset/add_fetch_log）非同事务：SIGKILL 缝隙可产生"已 fetched 无成功日志"（fails-safe：文件与状态正确，审计少记方向保守）——**Phase 2 硬化项**。
+- fetch 收尾三步（commit/mark_asset/add_fetch_log）非同事务：SIGKILL 缝隙可产生"已 fetched 无成功日志"（fails-safe：文件与状态正确，审计少记方向保守）——**Phase 2 硬化项**（已于 Phase 2 T1 消除：mark_asset+add_fetch_log 并入 `repo.finalize_fetch` 单事务，AC-1.3 断言收紧为每 asset ==1）。
 - `planned_bytes` 恒 0（AssetPlan 无 size 字段），dry-run 字节估算待 Phase 2。
 - rate_limit 配置未禁 0/负值；config.toml 损坏为裸 traceback——Phase 2 polish。
 - RATE_LIMITED 的 domain 冷却为 Phase 1 近似（连续 >3 转 transient 处置），真实冷却随 Phase 2。
