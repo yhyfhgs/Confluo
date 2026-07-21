@@ -1,0 +1,20 @@
+# arxiv-cs-cr.yaml —— arXiv cs.CR（自动生成 by scripts/gen_arxiv_venues.py）
+id: arxiv_cs_cr
+kind: preprint_channel
+names:
+  full: "arXiv cs.CR · Cryptography and Security"
+  aliases: ["cs.CR"]
+field: [cs_ai]
+tier: T1
+metadata_source: arxiv
+fulltext_source: arxiv
+auth:
+  level: none
+quirks:
+  inception: "1998-01"       # cs archive 上线月近似（arXiv 分类史）；月度桶起点
+  arxiv_set: "cs"          # OAI-PMH archive 级 set
+  arxiv_category: "cs.CR"    # 子分类客户端过滤 + set 派生（大小写敏感权威源）
+status: active
+notes: >
+  自动生成（scripts/gen_arxiv_venues.py，catalog/preprint-platforms.md §1 白名单）。
+  inception 为 archive 上线月近似，仅作月度虚拟桶起点；backfill 排期实现前逐 category 核准。

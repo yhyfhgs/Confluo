@@ -14,7 +14,7 @@ import httpx
 import pytest
 
 from helpers import FakeFetchIO, make_arxiv_venue
-from paper_crawler.adapters.arxiv.adapter import ArxivAdapter, build_user_agent
+from paper_crawler.adapters.arxiv.adapter import ArxivAdapter
 from paper_crawler.errors import CrawlerError, ErrorClass
 from paper_crawler.http import HttpClient
 from paper_crawler.types import AssetKind, AuthLevel, Capability, IssueRef, PaperStub, UrlStrategy
@@ -105,22 +105,24 @@ _OAI_BAD_RESUMPTION = b"""<?xml version="1.0" encoding="UTF-8"?>
 </OAI-PMH>
 """
 
-# Query API Atom：3 条 canary（与 adapter._CANARIES 对齐；一元素一行以内避免超长）。
+# Query API Atom：3 条真实 canary（与 adapter._CANARIES 逐字对齐；T7 在线冒烟选定）。
+# cs.LG 用老式 slash id；q-fin 标题含 ö（bytes 字面量以 UTF-8 转义 \xc3\xb6）。
 _ATOM_HEALTHCHECK = b"""<?xml version="1.0" encoding="UTF-8"?>
 <feed xmlns="http://www.w3.org/2005/Atom" xmlns:arxiv="http://arxiv.org/schemas/atom">
 <entry>
-<id>http://arxiv.org/abs/2401.00001v1</id>
-<title>A Robust Canary for Machine Learning</title>
+<id>http://arxiv.org/abs/cs/9901001v1</id>
+<title>TDLeaf(lambda): Combining Temporal Difference Learning with Game-Tree Search</title>
 <arxiv:primary_category term="cs.LG" scheme="http://arxiv.org/schemas/atom"/>
 </entry>
 <entry>
-<id>http://arxiv.org/abs/2312.00002v1</id>
-<title>An Econometrics Canary for Empirical Methods</title>
+<id>http://arxiv.org/abs/1801.00973v1</id>
+<title>A New Wald Test for Hypothesis Testing Based on MCMC outputs</title>
 <arxiv:primary_category term="econ.EM" scheme="http://arxiv.org/schemas/atom"/>
 </entry>
 <entry>
-<id>http://arxiv.org/abs/2311.00003v2</id>
-<title>A Quantitative Finance Canary on Pricing</title>
+<id>http://arxiv.org/abs/1001.0615v1</id>
+<title>Adaptive Wave Models for Option Pricing Evolution: \
+Nonlinear and Quantum Schr\xc3\xb6dinger Approaches</title>
 <arxiv:primary_category term="q-fin.PR" scheme="http://arxiv.org/schemas/atom"/>
 </entry>
 </feed>
@@ -144,22 +146,6 @@ def test_adapter_metadata_matches_arxiv_md_verdicts() -> None:
     # 1 req/3s = 20 rpm；source_note 出处强制（ToU）。
     assert a.default_rate.requests_per_minute == 20.0
     assert "Terms of Use" in a.default_rate.source_note
-
-
-def test_build_user_agent_is_d014_shaped() -> None:
-    ua = build_user_agent("me@example.com", version="9.9.9")
-    assert ua == "PaperCrawler/9.9.9 (personal research; mailto:me@example.com)"
-
-
-def test_build_user_agent_omits_mailto_when_email_none() -> None:
-    """config `[identity].email` 未配置（None）→ UA 省略 mailto 段（不硬编码占位地址）。"""
-    ua = build_user_agent(None, version="9.9.9")
-    assert ua == "PaperCrawler/9.9.9 (personal research)"
-
-
-def test_build_user_agent_omits_mailto_when_email_empty() -> None:
-    """空串等价未配置（防御性）——同样省略 mailto 段。"""
-    assert build_user_agent("", version="9.9.9") == "PaperCrawler/9.9.9 (personal research)"
 
 
 def test_set_http_client_injection_overrides_lazy_env_build() -> None:
@@ -410,12 +396,13 @@ def test_healthcheck_queries_all_three_canary_ids() -> None:
 
     _adapter(handler).healthcheck()
     id_list = seen[0].params["id_list"]
-    assert id_list == "2401.00001v1,2312.00002v1,2311.00003v2"
+    assert id_list == "cs/9901001v1,1801.00973v1,1001.0615v1"
 
 
 def test_healthcheck_title_drift_is_unhealthy() -> None:
     drifted = _ATOM_HEALTHCHECK.replace(
-        b"A Robust Canary for Machine Learning", b"Some Totally Different Title"
+        b"TDLeaf(lambda): Combining Temporal Difference Learning with Game-Tree Search",
+        b"Some Totally Different Title",
     )
     handler: Handler = lambda request: httpx.Response(200, content=drifted)  # noqa: E731
     report = _adapter(handler).healthcheck()
@@ -428,7 +415,8 @@ def test_healthcheck_missing_canary_is_unhealthy() -> None:
     partial = b"""<?xml version="1.0" encoding="UTF-8"?>
 <feed xmlns="http://www.w3.org/2005/Atom" xmlns:arxiv="http://arxiv.org/schemas/atom" xmlns:opensearch="http://a9.com/-/spec/opensearch/1.1/">
 <opensearch:totalResults>1</opensearch:totalResults>
-<entry><id>http://arxiv.org/abs/2401.00001v1</id><title>A Robust Canary for Machine Learning</title>
+<entry><id>http://arxiv.org/abs/cs/9901001v1</id>
+<title>TDLeaf(lambda): Combining Temporal Difference Learning with Game-Tree Search</title>
 <arxiv:primary_category term="cs.LG" scheme="http://arxiv.org/schemas/atom"/></entry>
 </feed>
 """
@@ -479,21 +467,6 @@ def test_default_user_agent_falls_back_to_placeholder(monkeypatch: pytest.Monkey
     monkeypatch.delenv(mod._CONTACT_EMAIL_ENV, raising=False)
     ua = mod._default_user_agent()
     assert ua.endswith("(personal research; mailto:anonymous@paper-crawler.invalid)")
-
-
-def test_package_version_falls_back_when_distribution_missing(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    from importlib import metadata as im
-
-    from paper_crawler import __version__
-    from paper_crawler.adapters.arxiv import adapter as mod
-
-    def _raise(_name: str) -> str:
-        raise im.PackageNotFoundError(_name)
-
-    monkeypatch.setattr(mod.metadata, "version", _raise)
-    assert mod._package_version() == __version__
 
 
 def test_lazy_client_builds_and_caches_httpclient_when_http_none() -> None:
@@ -626,3 +599,42 @@ def test_fetch_short_non_magic_body_passes_through() -> None:
     result = _adapter(handler).fetch_asset(plan, io)
     assert result.ok is True
     assert io.data == b"abc"
+
+
+# --- C4 红线：adapter 内部 OAI 翻页逐请求过限速闸（不再整段仅 acquire 一次）------------------
+
+
+class _SpyLimiter:
+    """记账每次 acquire 的 domain（返回 0 wait，离线不真睡）；HttpClient 只调 acquire。"""
+
+    def __init__(self) -> None:
+        self.calls: list[str] = []
+
+    def acquire(self, domain: str) -> float:
+        self.calls.append(domain)
+        return 0.0
+
+
+def test_enumerate_pagination_acquires_rate_limiter_once_per_page_request() -> None:
+    """C4 红线回归：两页 OAI 收割 = 两次 acquire（逐请求），而非整个 enumerate 仅一次。
+
+    修复前 adapter 内部翻页的第 2+ 页请求绕过限速器（pipeline 只在 enumerate 前
+    acquire 一次）。注入共享 limiter 的 HttpClient 后，每个 resumptionToken 页请求
+    发出前各 acquire 一次，且都记在实际请求 host `oaipmh.arxiv.org` 上（经 route_for
+    的 alias 归并到主域预算——此处直接断言逐请求触发）。
+    """
+    spy = _SpyLimiter()
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        if "resumptionToken" in request.url.params:
+            return httpx.Response(200, content=_OAI_PAGE2)
+        return httpx.Response(200, content=_OAI_PAGE1)
+
+    client = HttpClient(
+        user_agent=_TEST_UA, transport=httpx.MockTransport(handler), rate_limiter=spy
+    )
+    stubs = list(ArxivAdapter(http=client).enumerate_issue(make_arxiv_venue(), _bucket()))
+
+    # 两条命中（新+老格式）证明确实翻了页；限速器逐页 acquire 两次，都在 OAI host 上。
+    assert [dict(s.identifiers)["arxiv"] for s in stubs] == ["2401.00001", "cs.lg/0501001"]
+    assert spy.calls == ["oaipmh.arxiv.org", "oaipmh.arxiv.org"]

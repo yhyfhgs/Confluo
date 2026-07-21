@@ -15,6 +15,7 @@ from paper_crawler.types import (
     Capability,
     FetchIO,
     FetchResult,
+    HealthReport,
     IssueRef,
     PaperStub,
     RatePolicy,
@@ -39,6 +40,12 @@ class CrossrefStub(AdapterBase):
         raise NotImplementedError("stub until Phase 3")
 
     def enumerate_issue(self, venue: VenueSpec, issue: IssueRef) -> Iterable[PaperStub]:
+        raise NotImplementedError("stub until Phase 3")
+
+    def healthcheck(self, session: SessionHandle | None = None) -> HealthReport:
+        # canary SKIP 语义修正（T3 backlog）：stub 未实现健康探测——抛
+        # NotImplementedError 让 canary 归为 SKIP，而非继承 AdapterBase 默认恒
+        # healthy 假报"健康"（stub 无真实站点可探）。真实 healthcheck 随 Phase 3。
         raise NotImplementedError("stub until Phase 3")
 
 
@@ -70,6 +77,10 @@ class OpenReviewStub(AdapterBase):
     ) -> FetchResult:
         raise NotImplementedError("stub until Phase 2")
 
+    def healthcheck(self, session: SessionHandle | None = None) -> HealthReport:
+        # canary SKIP 语义修正（T3 backlog）：见 CrossrefStub.healthcheck 说明。
+        raise NotImplementedError("stub until Phase 2")
+
 
 class ElsevierScienceDirectStub(AdapterBase):
     """Elsevier ScienceDirect（JFE 等，Phase 4）。仅 resolve/fetch，机构认证。"""
@@ -89,4 +100,8 @@ class ElsevierScienceDirectStub(AdapterBase):
     def fetch_asset(
         self, plan: AssetPlan, io: FetchIO, session: SessionHandle | None = None
     ) -> FetchResult:
+        raise NotImplementedError("stub until Phase 4")
+
+    def healthcheck(self, session: SessionHandle | None = None) -> HealthReport:
+        # canary SKIP 语义修正（T3 backlog）：见 CrossrefStub.healthcheck 说明。
         raise NotImplementedError("stub until Phase 4")

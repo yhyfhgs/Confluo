@@ -24,6 +24,7 @@ from paper_crawler import cli as cli_module
 from paper_crawler.cli import app
 from paper_crawler.config import Config
 from paper_crawler.http import HttpClient
+from paper_crawler.ratelimit import RateLimiter
 
 runner = CliRunner()
 
@@ -97,7 +98,9 @@ def _patch_mock_client(
     def handler(_request: httpx.Request) -> httpx.Response:
         return httpx.Response(200, content=build_oai_listrecords(recs))
 
-    def factory(_config: Config) -> HttpClient:
+    def factory(_config: Config, _rate_limiter: RateLimiter | None = None) -> HttpClient:
+        # 覆盖 seam 刻意不接 limiter：离线 MockTransport client 无逐请求限速闸，
+        # watch happy-path 不会真实 sleep（限速接线的真值由 test_http.py 直测）。
         return HttpClient(user_agent=_MOCK_UA, transport=httpx.MockTransport(handler))
 
     monkeypatch.setattr(cli_module, "_http_client_factory", factory)

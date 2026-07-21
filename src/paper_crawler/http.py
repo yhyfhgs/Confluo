@@ -37,6 +37,7 @@ import httpx
 
 from paper_crawler.errors import CrawlerError, ErrorClass
 from paper_crawler.obslog import log_event, redact
+from paper_crawler.ratelimit import RateLimiter
 
 
 def _parse_retry_after(response: httpx.Response) -> int | None:
@@ -137,6 +138,7 @@ class HttpClient:
         user_agent: str,
         timeout_s: float = 30.0,
         transport: httpx.BaseTransport | None = None,
+        rate_limiter: RateLimiter | None = None,
     ) -> None:
         self._client = httpx.Client(
             headers={"User-Agent": user_agent},
@@ -144,6 +146,12 @@ class HttpClient:
             transport=transport,
             follow_redirects=True,
         )
+        # 逐请求限速（C4 红线修复，plan §7-6）：非 None 时每次请求发出前对**请求 host**
+        # `acquire`+按需 sleep，使 adapter 内部翻页（每页一请求）不绕过限速。与 pipeline
+        # 的 per-stage `acquire_and_wait` 共享同一 `RateLimiter` 实例（同桶——arxiv 三域经
+        # `RateLimiter.alias` 归并到主域），故两处计费落到同一预算，不放宽速率。None 时
+        # （单测/离线 MockTransport 路径、canary 惰性自建 client）行为与限速前完全一致。
+        self._rate_limiter = rate_limiter
 
     def get_text(self, url: str, *, accept: str | None = None) -> str:
         """GET 并返回解码后的文本正文；错误状态/异常 → `CrawlerError`。"""
@@ -181,8 +189,26 @@ class HttpClient:
     ) -> None:
         self.close()
 
+    def _throttle(self, url: str) -> None:
+        """逐请求限速闸：对请求 host `acquire` 一个 token，需等待则真实 `time.sleep`。
+
+        无 `rate_limiter` 或 host 不可解析时为无操作。host 必须已在限速器注册
+        （arxiv 三域经 `route_for` 的 register+alias 落到同一主域桶）；未注册即
+        限速策略缺失，`acquire` fail-fast 为 `CrawlerError(CONFIG)`——响亮暴露
+        「有网络请求却无限速声明」的装配缺陷，而非静默放行绕过限速。
+        """
+        if self._rate_limiter is None:
+            return
+        host = httpx.URL(url).host
+        if not host:
+            return
+        wait = self._rate_limiter.acquire(host)
+        if wait > 0:
+            time.sleep(wait)
+
     def _request(self, url: str, *, accept: str | None) -> httpx.Response:
-        """非流式 GET：发请求、记 obslog、按状态映射错误，返回已读响应。"""
+        """非流式 GET：限速闸 → 发请求、记 obslog、按状态映射错误，返回已读响应。"""
+        self._throttle(url)
         start = time.monotonic()
         try:
             response = self._client.get(url, headers=_accept_headers(accept))
@@ -203,7 +229,12 @@ class HttpClient:
         return response
 
     def _stream(self, url: str) -> Iterator[bytes]:
-        """`stream()` 的生成器实现：见其 docstring 的惰性语义。"""
+        """`stream()` 的生成器实现：见其 docstring 的惰性语义。
+
+        限速闸在首次迭代（真正发请求前）触发，与非流式路径同粒度：一次逻辑请求
+        一次 `acquire`（内部重定向跳由 httpx 在同一 `.stream()` 内跟随，不重复计费）。
+        """
+        self._throttle(url)
         start = time.monotonic()
         try:
             with self._client.stream("GET", url) as response:

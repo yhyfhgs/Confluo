@@ -457,3 +457,82 @@ def test_context_manager_closes_client() -> None:
 def test_custom_timeout_still_serves_requests() -> None:
     client = make_client(ok_text, timeout_s=5.0)
     assert client.get_text("https://x.local/p") == "hello world"
+
+
+# ---------------------------------------------------------------------------
+# 逐请求限速闸（C4 红线修复，plan §7-6）：每请求发出前 acquire(host)+按需 sleep
+# ---------------------------------------------------------------------------
+
+
+class _SpyLimiter:
+    """记账每次 `acquire` 的 domain（并可返回预设 wait），用于断言逐请求限速。
+
+    只需 `acquire(domain)->float`——`HttpClient._throttle` 只调这一个方法（鸭子类型；
+    tests 不受 `mypy src` 约束，无需是真正的 `RateLimiter`）。
+    """
+
+    def __init__(self, wait: float = 0.0) -> None:
+        self.calls: list[str] = []
+        self._wait = wait
+
+    def acquire(self, domain: str) -> float:
+        self.calls.append(domain)
+        return self._wait
+
+
+def test_no_rate_limiter_means_no_throttle() -> None:
+    """未注入 limiter（默认 None）：行为与限速前完全一致，不触任何 acquire。"""
+    client = HttpClient(user_agent=UA, transport=httpx.MockTransport(ok_text))
+    assert client.get_text("https://x.local/p") == "hello world"
+
+
+def test_rate_limiter_acquires_once_per_request_on_request_host() -> None:
+    """逐请求限速：每次 GET 发出前对**请求 host** acquire 一次（多请求逐一记账）。"""
+    spy = _SpyLimiter()
+    client = HttpClient(user_agent=UA, transport=httpx.MockTransport(ok_text), rate_limiter=spy)
+
+    client.get_text("https://export.arxiv.org/api/query?a=1")
+    client.get_bytes("https://oaipmh.arxiv.org/oai?verb=ListRecords")
+    client.get_text("https://export.arxiv.org/api/query?a=2")
+
+    assert spy.calls == ["export.arxiv.org", "oaipmh.arxiv.org", "export.arxiv.org"]
+
+
+def test_rate_limiter_sleeps_when_acquire_returns_positive_wait(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """acquire 返回正 wait 时真实 sleep 该秒数（限速在 HttpClient 层生效，非仅计数）。"""
+    slept: list[float] = []
+    monkeypatch.setattr("paper_crawler.http.time.sleep", lambda s: slept.append(s))
+    spy = _SpyLimiter(wait=3.0)
+    client = HttpClient(user_agent=UA, transport=httpx.MockTransport(ok_text), rate_limiter=spy)
+
+    client.get_text("https://export.arxiv.org/api/query")
+
+    assert slept == [3.0]
+
+
+def test_rate_limiter_does_not_sleep_when_wait_is_zero(monkeypatch: pytest.MonkeyPatch) -> None:
+    """wait=0（token 立即可用）时不 sleep——避免无谓的 sleep(0) 调度开销。"""
+    slept: list[float] = []
+    monkeypatch.setattr("paper_crawler.http.time.sleep", lambda s: slept.append(s))
+    spy = _SpyLimiter(wait=0.0)
+    client = HttpClient(user_agent=UA, transport=httpx.MockTransport(ok_text), rate_limiter=spy)
+
+    client.get_text("https://export.arxiv.org/api/query")
+
+    assert slept == []
+
+
+def test_stream_throttles_once_per_logical_request() -> None:
+    """流式取回同样过限速闸：一次 `stream()` = 一次 acquire（首次迭代前触发）。"""
+    spy = _SpyLimiter()
+
+    def pdf_handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(200, content=b"%PDF-1.5\nx")
+
+    client = HttpClient(user_agent=UA, transport=httpx.MockTransport(pdf_handler), rate_limiter=spy)
+    chunks = list(client.stream("https://arxiv.org/pdf/2401.00001"))
+
+    assert b"".join(chunks) == b"%PDF-1.5\nx"
+    assert spy.calls == ["arxiv.org"]

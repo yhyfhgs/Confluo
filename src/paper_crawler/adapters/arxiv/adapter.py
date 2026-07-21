@@ -35,10 +35,8 @@ import os
 from collections.abc import Iterable, Iterator
 from dataclasses import dataclass
 from datetime import UTC, date, datetime, timedelta
-from importlib import metadata
 from urllib.parse import urlencode
 
-from paper_crawler import __version__
 from paper_crawler.adapter import AdapterBase, AdapterFamily
 from paper_crawler.adapters.arxiv import buckets, parse
 from paper_crawler.errors import CrawlerError, ErrorClass
@@ -59,6 +57,7 @@ from paper_crawler.types import (
     UrlStrategy,
     VenueSpec,
 )
+from paper_crawler.useragent import build_user_agent
 
 # --- 端点与常量（arxiv.md §2 表）---------------------------------------------------------------
 
@@ -75,26 +74,8 @@ _PLACEHOLDER_EMAIL = "anonymous@paper-crawler.invalid"
 
 
 # --- User-Agent（D-014）----------------------------------------------------------------------
-
-
-def _package_version() -> str:
-    try:
-        return metadata.version("paper-crawler")
-    except metadata.PackageNotFoundError:  # 源码树/未安装场景
-        return __version__
-
-
-def build_user_agent(email: str | None, *, version: str | None = None) -> str:
-    """D-014 UA：``PaperCrawler/<ver> (personal research; mailto:<email>)``。
-
-    `email=None`（config `[identity].email` 未配置）时省略 `mailto:` 段，产出
-    ``PaperCrawler/<ver> (personal research)``——不硬编码占位地址（隐私安全），
-    诚实反映"未提供联系方式"（CLI 网络命令另 obslog warn 一次）。
-    """
-    ver = version or _package_version()
-    if email:
-        return f"PaperCrawler/{ver} (personal research; mailto:{email})"
-    return f"PaperCrawler/{ver} (personal research)"
+# `build_user_agent` 已上移中性模块 `paper_crawler.useragent`（T6-C2 backlog）；此处仅保留
+# arxiv 专属的惰性自建兜底（env 联系人 + `.invalid` 占位）。
 
 
 def _default_user_agent() -> str:
@@ -116,15 +97,30 @@ class _Canary:
     primary_category: str
 
 
-# ⚠ 合成占位值：真实在线 healthcheck 需 3 篇**真实且稳定**的 arXiv 论文（cs.LG / econ.* /
-# q-fin.* 各 1，arxiv.md §6 canary）。当前 id/title 为合成 fixture 配套占位——T5/T7 在线
-# 冒烟必须用实测响应替换为经核验的真实 id + 规整化 title（见 concerns / fixtures README）。
+# 真实稳定 canary（T7 在线冒烟 2026-07-22 实测选定，tests/online/test_arxiv_smoke.py 的
+# canary 选样：跨域 cs.LG / econ.EM / q-fin.PR 各取一篇**主分类即该 category** 的早期原生
+# 论文——年代久远且主分类正确，最稳定，贴合 arxiv.md §6 跨域语义）。title 为 Query API 实测
+# 规整化后的标题（与 parse.parse_atom_feed 产物逐字对齐，healthcheck 直接等值比对）。
 _CANARIES: tuple[_Canary, ...] = (
-    _Canary("2401.00001", "2401.00001v1", "A Robust Canary for Machine Learning", "cs.LG"),
     _Canary(
-        "2312.00002", "2312.00002v1", "An Econometrics Canary for Empirical Methods", "econ.EM"
+        "cs/9901001",
+        "cs/9901001v1",
+        "TDLeaf(lambda): Combining Temporal Difference Learning with Game-Tree Search",
+        "cs.LG",
     ),
-    _Canary("2311.00003", "2311.00003v2", "A Quantitative Finance Canary on Pricing", "q-fin.PR"),
+    _Canary(
+        "1801.00973",
+        "1801.00973v1",
+        "A New Wald Test for Hypothesis Testing Based on MCMC outputs",
+        "econ.EM",
+    ),
+    _Canary(
+        "1001.0615",
+        "1001.0615v1",
+        "Adaptive Wave Models for Option Pricing Evolution: "
+        "Nonlinear and Quantum Schrödinger Approaches",
+        "q-fin.PR",
+    ),
 )
 
 
@@ -461,4 +457,4 @@ def _canary_drift(canary: _Canary, record: parse.ArxivRecord | None) -> str | No
     return None
 
 
-__all__ = ["ArxivAdapter", "build_user_agent"]
+__all__ = ["ArxivAdapter"]
