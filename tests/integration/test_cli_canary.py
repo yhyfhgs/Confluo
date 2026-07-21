@@ -92,23 +92,25 @@ def test_canary_unknown_adapter_exits_2(tmp_path: Path) -> None:
 def test_canary_without_filter_checks_all_registered_adapters(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
-    """无 --adapter 时遍历全部注册 adapter（含 T5 起注册的 arxiv）。
+    """无 --adapter 时遍历全部注册 adapter（含 T5 起注册的 arxiv/pmlr）。
 
-    本测试只验证遍历编排；真 healthcheck 属 T5 在线域（arxiv 的实现会发真实
-    Query API 请求——合并期修复 2026-07-22：此前直调导致离线门禁打真网），
-    故一律猴补丁为恒 healthy。真实健康探测由 `crawler canary` 在 T5 在线
-    冒烟/运维场景执行。
+    本测试只验证遍历编排；真 healthcheck 属 T5 在线域（arxiv/pmlr 的实现都会发
+    真实请求——合并期修复 2026-07-22：此前直调导致离线门禁打真网），故一律猴
+    补丁为恒 healthy。真实健康探测由 `crawler canary` 在 T5 在线冒烟/运维场景
+    执行。
     """
     from paper_crawler.adapters.arxiv.adapter import ArxivAdapter
+    from paper_crawler.adapters.pmlr.adapter import PmlrAdapter
 
     def _fake_healthy(self: object, session: object = None) -> HealthReport:
         return HealthReport(healthy=True, detail="patched offline")
 
     monkeypatch.setattr(ArxivAdapter, "healthcheck", _fake_healthy)
+    monkeypatch.setattr(PmlrAdapter, "healthcheck", _fake_healthy)
     monkeypatch.setattr(MockPlatformAdapter, "healthcheck", _fake_healthy)
 
     result = runner.invoke(app, ["canary", "--home", str(_home(tmp_path))])
 
     assert result.exit_code == 0, result.output
-    for adapter_id in ("mock_platform", "arxiv", "crossref", "openreview", "elsevier_sd"):
+    for adapter_id in ("mock_platform", "arxiv", "pmlr", "crossref", "openreview", "elsevier_sd"):
         assert adapter_id in result.output

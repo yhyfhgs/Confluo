@@ -97,7 +97,8 @@ def _make_env(tmp_path: Path, handler: Handler, *, inception: str = "2024-01") -
 
     adapters = load_adapters()
     client = HttpClient(user_agent=_UA, transport=httpx.MockTransport(handler))
-    assert bind_http_client(adapters, client) == ["arxiv"]  # mock 注入 arxiv
+    # mock 注入所有 HttpClientConsumer adapter（现含 arxiv + pmlr，本测试只用 arxiv）。
+    assert bind_http_client(adapters, client) == ["arxiv", "pmlr"]
     registry = VenueRegistry(adapters)
     assert registry.load_dirs([venues_dir]) == []
 
