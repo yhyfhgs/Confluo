@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- SYNTHETIC (design/adapters/aaai-ojs.md §7 T3 ⑨). Truncated/malformed XML (unclosed
+     elements, e.g. a response cut off mid-stream) -> PARSE via _oai.fromstring. -->
+<OAI-PMH xmlns="http://www.openarchives.org/OAI/2.0/">
+<responseDate>2026-07-21T17:41:40Z</responseDate>
+<ListRecords>
+<record>
+<header>
+<identifier>oai:ojs.aaai.org:article/40000</identifier>

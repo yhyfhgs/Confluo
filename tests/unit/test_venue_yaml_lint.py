@@ -42,12 +42,12 @@ def test_shipped_venues_pass_lint_cleanly(adapters: dict[str, SourceAdapter]) ->
     assert load_issues == []
     assert reg.lint() == []
     ids = {spec.id for spec in reg.all()}
-    # 基础四件（Phase 1 mock + 期刊/会议示例 + pmlr 首个会议 icml）常驻。
-    assert {"mock_journal", "jfe", "iclr", "icml"} <= ids
+    # 基础五件（Phase 1 mock + 期刊/会议示例 + pmlr icml + aaai_ojs aaai）常驻。
+    assert {"mock_journal", "jfe", "iclr", "icml", "aaai"} <= ids
     # 其余全为 arxiv preprint_channel 白名单（catalog §1，31 个 category），
     # 由 scripts/gen_arxiv_venues.py 生成；每个都 preprint_channel 且路由到 arxiv。
     arxiv_ids = {i for i in ids if i.startswith("arxiv_")}
-    assert arxiv_ids == ids - {"mock_journal", "jfe", "iclr", "icml"}
+    assert arxiv_ids == ids - {"mock_journal", "jfe", "iclr", "icml", "aaai"}
     assert len(arxiv_ids) == 31
     for venue_id in arxiv_ids:
         spec = reg.get(venue_id)
@@ -80,7 +80,27 @@ def test_icml_venue_routes_to_pmlr_adapter(adapters: dict[str, SourceAdapter]) -
     }
 
 
-@pytest.mark.parametrize("venue_id", ["mock_journal", "jfe", "iclr", "icml"])
+def test_aaai_venue_routes_to_aaai_ojs_adapter(adapters: dict[str, SourceAdapter]) -> None:
+    reg = VenueRegistry(adapters)
+    reg.load_dirs([REPO_VENUES_DIR])
+    spec = reg.get("aaai")
+    assert spec.kind == "conference"
+    assert spec.metadata_source == "aaai_ojs"
+    assert spec.fulltext_source == "aaai_ojs"
+    assert spec.quirks["ojs_code"] == "AAAI"
+    assert spec.quirks["volume_map"] == {
+        2019: 33,
+        2020: 34,
+        2021: 35,
+        2022: 36,
+        2023: 37,
+        2024: 38,
+        2025: 39,
+        2026: 40,
+    }
+
+
+@pytest.mark.parametrize("venue_id", ["mock_journal", "jfe", "iclr", "icml", "aaai"])
 def test_each_shipped_venue_is_routable(adapters: dict[str, SourceAdapter], venue_id: str) -> None:
     reg = VenueRegistry(adapters)
     reg.load_dirs([REPO_VENUES_DIR])

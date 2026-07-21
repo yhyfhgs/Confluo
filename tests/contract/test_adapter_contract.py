@@ -23,14 +23,17 @@ import pytest
 
 from helpers import (
     FakeFetchIO,
+    make_aaai_venue,
     make_arxiv_venue,
     make_mock_venue,
     make_openreview_venue,
     make_pmlr_venue,
 )
+from helpers.aaai_fixtures import fixture_bytes as aaai_fixture_bytes
 from helpers.arxiv_fixtures import fixture_bytes
 from helpers.pmlr_fixtures import fixture_bytes as pmlr_fixture_bytes
 from paper_crawler.adapter import AdapterBase, AdapterFamily, SourceAdapter, load_adapters
+from paper_crawler.adapters.aaai_ojs.adapter import AaaiOjsAdapter
 from paper_crawler.adapters.arxiv.adapter import ArxivAdapter
 from paper_crawler.adapters.openreview.adapter import OpenReviewAdapter
 from paper_crawler.adapters.pmlr.adapter import PmlrAdapter
@@ -118,6 +121,25 @@ def _pmlr_case() -> tuple[SourceAdapter, VenueSpec]:
     return PmlrAdapter(http=client), make_pmlr_venue()
 
 
+def _aaai_contract_handler(request: httpx.Request) -> httpx.Response:
+    """aaai_ojs 契约链的 MockTransport：OAI 首页/续页 → 合成 fixture；PDF download → %PDF。
+
+    第一个 issue（discover 升序首个=2019/v33 历史届）走全库 2 页收割，enumerate 产出 v33
+    记录，resolve 经 view→download 命中 /article/download/，fetch 取回 %PDF。
+    """
+    if "/article/download/" in request.url.path:
+        return httpx.Response(200, content=_CONTRACT_PDF)
+    if "resumptionToken" in request.url.params:
+        return httpx.Response(200, content=aaai_fixture_bytes("02_oai_listrecords_page2.xml"))
+    return httpx.Response(200, content=aaai_fixture_bytes("01_oai_listrecords_page1.xml"))
+
+
+def _aaai_case() -> tuple[SourceAdapter, VenueSpec]:
+    transport = httpx.MockTransport(_aaai_contract_handler)
+    client = HttpClient(user_agent=_CONTRACT_UA, transport=transport)
+    return AaaiOjsAdapter(http=client), make_aaai_venue()
+
+
 # adapter_id -> (adapter, venue) 工厂。只有此处登记的 adapter 会跑完整能力链路检查；
 # 其余（stub）adapter 一律 pytest.skip（stub until Phase 3/4）。pmlr 无 stub 阶段
 # （不同于 arxiv 曾有 T1-T4 的 stub 过渡期）——直接新增一行即完整接入契约套件。
@@ -126,6 +148,7 @@ _CONTRACT_CASES: dict[str, Callable[[], tuple[SourceAdapter, VenueSpec]]] = {
     "arxiv": _arxiv_case,
     "openreview": _openreview_case,
     "pmlr": _pmlr_case,
+    "aaai_ojs": _aaai_case,
 }
 
 ADAPTER_IDS = sorted(load_adapters())

@@ -41,6 +41,15 @@ DEFAULT_OPENREVIEW_QUIRKS: dict[str, object] = {"openreview_group_overrides": {}
 DEFAULT_PMLR_QUIRKS: dict[str, object] = {
     "volume_map": {2023: 202, 2024: 235},
 }
+# aaai_ojs 契约/集成测试用的 conference venue：quirks 自成一体、独立于 venues/cs_ai/aaai.yaml
+# 的真实内容（同 pmlr/arxiv 先例的解耦考量）。保留两个年份——一历史届（2019/v33，enumerate
+# 全库回填无日期窗）、一当前届（2026/v40=volume_map 最大年，enumerate 触发固定回看窗增量），
+# 覆盖 design §4 的双枚举路径。ojs_code=AAAI 显式给出（否则回退 venue.id.upper()='AAAI'，此处
+# venue id 恰为 'aaai' 也能推出，但显式更贴近真实 YAML）。
+DEFAULT_AAAI_QUIRKS: dict[str, object] = {
+    "volume_map": {2019: 33, 2026: 40},
+    "ojs_code": "AAAI",
+}
 
 
 def make_mock_venue(**quirks_overrides: object) -> VenueSpec:
@@ -125,6 +134,26 @@ def make_pmlr_venue(**quirks_overrides: object) -> VenueSpec:
     )
 
 
+def make_aaai_venue(**quirks_overrides: object) -> VenueSpec:
+    """构造 aaai_ojs 契约/集成测试用的 `conference` venue（不依赖 `venues/` 目录文件）。
+
+    默认 quirks：`volume_map={2019: 33, 2026: 40}`（一历史届 + 一当前届，覆盖 aaai-ojs.md
+    §4 的全库回填 / 固定回看窗双枚举路径）、`ojs_code='AAAI'`。
+    """
+    quirks: dict[str, object] = dict(DEFAULT_AAAI_QUIRKS)
+    quirks.update(quirks_overrides)
+    return VenueSpec(
+        id="aaai",
+        kind="conference",
+        names={"full": "AAAI Conference on Artificial Intelligence", "aliases": ["AAAI"]},
+        field=["cs_ai"],
+        identifiers={"dblp_key": "conf/aaai"},
+        metadata_source="aaai_ojs",
+        fulltext_source="aaai_ojs",
+        quirks=quirks,
+    )
+
+
 class FakeFetchIO:
     """`FetchIO` 协议的测试替身：把 chunks 缓冲进内存并计算 `(bytes_written, sha256)`。
 
@@ -145,16 +174,15 @@ class FakeFetchIO:
 
 
 __all__ = [
+    "DEFAULT_AAAI_QUIRKS",
     "DEFAULT_ARXIV_QUIRKS",
     "DEFAULT_MOCK_QUIRKS",
     "DEFAULT_OPENREVIEW_QUIRKS",
+    "DEFAULT_PMLR_QUIRKS",
     "FakeFetchIO",
+    "make_aaai_venue",
     "make_arxiv_venue",
     "make_mock_venue",
     "make_openreview_venue",
-    "DEFAULT_PMLR_QUIRKS",
-    "FakeFetchIO",
-    "make_arxiv_venue",
-    "make_mock_venue",
     "make_pmlr_venue",
 ]

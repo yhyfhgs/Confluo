@@ -41,9 +41,11 @@ def _page(data: bytes) -> _oai.OaiListPage[str]:
 _NORMAL = b"""<?xml version="1.0" encoding="UTF-8"?>
 <OAI-PMH xmlns="http://www.openarchives.org/OAI/2.0/">
 <ListRecords>
-<record><header><identifier>a</identifier></header><metadata><body xmlns="urn:test:body">first</body></metadata></record>
+<record><header><identifier>a</identifier></header>
+<metadata><body xmlns="urn:test:body">first</body></metadata></record>
 <record><header status="deleted"><identifier>b</identifier></header></record>
-<record><header><identifier>c</identifier></header><metadata><body xmlns="urn:test:body">second</body></metadata></record>
+<record><header><identifier>c</identifier></header>
+<metadata><body xmlns="urn:test:body">second</body></metadata></record>
 <resumptionToken cursor="0" completeListSize="3">TOK</resumptionToken>
 </ListRecords>
 </OAI-PMH>
@@ -52,7 +54,8 @@ _NORMAL = b"""<?xml version="1.0" encoding="UTF-8"?>
 _EMPTY_TOKEN = b"""<?xml version="1.0" encoding="UTF-8"?>
 <OAI-PMH xmlns="http://www.openarchives.org/OAI/2.0/">
 <ListRecords>
-<record><header><identifier>a</identifier></header><metadata><body xmlns="urn:test:body">only</body></metadata></record>
+<record><header><identifier>a</identifier></header>
+<metadata><body xmlns="urn:test:body">only</body></metadata></record>
 <resumptionToken></resumptionToken>
 </ListRecords>
 </OAI-PMH>
@@ -61,7 +64,8 @@ _EMPTY_TOKEN = b"""<?xml version="1.0" encoding="UTF-8"?>
 _NO_TOKEN = b"""<?xml version="1.0" encoding="UTF-8"?>
 <OAI-PMH xmlns="http://www.openarchives.org/OAI/2.0/">
 <ListRecords>
-<record><header><identifier>a</identifier></header><metadata><body xmlns="urn:test:body">only</body></metadata></record>
+<record><header><identifier>a</identifier></header>
+<metadata><body xmlns="urn:test:body">only</body></metadata></record>
 </ListRecords>
 </OAI-PMH>
 """
@@ -70,7 +74,8 @@ _METADATA_LESS = b"""<?xml version="1.0" encoding="UTF-8"?>
 <OAI-PMH xmlns="http://www.openarchives.org/OAI/2.0/">
 <ListRecords>
 <record><header><identifier>a</identifier></header></record>
-<record><header><identifier>b</identifier></header><metadata><body xmlns="urn:test:body">survivor</body></metadata></record>
+<record><header><identifier>b</identifier></header>
+<metadata><body xmlns="urn:test:body">survivor</body></metadata></record>
 </ListRecords>
 </OAI-PMH>
 """

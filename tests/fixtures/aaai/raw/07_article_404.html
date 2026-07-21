@@ -1,0 +1,15 @@
+<!-- SYNTHETIC (design/adapters/aaai-ojs.md §7 T3 ⑦). Article-not-found page. survey §9 [LIVE]:
+     /article/view/999999999 -> HTTP 404 (body a generic 404). Served with status 404 the
+     HttpClient maps it to GONE; served with status 200 (a PDF url that returns HTML instead of
+     a PDF, i.e. withdrawn/merged) the adapter's first-byte sniff also maps HTML(non-login)->GONE.
+     Deliberately carries NO login markers, so it is distinguishable from 08 (login-gated). -->
+<!DOCTYPE html>
+<html lang="en">
+<head><title>404 Not Found</title></head>
+<body>
+<div class="page">
+<h1>404 Not Found</h1>
+<p>The page or resource you requested could not be found on this server.</p>
+</div>
+</body>
+</html>
