@@ -186,6 +186,42 @@ def test_upsert_paper_merge_across_identifier_overlap(repo: Repo) -> None:
     assert len(repo.db.query("SELECT id FROM paper")) == 1
 
 
+def test_upsert_paper_merge_keeps_single_primary_identifier(repo: Repo) -> None:
+    """合并路径不得产生双 is_primary：既有 paper 已有 primary，新来 stub 的首个
+    （index==0）identifier 是新增的，应降为非 primary（既有 primary 保留）。"""
+    # 首建：doi X 成为 primary。
+    repo.upsert_paper(VENUE_ID, None, _stub(doi="10.9999/dp", title="First"))
+    # 二次：新 identifier 排在首位（index 0）、与既有 doi 重叠 → 并入同一 paper。
+    p2 = repo.upsert_paper(
+        VENUE_ID,
+        None,
+        PaperStub(
+            title="Second",
+            identifiers=(("arxiv", "2401.09999"), ("doi", "10.9999/dp")),
+        ),
+    )
+    primaries = repo.db.query(
+        "SELECT scheme, value FROM identifier WHERE paper_id = ? AND is_primary = 1", (p2,)
+    )
+    assert len(primaries) == 1  # 恰一个 primary（修复前 arxiv 会被误标 primary → 2 个）
+    assert primaries[0]["scheme"] == "doi"  # 既有 primary 不被新来者篡夺
+    assert len(repo.db.query("SELECT scheme FROM identifier WHERE paper_id = ?", (p2,))) == 2
+
+
+def test_upsert_paper_new_paper_first_identifier_is_primary(repo: Repo) -> None:
+    """回归护栏：全新 paper 的首个 identifier 仍标 primary（修复不误伤新建路径）。"""
+    paper_id = repo.upsert_paper(
+        VENUE_ID,
+        None,
+        PaperStub(title="New", identifiers=(("doi", "10.9999/np"), ("arxiv", "2402.00001"))),
+    )
+    primaries = repo.db.query(
+        "SELECT scheme FROM identifier WHERE paper_id = ? AND is_primary = 1", (paper_id,)
+    )
+    assert len(primaries) == 1
+    assert primaries[0]["scheme"] == "doi"
+
+
 def test_upsert_paper_meta_serialized(repo: Repo) -> None:
     repo.upsert_paper(VENUE_ID, None, _stub(doi="10.9999/meta", meta=(("jel", "G12"),)))
     paper = repo.db.query("SELECT meta_json FROM paper")[0]

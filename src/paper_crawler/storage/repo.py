@@ -223,17 +223,32 @@ class Repo:
 
     @staticmethod
     def _ensure_identifiers(conn: sqlite3.Connection, paper_id: str, stub: PaperStub) -> None:
-        """确保 stub 的每个 identifier 存在并指向 paper_id；已存在的保持不动（全局唯一锚点）。"""
+        """确保 stub 的每个 identifier 存在并指向 paper_id；已存在的保持不动（全局唯一锚点）。
+
+        `is_primary` 单一性：一个 paper 至多一个 primary。仅当该 paper 尚无 primary 时，
+        才把 stub 首个（index==0）**新增** identifier 标为 primary；合并进已有 primary 的
+        paper 时新来者一律非 primary（否则合并路径会产生双 is_primary）。
+        """
+        has_primary = (
+            conn.execute(
+                "SELECT 1 FROM identifier WHERE paper_id = ? AND is_primary = 1 LIMIT 1",
+                (paper_id,),
+            ).fetchone()
+            is not None
+        )
         for index, (scheme, value) in enumerate(stub.identifiers):
             present = conn.execute(
                 "SELECT paper_id FROM identifier WHERE scheme = ? AND value = ?",
                 (scheme, value),
             ).fetchone()
             if present is None:
+                is_primary = 1 if (index == 0 and not has_primary) else 0
                 conn.execute(
                     "INSERT INTO identifier (paper_id, scheme, value, is_primary) VALUES (?,?,?,?)",
-                    (paper_id, scheme, value, 1 if index == 0 else 0),
+                    (paper_id, scheme, value, is_primary),
                 )
+                if is_primary:
+                    has_primary = True
 
     def list_papers(self, venue_id: str, issue_id: str | None = None) -> list[sqlite3.Row]:
         """列出某 venue 的 paper；给定 issue_id 时限定该期内（经 paper_issue_link）。按标题排序。"""
