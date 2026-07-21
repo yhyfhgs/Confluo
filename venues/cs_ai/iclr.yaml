@@ -1,4 +1,4 @@
-# venues/cs_ai/iclr.yaml —— 会议示例
+# venues/cs_ai/iclr.yaml —— 会议示例（OpenReview adapter，AC-2.1/2.2）
 id: iclr
 kind: conference
 names: {full: International Conference on Learning Representations, aliases: [ICLR]}
@@ -8,8 +8,12 @@ identifiers:
   dblp_key: conf/iclr
 metadata_source: openreview
 fulltext_source: openreview
-auth: {level: none}
+# 勘误（design/adapters/openreview.md §3）：notes/PDF 需自有账号 token（cookieAuth）→
+# free_account 级（原 none 被 [LIVE] 勘察证伪）。provider_hint 指向 token 通道（§3）。
+auth: {level: free_account, provider_hint: openreview}
 quirks:
-  openreview_venue_template: "ICLR.cc/{year}/Conference"
-  first_year: 2013
+  # 届表由 adapter 内置常量表（勘察 §2 逐年编码）驱动——**不再模板拼接**（原
+  # openreview_venue_template 假设被证伪：大小写逐年不一致、2015/2016 缺届）。
+  # 本通道供新届/命名修正覆盖：dict[year → group id]（值 null 掩届）。默认空。
+  openreview_group_overrides: {}
 status: active

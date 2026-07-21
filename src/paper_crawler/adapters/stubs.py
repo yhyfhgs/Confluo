@@ -1,9 +1,12 @@
-"""占位 adapters（Phase 2/3/4 实现）——让 jfe/iclr 等 VenueSpec 可通过 lint。
+"""占位 adapters（Phase 3/4 实现）——让 jfe 等 VenueSpec 可通过 lint。
 
-三者由 `load_adapters()` 内置注册（不走 entry point，包内占位）。已声明能力的方法
+两者由 `load_adapters()` 内置注册（不走 entry point，包内占位）。已声明能力的方法
 抛 `NotImplementedError("stub until Phase N")`（声明但未实现）；未声明能力的方法
 沿用 `AdapterBase` 的 `CapabilityNotSupported`。限速默认值均为占位（`⚠`），真实值在
 对应 Phase 按站点勘察核定。
+
+（openreview 已在 Phase 2 落地为真实 adapter，经 entry point 注册——见
+adapters/openreview/；此前的 OpenReviewStub 已退役。）
 """
 
 from collections.abc import Iterable
@@ -47,39 +50,6 @@ class CrossrefStub(AdapterBase):
         # NotImplementedError 让 canary 归为 SKIP，而非继承 AdapterBase 默认恒
         # healthy 假报"健康"（stub 无真实站点可探）。真实 healthcheck 随 Phase 3。
         raise NotImplementedError("stub until Phase 3")
-
-
-class OpenReviewStub(AdapterBase):
-    """OpenReview（ICLR/NeurIPS 评审等，Phase 2）。全能力。"""
-
-    adapter_id = "openreview"
-    family: AdapterFamily = "open_access"
-    capabilities = (
-        Capability.DISCOVER | Capability.ENUMERATE | Capability.RESOLVE | Capability.FETCH
-    )
-    default_rate = RatePolicy(30, source_note="⚠ 占位；Phase 2 定值")
-    auth_requirement = AuthLevel.NONE
-    domains: tuple[str, ...] = ("api2.openreview.net",)
-
-    def discover_timeline(self, venue: VenueSpec, since: str | None = None) -> Iterable[IssueRef]:
-        raise NotImplementedError("stub until Phase 2")
-
-    def enumerate_issue(self, venue: VenueSpec, issue: IssueRef) -> Iterable[PaperStub]:
-        raise NotImplementedError("stub until Phase 2")
-
-    def resolve_assets(
-        self, venue: VenueSpec, paper: PaperStub, session: SessionHandle | None = None
-    ) -> list[AssetPlan]:
-        raise NotImplementedError("stub until Phase 2")
-
-    def fetch_asset(
-        self, plan: AssetPlan, io: FetchIO, session: SessionHandle | None = None
-    ) -> FetchResult:
-        raise NotImplementedError("stub until Phase 2")
-
-    def healthcheck(self, session: SessionHandle | None = None) -> HealthReport:
-        # canary SKIP 语义修正（T3 backlog）：见 CrossrefStub.healthcheck 说明。
-        raise NotImplementedError("stub until Phase 2")
 
 
 class ElsevierScienceDirectStub(AdapterBase):
