@@ -16,7 +16,7 @@ from paper_crawler.types import (
     VenueSpec,
 )
 
-EXPECTED_ADAPTER_IDS = {"mock_platform", "crossref", "openreview", "elsevier_sd"}
+EXPECTED_ADAPTER_IDS = {"mock_platform", "crossref", "openreview", "elsevier_sd", "arxiv"}
 VALID_FAMILIES = {"open_access", "auth_gated", "aggregator"}
 
 
@@ -25,8 +25,8 @@ def adapters() -> dict[str, SourceAdapter]:
     return load_adapters()
 
 
-def test_load_adapters_discovers_four(adapters: dict[str, SourceAdapter]) -> None:
-    # 三个内置 stub + mock（mock 亦经 entry point，覆盖同 id 不新增）。
+def test_load_adapters_discovers_all_registered(adapters: dict[str, SourceAdapter]) -> None:
+    # 三个内置 stub + mock + arxiv（Phase 2 T5 经 entry point 注册的第一个真实 adapter）。
     assert set(adapters) == EXPECTED_ADAPTER_IDS
 
 
@@ -86,6 +86,21 @@ def test_elsevier_stub_attributes(adapters: dict[str, SourceAdapter]) -> None:
     assert elsevier.auth_requirement is AuthLevel.INSTITUTIONAL
     assert elsevier.default_rate.requests_per_minute == 10
     assert elsevier.domains == ("www.sciencedirect.com",)
+
+
+def test_arxiv_attributes(adapters: dict[str, SourceAdapter]) -> None:
+    arxiv = adapters["arxiv"]
+    assert arxiv.family == "open_access"
+    # arxiv.md §1 裁决：DISCOVER|ENUMERATE|RESOLVE|FETCH，无 SEARCH。
+    assert (
+        arxiv.capabilities
+        == Capability.DISCOVER | Capability.ENUMERATE | Capability.RESOLVE | Capability.FETCH
+    )
+    assert Capability.SEARCH not in arxiv.capabilities
+    assert arxiv.default_rate.requests_per_minute == 20.0  # 1 req/3s
+    assert "Terms of Use" in arxiv.default_rate.source_note  # ToU 出处
+    assert arxiv.auth_requirement is AuthLevel.NONE
+    assert arxiv.domains == ("export.arxiv.org", "oaipmh.arxiv.org", "arxiv.org")
 
 
 def test_healthcheck_defaults_healthy(adapters: dict[str, SourceAdapter]) -> None:

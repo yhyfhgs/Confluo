@@ -1,0 +1,57 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- SYNTHETIC fixture (Phase 2 T5). Structure per OAI-PMH 2.0 + arXiv `arXiv` metadata
+     format (http://arxiv.org/OAI/arXiv/). Records/ids/titles are fabricated (not a real
+     recording). Fidelity to be verified against live responses in T7 online smoke. -->
+<OAI-PMH xmlns="http://www.openarchives.org/OAI/2.0/">
+<responseDate>2024-02-01T08:00:00Z</responseDate>
+<request verb="ListRecords" from="2024-01-01" until="2024-01-31" metadataPrefix="arXiv" set="cs">https://oaipmh.arxiv.org/oai</request>
+<ListRecords>
+<record>
+<header>
+<identifier>oai:arXiv.org:2401.10001</identifier>
+<datestamp>2024-01-15</datestamp>
+<setSpec>cs</setSpec>
+</header>
+<metadata>
+<arXiv xmlns="http://arxiv.org/OAI/arXiv/">
+<id>2401.10001</id>
+<created>2024-01-10</created>
+<updated>2024-01-14</updated>
+<authors>
+<author><keyname>Lovelace</keyname><forenames>Ada</forenames></author>
+<author><keyname>Turing</keyname><forenames>Alan M.</forenames></author>
+</authors>
+<title>A Robust Framework for Scalable Representation Learning</title>
+<categories>cs.LG stat.ML</categories>
+<journal-ref>Proc. Example ML Conf. 2024, pp. 1-12</journal-ref>
+<doi>10.1000/ex.2024.10001</doi>
+<abstract>We present a robust framework for representation learning at scale.</abstract>
+</arXiv>
+</metadata>
+</record>
+<record>
+<header status="deleted">
+<identifier>oai:arXiv.org:2401.19999</identifier>
+<datestamp>2024-01-20</datestamp>
+</header>
+</record>
+<record>
+<header>
+<identifier>oai:arXiv.org:2401.10002</identifier>
+<datestamp>2024-01-16</datestamp>
+<setSpec>cs</setSpec>
+</header>
+<metadata>
+<arXiv xmlns="http://arxiv.org/OAI/arXiv/">
+<id>2401.10002</id>
+<created>2024-01-11</created>
+<authors><author><keyname>Hopper</keyname><forenames>Grace</forenames></author></authors>
+<title>Parsing Natural Language With Compositional Grammars</title>
+<categories>cs.CL cs.AI</categories>
+<abstract>A cs.CL-primary paper that a cs.LG channel filters out client-side.</abstract>
+</arXiv>
+</metadata>
+</record>
+<resumptionToken cursor="0" completeListSize="4">cs|2024-01|1000</resumptionToken>
+</ListRecords>
+</OAI-PMH>

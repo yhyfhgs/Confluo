@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- SYNTHETIC fixture (Phase 2 T5). Query API 400 for pagination offset over the 30000 hard
+     cap → ErrorClass.CONFIG (design defect signal: switch to date slicing, do not retry).
+     HttpClient maps the 400 status to CONFIG before any body parse; body kept for realism. -->
+<error xmlns="http://a9.com/-/spec/opensearch/1.1/">
+<message>offset must be less than or equal to 30000</message>
+</error>

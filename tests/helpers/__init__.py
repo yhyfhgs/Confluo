@@ -21,6 +21,15 @@ DEFAULT_MOCK_QUIRKS: dict[str, object] = {
     "seed": 42,
 }
 
+# arxiv 契约/集成测试用的 preprint_channel venue（不依赖 venues/ 目录——仓库不 ship
+# arxiv YAML，test_venue_yaml_lint 钉死 shipped 集合为 {mock_journal, jfe, iclr}）。
+# inception 取近期月份保证 discover 非空；arxiv_category 决定 OAI set(=cs) 与子分类过滤。
+DEFAULT_ARXIV_QUIRKS: dict[str, object] = {
+    "inception": "2024-01",
+    "arxiv_set": "cs",
+    "arxiv_category": "cs.LG",
+}
+
 
 def make_mock_venue(**quirks_overrides: object) -> VenueSpec:
     """构造 mock_platform 契约测试用的 venue（不依赖 `venues/` 目录文件）。
@@ -39,6 +48,25 @@ def make_mock_venue(**quirks_overrides: object) -> VenueSpec:
         identifiers={"issn": ["0000-0000"]},
         metadata_source="mock_platform",
         fulltext_source="mock_platform",
+        quirks=quirks,
+    )
+
+
+def make_arxiv_venue(**quirks_overrides: object) -> VenueSpec:
+    """构造 arxiv 契约/集成测试用的 `preprint_channel` venue（不依赖 `venues/` 目录文件）。
+
+    默认 quirks：`inception='2024-01'`（近期，保证 discover 非空且窗口为过去完整月）、
+    `arxiv_set='cs'`、`arxiv_category='cs.LG'`（决定 OAI set 与子分类客户端过滤）。
+    """
+    quirks: dict[str, object] = dict(DEFAULT_ARXIV_QUIRKS)
+    quirks.update(quirks_overrides)
+    return VenueSpec(
+        id="arxiv_cs_lg",
+        kind="preprint_channel",
+        names={"full": "arXiv cs.LG (Machine Learning)", "aliases": ["arxiv-cs-lg"]},
+        field=["cs_ai"],
+        metadata_source="arxiv",
+        fulltext_source="arxiv",
         quirks=quirks,
     )
 
@@ -62,4 +90,10 @@ class FakeFetchIO:
         return len(self.data), hashlib.sha256(self.data).hexdigest()
 
 
-__all__ = ["DEFAULT_MOCK_QUIRKS", "FakeFetchIO", "make_mock_venue"]
+__all__ = [
+    "DEFAULT_ARXIV_QUIRKS",
+    "DEFAULT_MOCK_QUIRKS",
+    "FakeFetchIO",
+    "make_arxiv_venue",
+    "make_mock_venue",
+]

@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- SYNTHETIC fixture (Phase 2 T5). Supplement to the 8-piece set. OAI-PMH noRecordsMatch:
+     per arxiv.md §5 errata this is a LEGAL EMPTY STATE (empty record sequence, normal
+     completion) — a watch empty-day / new-category month-start, NOT a PARSE error. -->
+<OAI-PMH xmlns="http://www.openarchives.org/OAI/2.0/">
+<responseDate>2024-02-01T08:00:00Z</responseDate>
+<request verb="ListRecords" from="2024-01-01" until="2024-01-31" metadataPrefix="arXiv" set="cs">https://oaipmh.arxiv.org/oai</request>
+<error code="noRecordsMatch">The combination of from, until and set arguments results in an empty list.</error>
+</OAI-PMH>

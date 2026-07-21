@@ -20,6 +20,7 @@ crawler = "paper_crawler.cli:main"
 # stubs（crossref/openreview/elsevier_sd）由 load_adapters() 内置注册，不走 entry point（包内占位）。
 [project.entry-points."paper_crawler.adapters"]
 mock_platform = "paper_crawler.adapters.mock_platform:MockPlatformAdapter"
+arxiv = "paper_crawler.adapters.arxiv.adapter:ArxivAdapter"
 
 [dependency-groups]
 dev = [

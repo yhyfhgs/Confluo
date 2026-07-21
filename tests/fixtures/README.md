@@ -73,3 +73,35 @@ tests/fixtures/<adapter_id>/
   `golden/` 并过目 diff；
 - 站点响应快照本身不受 golden 重录纪律约束（它是"输入"不是"断言"），但增删
   `raw/` 文件同样应在 PR 描述里说明原因，方便审查。
+
+## arXiv fixture 八件套（Phase 2 T5）
+
+`tests/fixtures/arxiv/raw/`（无 `golden/` 层——这些是回放**输入**，断言写在
+`tests/unit/test_arxiv_fixtures.py` / `tests/integration/test_arxiv_enumerate.py` 里）：
+
+| 件 | 文件 | 覆盖（arxiv.md §5/§6） |
+|---|---|---|
+| ① | `01_query_atom_normal.xml` | Query API Atom 正常页（10 条，含 1 条老格式 id） |
+| ② | `02_oai_listrecords_page1.xml` (+ `..._page2.xml`) | OAI ListRecords 正常页 + resumptionToken 翻页 |
+| ③ | `03_query_atom_empty.xml` | 空结果 Atom（totalResults=0，边界正常态） |
+| ④ | `04_query_atom_total_mismatch.xml` | totalResults>0 但 entry 空 → `parse` |
+| ⑤ | `05_pdf_withdrawn.html` | 撤稿 HTML 页（pdf url 回 HTML）→ `gone` 嗅探 |
+| ⑥ | `06_oai_503_retry_after.http` | HTTP 503 + Retry-After → `rate_limited`（响应头随 body 落盘） |
+| ⑦ | `07_oai_bad_resumption_token.xml` | OAI badResumptionToken → `transient` |
+| ⑧ | `08_query_400_offset.xml` | Query API 400 offset 超限 → `config` |
+| 补 | `09_query_atom_healthcheck.xml` | 3 canary（healthcheck 双字段比对） |
+| 补 | `10_oai_norecordsmatch.xml` | OAI noRecordsMatch → 合法空态（非错误，§5 勘误） |
+
+**⚠ 全部为合成 fixture（SYNTHETIC）**：本批未做真实站点录制——结构依 OAI-PMH 2.0 /
+Atom 1.0 / arXiv API 规范手写，内容为构造值，各文件头以注释标注。选择合成而非录制的
+理由：(a) 确定性（真实 OAI 月页有上千条记录，需重裁且随时间漂移）；(b) 合规——真实
+录制须先履行 arxiv.md §4 的在线 robots/ToU 复核义务。**T7 在线冒烟须用实测响应对照
+保真度**（尤其 ⑨ 的 canary id/title 与 `adapter._CANARIES` 均为占位，须替换为经核验的
+3 篇真实稳定论文）。重录工具：`scripts/record_arxiv_fixtures.py`（单次运行、D-014 UA、
+≤10 请求 @1req/3s、落 `_staging/` 待人工过目脱敏）。
+
+### `.http` 快照格式（⑥）
+
+响应头需随 body 落盘时（Retry-After 等信号须 round-trip），用 `.http` 文本格式，
+由 `tests/helpers/arxiv_fixtures.py::http_fixture()` 解析：以 `#` 开头的行是注释；
+`HTTP-STATUS: <int>` 声明状态码；其余 `Key: Value` 为响应头；**首个空行**后是原始 body。

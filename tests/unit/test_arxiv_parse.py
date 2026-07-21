@@ -13,9 +13,11 @@ import pytest
 
 from paper_crawler.adapters.arxiv.parse import (
     ArxivRecord,
+    OaiListPage,
     oai_resumption_token,
     parse_atom_feed,
     parse_oai_list_records,
+    parse_oai_page,
     to_paper_stub,
 )
 from paper_crawler.errors import CrawlerError, ErrorClass
@@ -269,6 +271,47 @@ OAI_ERROR_BAD_ARGUMENT = b"""<?xml version="1.0" encoding="UTF-8"?>
 </OAI-PMH>
 """
 
+OAI_ERROR_BAD_VERB = b"""<?xml version="1.0" encoding="UTF-8"?>
+<OAI-PMH xmlns="http://www.openarchives.org/OAI/2.0/">
+<responseDate>2024-01-16T00:00:00Z</responseDate>
+<request>http://export.arxiv.org/oai2</request>
+<error code="badVerb">Illegal OAI verb.</error>
+</OAI-PMH>
+"""
+
+OAI_ERROR_CANNOT_DISSEMINATE = b"""<?xml version="1.0" encoding="UTF-8"?>
+<OAI-PMH xmlns="http://www.openarchives.org/OAI/2.0/">
+<responseDate>2024-01-16T00:00:00Z</responseDate>
+<request verb="ListRecords" metadataPrefix="bogus">http://export.arxiv.org/oai2</request>
+<error code="cannotDisseminateFormat">Unsupported metadataPrefix.</error>
+</OAI-PMH>
+"""
+
+OAI_ERROR_ID_DOES_NOT_EXIST = b"""<?xml version="1.0" encoding="UTF-8"?>
+<OAI-PMH xmlns="http://www.openarchives.org/OAI/2.0/">
+<responseDate>2024-01-16T00:00:00Z</responseDate>
+<request verb="GetRecord" identifier="oai:arXiv.org:9999.99999">http://export.arxiv.org/oai2</request>
+<error code="idDoesNotExist">No matching identifier.</error>
+</OAI-PMH>
+"""
+
+OAI_ERROR_UNKNOWN_CODE = b"""<?xml version="1.0" encoding="UTF-8"?>
+<OAI-PMH xmlns="http://www.openarchives.org/OAI/2.0/">
+<responseDate>2024-01-16T00:00:00Z</responseDate>
+<request>http://export.arxiv.org/oai2</request>
+<error code="someBrandNewCode">Unclassified error.</error>
+</OAI-PMH>
+"""
+
+# arxiv.md §5 勘误：noRecordsMatch 是空窗口/空桶的合法响应，不是错误。
+OAI_ERROR_NO_RECORDS_MATCH = b"""<?xml version="1.0" encoding="UTF-8"?>
+<OAI-PMH xmlns="http://www.openarchives.org/OAI/2.0/">
+<responseDate>2024-01-16T00:00:00Z</responseDate>
+<request verb="ListRecords" from="2024-01-01" until="2024-01-31" metadataPrefix="arXiv" set="cs">http://export.arxiv.org/oai2</request>
+<error code="noRecordsMatch">Empty list for the given from, until, set combination.</error>
+</OAI-PMH>
+"""
+
 OAI_RECORD_HEADER_ONLY_NO_METADATA = b"""<?xml version="1.0" encoding="UTF-8"?>
 <OAI-PMH xmlns="http://www.openarchives.org/OAI/2.0/">
 <responseDate>2024-01-16T00:00:00Z</responseDate>
@@ -452,9 +495,62 @@ def test_parse_oai_list_records_bad_resumption_token_is_transient() -> None:
     assert exc_info.value.error_class is ErrorClass.TRANSIENT
 
 
-def test_parse_oai_list_records_other_error_code_is_parse() -> None:
+# arxiv.md §5 + 2026-07-22 勘误：OAI 错误码逐类归并（noRecordsMatch 单列于下方）。
+@pytest.mark.parametrize(
+    ("payload", "expected"),
+    [
+        (OAI_ERROR_BAD_RESUMPTION_TOKEN, ErrorClass.TRANSIENT),
+        (OAI_ERROR_BAD_ARGUMENT, ErrorClass.CONFIG),
+        (OAI_ERROR_BAD_VERB, ErrorClass.CONFIG),
+        (OAI_ERROR_CANNOT_DISSEMINATE, ErrorClass.CONFIG),
+        (OAI_ERROR_ID_DOES_NOT_EXIST, ErrorClass.GONE),
+        (OAI_ERROR_UNKNOWN_CODE, ErrorClass.PARSE),
+    ],
+)
+def test_parse_oai_error_code_taxonomy(payload: bytes, expected: ErrorClass) -> None:
     with pytest.raises(CrawlerError) as exc_info:
-        list(parse_oai_list_records(OAI_ERROR_BAD_ARGUMENT))
+        list(parse_oai_list_records(payload))
+    assert exc_info.value.error_class is expected
+
+
+def test_parse_oai_no_records_match_is_legal_empty_state_not_an_error() -> None:
+    # 勘误核心：noRecordsMatch 不抛错，解析为空记录序列正常完成（watch 空日常态）。
+    assert list(parse_oai_list_records(OAI_ERROR_NO_RECORDS_MATCH)) == []
+    assert oai_resumption_token(OAI_ERROR_NO_RECORDS_MATCH) is None
+    page = parse_oai_page(OAI_ERROR_NO_RECORDS_MATCH)
+    assert page == OaiListPage(records=(), resumption_token=None, skipped_tombstones=0)
+
+
+# --- parse_oai_page（记录 + 令牌 + 墓碑跳过数，单遍解析）--------------------------------------
+
+
+def test_parse_oai_page_exposes_records_token_and_skipped_tombstone_count() -> None:
+    # NORMAL 页：3 条 record，其中 1 条 deleted 墓碑；records=2、skipped=1、token 非空。
+    page = parse_oai_page(OAI_LIST_RECORDS_NORMAL)
+    assert isinstance(page, OaiListPage)
+    assert page.skipped_tombstones == 1
+    assert tuple(r.base_id for r in page.records) == ("2401.00001", "hep-th/9901001")
+    assert page.resumption_token == "abc123XYZtoken"
+
+
+def test_parse_oai_page_counts_metadata_less_record_as_tombstone() -> None:
+    # header 存在但整条缺 <metadata>：与 deleted 同归墓碑跳过计数（防御性跳过）。
+    page = parse_oai_page(OAI_RECORD_HEADER_ONLY_NO_METADATA)
+    assert page.skipped_tombstones == 1
+    assert tuple(r.base_id for r in page.records) == ("2401.00004",)
+
+
+def test_parse_oai_page_last_page_has_no_token_and_zero_tombstones() -> None:
+    page = parse_oai_page(OAI_LIST_RECORDS_EMPTY_TOKEN)
+    assert page.resumption_token is None
+    assert page.skipped_tombstones == 0
+    assert len(page.records) == 1
+
+
+def test_parse_oai_page_metadata_missing_arxiv_element_is_parse_not_tombstone() -> None:
+    # <metadata> 存在但缺 <arXiv> 子元素是真实解析失败 → PARSE（不能被墓碑计数吞掉）。
+    with pytest.raises(CrawlerError) as exc_info:
+        parse_oai_page(OAI_METADATA_MISSING_ARXIV_ELEMENT)
     assert exc_info.value.error_class is ErrorClass.PARSE
 
 
