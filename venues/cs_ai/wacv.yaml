@@ -1,0 +1,16 @@
+# venues/cs_ai/wacv.yaml —— 会议示例（cvf adapter，AC-2.4）
+id: wacv
+kind: conference
+names: {full: IEEE/CVF Winter Conference on Applications of Computer Vision, aliases: [WACV]}
+field: [cs_ai]
+tier: T2
+identifiers:
+  dblp_key: conf/wacv
+metadata_source: cvf
+fulltext_source: cvf
+# auth 省略 = 默认 none（CVF 匿名可读、无认证，design/adapters/cvf.md §2/§4）。
+quirks:
+  # cadence 规则（内置 inception=2020、annual）无法表达的单年例外修正通道：
+  # dict[year → 'include'|'exclude']（design §3.1）。默认空。
+  cvf_edition_overrides: {}
+status: active

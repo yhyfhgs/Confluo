@@ -36,18 +36,21 @@ def _write(path: Path, content: str) -> None:
 # -- 三份仓库自带 YAML 全过 lint（design/02 §6 验收前提） -----------------------
 
 
+_NON_ARXIV_VENUE_IDS = {"mock_journal", "jfe", "iclr", "cvpr", "iccv", "wacv"}
+
+
 def test_shipped_venues_pass_lint_cleanly(adapters: dict[str, SourceAdapter]) -> None:
     reg = VenueRegistry(adapters)
     load_issues = reg.load_dirs([REPO_VENUES_DIR])
     assert load_issues == []
     assert reg.lint() == []
     ids = {spec.id for spec in reg.all()}
-    # 基础三件（Phase 1 mock + 期刊/会议示例）常驻。
-    assert {"mock_journal", "jfe", "iclr"} <= ids
+    # 基础六件（Phase 1 mock + 期刊/会议示例，含 cvf 三会 cvpr/iccv/wacv）常驻。
+    assert _NON_ARXIV_VENUE_IDS <= ids
     # 其余全为 arxiv preprint_channel 白名单（catalog §1，31 个 category），
     # 由 scripts/gen_arxiv_venues.py 生成；每个都 preprint_channel 且路由到 arxiv。
     arxiv_ids = {i for i in ids if i.startswith("arxiv_")}
-    assert arxiv_ids == ids - {"mock_journal", "jfe", "iclr"}
+    assert arxiv_ids == ids - _NON_ARXIV_VENUE_IDS
     assert len(arxiv_ids) == 31
     for venue_id in arxiv_ids:
         spec = reg.get(venue_id)
@@ -56,7 +59,17 @@ def test_shipped_venues_pass_lint_cleanly(adapters: dict[str, SourceAdapter]) ->
         assert spec.fulltext_source == "arxiv"
 
 
-@pytest.mark.parametrize("venue_id", ["mock_journal", "jfe", "iclr"])
+def test_cvf_venues_route_to_cvf_adapter(adapters: dict[str, SourceAdapter]) -> None:
+    reg = VenueRegistry(adapters)
+    reg.load_dirs([REPO_VENUES_DIR])
+    for venue_id in ("cvpr", "iccv", "wacv"):
+        spec = reg.get(venue_id)
+        assert spec.kind == "conference"
+        assert spec.metadata_source == "cvf"
+        assert spec.fulltext_source == "cvf"
+
+
+@pytest.mark.parametrize("venue_id", sorted(_NON_ARXIV_VENUE_IDS))
 def test_each_shipped_venue_is_routable(adapters: dict[str, SourceAdapter], venue_id: str) -> None:
     reg = VenueRegistry(adapters)
     reg.load_dirs([REPO_VENUES_DIR])
