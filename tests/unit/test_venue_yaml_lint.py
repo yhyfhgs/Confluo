@@ -36,7 +36,17 @@ def _write(path: Path, content: str) -> None:
 # -- 三份仓库自带 YAML 全过 lint（design/02 §6 验收前提） -----------------------
 
 
-_NON_ARXIV_VENUE_IDS = {"mock_journal", "jfe", "iclr", "icml", "emnlp", "cvpr", "iccv", "wacv"}
+_NON_ARXIV_VENUE_IDS = {
+    "mock_journal",
+    "jfe",
+    "iclr",
+    "icml",
+    "emnlp",
+    "cvpr",
+    "iccv",
+    "wacv",
+    "aaai",
+}
 
 
 def test_shipped_venues_pass_lint_cleanly(adapters: dict[str, SourceAdapter]) -> None:
@@ -95,6 +105,26 @@ def test_cvf_venues_route_to_cvf_adapter(adapters: dict[str, SourceAdapter]) -> 
         assert spec.kind == "conference"
         assert spec.metadata_source == "cvf"
         assert spec.fulltext_source == "cvf"
+
+
+def test_aaai_venue_routes_to_aaai_ojs_adapter(adapters: dict[str, SourceAdapter]) -> None:
+    reg = VenueRegistry(adapters)
+    reg.load_dirs([REPO_VENUES_DIR])
+    spec = reg.get("aaai")
+    assert spec.kind == "conference"
+    assert spec.metadata_source == "aaai_ojs"
+    assert spec.fulltext_source == "aaai_ojs"
+    assert spec.quirks["ojs_code"] == "AAAI"
+    assert spec.quirks["volume_map"] == {
+        2019: 33,
+        2020: 34,
+        2021: 35,
+        2022: 36,
+        2023: 37,
+        2024: 38,
+        2025: 39,
+        2026: 40,
+    }
 
 
 @pytest.mark.parametrize("venue_id", sorted(_NON_ARXIV_VENUE_IDS))

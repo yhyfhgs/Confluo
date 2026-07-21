@@ -98,6 +98,7 @@ def test_canary_without_filter_checks_all_registered_adapters(
     请求——合并期修复 2026-07-22：此前直调导致离线门禁打真网），故一律
     猴补丁为恒 healthy。真实健康探测由 `crawler canary` 在在线冒烟/运维场景执行。
     """
+    from paper_crawler.adapters.aaai_ojs.adapter import AaaiOjsAdapter
     from paper_crawler.adapters.acl_anthology.adapter import AclAnthologyAdapter
     from paper_crawler.adapters.arxiv.adapter import ArxivAdapter
     from paper_crawler.adapters.cvf.adapter import CVFAdapter
@@ -112,6 +113,7 @@ def test_canary_without_filter_checks_all_registered_adapters(
     monkeypatch.setattr(PmlrAdapter, "healthcheck", _fake_healthy)
     monkeypatch.setattr(AclAnthologyAdapter, "healthcheck", _fake_healthy)
     monkeypatch.setattr(CVFAdapter, "healthcheck", _fake_healthy)
+    monkeypatch.setattr(AaaiOjsAdapter, "healthcheck", _fake_healthy)
     monkeypatch.setattr(MockPlatformAdapter, "healthcheck", _fake_healthy)
 
     result = runner.invoke(app, ["canary", "--home", str(_home(tmp_path))])

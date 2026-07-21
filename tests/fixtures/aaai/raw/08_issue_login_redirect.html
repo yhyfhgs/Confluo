@@ -1,0 +1,22 @@
+<!-- SYNTHETIC (design/adapters/aaai-ojs.md §7 T3 ⑧). OJS login page = the landing after a
+     302 -> /login?source=... (unpublished/placeholder issue or stale galley). survey §9 [LIVE]:
+     /issue/view/1 -> 302 -> /login (NOT 404). ★D (§9): "exists but not anonymously fetchable" is
+     a permission gate, mapped to NO_ENTITLEMENT (detail=login-gated), NOT gone. The adapter's
+     first-byte sniff recognises this by the login form markers (/login, name="password", signIn). -->
+<!DOCTYPE html>
+<html lang="en">
+<head><title>Login</title></head>
+<body>
+<div class="page">
+<h1>Login</h1>
+<form class="cmp_form" id="login" method="post" action="https://ojs.aaai.org/index.php/AAAI/login/signIn?source=%2Findex.php%2FAAAI%2Fissue%2Fview%2F1">
+<label for="username">Username</label>
+<input type="text" name="username" id="username"/>
+<label for="password">Password</label>
+<input type="password" name="password" id="password"/>
+<button type="submit">Login</button>
+<a href="https://ojs.aaai.org/index.php/AAAI/login/lostPassword">Forgot your password?</a>
+</form>
+</div>
+</body>
+</html>

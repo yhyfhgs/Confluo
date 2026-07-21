@@ -31,6 +31,7 @@ EXPECTED_ADAPTER_IDS = {
     "pmlr",
     "acl_anthology",
     "cvf",
+    "aaai_ojs",
 }
 VALID_FAMILIES = {"open_access", "auth_gated", "aggregator"}
 
@@ -231,6 +232,11 @@ def test_arxiv_is_http_client_consumer(adapters: dict[str, SourceAdapter]) -> No
     assert isinstance(adapters["openreview"], HttpClientConsumer)
     assert isinstance(adapters["pmlr"], HttpClientConsumer)
     assert isinstance(adapters["acl_anthology"], HttpClientConsumer)
+    """真实 http adapter 实现 `HttpClientConsumer`（可注入共享 client）；stub/mock 不实现。"""
+    assert isinstance(adapters["arxiv"], HttpClientConsumer)
+    assert isinstance(adapters["openreview"], HttpClientConsumer)
+    assert isinstance(adapters["pmlr"], HttpClientConsumer)
+    assert isinstance(adapters["aaai_ojs"], HttpClientConsumer)
     assert not isinstance(adapters["mock_platform"], HttpClientConsumer)
     assert not isinstance(adapters["crossref"], HttpClientConsumer)
 
@@ -239,8 +245,8 @@ def test_bind_http_client_injects_only_consumers(adapters: dict[str, SourceAdapt
     """`bind_http_client` 只注入实现协议的 adapter，返回被注入的 id 列表。"""
     client = HttpClient(user_agent="PaperCrawler/test (personal research)")
     injected = bind_http_client(adapters, client)
-    # 五个真实 http adapter；注入生效——_client() 返回被注入实例，不再惰性自建。
-    assert set(injected) == {"arxiv", "openreview", "pmlr", "acl_anthology", "cvf"}
+    # 六个真实 http adapter；注入生效——_client() 返回被注入实例，不再惰性自建。
+    assert set(injected) == {"arxiv", "openreview", "pmlr", "acl_anthology", "cvf", "aaai_ojs"}
     # 注入生效：arxiv 的 _client() 返回被注入的实例，不再惰性自建。
     arxiv = adapters["arxiv"]
     pmlr = adapters["pmlr"]

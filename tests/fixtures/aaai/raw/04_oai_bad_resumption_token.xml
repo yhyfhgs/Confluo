@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- SYNTHETIC (design/adapters/aaai-ojs.md §7 T3 ④). badResumptionToken -> TRANSIENT
+     (token expired; task-level rerun rebuilds the harvest window). Shared core _oai. -->
+<OAI-PMH xmlns="http://www.openarchives.org/OAI/2.0/">
+<responseDate>2026-07-21T17:41:10Z</responseDate>
+<request verb="ListRecords" resumptionToken="STALE-TOKEN">https://ojs.aaai.org/index.php/AAAI/oai</request>
+<error code="badResumptionToken">The resumptionToken is invalid or has expired.</error>
+</OAI-PMH>

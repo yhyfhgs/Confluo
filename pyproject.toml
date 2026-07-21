@@ -25,6 +25,7 @@ openreview = "paper_crawler.adapters.openreview.adapter:OpenReviewAdapter"
 pmlr = "paper_crawler.adapters.pmlr.adapter:PmlrAdapter"
 acl_anthology = "paper_crawler.adapters.acl_anthology.adapter:AclAnthologyAdapter"
 cvf = "paper_crawler.adapters.cvf.adapter:CVFAdapter"
+aaai_ojs = "paper_crawler.adapters.aaai_ojs.adapter:AaaiOjsAdapter"
 
 [dependency-groups]
 dev = [

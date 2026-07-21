@@ -1,0 +1,55 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- SYNTHETIC (design/adapters/aaai-ojs.md §7 T3 ②). Continuation page consumed from
+     01_oai_listrecords_page1.xml's resumptionToken; empty <resumptionToken> text = end of
+     harvest (no further pages). Two more records: F (v40 current edition) + G (v33 historical),
+     so the full 2-page harvest totals v40=4 (A,C,E,F) and v33=2 (D,G) for partition-by-volume. -->
+<OAI-PMH xmlns="http://www.openarchives.org/OAI/2.0/"
+         xmlns:oai_dc="http://www.openarchives.org/OAI/2.0/oai_dc/"
+         xmlns:dc="http://purl.org/dc/elements/1.1/">
+<responseDate>2026-07-21T17:40:02Z</responseDate>
+<request verb="ListRecords" resumptionToken="AAAI-RESUME-PAGE2">https://ojs.aaai.org/index.php/AAAI/oai</request>
+<ListRecords>
+<record>
+<header>
+<identifier>oai:ojs.aaai.org:article/37050</identifier>
+<datestamp>2026-03-17T09:20:00Z</datestamp>
+<setSpec>AAAI:2026-CV</setSpec>
+</header>
+<metadata>
+<oai_dc:dc>
+<dc:title>A Third Current-Edition Paper on the Second Harvest Page</dc:title>
+<dc:creator>Lovelace, Ada</dc:creator>
+<dc:description>A labelled-synthetic abstract for the page-2 current-edition record.</dc:description>
+<dc:date>2026-03-17</dc:date>
+<dc:identifier>https://ojs.aaai.org/index.php/AAAI/article/view/37050</dc:identifier>
+<dc:identifier>10.1609/aaai.v40i3.37050</dc:identifier>
+<dc:source>Proceedings of the AAAI Conference on Artificial Intelligence; Vol. 40 No. 3: AAAI-26 Technical Track on Computer Vision III; 200-209</dc:source>
+<dc:relation>https://ojs.aaai.org/index.php/AAAI/article/view/37050/41100</dc:relation>
+<dc:rights>Copyright (c) 2026 Association for the Advancement of Artificial Intelligence</dc:rights>
+</oai_dc:dc>
+</metadata>
+</record>
+<record>
+<header>
+<identifier>oai:ojs.aaai.org:article/3746</identifier>
+<datestamp>2021-09-12T12:51:00Z</datestamp>
+<setSpec>AAAI:AISI</setSpec>
+</header>
+<metadata>
+<oai_dc:dc>
+<dc:title>A Synthetic Second Historical-Edition Paper for Partition Coverage</dc:title>
+<dc:creator>Shannon, Claude</dc:creator>
+<dc:creator>Weaver, Warren</dc:creator>
+<dc:description>A labelled-synthetic abstract for the second Vol.33 record.</dc:description>
+<dc:date>2019-07-21</dc:date>
+<dc:identifier>https://ojs.aaai.org/index.php/AAAI/article/view/3746</dc:identifier>
+<dc:identifier>10.1609/aaai.v33i01.3301696</dc:identifier>
+<dc:source>Proceedings of the AAAI Conference on Artificial Intelligence; Vol. 33 No. 01: AAAI-19, IAAI-19, EAAI-20; 702-709</dc:source>
+<dc:relation>https://ojs.aaai.org/index.php/AAAI/article/view/3746/3624</dc:relation>
+<dc:rights>Copyright (c) 2019 Proceedings of the AAAI Conference on Artificial Intelligence</dc:rights>
+</oai_dc:dc>
+</metadata>
+</record>
+<resumptionToken cursor="100" completeListSize="6"></resumptionToken>
+</ListRecords>
+</OAI-PMH>

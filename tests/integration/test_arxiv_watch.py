@@ -107,6 +107,7 @@ def _make_env(tmp_path: Path, handler: Handler, *, inception: str = "2024-01") -
         "pmlr",
         "acl_anthology",
         "cvf",
+        "aaai_ojs",
     }
     registry = VenueRegistry(adapters)
     assert registry.load_dirs([venues_dir]) == []
