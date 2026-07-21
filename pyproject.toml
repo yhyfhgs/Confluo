@@ -59,9 +59,13 @@ warn_required_dynamic_aliases = true
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
-addopts = "--strict-markers"
+# `-m 'not online'`：T5 在线冒烟默认零真实网络（AGENTS §6/test-plan §9）——
+# `tests/online/` 下 `online` 标记的用例默认被排除，显式 `pytest -m online`
+# 才会跑；命令行再给的 `-m` 会覆盖这里的默认值（pytest 标准 addopts 语义）。
+addopts = "--strict-markers -m 'not online'"
 markers = [
     "slow: 慢测试（kill-9 等，Phase 1 T9 引入）",
+    "online: 需要真实网络的在线冒烟测试（T5）；默认经 addopts 排除，显式 `-m online` 才跑（Phase 2 T3 引入，见 tests/online/ 与 docs/testing/test-plan.md §9）",
 ]
 
 [tool.coverage.run]
