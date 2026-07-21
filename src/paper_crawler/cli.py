@@ -65,15 +65,17 @@ import sqlite3
 from collections.abc import Iterator
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Annotated
+from typing import Annotated, NoReturn
 
 import typer
 
-from paper_crawler.adapter import load_adapters
+from paper_crawler.adapter import bind_http_client, load_adapters
+from paper_crawler.adapters.arxiv.adapter import build_user_agent
 from paper_crawler.canary import canary_exit_code, render_canary_markdown, run_canary
 from paper_crawler.config import Config
 from paper_crawler.errors import CrawlerError, ErrorClass, IllegalTransition
-from paper_crawler.obslog import setup_logging
+from paper_crawler.http import HttpClient
+from paper_crawler.obslog import log_event, setup_logging
 from paper_crawler.pipeline import PipelineRunner, RunReport, Selector, StageContext
 from paper_crawler.ratelimit import RateLimiter
 from paper_crawler.registry import VenueRegistry
@@ -108,6 +110,18 @@ class CliEnv:
     """一次命令调用的已装配环境。"""
 
     ctx: StageContext
+    http: HttpClient
+
+
+def _http_client_factory(config: Config) -> HttpClient:
+    """从 config 组装 D-014 UA 的共享 `HttpClient`（真实 adapter 注入用）。
+
+    UA `mailto:` 段取 `config.identity_email`（缺省 None → 省略 mailto，见
+    `build_user_agent`）——优先级 **显式注入 > config > env**：本 client 经
+    `bind_http_client` 注入 arxiv 等 adapter，覆盖其惰性 env 兜底（T5 过渡路径）。
+    模块级函数是测试注入 `MockTransport` client 的 seam（零真实网络）。
+    """
+    return HttpClient(user_agent=build_user_agent(config.identity_email))
 
 
 def _build_env(home: Path | None, verbose: bool, *, dry_run: bool = False) -> CliEnv:
@@ -118,7 +132,10 @@ def _build_env(home: Path | None, verbose: bool, *, dry_run: bool = False) -> Cl
     db = Database(config.db_path)
     db.migrate()
     repo = Repo(db)
-    registry = VenueRegistry(load_adapters())
+    adapters = load_adapters()
+    http = _http_client_factory(config)
+    bind_http_client(adapters, http)  # config UA 注入 http adapter（arxiv）
+    registry = VenueRegistry(adapters)
     registry.load_dirs(list(config.venues_dirs))
     queue = TaskQueue(db)
     limiter = RateLimiter(scale=config.rate_scale)
@@ -132,12 +149,12 @@ def _build_env(home: Path | None, verbose: bool, *, dry_run: bool = False) -> Cl
         limiter=limiter,
         dry_run=dry_run,
     )
-    return CliEnv(ctx=stage_ctx)
+    return CliEnv(ctx=stage_ctx, http=http)
 
 
 @contextlib.contextmanager
 def _env(home: Path | None, verbose: bool, *, dry_run: bool = False) -> Iterator[CliEnv]:
-    """`_build_env` 的上下文管理器包装：命令结束（正常或 `typer.Exit`）时关闭 DB 连接。
+    """`_build_env` 的上下文管理器包装：命令结束（正常或 `typer.Exit`）时关闭 DB + http。
 
     CLI 每次调用在真实使用中对应一个独立进程（连接随进程退出自然释放）；
     `typer.testing.CliRunner` 是进程内反复调用同一 Python 解释器，必须显式
@@ -147,6 +164,7 @@ def _env(home: Path | None, verbose: bool, *, dry_run: bool = False) -> Iterator
     try:
         yield cli_env
     finally:
+        cli_env.http.close()
         cli_env.ctx.db.close()
 
 
@@ -155,7 +173,7 @@ def _env(home: Path | None, verbose: bool, *, dry_run: bool = False) -> Iterator
 # ---------------------------------------------------------------------------
 
 
-def _usage_error(message: str) -> None:
+def _usage_error(message: str) -> NoReturn:
     """用法/配置错误的统一出口：打印到 stderr 并以退出码 2 终止（design/05 Task 8）。"""
     typer.echo(f"错误: {message}", err=True)
     raise typer.Exit(code=2)
@@ -443,6 +461,86 @@ def pull(
         typer.echo(report.render_markdown())
         exit_code = _report_exit_code(report)
     raise typer.Exit(code=exit_code)
+
+
+# -- watch -------------------------------------------------------------------
+
+
+def _emit_missing_email_warning(env: CliEnv) -> None:
+    """config `[identity].email` 缺省时 obslog warn 一次（网络命令，UA 无 mailto）。"""
+    if env.ctx.config.identity_email is None:
+        log_event(
+            "WARNING",
+            "identity.email 未配置：真实抓取的 User-Agent 省略 mailto 段（D-014）；"
+            "建议在 config.toml 设置 [identity].email 提供联系方式。",
+        )
+
+
+@app.command()
+def watch(
+    venue: Annotated[str | None, typer.Argument(help="preprint venue id（省略时需 --all）")] = None,
+    all_: Annotated[
+        bool, typer.Option("--all", help="对全部 preprint_channel venue 执行 watch")
+    ] = False,
+    home: HomeOpt = None,
+    verbose: VerboseOpt = False,
+) -> None:
+    """preprint venue 的当月桶 METADATA 增量（arxiv.md §3 watch 裁决）。
+
+    对 `kind=preprint_channel` 的 venue 执行 discover(强制刷新)→当月虚拟桶（跨月边界
+    ——当日 ≤3 号时连上一月桶）enumerate(强制刷新)，**不 fetch**（watch 是元数据增量；
+    `--fetch` 选项留 Phase 6）。去重由 `identifier(arxiv)` 主键天然保证（重叠窗口/同日
+    二跑零重复入库）。运行报告复用 report 机制（新增/跳过计数）。
+
+    非 preprint（`journal`/`conference`）venue 给用法错（退出 2）。`--all` 遍历全部
+    preprint venue（非 preprint 自动跳过，不报错）。退出码同 pull/timeline/list：
+    1（有 failed）> 3（无 failed 有 blocked）> 0；用法/配置错为 2。
+    """
+    if venue is None and not all_:
+        _usage_error("必须指定 VENUE 或 --all")
+    if venue is not None and all_:
+        _usage_error("VENUE 与 --all 不能同时指定")
+
+    with _env(home, verbose) as env:
+        _emit_missing_email_warning(env)
+        runner = PipelineRunner(env.ctx)
+        if all_:
+            specs = [s for s in env.ctx.registry.all() if s.kind == "preprint_channel"]
+            if not specs:
+                typer.echo("没有 preprint_channel 型 venue，watch 无目标。")
+                raise typer.Exit(code=0)
+            reports = [runner.watch(spec.id) for spec in specs]
+            for spec, rep in zip(specs, reports, strict=True):
+                typer.echo(_watch_summary_line(spec.id, rep))
+            totals = _fold_reports(reports)
+            typer.echo(
+                f"合计 成功 {totals.succeeded} 失败 {totals.failed} "
+                f"阻塞 {totals.blocked} 跳过 {totals.skipped}"
+            )
+            exit_code = _totals_exit_code(totals)
+        else:
+            assert venue is not None  # 上面两个用法错分支已排除 venue is None
+            _require_known_venue(env, venue)
+            spec = env.ctx.registry.get(venue)
+            if spec.kind != "preprint_channel":
+                _usage_error(
+                    f"venue {venue!r} 的 kind={spec.kind!r} 非 preprint_channel；"
+                    "watch 仅支持预印本 venue（journal/conference 用 pull/timeline）"
+                )
+            report = runner.watch(venue)
+            typer.echo(report.render_markdown())
+            exit_code = _report_exit_code(report)
+    raise typer.Exit(code=exit_code)
+
+
+def _watch_summary_line(venue_id: str, report: RunReport) -> str:
+    """`watch --all` 的每 venue 单行摘要（含净新增 note）。"""
+    note = next((n for n in report.notes if n.startswith("watch[")), "")
+    detail = note.split(": ", 1)[1] if ": " in note else ""
+    return (
+        f"{venue_id}: 失败 {report.failed} 阻塞 {report.blocked} "
+        f"跳过 {report.skipped}{f' | {detail}' if detail else ''}"
+    )
 
 
 # -- status -------------------------------------------------------------------
