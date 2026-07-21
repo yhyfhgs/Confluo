@@ -31,7 +31,7 @@
 | [plan/phase1-implementation-plan.md](plan/phase1-implementation-plan.md) | Phase 1 实施计划（任务切分+接口冻结） | approved | 2026-07-21 |
 | [plan/phase2-implementation-plan.md](plan/phase2-implementation-plan.md) | Phase 2 实施计划（Stage A 地基+arxiv；Stage B adapter 滚动） | approved | 2026-07-21 |
 | [plan/progress.md](plan/progress.md) | 项目进度跟踪 | approved | 2026-07-20 |
-| [plan/decision-log.md](plan/decision-log.md) | 架构决策记录（D-001…D-017） | approved | 2026-07-21 |
+| [plan/decision-log.md](plan/decision-log.md) | 架构决策记录（D-001…D-019） | approved | 2026-07-22 |
 
 ## design/ — 核心设计（00–09）
 
@@ -55,7 +55,7 @@
 | [design/adapters/README.md](design/adapters/README.md) | 模板 + 索引 + 勘察清单 | approved | 2026-07-20 |
 | [design/adapters/arxiv.md](design/adapters/arxiv.md) | arXiv | approved | 2026-07-21 |
 | [design/adapters/ssrn.md](design/adapters/ssrn.md) | SSRN | review | 2026-07-20 |
-| [design/adapters/openreview.md](design/adapters/openreview.md) | OpenReview | review | 2026-07-20 |
+| [design/adapters/openreview.md](design/adapters/openreview.md) | OpenReview | approved | 2026-07-22 |
 | [design/adapters/pmlr.md](design/adapters/pmlr.md) | PMLR | review | 2026-07-20 |
 | [design/adapters/cvf.md](design/adapters/cvf.md) | CVF Open Access | review | 2026-07-20 |
 | [design/adapters/acl-anthology.md](design/adapters/acl-anthology.md) | ACL Anthology | review | 2026-07-20 |
@@ -105,6 +105,7 @@
 | 路径 | 标题 | status | updated |
 |---|---|---|---|
 | [research/site-survey/arxiv.md](research/site-survey/arxiv.md) | 勘察：arXiv 全接口 | approved | 2026-07-20 |
+| [research/site-survey/openreview.md](research/site-survey/openreview.md) | 勘察：OpenReview API（v1/v2、鉴权、限流、届表） | approved | 2026-07-22 |
 | [research/site-survey/metadata-apis.md](research/site-survey/metadata-apis.md) | 勘察：Crossref/OpenAlex/S2 | approved | 2026-07-20 |
 | [research/site-survey/cs-ai-conferences.md](research/site-survey/cs-ai-conferences.md) | 勘察：CS/AI 顶会渠道 | approved | 2026-07-20 |
 | [research/site-survey/econ-fin-preprints.md](research/site-survey/econ-fin-preprints.md) | 勘察：SSRN/RePEc/NBER/CEPR | approved | 2026-07-20 |

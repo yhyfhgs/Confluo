@@ -2,7 +2,7 @@
 title: 架构决策记录（ADR）
 status: approved
 owner: fable5
-updated: 2026-07-21
+updated: 2026-07-22
 ---
 
 # 架构决策记录（Decision Log / ADR）
@@ -162,3 +162,10 @@ updated: 2026-07-21
 - **背景**：AC-2.3 字面要求"连续 7 日 watch，抽样 20 篇与官方 listing 比对无重复无遗漏"。CI 无法等待 7 个自然日；arxiv 详设评审（Phase 2 W0 双评审）指出若仅以离线回放+单次冒烟判定，与 AC 字面存在真实差距，不应静默弱化。
 - **决策**：AC-2.3 证据分三层——①T4 fixture 回放模拟 7 个收割日（含重叠窗口与 announce 延迟注入，CI 化，证机制正确）；②T5 限量在线冒烟单日 1 次（证真实响应可解析入库）。**①+② 为 Phase 2 的 AC-2.3 判定依据**（验收记录标注"PASS（Phase 2 口径，D-018）"）。③真实连续 7 自然日 watch + 第 7 天抽样 20 篇人工比对官方 listing = T6 runbook，**随 Phase 6 AC-6.1 联合执行**，届时 AC-2.3 完成字面口径复验。
 - **影响**：arxiv.md §6、phase2-implementation-plan T6/T7 按此口径；Phase 6 验收清单须包含 T6 runbook 执行；后续 7 日类验收（如 SSRN watch）沿用同分层模式。
+
+## D-019 外源比对类验收的锚点快照模式（AC-2.1 首例）
+
+- 状态：accepted · 日期：2026-07-22
+- **背景**：AC-2.1 要求 timeline 与 DBLP 卷数"一致 ±0"，但 DBLP adapter 属 Phase 3、验收不能依赖在线拉取外源；openreview 勘察亦证实 2015/2016 届在两侧俱缺等特例需固化口径。后续 Stage B adapter（pmlr/cvf/acl 等）的完整性验收均将面对同构问题。
+- **决策**：外源比对类 AC 以**人工核准的锚点快照（anchor golden 表）**为可执行判定：①快照由实现期程序生成（本例：带 token 按 venueid 过滤取 count）；②**人工对照外源页面核准**后入库（UPDATE_GOLDEN 纪律+records 留痕）；③特例（缺届/跨源）在表内显式标注；④验收判定=系统输出与快照全等。快照生成与核准过程记入验收记录。
+- **影响**：openreview.md §7（AC-2.1 anchor 表）为首例；Stage B 各 adapter 的"与外源一致"类验收沿用本模式；与 D-018（时间维分层）互补——D-018 解"等不了的时间"，本条解"依赖不了的外源"。

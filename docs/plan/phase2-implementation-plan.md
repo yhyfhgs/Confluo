@@ -42,7 +42,7 @@ updated: 2026-07-21
        # 429/503+Retry-After → CrawlerError(RATE_LIMITED, detail 含 retry_after_s=<n>)
        # transport 注入口 = T4 测试用 httpx.MockTransport 的唯一通道
    ```
-   映射表（冻结）：timeout/连接错→TRANSIENT；429→RATE_LIMITED；5xx→TRANSIENT（503+Retry-After→RATE_LIMITED）；401→AUTH_EXPIRED；403→NO_ENTITLEMENT；404/410→GONE；重定向默认跟随（记 obslog debug 事件）。
+   映射表（冻结，T2 执行期补全）：timeout/连接错及其余 httpx 传输异常（TooManyRedirects/DecodingError 等）→TRANSIENT；429→RATE_LIMITED；5xx→TRANSIENT（503+Retry-After→RATE_LIMITED）；401→AUTH_EXPIRED；403→NO_ENTITLEMENT；404/410→GONE；451→GONE（法律不可用=资源终态）；**其余 4xx（400/405/…）→CONFIG**（请求构造缺陷信号，响亮停机——arxiv offset>30000→400 即此类；adapter 可按上下文捕获重分类）。附加资源管理面：close()/上下文管理器（纯附加不破坏冻结签名）。重定向跳的 obslog 事件不含 elapsed_ms（httpx history 限制），终响应事件含。
    **Retry-After 裁决（W0 定）**：HttpClient **不做内部重试/等待**（单一职责，且限速器已把速率压到站点声明以下，Retry-After 实际罕见）；仅解析头值（秒数与 HTTP-date 两形态）写入 CrawlerError detail（`retry_after_s=<n>`）供日志观测；pipeline 维持冻结固定退避 2/8/30s（通常 ≥ 站点 Retry-After，保守合规）；domain 冷却维持 Phase 1 近似，真实冷却机制随 Phase 4 认证站点（修订记录 §7-1）。
    **obslog 义务**：HttpClient 每次请求记 debug 事件（domain / url 经 redact / status / elapsed_ms）——metadata 侧流量不入 FetchLog（冻结限制），jsonl 即其限速审计证据。
 2. **repo 组合事务 API**（T1 产出）：`repo.finalize_fetch(asset_id, *, file_path, bytes_, sha256, fetch_log_row) -> None` —— commit 文件收尾三步单事务。
@@ -134,3 +134,6 @@ updated: 2026-07-21
 |---|---|---|---|
 | 1 | 2026-07-21 | Phase 1 报告 §5"真实 domain 冷却随 Phase 2"降级为随 Phase 4：arxiv 场景限速器前置（1req/3s 保守值）使冷却机制冗余，Retry-After 仅观测不驱动调度 | 评审 A F4/F5 + 主 agent 裁决 |
 | 2 | 2026-07-21 | T1/T2 先于计划整体 approved 派发（其任务卡与 arxiv 评审零耦合，依据为 Phase 1 报告 §6 移交项）；计划于 W0 收束时整体定稿 | 用户并行度指令 + 主 agent 裁决 |
+| 3 | 2026-07-21 | §2.1 映射表补全：其余 4xx→CONFIG（否决 implementer 的 GONE 兜底——400 是请求缺陷非资源终态）、451→GONE、传输异常超集→TRANSIENT、close()/上下文管理器附加 | T2 DONE_WITH_CONCERNS 仲裁 |
+| 4 | 2026-07-22 | HttpClient 冻结件扩展立项：构造参数 `extra_headers: dict[str,str] \| None = None`（client 级附加头，纯附加带默认值）——openreview token 通道（cookie 注入）依赖；随 openreview 实现任务落地 | openreview.md §3（LIVE 勘察证实鉴权必需） |
+| 5 | 2026-07-22 | openreview.md 双评审 REJECT 后回炉：LIVE 勘察（25 请求）→ 主 agent 全文重写 → 复审；openreview 定位修正为 free_account 级（勘察证伪匿名可读），Phase 2 范围仅注册 iclr | 评审报告 + survey 归档 |

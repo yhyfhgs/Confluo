@@ -2,7 +2,7 @@
 title: 术语表（Glossary）
 status: review
 owner: fable5
-updated: 2026-07-21
+updated: 2026-07-22
 ---
 
 # 术语表
@@ -71,6 +71,8 @@ updated: 2026-07-21
 | **watch** | 订阅增量运行（cron 触发一次性进程）；游标见 watermark |
 | **watermark** | 订阅的增量游标，亦称"水位线"（arXiv=submittedDate 上界+重叠 1 天窗；SSRN=近 N 页 id 差分）；Phase 2 arxiv 以"当月桶+整窗收割"隐式表达，显式游标随 Phase 6 |
 | **收割 / harvest** | OAI-PMH 场景的批量元数据拉取（`ListRecords` + resumptionToken 翻页）；见 design/adapters/arxiv.md §3 |
+| **forum（OpenReview）** | OpenReview 讨论主帖 id；顶层论文帖 `id == forum`，回帖的 forum 指回主帖——本系统以 forum id 作 `identifier(openreview)` 锚点 |
+| **venueid（OpenReview）** | note 的归属场次字段；`content.venueid.value == 主会 venue id` 即接收（accepted）判定源；被拒/撤稿落 `*_venue_id` 类字段 |
 | **guard / 熔断** | 订阅护栏：单次新增超 `max_new_per_run` → 零入库+过载报告（FR-16，AC-6.2） |
 | **FetchLog** | 资产取回审计表（脱敏 URL/字节/耗时/限速等待）——限速合规的证据源（AC-4.4）；metadata 侧请求的审计证据为 obslog jsonl（Phase 2 勘误口径） |
 | **日配额 / 工作时段窗** | auth_gated 纪律：单平台每日下载上限（默认 200；敏感站更低）+ 默认 8:00–23:00 运行窗 |
