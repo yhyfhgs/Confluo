@@ -2,19 +2,28 @@
 的 Phase 1 子集）。
 
 职责边界：本模块只做"接线"——把已冻结的 `PipelineRunner`/`VenueRegistry`/
-`TaskQueue`/`verify_store` 等实物拼成命令行入口，不新增业务语义。所有命令共用
-一个环境工厂 `_build_env`（`Config.load(home)` → `setup_logging` →
-`Database`+`migrate` → `VenueRegistry.load_dirs` → 组装 `StageContext`），避免
-逐命令重复这套装配（任务书 Global Constraints 精神 + phase1-implementation-plan
-Task 8 DoD）。
+`TaskQueue`/`verify_store`/`canary.run_canary` 等实物拼成命令行入口，不新增
+业务语义。所有命令共用一个环境工厂 `_build_env`（`Config.load(home)` →
+`setup_logging` → `Database`+`migrate` → `VenueRegistry.load_dirs` → 组装
+`StageContext`），避免逐命令重复这套装配（任务书 Global Constraints 精神 +
+phase1-implementation-plan Task 8 DoD）。`canary` 命令同样经 `_env` 走这套
+装配以保持一致（复用其 Config/日志生命周期），但不消费 `StageContext` 里的
+`registry`/`queue`/`limiter`——它只需要 `load_adapters()` 给出的原始 adapter
+表，venue 层的路由与 canary 无关。
 
 退出码契约（design/05 §6 + phase1-implementation-plan Task 8）：
 - `0`：命令成功（含"报告 succeeded>0 或全 skipped"的正常结束）；
 - `1`：产出一份 `RunReport` 且 `failed > 0`（pull/timeline/list）；
 - `2`：用法/配置错误——未知 venue、`venues lint` 检出问题、Selector 冲突
   （如同时给 `--year` 与 `--volume`）、`resume` 缺参数、`retry --class` 给了
-  未知 error_class；
+  未知 error_class、`canary --adapter` 给了未注册的 adapter id；
 - `3`：产出一份 `RunReport` 且 `failed == 0` 但 `blocked > 0`。
+
+`canary` 命令不产出 `RunReport`，退出码是独立的另一套契约（phase2-
+implementation-plan §2.4，与上面的 0/1/3 判据无关，`2` 的用法错语义相同）：
+- `0`：全部 adapter healthy（`NotImplementedError` 归的 SKIP 行不影响判定）；
+- `1`：至少一个 adapter unhealthy（含 healthcheck 抛出非 `NotImplementedError`
+  异常的情形）。
 
 两个需要在此单独注记的实现选择（对应实物 API 不完全覆盖 CLI 语义的地方，
 遵循"按 PipelineRunner 实物 API 选实现，选择写进 docstring"的指示）：
@@ -61,6 +70,7 @@ from typing import Annotated
 import typer
 
 from paper_crawler.adapter import load_adapters
+from paper_crawler.canary import canary_exit_code, render_canary_markdown, run_canary
 from paper_crawler.config import Config
 from paper_crawler.errors import CrawlerError, ErrorClass, IllegalTransition
 from paper_crawler.obslog import setup_logging
@@ -578,6 +588,38 @@ def report(
         else:
             typer.echo("尚无历史运行报告（还没有执行过 pull/timeline/list 等命令）。")
     raise typer.Exit(code=0)
+
+
+# -- canary -------------------------------------------------------------------
+
+
+@app.command()
+def canary(
+    adapter: Annotated[str | None, typer.Option("--adapter", help="仅检查指定 adapter id")] = None,
+    home: HomeOpt = None,
+    verbose: VerboseOpt = False,
+) -> None:
+    """adapter 健康矩阵（test-plan §4/§9 canary 的 healthcheck 层，T3 落地）。
+
+    遍历已注册 adapter（`load_adapters()`）逐个调用 `healthcheck()`，打印
+    markdown 健康矩阵（`canary.render_canary_markdown`）。stub adapter 尚未实现
+    健康检查而抛出的 `NotImplementedError` 归为 SKIP 行，不计入不健康
+    （`canary.run_canary` 的分类规则，见该模块 docstring）。
+
+    `--adapter ID` 限定只检查该 adapter；给了未注册的 id 视为用法错，退出 2。
+    退出码契约见模块 docstring："canary 命令不产出 RunReport" 一段。
+    """
+    with _env(home, verbose):
+        adapters = load_adapters()
+        if adapter is not None:
+            if adapter not in adapters:
+                _usage_error(f"未注册的 adapter: {adapter!r}")
+            adapters = {adapter: adapters[adapter]}
+
+        rows = run_canary(adapters)
+        typer.echo(render_canary_markdown(rows))
+        exit_code = canary_exit_code(rows)
+    raise typer.Exit(code=exit_code)
 
 
 # ---------------------------------------------------------------------------
