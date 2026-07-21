@@ -285,6 +285,20 @@ def test_parse_year_page_href_with_malformed_hash_is_parse_error() -> None:
     assert exc.value.error_class is ErrorClass.PARSE
 
 
+def test_parse_year_page_whitespace_only_title_text_is_parse_error() -> None:
+    # 链接存在，但文字内容全是空白——规整化后为空串，与"整个链接缺失"是不同的漂移
+    # 信号，但同样判 parse（标题是核心身份字段，不能容忍空）。
+    blank_title = (
+        '<li class="" data-track="none"><div class="paper-content">'
+        '<a title="paper title" href="/paper_files/paper/1987/hash/'
+        '03004620ea802b9118dd44d69f07af56-Abstract.html">   </a>'
+        '<span class="paper-authors">A. Author</span></div></li>'
+    )
+    with pytest.raises(CrawlerError) as exc:
+        parse.parse_year_page(_page(blank_title))
+    assert exc.value.error_class is ErrorClass.PARSE
+
+
 def test_parse_year_page_missing_authors_span_is_tolerated_as_empty_tuple() -> None:
     # 作者字段比标题/hash 更"软"——缺失时容忍为空 tuple（pmlr 同款先例），不是错误。
     no_authors = (
@@ -294,6 +308,18 @@ def test_parse_year_page_missing_authors_span_is_tolerated_as_empty_tuple() -> N
         "</div></li>"
     )
     papers = parse.parse_year_page(_page(no_authors))
+    assert papers[0].authors == ()
+
+
+def test_parse_year_page_whitespace_only_authors_span_is_tolerated_as_empty_tuple() -> None:
+    # span 存在但内容全是空白（不同于"span 缺失"，规整化路径不同）——同样容忍为空 tuple。
+    blank_authors = (
+        '<li class="" data-track="none"><div class="paper-content">'
+        '<a title="paper title" href="/paper_files/paper/1987/hash/'
+        '03004620ea802b9118dd44d69f07af56-Abstract.html">Some Title</a>'
+        '<span class="paper-authors">   </span></div></li>'
+    )
+    papers = parse.parse_year_page(_page(blank_authors))
     assert papers[0].authors == ()
 
 

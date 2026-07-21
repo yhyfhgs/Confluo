@@ -174,6 +174,17 @@ def test_discover_bool_year_quirk_is_config_error() -> None:
     assert exc.value.error_class is ErrorClass.CONFIG
 
 
+def test_discover_year_quirk_with_illegal_type_is_config_error() -> None:
+    # 既非 bool/int/str（如误填一个列表）——落最终兜底分支，同样响亮拒绝。
+    with pytest.raises(CrawlerError) as exc:
+        list(
+            NeuripsProceedingsAdapter().discover_timeline(
+                make_neurips_venue(known_through_year=[2022])
+            )
+        )
+    assert exc.value.error_class is ErrorClass.CONFIG
+
+
 def test_discover_since_invalid_format_is_config_error() -> None:
     with pytest.raises(CrawlerError) as exc:
         list(
@@ -446,6 +457,24 @@ def test_fetch_pdf_url_returning_html_is_gone_sniffed() -> None:
     with pytest.raises(CrawlerError) as exc:
         _adapter(handler).fetch_asset(plan, FakeFetchIO())
     assert exc.value.error_class is ErrorClass.GONE
+
+
+def test_fetch_empty_response_writes_zero_bytes() -> None:
+    # 空响应体（0 chunk）——_gone_guarded_stream 的 `if head:` 分支两态之一
+    # （空 head 不产出任何 chunk，也不误判 gone）。
+    handler: Handler = lambda request: httpx.Response(200, content=b"")  # noqa: E731
+    paper = PaperStub(
+        title="T",
+        identifiers=(("neurips", "0001ca33ba34ce0351e4612b744b3936"),),
+        year=2023,
+        meta=(("track", "conference"), ("asset_suffix", "-Conference")),
+    )
+    plan = NeuripsProceedingsAdapter().resolve_assets(make_neurips_venue(), paper)[0]
+    io = FakeFetchIO()
+    result = _adapter(handler).fetch_asset(plan, io)
+    assert result.ok is True
+    assert result.bytes_written == 0
+    assert io.data == b""
 
 
 # --- healthcheck（2 请求，跨边界 canary）---------------------------------------------------------
