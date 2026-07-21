@@ -256,6 +256,47 @@ def test_count_bib_entries_empty_file_is_zero() -> None:
     assert parse.count_bib_entries(b"") == 0
 
 
+def test_count_bib_entries_space_between_type_and_brace() -> None:
+    # 少数 bib 生成器在 entry type 与开花括号间留空格：`@InProceedings {key, ...}`。
+    bib = b"@InProceedings {pmlr-v235-a24a,\n  title = {Paper A}\n}\n"
+    assert parse.count_bib_entries(bib) == 1
+
+
+def test_count_bib_entries_stray_at_sign_not_followed_by_brace_is_not_counted() -> None:
+    # 顶层裸 '@' 后接的不是 `word{`（如邮件署名残片）——不应被计为新 entry，
+    # 也不应打乱后续真实 entry 的扫描。
+    bib = b"contact @ conference for details\n@InProceedings{pmlr-v235-a24a,\n  title={T}\n}\n"
+    assert parse.count_bib_entries(bib) == 1
+
+
+def test_count_bib_entries_stray_braces_before_first_entry_do_not_affect_depth() -> None:
+    # entry 之外（顶层）的孤立花括号不应影响后续深度追踪。
+    bib = b"{stray} } another stray brace {\n@InProceedings{pmlr-v235-a24a,\n  title={T}\n}\n"
+    assert parse.count_bib_entries(bib) == 1
+
+
+# --- 相对链接/作者提取的边界形态 -----------------------------------------------------------------
+
+
+def test_abs_link_href_not_ending_in_html_yields_no_slug() -> None:
+    block = _paper_div(abs_href="v235/example24a")  # 缺 .html 后缀，形态非法
+    with pytest.raises(CrawlerError) as exc:
+        parse.parse_volume_index(_page(block))
+    assert exc.value.error_class is ErrorClass.PARSE
+
+
+def test_abs_link_href_empty_slug_after_stripping_yields_no_slug() -> None:
+    block = _paper_div(abs_href="v235/.html")  # 剥离后缀后 slug 为空串
+    with pytest.raises(CrawlerError) as exc:
+        parse.parse_volume_index(_page(block))
+    assert exc.value.error_class is ErrorClass.PARSE
+
+
+def test_authors_span_present_but_blank_yields_empty_tuple() -> None:
+    papers = parse.parse_volume_index(_page(_paper_div(authors="   ")))
+    assert papers[0].authors == ()
+
+
 # --- citation_* meta（推迟路径的解析基础）-------------------------------------------------------
 
 
@@ -298,3 +339,13 @@ def test_parse_citation_meta_missing_fields_are_none() -> None:
     assert meta.title is None
     assert meta.authors == ()
     assert meta.bibkey is None
+
+
+def test_parse_citation_meta_non_numeric_page_is_none_not_error() -> None:
+    page = (
+        b'<html><head><meta name="citation_firstpage" content="n/a">'
+        b'<meta name="citation_lastpage" content="also-not-a-number"></head><body></body></html>'
+    )
+    meta = parse.parse_citation_meta(page)
+    assert meta.firstpage is None
+    assert meta.lastpage is None
