@@ -162,7 +162,10 @@ def _paper_stub(ctx: StageContext, paper: sqlite3.Row) -> PaperStub:
     """从持久化的 paper + identifier 行重建 `PaperStub`（resolve/re-resolve 输入）。
 
     authorship Phase 1 未落库（repo 无 author 写入面），authors 恒空——mock 的
-    resolve 只依赖 doi identifier，不影响语义。
+    resolve 只依赖 doi identifier，不影响语义。`meta` 从 `paper.meta_json` 还原：
+    resolve 依赖 enumerate 携带的 adapter 私有定位符（如 openreview 的 pdf 相对路径）
+    重建 AssetPlan——meta 此前在重建时被丢弃，是需要 meta 的 adapter（openreview）成立
+    的前提。arxiv/mock 的 resolve 不读 meta，还原它不改变其语义。
     """
     idents = ctx.db.query(
         "SELECT scheme, value FROM identifier WHERE paper_id = ? "
@@ -179,7 +182,26 @@ def _paper_stub(ctx: StageContext, paper: sqlite3.Row) -> PaperStub:
         year=paper["year"],
         pub_date=paper["pub_date"],
         abstract=paper["abstract"],
+        meta=_meta_from_json(paper["meta_json"]),
     )
+
+
+def _meta_from_json(raw: object) -> tuple[tuple[str, str], ...]:
+    """`paper.meta_json`（`Repo._meta_to_json` 的产物）→ tuple-of-tuples；NULL/畸形 → 空。
+
+    只还原字符串键值对（值经 `str()` 兜底），键序确定（sorted）——与序列化时的
+    `sort_keys=True` 对齐，重建结果稳定。非 JSON-object 或解析失败静默降级为空 meta
+    （resolve 侧对缺失 meta 键已按「无该资产」处理，不需响亮停机）。
+    """
+    if not raw:
+        return ()
+    try:
+        parsed = json.loads(str(raw))
+    except (json.JSONDecodeError, ValueError):
+        return ()
+    if not isinstance(parsed, dict):
+        return ()
+    return tuple((str(k), str(v)) for k, v in sorted(parsed.items()))
 
 
 def fetched_file_ok(asset: sqlite3.Row) -> bool:

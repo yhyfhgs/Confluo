@@ -205,7 +205,7 @@ def test_route_iclr_binds_openreview_both_sides(
     route = registry.route("iclr")
     assert route.metadata_adapter is adapters["openreview"]
     assert route.fulltext_adapter is adapters["openreview"]
-    assert route.auth_profile is None
+    assert route.auth_profile == "openreview"  # provider_hint（§3 token 通道勘误）
     assert route.rate_overrides == {}  # iclr 未声明 rate_limit
 
 

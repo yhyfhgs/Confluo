@@ -78,11 +78,23 @@ def test_crossref_stub_attributes(adapters: dict[str, SourceAdapter]) -> None:
     assert "⚠" in crossref.default_rate.source_note
 
 
-def test_openreview_stub_attributes(adapters: dict[str, SourceAdapter]) -> None:
+def test_openreview_attributes(adapters: dict[str, SourceAdapter]) -> None:
+    # Phase 2 T-openreview：真实 adapter（entry point 注册），非 stub。
     openreview = adapters["openreview"]
     assert openreview.family == "open_access"
+    assert (
+        openreview.capabilities
+        == Capability.DISCOVER | Capability.ENUMERATE | Capability.RESOLVE | Capability.FETCH
+    )
+    assert Capability.SEARCH not in openreview.capabilities
     assert openreview.default_rate.requests_per_minute == 30
-    assert openreview.domains == ("api2.openreview.net",)
+    assert "OpenReview" in openreview.default_rate.source_note  # 出处（非占位 ⚠）
+    assert openreview.auth_requirement is AuthLevel.FREE_ACCOUNT  # notes/PDF 需 token（§3）
+    assert openreview.domains == (
+        "api2.openreview.net",
+        "api.openreview.net",
+        "openreview.net",
+    )
 
 
 def test_elsevier_stub_attributes(adapters: dict[str, SourceAdapter]) -> None:
@@ -117,14 +129,15 @@ def test_healthcheck_defaults_healthy(adapters: dict[str, SourceAdapter]) -> Non
     assert report.healthy is True
 
 
-@pytest.mark.parametrize("adapter_id", ["crossref", "openreview", "elsevier_sd"])
+@pytest.mark.parametrize("adapter_id", ["crossref", "elsevier_sd"])
 def test_stub_healthcheck_raises_not_implemented_for_canary_skip(
     adapters: dict[str, SourceAdapter], adapter_id: str
 ) -> None:
-    """canary SKIP 语义修正：三 stub 的 healthcheck 抛 NotImplementedError。
+    """canary SKIP 语义修正：剩余 stub 的 healthcheck 抛 NotImplementedError。
 
     此前继承 AdapterBase 默认恒 healthy，会让未实现的 stub 在 canary 假报"健康"；
     改为抛 NotImplementedError 后 `run_canary` 归为 SKIP（不影响退出码，见 canary.py）。
+    （openreview 已 Phase 2 落地真实 healthcheck——匿名双端 groups 探测，不再 stub。）
     """
     with pytest.raises(NotImplementedError):
         adapters[adapter_id].healthcheck()
@@ -153,10 +166,11 @@ def test_declared_stub_methods_are_not_implemented(
     adapters: dict[str, SourceAdapter], venue: VenueSpec
 ) -> None:
     # 声明了能力但 T1 未实现 —— 区别于 CapabilityNotSupported。
+    # （openreview 已 Phase 2 落地为真实 adapter；此处只剩 crossref stub。）
     with pytest.raises(NotImplementedError):
         adapters["crossref"].discover_timeline(venue)
     with pytest.raises(NotImplementedError):
-        adapters["openreview"].enumerate_issue(venue, IssueRef(venue_id=venue.id))
+        adapters["crossref"].enumerate_issue(venue, IssueRef(venue_id=venue.id))
 
 
 def test_mock_platform_methods_are_implemented_after_t6(
@@ -174,8 +188,9 @@ def test_mock_platform_methods_are_implemented_after_t6(
 
 
 def test_arxiv_is_http_client_consumer(adapters: dict[str, SourceAdapter]) -> None:
-    """arxiv 实现 `HttpClientConsumer`（可注入共享 client）；stub/mock 不实现。"""
+    """arxiv/openreview 实现 `HttpClientConsumer`（可注入共享 client）；stub/mock 不实现。"""
     assert isinstance(adapters["arxiv"], HttpClientConsumer)
+    assert isinstance(adapters["openreview"], HttpClientConsumer)
     assert not isinstance(adapters["mock_platform"], HttpClientConsumer)
     assert not isinstance(adapters["crossref"], HttpClientConsumer)
 
@@ -184,7 +199,7 @@ def test_bind_http_client_injects_only_consumers(adapters: dict[str, SourceAdapt
     """`bind_http_client` 只注入实现协议的 adapter，返回被注入的 id 列表。"""
     client = HttpClient(user_agent="PaperCrawler/test (personal research)")
     injected = bind_http_client(adapters, client)
-    assert injected == ["arxiv"]  # 唯一 http adapter
+    assert set(injected) == {"arxiv", "openreview"}  # 两个 http adapter
     # 注入生效：arxiv 的 _client() 返回被注入的实例，不再惰性自建。
     arxiv = adapters["arxiv"]
     assert isinstance(arxiv, HttpClientConsumer)

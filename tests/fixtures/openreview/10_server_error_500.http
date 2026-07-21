@@ -1,0 +1,6 @@
+# SYNTHETIC (Phase 2, no user token). 5xx server error. HttpClient maps 5xx
+# (no Retry-After) -> transient (pipeline retries per RETRY_TABLE). Shape synthesized.
+HTTP-STATUS: 500
+Content-Type: application/json
+
+{"name":"InternalServerError","message":"Something went wrong","status":500}

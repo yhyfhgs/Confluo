@@ -129,13 +129,11 @@ def load_adapters() -> dict[str, SourceAdapter]:
     from paper_crawler.adapters.stubs import (
         CrossrefStub,
         ElsevierScienceDirectStub,
-        OpenReviewStub,
     )
 
     adapters: dict[str, SourceAdapter] = {}
     for builtin in (
         CrossrefStub(),
-        OpenReviewStub(),
         ElsevierScienceDirectStub(),
         MockPlatformAdapter(),
     ):

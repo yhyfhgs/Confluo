@@ -1,0 +1,39 @@
+{
+  "_synthetic": "SYNTHETIC (Phase 2, no user token). Structure per docs.openreview.net v2 note schema (content.<field>.value nesting); fabricated content. Awaiting real-token fidelity check (see research/site-survey/openreview.md §3 [DOC]).",
+  "notes": [
+    {
+      "id": "acc0001pdf",
+      "forum": "acc0001pdf",
+      "content": {
+        "title": {"value": "Scalable Representation Learning for Graphs"},
+        "abstract": {"value": "We present a scalable method."},
+        "venueid": {"value": "ICLR.cc/2024/Conference"},
+        "venue": {"value": "ICLR 2024 poster"},
+        "authors": {"value": ["Ada Lovelace", "Alan Turing"]},
+        "pdf": {"value": "/pdf/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa.pdf"}
+      }
+    },
+    {
+      "id": "acc0002nopdf",
+      "forum": "acc0002nopdf",
+      "content": {
+        "title": {"value": "A Theory Paper Whose PDF Lives Elsewhere"},
+        "abstract": {"value": "Accepted but no OpenReview-hosted pdf field."},
+        "venueid": {"value": "ICLR.cc/2024/Conference"},
+        "venue": {"value": "ICLR 2024 oral"},
+        "authors": {"value": ["Grace Hopper"]}
+      }
+    },
+    {
+      "id": "rej0003sub",
+      "forum": "rej0003sub",
+      "content": {
+        "title": {"value": "A Rejected Submission Not To Be Enumerated"},
+        "venueid": {"value": "ICLR.cc/2024/Conference/Submission"},
+        "venue": {"value": "ICLR 2024 Conference Submission"},
+        "pdf": {"value": "/pdf/cccccccccccccccccccccccccccccccccccccccc.pdf"}
+      }
+    }
+  ],
+  "count": 3
+}

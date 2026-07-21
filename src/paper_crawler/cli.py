@@ -69,7 +69,12 @@ from typing import Annotated, NoReturn
 
 import typer
 
-from paper_crawler.adapter import bind_http_client, load_adapters
+from paper_crawler.adapter import (
+    HttpClientConsumer,
+    SourceAdapter,
+    bind_http_client,
+    load_adapters,
+)
 from paper_crawler.canary import canary_exit_code, render_canary_markdown, run_canary
 from paper_crawler.config import Config
 from paper_crawler.errors import CrawlerError, ErrorClass, IllegalTransition
@@ -111,6 +116,9 @@ class CliEnv:
 
     ctx: StageContext
     http: HttpClient
+    # openreview 专属 token client（有 token 时构造，绝不复用共享 http——见
+    # `_bind_openreview_token_client`）；无 token 时 None（openreview 沿用共享 http）。
+    openreview_http: HttpClient | None = None
 
 
 def _http_client_factory(config: Config, rate_limiter: RateLimiter | None = None) -> HttpClient:
@@ -127,6 +135,43 @@ def _http_client_factory(config: Config, rate_limiter: RateLimiter | None = None
     return HttpClient(user_agent=build_user_agent(config.identity_email), rate_limiter=rate_limiter)
 
 
+def _openreview_client_factory(
+    config: Config, rate_limiter: RateLimiter | None = None
+) -> HttpClient:
+    """构造 openreview 携 token cookie 的**专属** client（openreview.md §3）。
+
+    client 级附加头 `Cookie: openreview.accessToken=<token>`（config.openreview_token，
+    调用方须已确认非空）；共享 limiter 同桶计费。模块级函数是测试注入 `MockTransport`
+    client 的 seam（零真实网络），与 `_http_client_factory` 对称。
+    """
+    return HttpClient(
+        user_agent=build_user_agent(config.identity_email),
+        rate_limiter=rate_limiter,
+        extra_headers={"Cookie": f"openreview.accessToken={config.openreview_token}"},
+    )
+
+
+def _bind_openreview_token_client(
+    adapters: dict[str, SourceAdapter], config: Config, rate_limiter: RateLimiter
+) -> HttpClient | None:
+    """有 token 时为 openreview adapter 注入携 cookie 的专属 client（openreview.md §3）。
+
+    token 缺省 → 返回 None：openreview 沿用 `bind_http_client` 注入的共享匿名 client
+    （groups/healthcheck 可用，notes/pdf 会 403→auth_expired→BLOCKED，status 给配置指引）。
+    有 token → 经 `_openreview_client_factory` 构造独立 client 并注入，**绝不把 cookie
+    挂到共享 http**（否则随 arxiv 等请求外泄他站，凭证红线）。返回专属 client（供 `_env`
+    关闭）或 None。
+    """
+    if not config.openreview_token:
+        return None
+    adapter = adapters.get("openreview")
+    if not isinstance(adapter, HttpClientConsumer):
+        return None
+    client = _openreview_client_factory(config, rate_limiter)
+    adapter.set_http_client(client)
+    return client
+
+
 def _build_env(home: Path | None, verbose: bool, *, dry_run: bool = False) -> CliEnv:
     config = Config.load(home)
     config.ensure_dirs()
@@ -140,7 +185,9 @@ def _build_env(home: Path | None, verbose: bool, *, dry_run: bool = False) -> Cl
     # HttpClient（逐请求限速，含 adapter 内部翻页），保证同桶共享、不放宽速率。
     limiter = RateLimiter(scale=config.rate_scale)
     http = _http_client_factory(config, limiter)
-    bind_http_client(adapters, http)  # config UA + 共享 limiter 注入 http adapter（arxiv）
+    bind_http_client(adapters, http)  # config UA + 共享 limiter 注入 http adapter（arxiv 等）
+    # openreview token 通道：有 token 时覆盖为携 cookie 的专属 client（§3；绝不污染共享 http）。
+    openreview_http = _bind_openreview_token_client(adapters, config, limiter)
     registry = VenueRegistry(adapters)
     registry.load_dirs(list(config.venues_dirs))
     queue = TaskQueue(db)
@@ -154,7 +201,7 @@ def _build_env(home: Path | None, verbose: bool, *, dry_run: bool = False) -> Cl
         limiter=limiter,
         dry_run=dry_run,
     )
-    return CliEnv(ctx=stage_ctx, http=http)
+    return CliEnv(ctx=stage_ctx, http=http, openreview_http=openreview_http)
 
 
 @contextlib.contextmanager
@@ -170,6 +217,8 @@ def _env(home: Path | None, verbose: bool, *, dry_run: bool = False) -> Iterator
         yield cli_env
     finally:
         cli_env.http.close()
+        if cli_env.openreview_http is not None:
+            cli_env.openreview_http.close()
         cli_env.ctx.db.close()
 
 

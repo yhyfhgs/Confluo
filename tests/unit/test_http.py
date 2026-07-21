@@ -97,6 +97,83 @@ def test_user_agent_sent_on_stream_requests() -> None:
 
 
 # ---------------------------------------------------------------------------
+# extra_headers（plan §7-4 冻结扩展）：client 级附加头，纯附加带默认值
+# ---------------------------------------------------------------------------
+
+
+def test_extra_headers_are_sent_on_every_request() -> None:
+    """`extra_headers` 注入的 client 级头随每次请求发出（openreview token cookie 通道）。"""
+    captured: list[str | None] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        captured.append(request.headers.get("cookie"))
+        return httpx.Response(200, text="ok")
+
+    client = HttpClient(
+        user_agent=UA,
+        transport=httpx.MockTransport(handler),
+        extra_headers={"Cookie": "openreview.accessToken=SEKRET_TOKEN"},
+    )
+    client.get_text("https://api2.openreview.net/notes?content.venueid=X")
+    client.get_bytes("https://api2.openreview.net/groups?id=Y")
+    assert captured == [
+        "openreview.accessToken=SEKRET_TOKEN",
+        "openreview.accessToken=SEKRET_TOKEN",
+    ]
+
+
+def test_extra_headers_are_sent_on_stream_requests() -> None:
+    """流式取回（PDF 下载）同样携带 client 级附加头。"""
+    captured: list[str | None] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        captured.append(request.headers.get("cookie"))
+        return httpx.Response(200, content=b"%PDF-1.7\nx")
+
+    client = HttpClient(
+        user_agent=UA,
+        transport=httpx.MockTransport(handler),
+        extra_headers={"Cookie": "openreview.accessToken=T"},
+    )
+    list(client.stream("https://openreview.net/pdf?id=abc"))
+    assert captured == ["openreview.accessToken=T"]
+
+
+def test_extra_headers_default_none_keeps_user_agent_only() -> None:
+    """缺省 `extra_headers=None`：只发 UA，无附加头（扩展前行为不变）。"""
+    captured: dict[str, str | None] = {}
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        captured["ua"] = request.headers.get("user-agent")
+        captured["cookie"] = request.headers.get("cookie")
+        return httpx.Response(200, text="ok")
+
+    client = make_client(handler)
+    client.get_text("https://x.local/p")
+    assert captured["ua"] == UA
+    assert captured["cookie"] is None
+
+
+def test_extra_headers_coexist_with_user_agent() -> None:
+    """附加头与 UA 并存：既发 UA 也发附加头（纯附加，互不覆盖）。"""
+    captured: dict[str, str | None] = {}
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        captured["ua"] = request.headers.get("user-agent")
+        captured["cookie"] = request.headers.get("cookie")
+        return httpx.Response(200, text="ok")
+
+    client = HttpClient(
+        user_agent=UA,
+        transport=httpx.MockTransport(handler),
+        extra_headers={"Cookie": "openreview.accessToken=T"},
+    )
+    client.get_text("https://api2.openreview.net/notes")
+    assert captured["ua"] == UA
+    assert captured["cookie"] == "openreview.accessToken=T"
+
+
+# ---------------------------------------------------------------------------
 # 流式分块（多 chunk）
 # ---------------------------------------------------------------------------
 

@@ -143,6 +143,63 @@ def test_identity_email_blank_normalizes_to_none(
     assert cfg.identity_email is None
 
 
+# -- OpenReview token 通道（openreview.md §3）--------------------------------------------
+
+
+def test_openreview_token_read_from_config_toml(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """`[auth.openreview].token` 读入 Config.openreview_token（cookie 通道来源）。"""
+    monkeypatch.delenv("PAPER_CRAWLER_HOME", raising=False)
+    monkeypatch.delenv("PAPER_CRAWLER_OPENREVIEW_TOKEN", raising=False)
+    home = tmp_path / "home"
+    home.mkdir()
+    (home / "config.toml").write_text('[auth.openreview]\ntoken = "tok-abc123"\n', encoding="utf-8")
+    cfg = Config.load(home=home)
+    assert cfg.openreview_token == "tok-abc123"
+
+
+def test_openreview_token_absent_is_none(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """无 config.toml 且无 env → openreview_token 缺省 None（匿名）。"""
+    monkeypatch.delenv("PAPER_CRAWLER_HOME", raising=False)
+    monkeypatch.delenv("PAPER_CRAWLER_OPENREVIEW_TOKEN", raising=False)
+    cfg = Config.load(home=tmp_path / "home")
+    assert cfg.openreview_token is None
+
+
+def test_openreview_token_blank_normalizes_to_none(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.delenv("PAPER_CRAWLER_HOME", raising=False)
+    monkeypatch.delenv("PAPER_CRAWLER_OPENREVIEW_TOKEN", raising=False)
+    home = tmp_path / "home"
+    home.mkdir()
+    (home / "config.toml").write_text('[auth.openreview]\ntoken = "   "\n', encoding="utf-8")
+    cfg = Config.load(home=home)
+    assert cfg.openreview_token is None
+
+
+def test_openreview_token_env_var_read(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """环境变量 PAPER_CRAWLER_OPENREVIEW_TOKEN 提供 token（无 config.toml）。"""
+    monkeypatch.delenv("PAPER_CRAWLER_HOME", raising=False)
+    monkeypatch.setenv("PAPER_CRAWLER_OPENREVIEW_TOKEN", "env-tok-xyz")
+    cfg = Config.load(home=tmp_path / "home")
+    assert cfg.openreview_token == "env-tok-xyz"
+
+
+def test_openreview_token_env_overrides_config_toml(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """env 覆盖 config.toml（12-factor 惯例）。"""
+    monkeypatch.delenv("PAPER_CRAWLER_HOME", raising=False)
+    monkeypatch.setenv("PAPER_CRAWLER_OPENREVIEW_TOKEN", "env-wins")
+    home = tmp_path / "home"
+    home.mkdir()
+    (home / "config.toml").write_text('[auth.openreview]\ntoken = "file-loses"\n', encoding="utf-8")
+    cfg = Config.load(home=home)
+    assert cfg.openreview_token == "env-wins"
+
+
 def test_ensure_dirs_creates_tree(tmp_path: Path) -> None:
     cfg = Config.load(home=tmp_path)
     cfg.ensure_dirs()

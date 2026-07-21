@@ -105,3 +105,30 @@ Atom 1.0 / arXiv API 规范手写，内容为构造值，各文件头以注释�
 响应头需随 body 落盘时（Retry-After 等信号须 round-trip），用 `.http` 文本格式，
 由 `tests/helpers/arxiv_fixtures.py::http_fixture()` 解析：以 `#` 开头的行是注释；
 `HTTP-STATUS: <int>` 声明状态码；其余 `Key: Value` 为响应头；**首个空行**后是原始 body。
+
+## OpenReview fixture 十一件套（Phase 2；AC-2.1/2.2）
+
+`tests/fixtures/openreview/`（无 `golden/` 层——回放**输入**，断言在
+`tests/unit/test_openreview_fixtures.py` / `tests/integration/test_openreview_pull.py`）：
+
+| 件 | 文件 | 覆盖（openreview.md §6/§7） |
+|---|---|---|
+| ① | `01_v2_notes_normal.json` | v2 notes 正常页（接收+pdf / 接收无pdf / 被拒 Submission） |
+| ② | `02_v2_notes_paged_page1.json` (+ `..._page2.json`) | count>limit 分页（offset 至 count） |
+| ③ | `03_notes_empty.json` | 200 `{"notes":[],"count":0}` 合法空态 |
+| ④ | `04_groups_venues.json` | groups venues 主表节选（届表交叉验证）；另 `04_group_2024_v2`/`04_group_2014_v1` 判版本 |
+| ⑤ | `05_v1_notes_page.json` | v1 notes 直取形态（2014，arxiv 线索入 meta，无 pdf） |
+| ⑥ | `06_challenge_403.http` | 403 ChallengeRequiredError → adapter 重分类 `auth_expired` |
+| ⑦ | `07_notfound_404.http` | 404 NotFoundError → `gone` |
+| ⑧ | `08_ratelimit_429.http` | 429 + ratelimit 头 → `rate_limited` |
+| ⑨ | `09_malformed.json` | 畸形 JSON → `parse` |
+| ⑩ | `10_server_error_500.http` | 5xx → `transient` |
+| ⑪ | `11_bad_request_400.http` | 400 → `config` |
+
+**⚠ 全部为合成 fixture（SYNTHETIC；Phase 2 无用户 token 故全部合成）**：结构依
+docs.openreview.net v1/v2 note schema 与勘察 §1-§7 [DOC]/[LIVE] 手写，内容为构造值，
+文件头（JSON `_synthetic` 键 / `.http` `#` 注释）标注"合成；待 token 后真实校验"。
+④ 的 venues 主表 ICLR.cc/* 系勘察 §2 [LIVE] 转录（公开 CC0 元数据、匿名可读）。
+**在线部分（带 token 冒烟 + anchor 正式 count 生成）BLOCKED 待用户 token**——离线全链
+（enumerate→resolve→fetch MockTransport 回放、AC-2.1 anchor 结构比对、AC-2.2 pull 回放）
+是本期 DoD。加载器 `tests/helpers/openreview_fixtures.py`（`fixture_bytes`/`http_fixture`）。
