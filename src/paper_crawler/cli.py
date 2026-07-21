@@ -70,7 +70,6 @@ from typing import Annotated, NoReturn
 import typer
 
 from paper_crawler.adapter import bind_http_client, load_adapters
-from paper_crawler.adapters.arxiv.adapter import build_user_agent
 from paper_crawler.canary import canary_exit_code, render_canary_markdown, run_canary
 from paper_crawler.config import Config
 from paper_crawler.errors import CrawlerError, ErrorClass, IllegalTransition
@@ -82,6 +81,7 @@ from paper_crawler.registry import VenueRegistry
 from paper_crawler.storage.db import Database
 from paper_crawler.storage.repo import Repo
 from paper_crawler.tasks import TASK_STATES, TaskQueue
+from paper_crawler.useragent import build_user_agent
 from paper_crawler.verify import verify_store
 
 # ---------------------------------------------------------------------------

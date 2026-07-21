@@ -14,7 +14,7 @@ import httpx
 import pytest
 
 from helpers import FakeFetchIO, make_arxiv_venue
-from paper_crawler.adapters.arxiv.adapter import ArxivAdapter, build_user_agent
+from paper_crawler.adapters.arxiv.adapter import ArxivAdapter
 from paper_crawler.errors import CrawlerError, ErrorClass
 from paper_crawler.http import HttpClient
 from paper_crawler.types import AssetKind, AuthLevel, Capability, IssueRef, PaperStub, UrlStrategy
@@ -144,22 +144,6 @@ def test_adapter_metadata_matches_arxiv_md_verdicts() -> None:
     # 1 req/3s = 20 rpm；source_note 出处强制（ToU）。
     assert a.default_rate.requests_per_minute == 20.0
     assert "Terms of Use" in a.default_rate.source_note
-
-
-def test_build_user_agent_is_d014_shaped() -> None:
-    ua = build_user_agent("me@example.com", version="9.9.9")
-    assert ua == "PaperCrawler/9.9.9 (personal research; mailto:me@example.com)"
-
-
-def test_build_user_agent_omits_mailto_when_email_none() -> None:
-    """config `[identity].email` 未配置（None）→ UA 省略 mailto 段（不硬编码占位地址）。"""
-    ua = build_user_agent(None, version="9.9.9")
-    assert ua == "PaperCrawler/9.9.9 (personal research)"
-
-
-def test_build_user_agent_omits_mailto_when_email_empty() -> None:
-    """空串等价未配置（防御性）——同样省略 mailto 段。"""
-    assert build_user_agent("", version="9.9.9") == "PaperCrawler/9.9.9 (personal research)"
 
 
 def test_set_http_client_injection_overrides_lazy_env_build() -> None:
@@ -479,21 +463,6 @@ def test_default_user_agent_falls_back_to_placeholder(monkeypatch: pytest.Monkey
     monkeypatch.delenv(mod._CONTACT_EMAIL_ENV, raising=False)
     ua = mod._default_user_agent()
     assert ua.endswith("(personal research; mailto:anonymous@paper-crawler.invalid)")
-
-
-def test_package_version_falls_back_when_distribution_missing(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    from importlib import metadata as im
-
-    from paper_crawler import __version__
-    from paper_crawler.adapters.arxiv import adapter as mod
-
-    def _raise(_name: str) -> str:
-        raise im.PackageNotFoundError(_name)
-
-    monkeypatch.setattr(mod.metadata, "version", _raise)
-    assert mod._package_version() == __version__
 
 
 def test_lazy_client_builds_and_caches_httpclient_when_http_none() -> None:
