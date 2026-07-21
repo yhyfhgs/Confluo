@@ -12,10 +12,10 @@ updated: 2026-07-21
 
 ## 当前快照（2026-07-21）
 
-- **当前 Phase**：2 **进行中**（Open-Access MVP，用户 2026-07-21 授权开工）。W0 门禁完成：arxiv 详设双评审（2 BLOCKER + 10 CONCERN 全闭合）→ **approved**；[Phase 2 实施计划](phase2-implementation-plan.md) approved；D-018（AC-2.3 证据分层）。
-- **执行中**：T1 核心硬化包（fix/core-hardening，opus）、T2 HttpClient（feat/core-http，opus）并行开发中；T3 在线测试基建待派；随后 arxiv 三件套（T4-T6）→ T7 收束 → Stage B 其余 7 adapter 滚动。
-- **总体进度**：Phase 0/1 = 100%（519 测试 / 覆盖率 99.13%，tag `phase-1`、`schema-v1`）；Phase 2 = W0 完成。
-- **待用户执行**：外部 API 申请（Elsevier/S2/Kaggle——Phase 3/4 前 1-2 周提交即可，Phase 2 不阻塞）。
+- **当前 Phase**：2 **进行中**。**arxiv adapter 整链完成并验收**（T1-T7 全合并，AC-2.3 双层 PASS 见[验收记录](../testing/records/2026-07-22-arxiv-acceptance.md)，arxiv.md 转 implemented；首次真网冒烟 7 请求全程合规）。Stage A 地基 + 31 个 arxiv venue + socket 禁网护栏就位。
+- **Stage B 门禁全清**（6/6 approved：openreview/pmlr/cvf/acl/neurips/aaai——各经 LIVE 勘察→重写→复审；acm_dl 红线出列 D-020、AC-2.6 deferred）；实现滚动开闸：openreview（AC-2.1/2.2）先行 + pmlr 并行。
+- **总体进度**：Phase 0/1 = 100%；Phase 2 ≈ 55%（main 822 测试 / 覆盖率 99.31%）。新 ADR：D-018/D-019/D-020。
+- **待用户执行**：①OpenReview 免费账号 token（openreview 在线验收前提，config.toml [auth.openreview]）；②外部 API 申请（Elsevier/S2/Kaggle，Phase 3/4 前）。
 - **阻塞**：无
 
 ## Phase 进度板

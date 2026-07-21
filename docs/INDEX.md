@@ -53,7 +53,7 @@
 | 路径 | 标题 | status | updated |
 |---|---|---|---|
 | [design/adapters/README.md](design/adapters/README.md) | 模板 + 索引 + 勘察清单 | approved | 2026-07-20 |
-| [design/adapters/arxiv.md](design/adapters/arxiv.md) | arXiv | approved | 2026-07-21 |
+| [design/adapters/arxiv.md](design/adapters/arxiv.md) | arXiv | implemented | 2026-07-22 |
 | [design/adapters/ssrn.md](design/adapters/ssrn.md) | SSRN | review | 2026-07-20 |
 | [design/adapters/openreview.md](design/adapters/openreview.md) | OpenReview | approved | 2026-07-22 |
 | [design/adapters/pmlr.md](design/adapters/pmlr.md) | PMLR | approved | 2026-07-22 |
@@ -91,6 +91,7 @@
 | [testing/acceptance-criteria.md](testing/acceptance-criteria.md) | 验收标准总表（AC-0…AC-8） | approved | 2026-07-20 |
 | testing/records/ | 测试执行留痕（目录，随执行追加） | — | — |
 | [testing/records/2026-07-21-phase1-acceptance.md](testing/records/2026-07-21-phase1-acceptance.md) | Phase 1 验收记录（AC-1 全过） | — | 2026-07-21 |
+| [testing/records/2026-07-22-arxiv-acceptance.md](testing/records/2026-07-22-arxiv-acceptance.md) | arXiv 验收记录（AC-2.3 双层 PASS） | — | 2026-07-22 |
 
 ## process/ — 流程规范
 

@@ -1,8 +1,8 @@
 ---
 title: Adapter 设计 · arXiv
-status: approved
+status: implemented
 owner: fable5
-updated: 2026-07-21
+updated: 2026-07-22
 ---
 
 # Adapter · `arxiv`
@@ -56,7 +56,7 @@ updated: 2026-07-21
 | arxiv.org（abs/pdf 单篇） | 1 req/3s，并发 1 | ToU 口径统一 |
 
 - UA：`PaperCrawler/<ver> (personal research; mailto:<user>)`（D-014）；`default_rate` 带 `source_note` 出处（types.RatePolicy 强制）。
-- **robots 合规（两域名分别对待）**：`arxiv.org` robots 允许 `/list /abs /pdf`（Crawl-delay 15）、禁 `/search /api` 等——我们不访问其禁区。`export.arxiv.org` robots 对通用爬虫全禁——**本 adapter 对该域仅走官方文档化 API（Query API），其程序化访问依据是 arXiv API ToU 的明确邀请（api.arxiv.org 文档），robots.txt 的网页爬虫公约不适用于 ToU 授权的 API 消费**；⚠ **实现期复核义务（T5 首次在线冒烟时）**：实测 `export.arxiv.org/robots.txt` 与 API ToU 现行文本，若发现与本推理相悖的明确条款，立即停用该通道并升级 decision-log 仲裁（AC-0.5 红线优先）。
+- **robots 合规（两域名分别对待）**：`arxiv.org` robots 允许 `/list /abs /pdf`（Crawl-delay 15）、禁 `/search /api` 等——我们不访问其禁区。`export.arxiv.org` robots 对通用爬虫全禁——**本 adapter 对该域仅走官方文档化 API（Query API），其程序化访问依据是 arXiv API ToU 的明确邀请（api.arxiv.org 文档），robots.txt 的网页爬虫公约不适用于 ToU 授权的 API 消费**；**复核已执行（T7 在线冒烟 2026-07-22）**：`export.arxiv.org/robots.txt` 实测 `Disallow: /`（blanket 形态，与勘察记录一致）——维持本节推理（ToU 授权的文档化 API 消费不受网页爬虫公约约束），无 AC-0.5 升级；书面 ToU 条款引用列为增强项（终审补充）。
 - bulk 需求走 Kaggle/S3 而非在线刷取。
 
 ## 5. 失败模式映射

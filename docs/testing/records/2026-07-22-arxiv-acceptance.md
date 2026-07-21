@@ -1,14 +1,14 @@
 ---
-title: arXiv 验收执行记录（AC-2.3）· DRAFT
-status: draft
+title: arXiv 验收执行记录（AC-2.3）
+status: approved
 owner: fable5
 updated: 2026-07-22
 ---
 
-# arXiv 验收执行记录（AC-2.3）— **DRAFT**
+# arXiv 验收执行记录（AC-2.3）
 
-> **draft 状态**：本记录由 Phase 2 T7 implementer 起草并附实测证据；**主 agent 终验后转正**
-> （去掉 draft 标记、补独立复核结论）。口径依 arxiv.md §6 的 AC-2.3 证据分层（D-018）。
+> 本记录由 T7 implementer 起草、独立审查（Spec 7/7 + 合规审计 PASS）后经主 agent 终验**转正**
+> （2026-07-22）。口径依 arxiv.md §6 的 AC-2.3 证据分层（D-018）。
 
 - 起草日期：2026-07-22 · 起草者：T7 implementer（fable5 档）
 - 代码版本：`worktree-agent-a00d496f50d3bb46e` @ `d933472`（起点 982c2ad = main，含 T5/T6 全合并）
@@ -99,3 +99,11 @@ cs.LG canary 用老式 slash id，顺带验证 Query API `id_list` 接受老式 
 1. 独立复核（另一 agent 亲跑门禁 + 抽验在线台账合规）结论；
 2. robots/ToU 张力是否需追加书面 ToU 引用（见上节 ⚠）；
 3. 转正：去 draft 标记、并入 AC 汇总。
+
+## 主 agent 终验签署（fable5，2026-07-22）
+
+- 独立审查结论采信：Spec 7/7 PASS、合规审计 PASS（台账逐条核对：7 请求 ≤10、间隔合 1req/3s、端点全官方文档化 API、UA 携 mailto、零凭证零绕过）、质量 PASS。
+- 合并后主仓库亲跑 `uv run make check`：**822 passed / 12 skipped / 覆盖率 99.31%** 全绿（含层①离线回放）。
+- 硬编码邮箱按审查 concern 修正为环境变量通道（f25903d，D-014 口径对齐）。
+- robots 复核义务（arxiv.md §4 ⚠）已执行：`export.arxiv.org/robots.txt` 实测 `Disallow: /`（blanket）——维持既立推理（网页爬虫公约 ≠ ToU 明确授权的 API 消费），无 AC-0.5 升级；书面 ToU 引用列为 Phase 2 终审增强项。
+- **判定：AC-2.3 = PASS（Phase 2 口径，D-018 双层证据齐备）**；第三层真实 7 日 runbook 随 Phase 6 AC-6.1。
