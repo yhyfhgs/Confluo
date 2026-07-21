@@ -17,7 +17,7 @@ updated: 2026-07-21
 | T2 | 契约测试 | 所有 adapter 对协议的一致性（能力声明↔行为） | 无 | 每次提交 | `tests/contract/` |
 | T3 | Fixture 回放测试 | adapter 解析真实页面快照的回归 | 无 | 每次提交 | `tests/fixtures/<adapter>/` |
 | T4 | 集成测试（mock 网络） | pipeline 六阶段、断点续爬、限速器、auth 生命周期（假 IdP） | 本地 mock | 每次提交 | `tests/integration/` |
-| T5 | 在线冒烟 + canary | 真网小样本：结构未漂移、限速合规 | **真网，限量** | 手动 / nightly / 周 | `tests/smoke/`、`crawler canary` |
+| T5 | 在线冒烟 + canary | 真网小样本：结构未漂移、限速合规 | **真网，限量** | 手动 / nightly / 周 | `tests/online/`、`crawler canary` |
 | T6 | 手动 runbook（半自动） | 真实凭证的认证流程、端到端场景验收 | 真网 | 里程碑 / 按需 | `tests/manual/` + records 留痕 |
 
 **门禁规则**：T1–T4 绿是合并前提；T5 失败不阻塞合并但必须开跟踪任务（站点漂移≠代码错误）；T6 结果决定验收（AC）判定。
