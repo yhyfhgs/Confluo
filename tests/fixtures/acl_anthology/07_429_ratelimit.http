@@ -1,0 +1,10 @@
+# SYNTHETIC (Phase 2). Not observed live -- research/site-survey/acl-anthology.md §7
+# found no rate-limit headers on raw.githubusercontent.com/aclanthology.org across 24
+# requests (only api.github.com exposes a documented limit, see 08_github_403.http for
+# that 403-flavoured signal). Shape synthesized per NFR-4 default expectations: 429 with
+# Retry-After -> HttpClient maps to rate_limited (detail carries retry_after_s).
+HTTP-STATUS: 429
+Content-Type: text/plain
+Retry-After: 30
+
+Too Many Requests

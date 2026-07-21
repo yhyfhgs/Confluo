@@ -42,21 +42,25 @@ def test_shipped_venues_pass_lint_cleanly(adapters: dict[str, SourceAdapter]) ->
     assert load_issues == []
     assert reg.lint() == []
     ids = {spec.id for spec in reg.all()}
-    # 基础三件（Phase 1 mock + 期刊/会议示例）常驻。
-    assert {"mock_journal", "jfe", "iclr"} <= ids
+    # 基础四件（Phase 1 mock + 期刊/会议示例 + acl_anthology AC-2.5 载体）常驻。
+    assert {"mock_journal", "jfe", "iclr", "emnlp"} <= ids
     # 其余全为 arxiv preprint_channel 白名单（catalog §1，31 个 category），
     # 由 scripts/gen_arxiv_venues.py 生成；每个都 preprint_channel 且路由到 arxiv。
     arxiv_ids = {i for i in ids if i.startswith("arxiv_")}
-    assert arxiv_ids == ids - {"mock_journal", "jfe", "iclr"}
+    assert arxiv_ids == ids - {"mock_journal", "jfe", "iclr", "emnlp"}
     assert len(arxiv_ids) == 31
     for venue_id in arxiv_ids:
         spec = reg.get(venue_id)
         assert spec.kind == "preprint_channel"
         assert spec.metadata_source == "arxiv"
         assert spec.fulltext_source == "arxiv"
+    emnlp = reg.get("emnlp")
+    assert emnlp.kind == "conference"
+    assert emnlp.metadata_source == "acl_anthology"
+    assert emnlp.fulltext_source == "acl_anthology"
 
 
-@pytest.mark.parametrize("venue_id", ["mock_journal", "jfe", "iclr"])
+@pytest.mark.parametrize("venue_id", ["mock_journal", "jfe", "iclr", "emnlp"])
 def test_each_shipped_venue_is_routable(adapters: dict[str, SourceAdapter], venue_id: str) -> None:
     reg = VenueRegistry(adapters)
     reg.load_dirs([REPO_VENUES_DIR])

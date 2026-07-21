@@ -35,6 +35,10 @@ DEFAULT_ARXIV_QUIRKS: dict[str, object] = {
 # adapter auth_requirement（否则 lint 不过）。overrides 通道默认空。
 DEFAULT_OPENREVIEW_QUIRKS: dict[str, object] = {"openreview_group_overrides": {}}
 
+# acl_anthology 契约/集成测试用的 conference venue（id='emnlp'，与 venues/cs_ai/emnlp.yaml
+# 一致）。`anthology_legacy_prefix` 驱动旧式文件名构造（design/adapters/acl-anthology.md §4）。
+DEFAULT_ACL_ANTHOLOGY_QUIRKS: dict[str, object] = {"anthology_legacy_prefix": "D"}
+
 
 def make_mock_venue(**quirks_overrides: object) -> VenueSpec:
     """构造 mock_platform 契约测试用的 venue（不依赖 `venues/` 目录文件）。
@@ -98,6 +102,30 @@ def make_openreview_venue(**quirks_overrides: object) -> VenueSpec:
     )
 
 
+def make_acl_anthology_venue(**quirks_overrides: object) -> VenueSpec:
+    """构造 acl_anthology 契约/集成测试用的 `conference` venue（不依赖 `venues/` 目录文件）。
+
+    id='emnlp'（与仓内 `venues/cs_ai/emnlp.yaml` 一致，虽测试默认不读该文件）；
+    auth=none（family=open_access，勘察 §7 全程匿名）；quirks 默认含
+    `anthology_legacy_prefix='D'` 驱动旧式文件名构造/候选年份提取。
+    """
+    quirks: dict[str, object] = dict(DEFAULT_ACL_ANTHOLOGY_QUIRKS)
+    quirks.update(quirks_overrides)
+    return VenueSpec(
+        id="emnlp",
+        kind="conference",
+        names={
+            "full": "Conference on Empirical Methods in Natural Language Processing",
+            "aliases": ["EMNLP"],
+        },
+        field=["cs_ai"],
+        identifiers={"dblp_key": "conf/emnlp"},
+        metadata_source="acl_anthology",
+        fulltext_source="acl_anthology",
+        quirks=quirks,
+    )
+
+
 class FakeFetchIO:
     """`FetchIO` 协议的测试替身：把 chunks 缓冲进内存并计算 `(bytes_written, sha256)`。
 
@@ -118,10 +146,12 @@ class FakeFetchIO:
 
 
 __all__ = [
+    "DEFAULT_ACL_ANTHOLOGY_QUIRKS",
     "DEFAULT_ARXIV_QUIRKS",
     "DEFAULT_MOCK_QUIRKS",
     "DEFAULT_OPENREVIEW_QUIRKS",
     "FakeFetchIO",
+    "make_acl_anthology_venue",
     "make_arxiv_venue",
     "make_mock_venue",
     "make_openreview_venue",

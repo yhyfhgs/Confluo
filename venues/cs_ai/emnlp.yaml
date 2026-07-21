@@ -1,0 +1,17 @@
+# venues/cs_ai/emnlp.yaml —— ACL Anthology adapter（AC-2.5 验收载体）
+id: emnlp
+kind: conference
+names: {full: Conference on Empirical Methods in Natural Language Processing, aliases: [EMNLP]}
+field: [cs_ai]
+tier: T1
+identifiers:
+  dblp_key: conf/emnlp
+metadata_source: acl_anthology
+fulltext_source: acl_anthology
+# 勘察 §7：GitHub bulk + aclanthology.org 站点全程匿名可读，无认证依赖。
+auth: {level: none}
+quirks:
+  # 旧式（2020 年前摄入）文件名前缀：{prefix}{两位年}.xml（如 D19.xml）——EMNLP 专属
+  # 单字母前缀 'D'（design/adapters/acl-anthology.md §4/§7 canary(b) D19-1001 先例）。
+  anthology_legacy_prefix: "D"
+status: active
