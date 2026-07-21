@@ -154,9 +154,7 @@ def test_openreview_token_read_from_config_toml(
     monkeypatch.delenv("PAPER_CRAWLER_OPENREVIEW_TOKEN", raising=False)
     home = tmp_path / "home"
     home.mkdir()
-    (home / "config.toml").write_text(
-        '[auth.openreview]\ntoken = "tok-abc123"\n', encoding="utf-8"
-    )
+    (home / "config.toml").write_text('[auth.openreview]\ntoken = "tok-abc123"\n', encoding="utf-8")
     cfg = Config.load(home=home)
     assert cfg.openreview_token == "tok-abc123"
 
@@ -197,9 +195,7 @@ def test_openreview_token_env_overrides_config_toml(
     monkeypatch.setenv("PAPER_CRAWLER_OPENREVIEW_TOKEN", "env-wins")
     home = tmp_path / "home"
     home.mkdir()
-    (home / "config.toml").write_text(
-        '[auth.openreview]\ntoken = "file-loses"\n', encoding="utf-8"
-    )
+    (home / "config.toml").write_text('[auth.openreview]\ntoken = "file-loses"\n', encoding="utf-8")
     cfg = Config.load(home=home)
     assert cfg.openreview_token == "env-wins"
 
