@@ -106,6 +106,22 @@ quirks:
 status: active
 ```
 
+```yaml
+# venues/preprint/arxiv-q-fin-pr.yaml —— 预印本渠道示例（勘误补：原无 preprint_channel 模板）
+id: arxiv_q_fin_pr            # 文件名 kebab→snake 必须 == id
+kind: preprint_channel        # 无期/届概念，按 (category, 年月) 切月度虚拟桶（design/08 §1）
+names: {full: "arXiv q-fin.PR · Pricing of Securities", aliases: ["q-fin.PR"]}
+field: [finance]
+metadata_source: arxiv        # preprint_channel 无 issn；分类身份落 quirks，非 identifiers
+fulltext_source: arxiv
+auth: {level: none}
+quirks:                       # arxiv adapter 定义：起点月 + OAI set + 子分类过滤键
+  inception: "2008-12"        # 月度桶起点（未声明则回退全站起点 1991-08）
+  arxiv_set: "q-fin"          # OAI-PMH archive 级 set（带连字符 archive 须显式）
+  arxiv_category: "q-fin.PR"  # 子分类客户端过滤（大小写敏感）
+status: active
+```
+
 校验规则（Registry 加载时强制）：id 唯一；metadata_source/fulltext_source 必须是已注册 adapter；auth.level 与 adapter 能力兼容（如 `elsevier_sd` 不接受 `none`）；**期刊必须有 issn**（D-015 修订：OpenAlex 改信用计费后 openalex_source 降为可选补充字段，不再可替代 issn——Crossref 按 ISSN 枚举是期刊元数据主干的硬前提）。
 
 ## 3. SourceAdapter 协议（设计伪代码）
