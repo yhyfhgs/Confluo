@@ -41,6 +41,15 @@ DEFAULT_OPENREVIEW_QUIRKS: dict[str, object] = {"openreview_group_overrides": {}
 DEFAULT_PMLR_QUIRKS: dict[str, object] = {
     "volume_map": {2023: 202, 2024: 235},
 }
+# neurips_proceedings 契约/集成测试用的 conference venue：quirks 自成一体、独立于
+# venues/cs_ai/neurips.yaml 的真实内容（同 pmlr/arxiv 先例的解耦考量）。收窄到
+# [2021, 2022]——单一后缀边界（legacy→modern）两侧各一年，恰好是 healthcheck 固定
+# canary 覆盖的两届（design/adapters/neurips-proceedings.md §3.5），discover 默认零
+# 网络产 2 个 IssueRef，测试确定性不随墙钟年份漂移。
+DEFAULT_NEURIPS_QUIRKS: dict[str, object] = {
+    "first_year": 2021,
+    "known_through_year": 2022,
+}
 
 
 def make_mock_venue(**quirks_overrides: object) -> VenueSpec:
@@ -125,6 +134,29 @@ def make_pmlr_venue(**quirks_overrides: object) -> VenueSpec:
     )
 
 
+def make_neurips_venue(**quirks_overrides: object) -> VenueSpec:
+    """构造 neurips_proceedings 契约/集成测试用的 `conference` venue（不依赖 `venues/` 目录）。
+
+    id='neurips'。默认 quirks 收窄届表到 `[2021, 2022]`（单一后缀边界两侧各一年）；
+    `quirks_overrides` 可注入/覆盖 `first_year`/`known_through_year`。
+    """
+    quirks: dict[str, object] = dict(DEFAULT_NEURIPS_QUIRKS)
+    quirks.update(quirks_overrides)
+    return VenueSpec(
+        id="neurips",
+        kind="conference",
+        names={
+            "full": "Conference on Neural Information Processing Systems",
+            "aliases": ["NeurIPS", "NIPS"],
+        },
+        field=["cs_ai"],
+        identifiers={"dblp_key": "conf/nips"},
+        metadata_source="neurips_proceedings",
+        fulltext_source="neurips_proceedings",
+        quirks=quirks,
+    )
+
+
 class FakeFetchIO:
     """`FetchIO` 协议的测试替身：把 chunks 缓冲进内存并计算 `(bytes_written, sha256)`。
 
@@ -157,4 +189,6 @@ __all__ = [
     "make_arxiv_venue",
     "make_mock_venue",
     "make_pmlr_venue",
+    "DEFAULT_NEURIPS_QUIRKS",
+    "make_neurips_venue",
 ]
