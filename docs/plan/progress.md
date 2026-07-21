@@ -12,10 +12,10 @@ updated: 2026-07-21
 
 ## 当前快照（2026-07-21）
 
-- **当前 Phase**：2 **进行中**。**arxiv adapter 整链完成并验收**（T1-T7 全合并，AC-2.3 双层 PASS 见[验收记录](../testing/records/2026-07-22-arxiv-acceptance.md)，arxiv.md 转 implemented；首次真网冒烟 7 请求全程合规）。Stage A 地基 + 31 个 arxiv venue + socket 禁网护栏就位。
-- **Stage B 门禁全清**（6/6 approved：openreview/pmlr/cvf/acl/neurips/aaai——各经 LIVE 勘察→重写→复审；acm_dl 红线出列 D-020、AC-2.6 deferred）；实现滚动开闸：openreview（AC-2.1/2.2）先行 + pmlr 并行。
-- **总体进度**：Phase 0/1 = 100%；Phase 2 ≈ 55%（main 822 测试 / 覆盖率 99.31%）。新 ADR：D-018/D-019/D-020。
-- **待用户执行**：①OpenReview 免费账号 token（openreview 在线验收前提，config.toml [auth.openreview]）；②外部 API 申请（Elsevier/S2/Kaggle，Phase 3/4 前）。
+- **当前 Phase**：2 **已完成**（2026-07-22，[验收汇总](../testing/records/2026-07-22-phase2-acceptance.md)、[阶段报告](../reports/2026-07-22-phase2-report.md)，tag `phase-2`）。7 个真实 adapter（arxiv/openreview/pmlr/acl_anthology/cvf/aaai_ojs/neurips_proceedings）+ 全部详设 implemented；1629 测试 / 覆盖率 99.32%；在线冒烟 6 站实跑合规（arxiv 7 请求 + 五站批量 18 请求，四个 D-019 锚点精确命中）。→ 下一 Phase：3（聚合元数据层）
+- **待补验（不阻塞 tag，如实记录）**：openreview 在线层（AC-2.1/2.2 ②层）待用户 OpenReview token；D-019 锚点 DBLP 人工核准正式 sign-off；neurips canary 三条真值替换（2021 真值已捕获）。acm_dl 依 D-020 出列、Phase 4 重评。
+- **总体进度**：Phase 0/1/2 = 100%。新 ADR：D-018/D-019/D-020。
+- **待用户执行**：①OpenReview 免费账号 token（config.toml [auth.openreview]，openreview 在线补验前提）；②外部 API 申请（Elsevier/S2/Kaggle，Phase 3/4 前 1-2 周提交）。
 - **阻塞**：无
 
 ## Phase 进度板
@@ -24,8 +24,8 @@ updated: 2026-07-21
 |---|---|---|---|
 | 0 设计与文本系统 | done | 100% | 报告：reports/2026-07-20-phase0-report.md |
 | 1 核心框架 | **done** | 100% | 报告：reports/2026-07-21-phase1-report.md；tag phase-1 + schema-v1 |
-| 2 Open-Access MVP | **in_progress** | W0 完成 | 实施计划 approved；arxiv 详设 approved；T1/T2 开发中 |
-| 3 聚合元数据层 | planned | 0% | |
+| 2 Open-Access MVP | **done** | 100% | 报告：reports/2026-07-22-phase2-report.md；tag phase-2；openreview 在线层待 token 补验 |
+| 3 聚合元数据层 | planned | 0% | 开工检查单见 Phase 2 报告 |
 | 4 认证框架+出版社 | planned | 0% | |
 | 5 SSRN 与特殊源 | planned | 0% | |
 | 6 订阅与搜索 | planned | 0% | |
@@ -55,3 +55,4 @@ updated: 2026-07-21
 | 2026-07-20 | [logs/2026-07-20-session-003.md](../logs/2026-07-20-session-003.md) | 一致性审查第 1 轮：需求矩阵 17/17；13 项修复（D-015） |
 | 2026-07-21 | [logs/2026-07-21-session-004.md](../logs/2026-07-21-session-004.md) | 深度审计第 2 轮：10 项修复；GLOSSARY+INDEX 导航+FR→AC 映射表（D-016） |
 | 2026-07-21 | [logs/2026-07-21-session-005.md](../logs/2026-07-21-session-005.md) | **Phase 1 全程**：实施计划+D-017；多 agent 并行开发 10 任务（fable/opus/sonnet 分档）；10 轮审查+终审；AC-1 全过；文档 implemented；tag phase-1/schema-v1 |
+| 2026-07-21/22 | [logs/2026-07-22-session-006.md](../logs/2026-07-22-session-006.md) | **Phase 2 全程**：W0 门禁+D-018/019/020；7 站 LIVE 勘察（~185 只读请求）；6 详设重写门禁；7 adapter 实现+审查+真实交叉验证；6 站在线冒烟实跑；终审放行；tag phase-2 |
