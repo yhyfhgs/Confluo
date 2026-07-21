@@ -102,6 +102,21 @@ def test_no_overrides_quirk_behaves_as_empty() -> None:
     assert cadence.resolve_overrides(venue) == {}
 
 
+def test_cadence_default_included_false_before_inception_direct() -> None:
+    # 直接单测这个纯谓词的边界（edition_years 的 range() 恒从 inception 起，不会以
+    # < inception 的年份调用它——直接调用验证谓词自身逻辑完整、不依赖调用方保证）。
+    spec = cadence.CadenceSpec(inception=2020, cadence=cadence.Cadence.ANNUAL)
+    assert cadence._cadence_default_included(spec, 2019) is False
+    assert cadence._cadence_default_included(spec, 2020) is True
+
+
+def test_overrides_non_str_non_int_non_bool_year_key_raises_config() -> None:
+    venue = make_cvf_venue("cvpr", cvf_edition_overrides={3.14: "exclude"})
+    with pytest.raises(CrawlerError) as exc:
+        cadence.edition_years(venue, current_year=2023)
+    assert exc.value.error_class is ErrorClass.CONFIG
+
+
 # --- since_year 下界裁剪（discover_timeline 增量发现）-----------------------------------------
 
 
