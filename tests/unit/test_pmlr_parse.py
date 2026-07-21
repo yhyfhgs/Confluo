@@ -112,6 +112,21 @@ def test_parse_volume_index_single_author_no_comma() -> None:
     assert papers[0].authors == ("Solo Author",)
 
 
+def test_parse_volume_index_authors_separated_by_comma_nbsp_real_form() -> None:
+    """真实分隔符观测（独立审查 2026-07-22 交叉验证）：作者列表用 `,&nbsp;`
+    （逗号 + 不换行空格实体）而非纯 ASCII 逗号空格分隔。`&nbsp;` 经
+    `html.unescape` 解码为 U+00A0，Python 的 `str.split()`/`.strip()` 把它
+    视同普通空白，`_normalize_ws` 会先把它规整成单个 ASCII 空格——故到
+    `_extract_authors` 按逗号切分时效果与纯 ASCII "`, `" 分隔完全一致，
+    本测试钉死这一真实形态确实被正确处理（此前只有纯 ASCII 逗号空格形态
+    有测试覆盖）。
+    """
+    papers = parse.parse_volume_index(
+        _page(_paper_div(authors="Elias Abad Rocamora,&nbsp;Jane Researcher,&nbsp;Alex Example"))
+    )
+    assert papers[0].authors == ("Elias Abad Rocamora", "Jane Researcher", "Alex Example")
+
+
 # --- 必需字段缺失 → PARSE ------------------------------------------------------------------------
 
 
@@ -135,15 +150,29 @@ def test_parse_volume_index_missing_abs_link_is_parse_error() -> None:
     assert exc.value.error_class is ErrorClass.PARSE
 
 
-# --- 相对链接解析（无前导斜杠，须以站点根解析）---------------------------------------------------
+# --- 链接解析（相对/绝对两种真实观测形态，均须以站点根为解析基准）---------------------------------
 
 
-def test_abs_link_resolves_against_site_root_not_fetched_page_url() -> None:
-    # href 自身已含 'v235/' 前缀；解析基准是站点根，不是"当前抓取页 URL"——
-    # 否则会重复拼出 v235/v235/... （pmlr.md §3.2 明文警告的陷阱）。
+def test_abs_link_relative_href_resolves_against_site_root_not_fetched_page_url() -> None:
+    # 相对形态（design pmlr.md §3.2 简化示例的 href 形态；理论输入，仍需正确
+    # 处理）：href 自身已含 'v235/' 前缀；解析基准是站点根，不是"当前抓取页
+    # URL"——否则会重复拼出 v235/v235/...（pmlr.md §3.2 明文警告的陷阱）。
     papers = parse.parse_volume_index(_page(_paper_div(abs_href="v235/example24a.html")))
     assert papers[0].landing_url == "https://proceedings.mlr.press/v235/example24a.html"
     assert "v235/v235" not in papers[0].landing_url
+
+
+def test_abs_link_absolute_href_passes_through_unchanged() -> None:
+    """真实观测形态（独立审查 2026-07-22 对真实 v235/v202/v9 三卷页面交叉验证）：
+    卷内 `[abs]` href **通常已是绝对 URL**，并非上一个测试覆盖的相对形态——
+    与顶层卷列表锚点（`href="v235"`，[LIVE] 确认相对无前导斜杠）不一致。
+    `urljoin` 对绝对 href 原样返回，slug 提取（取路径尾段去 `.html`）同样不受
+    绝对/相对形态影响，故这是当前生产真正会走到的分支。
+    """
+    absolute_href = "https://proceedings.mlr.press/v235/example24a.html"
+    papers = parse.parse_volume_index(_page(_paper_div(abs_href=absolute_href)))
+    assert papers[0].landing_url == absolute_href
+    assert papers[0].slug == "example24a"
 
 
 def test_slug_extraction_preserves_case_and_hyphens() -> None:
@@ -254,6 +283,60 @@ def test_count_bib_entries_top_level_percent_comment_with_at_sign_ignored() -> N
 def test_count_bib_entries_empty_file_is_zero() -> None:
     assert parse.count_bib_entries(b"% empty bibliography\n") == 0
     assert parse.count_bib_entries(b"") == 0
+
+
+# --- 独立审查 2026-07-22 MEDIUM 发现：只统计 @InProceedings，排除卷级前导 entry -------------------
+
+
+def test_count_bib_entries_excludes_leading_volume_proceedings_entry() -> None:
+    """真实 bibliography.bib 恒以卷级 @Proceedings{} 起手（独立审查对
+    v202/ICML2023、v238/AISTATS2024、v9/AISTATS2010 三份真实文件核实一致），
+    与逐篇论文用同一套 @Type{key,...} 语法——必须被排除，否则计数=论文数+1。
+    """
+    bib = (
+        b"@Proceedings{ICML2023,\n"
+        b"  booktitle = {Proceedings of the 40th ICML},\n"
+        b"  volume = {202},\n"
+        b"  year = {2023}\n"
+        b"}\n"
+        b"@InProceedings{pmlr-v202-a23a,\n"
+        b"  title = {Paper A}\n"
+        b"}\n"
+        b"@InProceedings{pmlr-v202-b23b,\n"
+        b"  title = {Paper B}\n"
+        b"}\n"
+    )
+    assert parse.count_bib_entries(bib) == 2  # 只数两篇论文，不含卷级 entry
+
+
+def test_count_bib_entries_header_only_zero_papers_is_zero_not_one() -> None:
+    """修复前会返回 1（把卷级 entry 也计入）；修复后必须是 0，B5"合法空卷"
+    分支才在这种（未实测但被审查标注为风险）形态下仍可达。
+    """
+    bib = b"@Proceedings{ICML2099,\n  volume = {9998},\n  year = {2099}\n}\n"
+    assert parse.count_bib_entries(bib) == 0
+
+
+def test_count_bib_entries_entry_type_matching_is_case_insensitive() -> None:
+    # BibTeX 惯例：entry type 大小写不敏感（@inproceedings/@InProceedings/
+    # @INPROCEEDINGS 等价）；@proceedings 同理不区分大小写地被排除。
+    bib = (
+        b"@proceedings{ICML2023,\n  volume = {202}\n}\n"
+        b"@inproceedings{a,\n  title = {A}\n}\n"
+        b"@INPROCEEDINGS{b,\n  title = {B}\n}\n"
+        b"@InPROCeedings{c,\n  title = {C}\n}\n"
+    )
+    assert parse.count_bib_entries(bib) == 3
+
+
+def test_count_bib_entries_excludes_comment_and_string_entry_types() -> None:
+    # 理论上可能出现的其余非论文 entry 类型（@Comment/@String）同样应被排除。
+    bib = (
+        b"@Comment{this is a bibtex-style comment entry, not a paper}\n"
+        b"@String{pmlr = {PMLR}}\n"
+        b"@InProceedings{pmlr-v235-a24a,\n  title = {Paper A}\n}\n"
+    )
+    assert parse.count_bib_entries(bib) == 1
 
 
 def test_count_bib_entries_space_between_type_and_brace() -> None:

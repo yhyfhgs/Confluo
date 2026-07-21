@@ -13,12 +13,20 @@ T5 adapter 主体消费。三个解析目标对应 pmlr.md §2 勘察的三条�
   pmlr.md §3.2"abstract：卷 index 不含…本期留 None"），仅供 bibkey 反查回归与
   未来回填路径的解析基础（test-plan §2"三件套"详情页覆盖）。
 
-链接解析约定（pmlr.md §3.2"相对链接无前导斜杠，须以卷 base URL 解析"）：卷
-index 页内的 ``[abs]``/``[Download PDF]``/``[OpenReview]`` 三链一律相对**站点根**
-（`https://proceedings.mlr.press/`）解析，而非相对"当前抓取页自身 URL"——
-站点顶层卷列表锚点 `href="v235"` 与卷内单篇锚点 `href="v235/{slug}.html"` 都是
-同一 Jekyll 模板产出的"无前导斜杠、相对站点根"形态（勘察 [LIVE] 2026-07-22）；
-若改用严格 RFC3986"相对当前页"解析会把卷内链接误拼成 `v235/v235/…`（重复段）。
+链接解析约定：卷 index 页内的 ``[abs]``/``[Download PDF]``/``[OpenReview]`` 三链
+一律用 ``urljoin(SITE_ROOT, href)`` 相对**站点根**（`https://proceedings.mlr.press/`）
+解析，而非相对"当前抓取页自身 URL"——站点顶层卷列表锚点确实是
+`href="v235"`（无前导斜杠、相对站点根，[LIVE] 勘察与独立审查 2026-07-22 真实
+抓取均证实）；若改用严格 RFC3986"相对当前页"解析会把卷内链接误拼成
+`v235/v235/…`（重复段）。**测辞校准**（独立审查 2026-07-22 真实交叉验证）：
+design pmlr.md §3.2 的简化示例给出的是卷内 `[abs]` href 形如
+`v235/{slug}.html` 的"相对无前导斜杠"形态，但审查对真实 v235/v202/v9 三卷
+页面的抓取显示，卷内 `[abs]`/`[Download PDF]`/`[OpenReview]` 三链的 href
+**通常已是绝对 URL**（而非相对形态）——即卷内链接与顶层卷列表锚点的相对/
+绝对形态并不一致。这不影响本模块的正确性：`urljoin(SITE_ROOT, href)` 对
+绝对 href 直接原样返回、对相对 href 按站点根解析，两种输入形态殊途同归；
+选用"相对站点根"而非"相对当前页"解析仍是唯一正确选择（覆盖顶层锚点场景，
+且对卷内的绝对 href 无副作用）。
 """
 
 from __future__ import annotations
@@ -175,18 +183,34 @@ def _extract_openreview(block: str) -> str | None:
 
 # --- bibliography.bib（0-div 歧义态消歧辅源）----------------------------------------------------
 
+# 真实 PMLR `bibliography.bib` 恒以一条卷级元数据 entry 起手（独立审查 2026-07-22
+# 对三份不同年代/会议的真实 bib 文件核实一致：v202/ICML2023、v238/AISTATS2024、
+# v9/AISTATS2010），形如 ``@Proceedings{ICML2023, title=…, volume=202, …}``——
+# 与逐篇论文的 ``@InProceedings{…}`` 用完全相同的 ``@Type{key, ...}`` 语法，
+# 但不是一篇论文。计数必须只认 `@InProceedings`（大小写不敏感，BibTeX 惯例），
+# 否则会把这条卷级前导 entry 也计入，使返回值恒为"论文数 + 1"而非论文数
+# 本身——直接影响 §3.2 的 0-div 消歧判据（"bib==0 → 合法空卷"）。
+_PAPER_ENTRY_TYPE = "inproceedings"
+
 
 def count_bib_entries(data: bytes) -> int:
-    """计算 ``bibliography.bib`` 中顶层 ``@type{...}`` entry 的个数。
+    """计算 ``bibliography.bib`` 中顶层 ``@InProceedings{...}``（论文）entry 的个数。
 
     仅供 pmlr.md §3.2 的 0-div 消歧使用（区分"合法空卷"与"HTML 解析器失效"），
     不解析条目内字段——bibkey 由 ``pmlr-v{N}-{slug}`` 直接构造，无需抓 bib
-    （§3.2："bibkey 可由 N + slug 直接构造，不依赖抓 bib 文件"）。
+    （§3.2："bibkey 可由 N + slug 直接构造，不依赖抓 bib 文件"）。**只统计论文
+    entry**（`@InProceedings`，大小写不敏感）——真实 bib 文件恒有的卷级
+    ``@Proceedings{...}`` 元数据前导 entry（以及理论上可能出现的
+    ``@Comment{...}``/``@String{...}`` 等非论文类型）一律不计入，见上方模块级
+    常量注释。
 
-    用括号深度扫描而非整行/整段正则：只在**深度为 0**时把 ``@word{`` 计为新
-    entry 起点，故 entry 内部任意深度的嵌套花括号（如 ``title = {{BERT}: ...}``）
-    与字段值里的 ``@``（如邮箱 ``foo@bar.com``）都不会被误判为新 entry；顶层
-    ``%`` 注释行（BibTeX 惯例）整行跳过，避免注释文本里偶然出现的 ``@`` 误计数。
+    用括号深度扫描而非整行/整段正则：只在**深度为 0**时把 ``@word{`` 识别为新
+    entry 起点——**无论 entry 类型是否被计数，都照常推进深度**（否则
+    ``@Proceedings{}`` 内部的花括号会与后续真实论文 entry 的花括号错位配对），
+    只是计数器只在类型匹配 `@InProceedings` 时才 +1。entry 内部任意深度的嵌套
+    花括号（如 ``title = {{BERT}: ...}``）与字段值里的 ``@``（如邮箱
+    ``foo@bar.com``）都不会被误判为新 entry；顶层 ``%`` 注释行（BibTeX 惯例）
+    整行跳过，避免注释文本里偶然出现的 ``@`` 误计数。
     """
     text = data.decode("utf-8", errors="replace")
     count = 0
@@ -203,12 +227,14 @@ def count_bib_entries(data: bytes) -> int:
             j = i + 1
             while j < n and (text[j].isalnum() or text[j] == "_"):
                 j += 1
+            entry_type = text[i + 1 : j]
             k = j
             while k < n and text[k].isspace():
                 k += 1
             if k < n and text[k] == "{":
-                count += 1
-                depth = 1
+                if entry_type.lower() == _PAPER_ENTRY_TYPE:
+                    count += 1
+                depth = 1  # 无论是否计数，都要推进深度以正确跳过该 entry 的内容。
                 i = k + 1
                 continue
         elif ch == "{":
@@ -304,6 +330,19 @@ def _clean_text(text: str) -> str:
     return _normalize_ws(html.unescape(_strip_tags(text)))
 
 
+def clean_text(text: str) -> str:
+    """把带标签的 HTML 片段/整页转成"可见文本"：去标签 + 解转义实体 + 空白规整化。
+
+    公开导出供 `adapter.py` 的 `healthcheck` 复用（独立审查 2026-07-22 发现：真实
+    站点根页的卷锚点markup 是 ``<a href="v235"><b>Volume 235</b></a> Proceedings
+    of ICML 2024``——"Volume N" 被 ``<b>`` 包裹、锚点在此提前闭合，"Proceedings
+    of…" 落在锚点外的纯文本，二者之间隔着 ``</b></a> `` 标签边界而非纯空白，对
+    带标签原始 HTML 直接做 ``\\s+`` 正则必然不匹配。修法是先转成可见文本（与本
+    模块解析卷 index 页 title/authors 字段的既有处理方式一致）再匹配，而不是让
+    正则去容忍标签插入。"""
+    return _clean_text(text)
+
+
 def _first_group_text(pattern: re.Pattern[str], block: str) -> str | None:
     match = pattern.search(block)
     if match is None:
@@ -325,6 +364,7 @@ __all__ = [
     "SITE_ROOT",
     "CitationMeta",
     "PmlrPaper",
+    "clean_text",
     "count_bib_entries",
     "parse_citation_meta",
     "parse_volume_index",

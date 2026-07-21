@@ -15,6 +15,7 @@ import httpx
 import pytest
 
 from helpers import FakeFetchIO, make_pmlr_venue
+from helpers.pmlr_fixtures import fixture_bytes
 from paper_crawler.adapters.pmlr.adapter import PmlrAdapter
 from paper_crawler.errors import CrawlerError, ErrorClass
 from paper_crawler.http import HttpClient
@@ -318,12 +319,9 @@ def test_fetch_http_404_is_gone_via_httpclient() -> None:
 
 # --- healthcheck（站点根匿名 ping）--------------------------------------------------------------
 
-_SITE_ROOT_OK = (
-    b"<html><head><title>Proceedings of Machine Learning Research</title></head><body>"
-    b'<a href="v235">Volume 235 Proceedings of ICML 2024</a>'
-    b'<a href="v202">Volume 202 Proceedings of ICML 2023</a>'
-    b"</body></html>"
-)
+# 真实 DOM 形态（独立审查 2026-07-22 真实抓取，见
+# tests/fixtures/pmlr/raw/09_site_root_normal.html 文件头注释与来源声明）。
+_SITE_ROOT_OK = fixture_bytes("09_site_root_normal.html")
 
 
 def test_healthcheck_ok_site_root() -> None:
@@ -341,6 +339,24 @@ def test_healthcheck_requests_site_root_url() -> None:
 
     _adapter(handler).healthcheck()
     assert seen == ["https://proceedings.mlr.press/"]
+
+
+def test_healthcheck_matches_real_bold_wrapped_early_closing_anchor() -> None:
+    """回归：真实站点锚点markup `<a href="v235"><b>Volume 235</b></a> Proceedings
+    of ICML 2024`——"Volume N" 被 `<b>` 包裹且锚点在此提前闭合，"Proceedings
+    of…" 落在锚点外的纯文本（独立审查 2026-07-22 100% 复现的 HIGH 缺陷，已修复：
+    `healthcheck()` 现对 `parse.clean_text()` 转换后的可见文本匹配，不对带标签
+    原始 HTML 直接做 `\\s+` 正则）。用单条目最小 fixture 精确复刻该失配形态，
+    独立于 `_SITE_ROOT_OK`（多条目）之外单独钉死，防止回归。
+    """
+    html = (
+        b"<html><head><title>Proceedings of Machine Learning Research</title></head>"
+        b'<body><a href="v235"><b>Volume 235</b></a> Proceedings of ICML 2024</body></html>'
+    )
+    handler: Handler = lambda request: httpx.Response(200, content=html)  # noqa: E731
+    report = _adapter(handler).healthcheck()
+    assert report.healthy is True
+    assert report.detail == "site root reachable with expected title + volume anchor"
 
 
 def test_healthcheck_missing_title_text_is_unhealthy() -> None:

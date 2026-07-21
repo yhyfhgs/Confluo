@@ -2,13 +2,17 @@
   SYNTHETIC fixture (Phase 2 pmlr adapter, T3 fixture #6 -- design/adapters/pmlr.md
   Sec6.2 item 6). A legitimately empty / placeholder volume page: valid page shell,
   zero paper blocks below, because no papers have been uploaded yet. Paired with
-  07_bibliography_empty.bib (0 entries) to exercise the 0-div + bib==0 ->
-  legal-empty-volume (non-error, count=0) branch (design Sec3.2/Sec5 "合法空卷").
-  design/adapters/pmlr.md Sec2 notes this exact "200 but empty" shape was not
-  observed live during site-survey (a predicted state, not an observed one) --
-  hence synthetic. NOTE: do not spell out the real div/class markup literally in
-  this comment block -- the adapter's regex-based parser has no concept of HTML
-  comments and will happily match example markup written here.
+  TWO alternative bib shapes to exercise the 0-div + bib==0 -> legal-empty-volume
+  (non-error, count=0) branch (design Sec3.2/Sec5 "合法空卷"): 07_bibliography_
+  empty.bib (truly empty, 0 raw @ blocks) and 10_bibliography_header_only.bib
+  (has the real leading @Proceedings{} volume-header entry but 0 @InProceedings
+  papers -- the shape independent review 2026-07-22 flagged as the concrete risk
+  to this branch; count_bib_entries() must still return 0 for it after excluding
+  non-paper entry types). design/adapters/pmlr.md Sec2 notes this exact "200 but
+  empty" shape was not observed live during site-survey (a predicted state, not
+  an observed one) -- hence synthetic. NOTE: do not spell out the real div/class
+  markup literally in this comment block -- the adapter's regex-based parser has
+  no concept of HTML comments and will happily match example markup written here.
 -->
 <!DOCTYPE html>
 <html lang="en">

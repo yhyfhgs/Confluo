@@ -3,10 +3,32 @@
 % @InProceedings entry per paper, tab-aligned field values); content is partly
 % fabricated to exercise entry counting with escaping / unicode / nested braces
 % (design Sec6.1 T1 requirement). Mirrors the three papers in
-% 01_volume_index_normal.html -- entry count MUST be 3 for the fixture-validity
-% test. Also reused (unmodified) as the ">0 entries" companion to
-% 04_volume_index_parse_fault.html's 0-div HTML, to exercise the parse-drift
-% disambiguation path.
+% 01_volume_index_normal.html -- count_bib_entries() on this file MUST be 3
+% (papers only) for the fixture-validity test. Also reused (unmodified) as the
+% ">0 entries" companion to 04_volume_index_parse_fault.html's 0-div HTML, to
+% exercise the parse-drift disambiguation path.
+%
+% Leading @Proceedings{} entry below: real shape, per independent review
+% 2026-07-22 read-only cross-check against three real bibliography.bib files
+% spanning different eras/conferences (v202/ICML2023, v238/AISTATS2024,
+% v9/AISTATS2010) -- all three begin with exactly one volume-level
+% @Proceedings{...} entry using the same @Type{key, ...} syntax as paper
+% entries, before any @InProceedings{} papers. count_bib_entries() must
+% recognize and exclude it (only @InProceedings is counted); this fixture
+% exists specifically to regression-test that exclusion. Field VALUES for
+% this particular v235 header are still fabricated placeholders (the review
+% confirmed the leading-entry *shape* generally, not this exact volume's
+% real field values) but the entry type/position/@Type{key,...} syntax is real.
+@Proceedings{ICML2024,
+  booktitle = 	 {Proceedings of the 41st International Conference on Machine Learning},
+  name = 	 {International Conference on Machine Learning},
+  shortname = 	 {ICML},
+  volume = 	 {235},
+  year = 	 {2024},
+  editor = 	 {Salakhutdinov, Ruslan and Kolter, Zico and Heller, Katherine and Weller, Adrian and Oliver, Nuria and Scarlett, Jonathan and Berkenkamp, Felix},
+  publisher =    {PMLR}
+}
+
 @InProceedings{pmlr-v235-abad-rocamora24a,
   title = 	 {Revisiting Character-level Adversarial Attacks for Language Models},
   author =       {Abad Rocamora, Elias},

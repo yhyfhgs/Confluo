@@ -240,6 +240,14 @@ class PmlrAdapter(AdapterBase):
         匿名可用（无 auth）；此页亦是 track 新卷探测源（design/08 §4，不在本
         adapter 范围）。3 样本已知答案回归比对是测试层职责（§6.4，见模块
         docstring），不在本方法。
+
+        **两个断言都对 `parse.clean_text()` 转换后的可见文本匹配，不对带标签
+        原始 HTML 做正则**（独立审查 2026-07-22 发现并修复）：真实站点根页
+        647 条卷条目均为 ``<a href="v235"><b>Volume 235</b></a> Proceedings of
+        ICML 2024``——"Volume N" 被 ``<b>`` 包裹、锚点在 ``</b>`` 处提前闭合，
+        "Proceedings of…" 落在锚点外的纯文本，与"Volume N"之间隔着
+        ``</b></a> `` 标签边界；对原始带标签文本直接 `\\s+` 正则永不匹配，会
+        让生产环境的 pmlr 站点被恒定误报 unhealthy（见 `clean_text` 文档字符串）。
         """
         try:
             text = self._client().get_text(SITE_ROOT)
@@ -247,11 +255,12 @@ class PmlrAdapter(AdapterBase):
             return HealthReport(
                 healthy=False, detail=f"site root unreachable ({exc.error_class.value}): {exc}"
             )
-        if _HEALTHCHECK_TITLE_TEXT not in text:
+        visible = parse.clean_text(text)
+        if _HEALTHCHECK_TITLE_TEXT not in visible:
             return HealthReport(
-                healthy=False, detail=f"site root missing expected title text {text!r}"[:200]
+                healthy=False, detail=f"site root missing expected title text {visible!r}"[:200]
             )
-        if _VOLUME_ANCHOR_RE.search(text) is None:
+        if _VOLUME_ANCHOR_RE.search(visible) is None:
             return HealthReport(
                 healthy=False, detail="site root has no 'Volume N Proceedings of' anchor"
             )
