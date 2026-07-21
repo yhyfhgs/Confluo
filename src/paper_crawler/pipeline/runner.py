@@ -39,6 +39,7 @@ from __future__ import annotations
 
 import json
 import sqlite3
+from datetime import UTC, date, datetime
 from typing import Any
 
 from paper_crawler.errors import RETRY_TABLE, CrawlerError, ErrorClass, RetrySpec
@@ -85,6 +86,26 @@ def _selector_from_params(params: dict[str, Any]) -> Selector:
         filter_expr=params.get("filter"),
         limit=params.get("limit"),
     )
+
+
+def _watch_target_months(today: date) -> list[tuple[int, int]]:
+    """watch 的目标虚拟月桶列表（oldest-first），依 arxiv.md §3 watch 裁决：
+
+    - 当月桶恒在列；
+    - **跨月边界**：当日为月初（≤3 号）时追加上一月桶——announce 延迟可使上月末
+      提交的记录延至本月初才出现在 OAI，含上月桶保证不漏（4 号起仅当月，边界已过）。
+
+    纯函数（无 DB/网络），供 `PipelineRunner.watch` 与边界单测共用。年初（1 月 ≤3 号）
+    上一月为上一年 12 月（跨年回绕）。
+    """
+    months: list[tuple[int, int]] = []
+    if today.day <= 3:
+        if today.month == 1:
+            months.append((today.year - 1, 12))
+        else:
+            months.append((today.year, today.month - 1))
+    months.append((today.year, today.month))
+    return months
 
 
 def _issue_scope_params(sel: Selector) -> dict[str, object]:
@@ -164,6 +185,50 @@ class PipelineRunner:
         """把队列里现存的 PENDING 全部执行完（claim_next 循环直到空）。"""
         report = self._new_report("drain", None)
         self._drain_loop(report)
+        return self._finalize(report)
+
+    def watch(self, venue_id: str, *, today: date | None = None) -> RunReport:
+        """preprint venue 的当月桶元数据增量收割（arxiv.md §3 watch 裁决；零接口变更）。
+
+        编排复用 pull 的 enqueue→drain 机制，不 fetch（watch 是元数据增量；`--fetch`
+        选项留 Phase 6）：
+
+        1. **discover（force=True）**：确保目标虚拟月桶行存在。跨月边界时上一月桶可能
+           未在上次运行内建立（上次 discover 落在上月、24h 新鲜度内会 fresh_skip 而不
+           补建本月桶），force 绕过新鲜度保证桶存在——arxiv discover 零网络，force 廉价。
+        2. **enumerate 目标月桶（force=True）**：绕过 enumerate 的 7d 新鲜度 TTL 强制
+           re-enumerate 整窗（watch 强制刷新语义）。去重由 `identifier(scheme='arxiv')`
+           主键天然保证——重叠窗口/同日二跑零重复入库（幂等）。
+
+        目标月由 `today`（缺省真实 UTC 今日）经 `_watch_target_months` 定：当月，且月初
+        （≤3 号）含上一月桶。报告 notes 记本次净新增 paper 数（`repo.counts` 前后差）。
+        未知 venue fail-fast 抛 `CrawlerError(CONFIG)`（CLI 以退出码 2 呈现）；venue 是否
+        为 `preprint_channel` 由 CLI 层校验（用法约束，非 pipeline 语义）。
+        """
+        self.ctx.registry.get(venue_id)  # fail fast：未知 id → CrawlerError(CONFIG)
+        day = today if today is not None else datetime.now(UTC).date()
+        report = self._new_report("watch", venue_id)
+
+        # 阶段 1 discover（force：保证当月/上月桶存在，绕过 24h 新鲜度）
+        self._enqueue_child(report, "discover", venue_id, {}, None, force=True)
+        self._drain_loop(report)
+
+        papers_before = self.ctx.repo.counts(venue_id)["papers"]
+
+        # 阶段 2 enumerate 目标月桶（force：绕过 7d 新鲜度，强制整窗重收）
+        bucket_count = 0
+        for year, month in _watch_target_months(day):
+            for issue in self.ctx.repo.list_issues(venue_id, number=f"{month:02d}", year=year):
+                self._enqueue_child(
+                    report, "enumerate", venue_id, {"issue": str(issue["id"])}, None, force=True
+                )
+                bucket_count += 1
+        self._drain_loop(report)
+
+        new_papers = self.ctx.repo.counts(venue_id)["papers"] - papers_before
+        report.notes.append(
+            f"watch[{venue_id}]: +{new_papers} new paper(s) over {bucket_count} bucket(s)"
+        )
         return self._finalize(report)
 
     # -- 报告 ---------------------------------------------------------------
