@@ -31,6 +31,13 @@ class Config:
     # D-014 联系人 email：真实 adapter 的 UA `mailto:` 段来源（不硬编码）。缺省
     # None → UA 省略 mailto 段（CLI 网络命令 obslog warn 一次）。空白串归一为 None。
     identity_email: str | None = None
+    # OpenReview 自有账号 access token（design/adapters/openreview.md §3 free_account
+    # 通道）：CLI 装配期据此为 openreview adapter 构造携 `Cookie: openreview.accessToken=`
+    # 附加头的**专属** client（绝不复用共享 client——cookie 外泄他站属凭证红线）。缺省
+    # None → 匿名（groups/healthcheck 可用，notes/pdf 会 403→auth_expired→BLOCKED）。
+    # 家目录 config（仓库外，不入 git）；空白串归一为 None。**不入日志/报告**（obslog redact
+    # 覆盖 cookie/token 形态）——故本字段绝不经 log_event 落盘。
+    openreview_token: str | None = None
 
     @classmethod
     def load(cls, home: Path | None = None) -> "Config":
@@ -53,6 +60,7 @@ class Config:
         rate_scale = 1.0
         retry_scale = 1.0
         identity_email: str | None = None
+        openreview_token: str | None = None
         venues_dirs_override: tuple[Path, ...] | None = None
 
         config_file = resolved_home / "config.toml"
@@ -72,6 +80,16 @@ class Config:
             raw_email = doc.get("identity", {}).get("email")
             if isinstance(raw_email, str) and raw_email.strip():
                 identity_email = raw_email.strip()
+            # [auth.openreview].token：空白串归一为 None（openreview.md §3）。
+            raw_token = doc.get("auth", {}).get("openreview", {}).get("token")
+            if isinstance(raw_token, str) and raw_token.strip():
+                openreview_token = raw_token.strip()
+
+        # 环境变量 PAPER_CRAWLER_OPENREVIEW_TOKEN 覆盖 config.toml（12-factor 惯例；
+        # CI/临时会话不落盘 token 的通道）。空白归一为 None。
+        env_token = os.environ.get("PAPER_CRAWLER_OPENREVIEW_TOKEN", "").strip()
+        if env_token:
+            openreview_token = env_token
 
         if venues_dirs_override is not None:
             venues_dirs = venues_dirs_override
@@ -95,6 +113,7 @@ class Config:
             rate_scale=rate_scale,
             retry_scale=retry_scale,
             identity_email=identity_email,
+            openreview_token=openreview_token,
         )
 
     def ensure_dirs(self) -> None:
