@@ -22,12 +22,20 @@ DEFAULT_MOCK_QUIRKS: dict[str, object] = {
 }
 
 # arxiv 契约/集成测试用的 preprint_channel venue（不依赖 venues/ 目录——仓库不 ship
-# arxiv YAML，test_venue_yaml_lint 钉死 shipped 集合为 {mock_journal, jfe, iclr}）。
+# arxiv YAML，test_venue_yaml_lint 钉死 shipped 集合为 {mock_journal, jfe, iclr, icml}）。
 # inception 取近期月份保证 discover 非空；arxiv_category 决定 OAI set(=cs) 与子分类过滤。
 DEFAULT_ARXIV_QUIRKS: dict[str, object] = {
     "inception": "2024-01",
     "arxiv_set": "cs",
     "arxiv_category": "cs.LG",
+}
+
+# pmlr 契约/集成测试用的 conference venue：quirks 自成一体、独立于 venues/cs_ai/icml.yaml
+# 的真实内容（同 arxiv 先例的解耦考量——adapter 逻辑测试不应受真实 venue 数据编辑影响；
+# 真实 shipped YAML 的自身正确性由 test_venue_yaml_lint.py 与 D-019 锚点一致性测试覆盖）。
+# 只保留两个年份（一自托管旧卷 2023/v202、一 GitHub 托管新卷 2024/v235）即可覆盖双域路径。
+DEFAULT_PMLR_QUIRKS: dict[str, object] = {
+    "volume_map": {2023: 202, 2024: 235},
 }
 
 
@@ -71,6 +79,26 @@ def make_arxiv_venue(**quirks_overrides: object) -> VenueSpec:
     )
 
 
+def make_pmlr_venue(**quirks_overrides: object) -> VenueSpec:
+    """构造 pmlr 契约/集成测试用的 `conference` venue（不依赖 `venues/` 目录文件）。
+
+    默认 quirks：`volume_map={2023: 202, 2024: 235}`（一自托管旧卷 + 一 GitHub
+    托管新卷，覆盖 pmlr.md §3.3 的双域 resolve 路径）。
+    """
+    quirks: dict[str, object] = dict(DEFAULT_PMLR_QUIRKS)
+    quirks.update(quirks_overrides)
+    return VenueSpec(
+        id="icml",
+        kind="conference",
+        names={"full": "International Conference on Machine Learning", "aliases": ["ICML"]},
+        field=["cs_ai"],
+        identifiers={"dblp_key": "conf/icml"},
+        metadata_source="pmlr",
+        fulltext_source="pmlr",
+        quirks=quirks,
+    )
+
+
 class FakeFetchIO:
     """`FetchIO` 协议的测试替身：把 chunks 缓冲进内存并计算 `(bytes_written, sha256)`。
 
@@ -93,7 +121,9 @@ class FakeFetchIO:
 __all__ = [
     "DEFAULT_ARXIV_QUIRKS",
     "DEFAULT_MOCK_QUIRKS",
+    "DEFAULT_PMLR_QUIRKS",
     "FakeFetchIO",
     "make_arxiv_venue",
     "make_mock_venue",
+    "make_pmlr_venue",
 ]
