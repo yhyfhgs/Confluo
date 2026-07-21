@@ -4,12 +4,18 @@
 # HttpClient 冻结映射 404→GONE 只看 status，见 design §5 "判定以 status 为准"）。
 # 命中该形态的真实 URL 样本：/robots.txt、/CVPR2027、/ICCV2022、/ECCV2024、
 # /CVPR2012、/WACV2019、/sitemap.xml——本文件用于 /CVPR2099（不存在年份）场景。
+# 2026-07-22 独立审查 LOW 发现 + 订正：初版折叠 <head>/<title> 与 <hr>/<address>
+# 到同一行导致 body 少 3 字节（281 vs 实测 284）；已按 Apache 2.4 标准 404 模板的
+# 惯常换行（<head> 与 <title> 分行、<hr> 与 <address> 分行）补齐至字节精确 284。
 HTTP-STATUS: 404
 Content-Type: text/html; charset=iso-8859-1
 
 <!DOCTYPE HTML PUBLIC "-//IETF//DTD HTML 2.0//EN">
-<html><head><title>404 Not Found</title></head><body>
+<html><head>
+<title>404 Not Found</title>
+</head><body>
 <h1>Not Found</h1>
 <p>The requested URL was not found on this server.</p>
-<hr><address>Apache/2.4.58 (Ubuntu) Server at openaccess.thecvf.com Port 443</address>
+<hr>
+<address>Apache/2.4.58 (Ubuntu) Server at openaccess.thecvf.com Port 443</address>
 </body></html>

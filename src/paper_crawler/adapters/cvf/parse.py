@@ -6,9 +6,14 @@
 
 - 标题/landing：``dt.ptitle > a`` —— 一个 ``<dt class="ptitle">`` 开始一个新条目，
   紧随其后的第一个 ``<a>`` 即标题锚点（取 href 为 landing、取文本为 title）。
-- 作者：条目内所有 ``input[name=query_author]`` 的 ``value`` 属性（**不是** `<a href>`
-  ——[LIVE] §2b：作者是逐位 `<form class="authsearch">` + hidden input，取哪个都行，
-  本解析器取 input value，元组顺序即页面顺序）。
+- 作者：条目内所有 ``input[name=query_author]`` **或** ``input[name=query]`` 的
+  ``value`` 属性（**不是** `<a href>`——[LIVE] §2b：作者是逐位 `<form
+  class="authsearch">` + hidden input，取哪个都行，本解析器取 input value，元组
+  顺序即页面顺序）。**双属性名是 era 差异，非笔误**：现代 `?day=all` 页用
+  `query_author`（[LIVE] 站点勘察 §2b 转录）；flat 早年页（2013 起，含 CVPR2013/
+  ICCV2013 双会核验）用 `query`——设计稿 §3.2 曾把 §2b 的 modern-only 观测误推广为
+  跨 era 通用规则（site-survey §2b 本身准确措辞为"`?day=all` 真实列表页"小节内，
+  未声称覆盖 flat 页），2026-07-22 复审经站内活取证伪并订正为双属性名兼容。
 - 资产链接：条目内 `<a>` 标签按**可见文本**分类——``pdf``/``supp``/``arXiv`` 三个
   精确文本命中对应 href；其余锚文本（作者提交链接、bibtex 折叠开关等）忽略。这一
   分类不依赖 DOM 嵌套关系，只依赖"属于当前条目 + 锚文本命中"，对 CVF 两代路径规则
@@ -39,6 +44,11 @@ META_ARXIV = "arxiv"
 
 _DAY_ALL_RE = re.compile(r"[?&]day=all\b")
 _ARXIV_ABS_MARKER = "/abs/"
+
+# 作者 hidden input 的 name 属性：两代不同（2026-07-22 复审站内活取证实，见模块
+# docstring）——modern `?day=all` 用 "query_author"，flat 早年页用 "query"。两个
+# 名字互不重叠（无已知形态同时出现两者），接受任一即可，无需按 era 分支代码路径。
+_AUTHOR_INPUT_NAMES = frozenset({"query_author", "query"})
 
 
 # --- 中间记录 --------------------------------------------------------------------------------
@@ -114,7 +124,7 @@ class _ListPageParser(HTMLParser):
                 self._anchor_href = href
                 self._anchor_buf = []
             return
-        if tag == "input" and self._cur is not None and adict.get("name") == "query_author":
+        if tag == "input" and self._cur is not None and adict.get("name") in _AUTHOR_INPUT_NAMES:
             value = adict.get("value")
             if value:
                 self._cur.authors.append(value)

@@ -71,6 +71,10 @@ def test_02_flat_2013_parses_two_entries_with_relative_hrefs() -> None:
         assert entry.pdf_href is not None
         assert not entry.pdf_href.startswith("http")  # 相对路径（era 特征）
         assert entry.pdf_href.startswith("content_cvpr_2013/")  # 旧目录名
+        # 回归守卫（2026-07-22 独立审查 HIGH 发现）：flat era 作者 hidden input 的
+        # 真实 name 属性是 "query"（非 modern `?day=all` 专属的 "query_author"）；
+        # fixture 02 已按真实属性名订正，此断言防止再次静默回归为空 authors。
+        assert entry.authors != ()
 
 
 def test_02_flat_2013_golden() -> None:
@@ -183,6 +187,16 @@ def test_06_404_maps_to_gone() -> None:
     with pytest.raises(CrawlerError) as exc:
         _client_for("06_404_apache_default.http").get_text("https://openaccess.thecvf.com/CVPR2099")
     assert exc.value.error_class is ErrorClass.GONE
+
+
+def test_06_404_body_is_byte_exact_to_live_content_length() -> None:
+    """Closes: 2026-07-22 独立审查 LOW 发现——body 需字节精确等于 [LIVE] 实测
+
+    `Content-Length: 284`（design/adapters/cvf.md §2/§6 佐证信号；分类仍以 status
+    为准，见 `test_06_404_maps_to_gone`，本断言只锁定 fixture 的字节保真度）。
+    """
+    _, _, body = http_fixture("06_404_apache_default.http")
+    assert len(body) == 284
 
 
 def test_08a_ratelimit_429_with_header_maps_to_rate_limited_with_retry_after() -> None:

@@ -37,10 +37,22 @@ def _issue(year: int) -> IssueRef:
     return IssueRef(venue_id="cvpr", year=year, label=f"{year:04d}")
 
 
-def _entry_html(*, title: str, pdf_href: str, supp_href: str | None = None) -> str:
+def _entry_html(
+    *,
+    title: str,
+    pdf_href: str,
+    supp_href: str | None = None,
+    author_input_name: str = "query_author",
+) -> str:
+    """`author_input_name` 默认 modern `?day=all` 的真实属性名 `"query_author"`；
+
+    flat 早年页（2013 起）用 `"query"`——两者是 era 差异，非同义写法（2026-07-22
+    独立审查对 CVPR2013/ICCV2013 双会活取证实，见 `parse._AUTHOR_INPUT_NAMES`）。
+    调用方按所测 era 显式传入。
+    """
     return (
         f'<dt class="ptitle"><br><a href="/content/CVPR2023/html/x.html">{title}</a></dt>\n'
-        '<dd><input type="hidden" name="query_author" value="An Author"></dd>\n'
+        f'<dd><input type="hidden" name="{author_input_name}" value="An Author"></dd>\n'
         "<dd>\n"
         f'[<a href="{pdf_href}">pdf</a>]\n'
         + (f'[<a href="{supp_href}">supp</a>]\n' if supp_href else "")
@@ -130,6 +142,7 @@ def test_enumerate_flat_era_single_request() -> None:
             _entry_html(
                 title="Old Paper",
                 pdf_href="content_cvpr_2013/papers/Smith_Old_Paper_2013_CVPR_paper.pdf",
+                author_input_name="query",  # flat era 真实属性名（2026-07-22 审查校正）
             )
         )
         return httpx.Response(200, content=html.encode("utf-8"))
@@ -138,6 +151,9 @@ def test_enumerate_flat_era_single_request() -> None:
     assert request_count == 1  # flat era：1 请求拿全（design §3.2）
     assert len(stubs) == 1
     assert stubs[0].identifiers == (("cvf", "CVPR2013/Smith_Old_Paper_2013_CVPR_paper"),)
+    # 回归守卫：flat era 用 name="query" 抽出的 authors 非空（2026-07-22 独立审查
+    # HIGH 发现——旧实现硬编码 "query_author" 时本行会以 () 静默失败）。
+    assert stubs[0].authors == ("An Author",)
 
 
 def test_enumerate_day_landing_then_day_all_two_requests() -> None:

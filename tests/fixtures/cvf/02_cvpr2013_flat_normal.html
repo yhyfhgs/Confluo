@@ -7,6 +7,12 @@ https://openaccess.thecvf.com/CVPR2013）：无 day 分页、bare URL 直接 200
 逐字转录自 [LIVE] §9 摘录（"Deformable Spatial Pyramid Matching..."）；条目 2 为
 合成，同规则手写。2013 era 未观测到 [supp]/[arXiv] 链接样本（[UNRESOLVED] ④，
 design §2/§7）——本节选两条目均只有 pdf，如实反映未验证覆盖面，不臆造。
+
+**审查期真实抓取校正（2026-07-22）**：作者 hidden input 的 `name` 属性原稿误写为
+`query_author`（把 site-survey §2b 的 modern-only 观测当成跨 era 通用规则，§2b
+本身从未声称覆盖 flat 页）。独立审查对 CVPR2013（471 条）与 ICCV2013（454 条）
+双会实测：0 次 `query_author`、逐条均为 `query`——本文件按真实属性名订正，
+parse.py 现已同时接受两个属性名（`_AUTHOR_INPUT_NAMES`）。
 -->
 <!DOCTYPE html>
 <html>
@@ -16,23 +22,24 @@ design §2/§7）——本节选两条目均只有 pdf，如实反映未验证�
 <h1>CVPR 2013 Papers</h1>
 <dl>
 
-<!-- 条目 1/2：[LIVE] research/site-survey/cvf.md §9 逐字转录（相对路径、旧目录名） -->
+<!-- 条目 1/2：[LIVE] research/site-survey/cvf.md §9 逐字转录（相对路径、旧目录名）；
+     作者 input name="query"（非 "query_author"）——2026-07-22 复审真实抓取校正。 -->
 <dt class="ptitle"><br><a href="content_cvpr_2013/html/Kim_Deformable_Spatial_Pyramid_2013_CVPR_paper.html">Deformable Spatial Pyramid Matching for Fast Dense Correspondences</a></dt>
 <dd>
 <form id="form-author-0" action="/CVPR2013" method="post" class="authsearch">
-<input type="hidden" name="query_author" value="Jaechul Kim">
+<input type="hidden" name="query" value="Jaechul Kim">
 <a href="#" onclick="document.getElementById('form-author-0').submit();">Jaechul Kim</a>,
 </form>
 <form id="form-author-1" action="/CVPR2013" method="post" class="authsearch">
-<input type="hidden" name="query_author" value="Ce Liu">
+<input type="hidden" name="query" value="Ce Liu">
 <a href="#" onclick="document.getElementById('form-author-1').submit();">Ce Liu</a>,
 </form>
 <form id="form-author-2" action="/CVPR2013" method="post" class="authsearch">
-<input type="hidden" name="query_author" value="Fei Sha">
+<input type="hidden" name="query" value="Fei Sha">
 <a href="#" onclick="document.getElementById('form-author-2').submit();">Fei Sha</a>,
 </form>
 <form id="form-author-3" action="/CVPR2013" method="post" class="authsearch">
-<input type="hidden" name="query_author" value="Kristen Grauman">
+<input type="hidden" name="query" value="Kristen Grauman">
 <a href="#" onclick="document.getElementById('form-author-3').submit();">Kristen Grauman</a>
 </form>
 </dd>
@@ -49,11 +56,12 @@ design §2/§7）——本节选两条目均只有 pdf，如实反映未验证�
 </div>
 </dd>
 
-<!-- 条目 2/2：合成（同规则；不同 stem，验证多条目场景不串扰） -->
+<!-- 条目 2/2：合成（同规则；不同 stem，验证多条目场景不串扰）；作者 input
+     name="query"（同上订正）。 -->
 <dt class="ptitle"><br><a href="content_cvpr_2013/html/Alvarez_Sparse_Coding_for_Action_Recognition_2013_CVPR_paper.html">Sparse Coding for Action Recognition in Depth Videos</a></dt>
 <dd>
 <form id="form-author-4" action="/CVPR2013" method="post" class="authsearch">
-<input type="hidden" name="query_author" value="Sofia Alvarez">
+<input type="hidden" name="query" value="Sofia Alvarez">
 <a href="#" onclick="document.getElementById('form-author-4').submit();">Sofia Alvarez</a>
 </form>
 </dd>

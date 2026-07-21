@@ -105,14 +105,17 @@ def _cvf_contract_handler(request: httpx.Request) -> httpx.Response:
 
     合成响应（零真实网络）：单条目自带 pdf href，使 discover→enumerate→resolve→fetch
     全链有产出，无需模拟双请求 day-landing 分支（该分支的单测覆盖见
-    tests/unit/test_cvf_adapter.py）。
+    tests/unit/test_cvf_adapter.py）。`discover_timeline` 最早年为 2013，故本
+    handler 实际模拟的是 flat era 响应——作者 hidden input 用真实的 `name="query"`
+    （非 modern `?day=all` 专属的 `query_author`，2026-07-22 独立审查校正，见
+    `parse._AUTHOR_INPUT_NAMES`）。
     """
     if request.url.path.endswith(".pdf"):
         return httpx.Response(200, content=_CONTRACT_PDF)
     html = (
         '<dt class="ptitle"><br><a href="/content/X/html/contract_paper.html">'
         "Contract Paper</a></dt>\n"
-        '<dd><input type="hidden" name="query_author" value="Contract Author"></dd>\n'
+        '<dd><input type="hidden" name="query" value="Contract Author"></dd>\n'
         '<dd>[<a href="/content/X/papers/contract_paper.pdf">pdf</a>]</dd>\n'
     )
     return httpx.Response(200, content=f"<html><body><dl>{html}</dl></body></html>".encode())

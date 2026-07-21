@@ -1,10 +1,12 @@
 """cvf 列表页解析器单测（design/adapters/cvf.md §2/§3.2；T1）。
 
-零网络（输入 HTML 字面量）：单/多条目抽取、作者 `input[name=query_author]` 提取、
-pdf/supp/arXiv 按锚文本分类（不被 bibtex-toggle/作者提交链接误判）、URL 绝对化
-（相对→绝对，双 era 同一函数）、identifier 构造与大小写保留、缺 pdf href /
-空标题 → PARSE、Unicode 作者名、day=all 链接判据、PDF 路径改写规则交叉校验
-（T1 专属，非运行时来源，见 design §3.3）。
+零网络（输入 HTML 字面量）：单/多条目抽取、作者 `input[name=query_author]`
+（modern `?day=all`）/ `input[name=query]`（flat 早年，2026-07-22 复审 CVPR2013/
+ICCV2013 双会活取校正——见 `_AUTHOR_INPUT_NAMES`）双属性名提取、pdf/supp/arXiv
+按锚文本分类（不被 bibtex-toggle/作者提交链接误判）、URL 绝对化（相对→绝对，
+双 era 同一函数）、identifier 构造与大小写保留、缺 pdf href / 空标题 → PARSE、
+Unicode 作者名、day=all 链接判据、PDF 路径改写规则交叉校验（T1 专属，非运行时
+来源，见 design §3.3）。
 
 条目 1（GFPose）逐字转录自 [LIVE] 站点勘察（research/site-survey/cvf.md §2b）——
 真实标题/作者/href/arXiv id，非合成值；其余条目按站点选择器规则合成。
@@ -29,11 +31,18 @@ def _entry_html(
     pdf_href: str,
     supp_href: str | None = None,
     arxiv_href: str | None = None,
+    author_input_name: str = "query_author",
 ) -> str:
-    """按 [LIVE] §2b 选择器规则合成一条列表页条目的原始 HTML。"""
+    """按 [LIVE] §2b 选择器规则合成一条列表页条目的原始 HTML。
+
+    `author_input_name` 默认 `"query_author"`（modern `?day=all` 页的真实属性名，
+    [LIVE] 站点勘察 §2b）；flat 早年页（2013 起）用的是 `"query"`——两者是 era
+    差异，非同义写法（2026-07-22 复审对 CVPR2013/ICCV2013 双会活取证实，见
+    `parse.py` 模块 docstring 与 `_AUTHOR_INPUT_NAMES`）。调用方按所测 era 显式传入。
+    """
     author_forms = "".join(
         f'<form id="f{i}" action="/CVPR2023" method="post" class="authsearch">\n'
-        f'<input type="hidden" name="query_author" value="{a}">\n'
+        f'<input type="hidden" name="{author_input_name}" value="{a}">\n'
         f'<a href="#" onclick="document.getElementById(\'f{i}\').submit();">{a}</a>,\n'
         "</form>\n"
         for i, a in enumerate(authors)
@@ -215,8 +224,9 @@ def test_2013_relative_href_and_old_stem_word_order_extracted_as_is() -> None:
     html = _entry_html(
         title="Deformable Spatial Pyramid Matching for Fast Dense Correspondences",
         landing_href="content_cvpr_2013/html/Kim_Deformable_Spatial_Pyramid_2013_CVPR_paper.html",
-        authors=["Jaechul Kim"],
+        authors=["Jaechul Kim", "Ce Liu"],
         pdf_href="content_cvpr_2013/papers/Kim_Deformable_Spatial_Pyramid_2013_CVPR_paper.pdf",
+        author_input_name="query",  # flat era 真实属性名（2026-07-22 复审校正）
     )
     (entry,) = parse.parse_list_page(_page(html))
     # parse_list_page 只机械抽取，相对路径原样保留（绝对化是 to_paper_stub 的职责）。
@@ -225,6 +235,42 @@ def test_2013_relative_href_and_old_stem_word_order_extracted_as_is() -> None:
     )
     assert entry.pdf_href is not None
     assert not entry.pdf_href.startswith("http")
+    # 回归守卫：flat era 用 name="query"（非 "query_author"）——曾致 authors 静默
+    # 空元组（无异常，仅数据缺失），见 parse.py 模块 docstring 的 2026-07-22 订正记录。
+    assert entry.authors == ("Jaechul Kim", "Ce Liu")
+
+
+def test_flat_era_query_attribute_name_distinct_from_modern_query_author() -> None:
+    """Closes: 2026-07-22 独立审查 HIGH 发现——flat era（2013 起）作者 hidden input
+
+    的真实 `name` 属性是 `query`，不是 `query_author`（后者是 modern `?day=all`
+    页专属，[LIVE] 站点勘察 §2b）。审查对 CVPR2013（471 条）/ICCV2013（454 条）
+    双会活取证实：0 次 `query_author`、逐条均为 `query`。回归防线：用真实
+    `name="query"` 构造条目，断言 authors 非空——防止再次静默丢失 flat era 作者
+    （旧实现下本断言会以 `entry.authors == ()` 失败，不抛异常，是纯数据质量回归）。
+    """
+    html = _entry_html(
+        title="A Flat-Era Paper With the Real query Attribute",
+        landing_href="content_cvpr_2013/html/real_attr.html",
+        authors=["Real Author One", "Real Author Two"],
+        pdf_href="content_cvpr_2013/papers/real_attr.pdf",
+        author_input_name="query",
+    )
+    (entry,) = parse.parse_list_page(_page(html))
+    assert entry.authors != ()  # 非空是本回归测试的核心断言
+    assert entry.authors == ("Real Author One", "Real Author Two")
+
+    # 反向对照：同一条目若误用 modern 专属属性名，flat-era 解析器（同一份代码）
+    # 仍应正确处理——即 parse.py 现在对两个属性名一视同仁，不因 era 分支代码路径。
+    html_modern_attr = _entry_html(
+        title="Same Paper, Modern-Style Attribute",
+        landing_href="content_cvpr_2013/html/real_attr2.html",
+        authors=["Real Author Three"],
+        pdf_href="content_cvpr_2013/papers/real_attr2.pdf",
+        author_input_name="query_author",
+    )
+    (entry2,) = parse.parse_list_page(_page(html_modern_attr))
+    assert entry2.authors == ("Real Author Three",)
 
 
 # --- has_day_all_link：day-landing 页判据（§3.2 分支②）----------------------------------------
@@ -293,6 +339,7 @@ def test_to_paper_stub_relative_2013_href_absolutized_via_urljoin() -> None:
         landing_href="content_cvpr_2013/html/Kim_Deformable_Spatial_Pyramid_2013_CVPR_paper.html",
         authors=["Jaechul Kim"],
         pdf_href="content_cvpr_2013/papers/Kim_Deformable_Spatial_Pyramid_2013_CVPR_paper.pdf",
+        author_input_name="query",  # flat era 真实属性名（2026-07-22 复审校正）
     )
     (entry,) = parse.parse_list_page(_page(html))
     stub = parse.to_paper_stub(entry, base_url=_CVPR2013_URL, canonical_dir="CVPR2013", year=2013)
@@ -304,6 +351,8 @@ def test_to_paper_stub_relative_2013_href_absolutized_via_urljoin() -> None:
     _, value = stub.identifiers[0]
     # 早年 stem 词序 `_2013_CVPR_paper`（现代为 `_CVPR_2023_paper`）——原样保留，不改写。
     assert value == "CVPR2013/Kim_Deformable_Spatial_Pyramid_2013_CVPR_paper"
+    # 回归守卫：PaperStub 层面 authors 非空（entry→stub 转换不应弄丢已抽出的作者）。
+    assert stub.authors == ("Jaechul Kim",)
 
 
 def test_to_paper_stub_no_supp_omits_supp_meta_key() -> None:
@@ -468,6 +517,7 @@ def test_pdf_rewrite_rule_matches_collected_href_for_2013_relative_entry() -> No
         landing_href="content_cvpr_2013/html/Kim_Deformable_Spatial_Pyramid_2013_CVPR_paper.html",
         authors=["Jaechul Kim"],
         pdf_href="content_cvpr_2013/papers/Kim_Deformable_Spatial_Pyramid_2013_CVPR_paper.pdf",
+        author_input_name="query",  # flat era 真实属性名（2026-07-22 复审校正）
     )
     (entry,) = parse.parse_list_page(_page(html))
     stub = parse.to_paper_stub(entry, base_url=_CVPR2013_URL, canonical_dir="CVPR2013", year=2013)
@@ -475,3 +525,4 @@ def test_pdf_rewrite_rule_matches_collected_href_for_2013_relative_entry() -> No
     landing_url = meta[parse.META_LANDING_URL]
     rewritten = _rewrite_landing_to_pdf(landing_url)
     assert rewritten == meta[parse.META_PDF_URL]
+    assert stub.authors == ("Jaechul Kim",)  # 回归守卫（同上）

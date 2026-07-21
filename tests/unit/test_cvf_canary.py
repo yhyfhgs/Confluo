@@ -115,6 +115,11 @@ def test_canary_iccv2021_odd_year_routing_and_stem() -> None:
 
 
 # --- 样本 3：CVPR2013（flat 早年，验双形态解析器不退化，[LIVE] 词序/相对路径特征）--------------
+#
+# 作者 hidden input 用 name="query"（非 "query_author"）——2026-07-22 独立审查对
+# CVPR2013/ICCV2013 双会活取证实：flat era 真实属性名是 "query"，modern `?day=all`
+# 才是 "query_author"；旧稿把 site-survey §2b 的 modern-only 观测误推广为跨 era
+# 通用规则（parse.py 现已同时接受两个属性名，见 `_AUTHOR_INPUT_NAMES`）。
 
 _2013_STEM = "Kim_Deformable_Spatial_Pyramid_2013_CVPR_paper"  # 现代为 ..._CVPR_2013_paper 词序
 _2013_TITLE = "Deformable Spatial Pyramid Matching for Fast Dense Correspondences"
@@ -125,7 +130,7 @@ def _cvpr2013_flat_html() -> bytes:
         '<html><body><div id="content"><dl>\n'
         '<dt class="ptitle"><br><a href="content_cvpr_2013/html/'
         f'{_2013_STEM}.html">{_2013_TITLE}</a></dt>\n'
-        '<dd><input type="hidden" name="query_author" value="Jaechul Kim"></dd>\n'
+        '<dd><input type="hidden" name="query" value="Jaechul Kim"></dd>\n'
         f'<dd>[<a href="content_cvpr_2013/papers/{_2013_STEM}.pdf">pdf</a>]</dd>\n'
         "</dl></div></body></html>"
     ).encode()
@@ -153,6 +158,10 @@ def test_canary_cvpr2013_flat_era_relative_href_and_word_order() -> None:
     assert value == f"CVPR2013/{_2013_STEM}"
     # 早年词序特征（[LIVE] §9）：`_2013_CVPR_paper`，与现代 `_CVPR_2023_paper` 不同。
     assert value.endswith("_2013_CVPR_paper")
+    # 回归守卫（2026-07-22 独立审查 HIGH 发现）：flat era 用 name="query" 抽出的
+    # authors 非空——旧实现硬编码 "query_author" 时本行会以 stub.authors == () 静默
+    # 失败（无异常，纯数据丢失），是本次订正要防的具体回归。
+    assert stub.authors == ("Jaechul Kim",)
 
     meta = dict(stub.meta)
     # 相对路径已被 to_paper_stub 绝对化——落 meta 的 URL 恒绝对，消除 era 分支
