@@ -1,0 +1,125 @@
+[
+  {
+    "abstract": null,
+    "authors": [
+      "Hai Ci",
+      "Mingdong Wu",
+      "Wentao Zhu",
+      "Xiaoxuan Ma",
+      "Hao Dong",
+      "Fangwei Zhong",
+      "Yizhou Wang"
+    ],
+    "identifiers": [
+      [
+        "cvf",
+        "CVPR2023/Ci_GFPose_Learning_3D_Human_Pose_Prior_With_Gradient_Fields_CVPR_2023_paper"
+      ]
+    ],
+    "meta": [
+      [
+        "pdf_url",
+        "https://openaccess.thecvf.com/content/CVPR2023/papers/Ci_GFPose_Learning_3D_Human_Pose_Prior_With_Gradient_Fields_CVPR_2023_paper.pdf"
+      ],
+      [
+        "landing_url",
+        "https://openaccess.thecvf.com/content/CVPR2023/html/Ci_GFPose_Learning_3D_Human_Pose_Prior_With_Gradient_Fields_CVPR_2023_paper.html"
+      ],
+      [
+        "supp_url",
+        "https://openaccess.thecvf.com/content/CVPR2023/supplemental/Ci_GFPose_Learning_3D_CVPR_2023_supplemental.pdf"
+      ],
+      [
+        "arxiv",
+        "2212.08641"
+      ]
+    ],
+    "pub_date": null,
+    "title": "GFPose: Learning 3D Human Pose Prior With Gradient Fields",
+    "year": 2023
+  },
+  {
+    "abstract": null,
+    "authors": [
+      "Elena Torres",
+      "Michael Reyes"
+    ],
+    "identifiers": [
+      [
+        "cvf",
+        "CVPR2023/Torres_Sparse_Voxel_Diffusion_Fields_for_Scene_Reconstruction_CVPR_2023_paper"
+      ]
+    ],
+    "meta": [
+      [
+        "pdf_url",
+        "https://openaccess.thecvf.com/content/CVPR2023/papers/Torres_Sparse_Voxel_Diffusion_Fields_for_Scene_Reconstruction_CVPR_2023_paper.pdf"
+      ],
+      [
+        "landing_url",
+        "https://openaccess.thecvf.com/content/CVPR2023/html/Torres_Sparse_Voxel_Diffusion_Fields_for_Scene_Reconstruction_CVPR_2023_paper.html"
+      ],
+      [
+        "arxiv",
+        "2303.09999"
+      ]
+    ],
+    "pub_date": null,
+    "title": "Sparse Voxel Diffusion Fields for Scene Reconstruction",
+    "year": 2023
+  },
+  {
+    "abstract": null,
+    "authors": [
+      "Kenji Nakamura"
+    ],
+    "identifiers": [
+      [
+        "cvf",
+        "CVPR2023/Nakamura_Robust_Multi_View_Stereo_via_Adaptive_Cost_Volumes_CVPR_2023_paper"
+      ]
+    ],
+    "meta": [
+      [
+        "pdf_url",
+        "https://openaccess.thecvf.com/content/CVPR2023/papers/Nakamura_Robust_Multi_View_Stereo_via_Adaptive_Cost_Volumes_CVPR_2023_paper.pdf"
+      ],
+      [
+        "landing_url",
+        "https://openaccess.thecvf.com/content/CVPR2023/html/Nakamura_Robust_Multi_View_Stereo_via_Adaptive_Cost_Volumes_CVPR_2023_paper.html"
+      ],
+      [
+        "supp_url",
+        "https://openaccess.thecvf.com/content/CVPR2023/supplemental/Nakamura_Robust_Multi_View_CVPR_2023_supplemental.pdf"
+      ]
+    ],
+    "pub_date": null,
+    "title": "Robust Multi-View Stereo via Adaptive Cost Volumes",
+    "year": 2023
+  },
+  {
+    "abstract": null,
+    "authors": [
+      "Ade Oyelaran"
+    ],
+    "identifiers": [
+      [
+        "cvf",
+        "CVPR2023/Oyelaran_Lightweight_Attention_Pruning_for_Edge_Deployment_CVPR_2023_paper"
+      ]
+    ],
+    "meta": [
+      [
+        "pdf_url",
+        "https://openaccess.thecvf.com/content/CVPR2023/papers/Oyelaran_Lightweight_Attention_Pruning_for_Edge_Deployment_CVPR_2023_paper.pdf"
+      ],
+      [
+        "landing_url",
+        "https://openaccess.thecvf.com/content/CVPR2023/html/Oyelaran_Lightweight_Attention_Pruning_for_Edge_Deployment_CVPR_2023_paper.html"
+      ]
+    ],
+    "pub_date": null,
+    "title": "Lightweight Attention Pruning for Edge Deployment",
+    "year": 2023
+  }
+]

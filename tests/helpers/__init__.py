@@ -46,6 +46,24 @@ DEFAULT_PMLR_QUIRKS: dict[str, object] = {
 # 一致）。`anthology_legacy_prefix` 驱动旧式文件名构造（design/adapters/acl-anthology.md §4）。
 DEFAULT_ACL_ANTHOLOGY_QUIRKS: dict[str, object] = {"anthology_legacy_prefix": "D"}
 
+# cvf 契约/集成测试用venue 的展示名（id 必须是 cvpr/iccv/wacv 之一——adapter 内置 cadence
+# 表按 venue.id 键取，见 adapters/cvf/cadence._CADENCE_TABLE）。无 quirks 默认（cadence 规则
+# 生成届表零配置即可用；overrides/list_mode 按需经 quirks_overrides 注入）。
+_CVF_NAMES: dict[str, dict[str, object]] = {
+    "cvpr": {
+        "full": "IEEE/CVF Conference on Computer Vision and Pattern Recognition",
+        "aliases": ["CVPR"],
+    },
+    "iccv": {
+        "full": "IEEE/CVF International Conference on Computer Vision",
+        "aliases": ["ICCV"],
+    },
+    "wacv": {
+        "full": "IEEE/CVF Winter Conference on Applications of Computer Vision",
+        "aliases": ["WACV"],
+    },
+}
+
 
 def make_mock_venue(**quirks_overrides: object) -> VenueSpec:
     """构造 mock_platform 契约测试用的 venue（不依赖 `venues/` 目录文件）。
@@ -109,6 +127,7 @@ def make_openreview_venue(**quirks_overrides: object) -> VenueSpec:
     )
 
 
+<<<<<<< HEAD
 def make_pmlr_venue(**quirks_overrides: object) -> VenueSpec:
     """构造 pmlr 契约/集成测试用的 `conference` venue（不依赖 `venues/` 目录文件）。
 
@@ -149,6 +168,24 @@ def make_acl_anthology_venue(**quirks_overrides: object) -> VenueSpec:
         identifiers={"dblp_key": "conf/emnlp"},
         metadata_source="acl_anthology",
         fulltext_source="acl_anthology",
+=======
+def make_cvf_venue(venue_id: str = "cvpr", **quirks_overrides: object) -> VenueSpec:
+    """构造 cvf 契约/集成测试用的 `conference` venue（不依赖 `venues/` 目录文件）。
+
+    默认 `id='cvpr'`（adapter 内置 cadence 表按 venue.id 键取：cvpr/iccv/wacv 三选一，
+    调用方传 `venue_id='iccv'`/`'wacv'` 复用同一工厂）。`auth` 用默认值
+    `AuthLevel.NONE`（CVF 匿名可读，无需声明——匹配 adapter `auth_requirement`）。
+    `quirks_overrides` 可注入 `cvf_edition_overrides`/`list_mode` 等 quirks。
+    """
+    quirks: dict[str, object] = dict(quirks_overrides)
+    return VenueSpec(
+        id=venue_id,
+        kind="conference",
+        names=_CVF_NAMES.get(venue_id, {"full": venue_id.upper(), "aliases": [venue_id.upper()]}),
+        field=["cs_ai"],
+        metadata_source="cvf",
+        fulltext_source="cvf",
+>>>>>>> adapter/cvf
         quirks=quirks,
     )
 
@@ -181,6 +218,7 @@ __all__ = [
     "FakeFetchIO",
     "make_acl_anthology_venue",
     "make_arxiv_venue",
+    "make_cvf_venue",
     "make_mock_venue",
     "make_openreview_venue",
     "make_pmlr_venue",

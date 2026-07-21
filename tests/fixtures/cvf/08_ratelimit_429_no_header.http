@@ -1,0 +1,12 @@
+# SYNTHETIC fixture（design/adapters/cvf.md §6 T3 件⑧b：429 不含 Retry-After 头
+# → rate_limited，detail 无 retry_after_s 段）。同⑧a 附注：CVF 未观测到任何 429
+# 形态（[LIVE] §8），本件覆盖"无 Retry-After 头"分支（http.py `_rate_limited`
+# 的 detail 省略路径）。
+HTTP-STATUS: 429
+Content-Type: text/html
+
+<!DOCTYPE HTML PUBLIC "-//IETF//DTD HTML 2.0//EN">
+<html><head><title>429 Too Many Requests</title></head><body>
+<h1>Too Many Requests</h1>
+<p>synthetic — not an observed CVF response shape.</p>
+</body></html>

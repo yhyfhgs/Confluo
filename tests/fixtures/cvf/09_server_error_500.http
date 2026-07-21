@@ -1,0 +1,11 @@
+# SYNTHETIC fixture（design/adapters/cvf.md §6 T3 件⑨：5xx 响应 → transient）。
+# 未在 [LIVE] 勘察中观测到（22 次请求全部 2xx/3xx/404）；合成覆盖 HttpClient 冻结
+# 映射"其余 5xx→TRANSIENT"分支（design §5）。
+HTTP-STATUS: 500
+Content-Type: text/html
+
+<!DOCTYPE HTML PUBLIC "-//IETF//DTD HTML 2.0//EN">
+<html><head><title>500 Internal Server Error</title></head><body>
+<h1>Internal Server Error</h1>
+<p>synthetic — not an observed CVF response shape.</p>
+</body></html>

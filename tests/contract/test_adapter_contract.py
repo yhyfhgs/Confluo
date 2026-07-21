@@ -23,17 +23,25 @@ import pytest
 
 from helpers import (
     FakeFetchIO,
+<<<<<<< HEAD
     make_acl_anthology_venue,
     make_arxiv_venue,
     make_mock_venue,
     make_openreview_venue,
     make_pmlr_venue,
+=======
+    make_arxiv_venue,
+    make_cvf_venue,
+    make_mock_venue,
+    make_openreview_venue,
+>>>>>>> adapter/cvf
 )
 from helpers.arxiv_fixtures import fixture_bytes
 from helpers.pmlr_fixtures import fixture_bytes as pmlr_fixture_bytes
 from paper_crawler.adapter import AdapterBase, AdapterFamily, SourceAdapter, load_adapters
 from paper_crawler.adapters.acl_anthology.adapter import AclAnthologyAdapter
 from paper_crawler.adapters.arxiv.adapter import ArxivAdapter
+from paper_crawler.adapters.cvf.adapter import CVFAdapter
 from paper_crawler.adapters.openreview.adapter import OpenReviewAdapter
 from paper_crawler.adapters.pmlr.adapter import PmlrAdapter
 from paper_crawler.errors import CapabilityNotSupported
@@ -103,6 +111,7 @@ def _openreview_case() -> tuple[SourceAdapter, VenueSpec]:
     return OpenReviewAdapter(http=client), make_openreview_venue()
 
 
+<<<<<<< HEAD
 def _pmlr_contract_handler(request: httpx.Request) -> httpx.Response:
     """pmlr 契约链的 MockTransport：卷 index 页 → 合成 fixture；PDF 取回 → %PDF。
 
@@ -151,6 +160,33 @@ def _acl_anthology_case() -> tuple[SourceAdapter, VenueSpec]:
     transport = httpx.MockTransport(_acl_anthology_contract_handler)
     client = HttpClient(user_agent=_CONTRACT_UA, transport=transport)
     return AclAnthologyAdapter(http=client), make_acl_anthology_venue()
+=======
+def _cvf_contract_handler(request: httpx.Request) -> httpx.Response:
+    """cvf 契约链的 MockTransport：任意年份 bare GET → 单条目 flat 页 → pdf 取回 %PDF。
+
+    合成响应（零真实网络）：单条目自带 pdf href，使 discover→enumerate→resolve→fetch
+    全链有产出，无需模拟双请求 day-landing 分支（该分支的单测覆盖见
+    tests/unit/test_cvf_adapter.py）。`discover_timeline` 最早年为 2013，故本
+    handler 实际模拟的是 flat era 响应——作者 hidden input 用真实的 `name="query"`
+    （非 modern `?day=all` 专属的 `query_author`，2026-07-22 独立审查校正，见
+    `parse._AUTHOR_INPUT_NAMES`）。
+    """
+    if request.url.path.endswith(".pdf"):
+        return httpx.Response(200, content=_CONTRACT_PDF)
+    html = (
+        '<dt class="ptitle"><br><a href="/content/X/html/contract_paper.html">'
+        "Contract Paper</a></dt>\n"
+        '<dd><input type="hidden" name="query" value="Contract Author"></dd>\n'
+        '<dd>[<a href="/content/X/papers/contract_paper.pdf">pdf</a>]</dd>\n'
+    )
+    return httpx.Response(200, content=f"<html><body><dl>{html}</dl></body></html>".encode())
+
+
+def _cvf_case() -> tuple[SourceAdapter, VenueSpec]:
+    transport = httpx.MockTransport(_cvf_contract_handler)
+    client = HttpClient(user_agent=_CONTRACT_UA, transport=transport)
+    return CVFAdapter(http=client, current_year=2026), make_cvf_venue()
+>>>>>>> adapter/cvf
 
 
 # adapter_id -> (adapter, venue) 工厂。只有此处登记的 adapter 会跑完整能力链路检查；
@@ -160,8 +196,12 @@ _CONTRACT_CASES: dict[str, Callable[[], tuple[SourceAdapter, VenueSpec]]] = {
     "mock_platform": _mock_case,
     "arxiv": _arxiv_case,
     "openreview": _openreview_case,
+<<<<<<< HEAD
     "pmlr": _pmlr_case,
     "acl_anthology": _acl_anthology_case,
+=======
+    "cvf": _cvf_case,
+>>>>>>> adapter/cvf
 }
 
 ADAPTER_IDS = sorted(load_adapters())
