@@ -1,0 +1,55 @@
+[
+  {
+    "abstract": null,
+    "authors": [
+      "Jaechul Kim",
+      "Ce Liu",
+      "Fei Sha",
+      "Kristen Grauman"
+    ],
+    "identifiers": [
+      [
+        "cvf",
+        "CVPR2013/Kim_Deformable_Spatial_Pyramid_2013_CVPR_paper"
+      ]
+    ],
+    "meta": [
+      [
+        "pdf_url",
+        "https://openaccess.thecvf.com/content_cvpr_2013/papers/Kim_Deformable_Spatial_Pyramid_2013_CVPR_paper.pdf"
+      ],
+      [
+        "landing_url",
+        "https://openaccess.thecvf.com/content_cvpr_2013/html/Kim_Deformable_Spatial_Pyramid_2013_CVPR_paper.html"
+      ]
+    ],
+    "pub_date": null,
+    "title": "Deformable Spatial Pyramid Matching for Fast Dense Correspondences",
+    "year": 2013
+  },
+  {
+    "abstract": null,
+    "authors": [
+      "Sofia Alvarez"
+    ],
+    "identifiers": [
+      [
+        "cvf",
+        "CVPR2013/Alvarez_Sparse_Coding_for_Action_Recognition_2013_CVPR_paper"
+      ]
+    ],
+    "meta": [
+      [
+        "pdf_url",
+        "https://openaccess.thecvf.com/content_cvpr_2013/papers/Alvarez_Sparse_Coding_for_Action_Recognition_2013_CVPR_paper.pdf"
+      ],
+      [
+        "landing_url",
+        "https://openaccess.thecvf.com/content_cvpr_2013/html/Alvarez_Sparse_Coding_for_Action_Recognition_2013_CVPR_paper.html"
+      ]
+    ],
+    "pub_date": null,
+    "title": "Sparse Coding for Action Recognition in Depth Videos",
+    "year": 2013
+  }
+]

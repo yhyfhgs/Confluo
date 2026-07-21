@@ -1,0 +1,11 @@
+# SYNTHETIC fixture（design/adapters/cvf.md §6 T3 件⑩：400/405 响应 → config）。
+# 未在 [LIVE] 勘察中观测到；合成覆盖 HttpClient 冻结映射"其余 4xx（400/405…）
+# →CONFIG"分支（design §5：请求构造缺陷，响亮停机转 BLOCKED，而非资源终态）。
+HTTP-STATUS: 400
+Content-Type: text/html
+
+<!DOCTYPE HTML PUBLIC "-//IETF//DTD HTML 2.0//EN">
+<html><head><title>400 Bad Request</title></head><body>
+<h1>Bad Request</h1>
+<p>synthetic — not an observed CVF response shape.</p>
+</body></html>
