@@ -102,6 +102,7 @@ def test_canary_without_filter_checks_all_registered_adapters(
     from paper_crawler.adapters.acl_anthology.adapter import AclAnthologyAdapter
     from paper_crawler.adapters.arxiv.adapter import ArxivAdapter
     from paper_crawler.adapters.cvf.adapter import CVFAdapter
+    from paper_crawler.adapters.neurips_proceedings.adapter import NeuripsProceedingsAdapter
     from paper_crawler.adapters.openreview.adapter import OpenReviewAdapter
     from paper_crawler.adapters.pmlr.adapter import PmlrAdapter
 
@@ -114,6 +115,7 @@ def test_canary_without_filter_checks_all_registered_adapters(
     monkeypatch.setattr(AclAnthologyAdapter, "healthcheck", _fake_healthy)
     monkeypatch.setattr(CVFAdapter, "healthcheck", _fake_healthy)
     monkeypatch.setattr(AaaiOjsAdapter, "healthcheck", _fake_healthy)
+    monkeypatch.setattr(NeuripsProceedingsAdapter, "healthcheck", _fake_healthy)
     monkeypatch.setattr(MockPlatformAdapter, "healthcheck", _fake_healthy)
 
     result = runner.invoke(app, ["canary", "--home", str(_home(tmp_path))])
@@ -128,5 +130,6 @@ def test_canary_without_filter_checks_all_registered_adapters(
         "elsevier_sd",
         "acl_anthology",
         "cvf",
+        "neurips_proceedings",
     ):
         assert adapter_id in result.output

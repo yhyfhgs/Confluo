@@ -28,6 +28,7 @@ from helpers import (
     make_arxiv_venue,
     make_cvf_venue,
     make_mock_venue,
+    make_neurips_venue,
     make_openreview_venue,
     make_pmlr_venue,
 )
@@ -39,6 +40,7 @@ from paper_crawler.adapters.aaai_ojs.adapter import AaaiOjsAdapter
 from paper_crawler.adapters.acl_anthology.adapter import AclAnthologyAdapter
 from paper_crawler.adapters.arxiv.adapter import ArxivAdapter
 from paper_crawler.adapters.cvf.adapter import CVFAdapter
+from paper_crawler.adapters.neurips_proceedings.adapter import NeuripsProceedingsAdapter
 from paper_crawler.adapters.openreview.adapter import OpenReviewAdapter
 from paper_crawler.adapters.pmlr.adapter import PmlrAdapter
 from paper_crawler.errors import CapabilityNotSupported
@@ -204,6 +206,33 @@ def _aaai_case() -> tuple[SourceAdapter, VenueSpec]:
     return AaaiOjsAdapter(http=client), make_aaai_venue()
 
 
+_NEURIPS_YEAR_PAGE = (
+    b'<html><body><ul class="paper-list">'
+    b'<li class="" data-track="none"><div class="paper-content">'
+    b'<a title="paper title" href="/paper_files/paper/2021/hash/'
+    b'000c076c390a4c357313fca29e390ece-Abstract.html">Contract Test Paper</a>'
+    b'<span class="paper-authors">Contract Author</span>'
+    b"</div></li></ul></body></html>"
+)
+
+
+def _neurips_proceedings_contract_handler(request: httpx.Request) -> httpx.Response:
+    """neurips_proceedings 契约链的 MockTransport：年页 → 合成单条目页；PDF 取回 → %PDF。
+
+    不区分请求的具体年份（2021/2022 等）——contract 只关心链路机制是否走通，年页
+    内容与被请求年份是否语义一致由 T5 adapter 单测/T4 集成测试覆盖（同 pmlr 先例）。
+    """
+    if str(request.url).endswith(".pdf"):
+        return httpx.Response(200, content=_CONTRACT_PDF)
+    return httpx.Response(200, content=_NEURIPS_YEAR_PAGE)
+
+
+def _neurips_proceedings_case() -> tuple[SourceAdapter, VenueSpec]:
+    transport = httpx.MockTransport(_neurips_proceedings_contract_handler)
+    client = HttpClient(user_agent=_CONTRACT_UA, transport=transport)
+    return NeuripsProceedingsAdapter(http=client), make_neurips_venue()
+
+
 # adapter_id -> (adapter, venue) 工厂。只有此处登记的 adapter 会跑完整能力链路检查；
 # 其余（stub）adapter 一律 pytest.skip（stub until Phase 3/4）。pmlr 无 stub 阶段
 # （不同于 arxiv 曾有 T1-T4 的 stub 过渡期）——直接新增一行即完整接入契约套件。
@@ -215,6 +244,7 @@ _CONTRACT_CASES: dict[str, Callable[[], tuple[SourceAdapter, VenueSpec]]] = {
     "acl_anthology": _acl_anthology_case,
     "cvf": _cvf_case,
     "aaai_ojs": _aaai_case,
+    "neurips_proceedings": _neurips_proceedings_case,
 }
 
 ADAPTER_IDS = sorted(load_adapters())

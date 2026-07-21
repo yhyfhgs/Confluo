@@ -46,6 +46,7 @@ _NON_ARXIV_VENUE_IDS = {
     "iccv",
     "wacv",
     "aaai",
+    "neurips",
 }
 
 
@@ -61,6 +62,7 @@ def test_shipped_venues_pass_lint_cleanly(adapters: dict[str, SourceAdapter]) ->
     # 由 scripts/gen_arxiv_venues.py 生成；每个都 preprint_channel 且路由到 arxiv。
     arxiv_ids = {i for i in ids if i.startswith("arxiv_")}
     assert arxiv_ids == ids - _NON_ARXIV_VENUE_IDS
+
     assert len(arxiv_ids) == 31
     for venue_id in arxiv_ids:
         spec = reg.get(venue_id)
@@ -125,6 +127,20 @@ def test_aaai_venue_routes_to_aaai_ojs_adapter(adapters: dict[str, SourceAdapter
         2025: 39,
         2026: 40,
     }
+
+
+def test_neurips_venue_routes_to_neurips_proceedings_adapter(
+    adapters: dict[str, SourceAdapter],
+) -> None:
+    reg = VenueRegistry(adapters)
+    reg.load_dirs([REPO_VENUES_DIR])
+    spec = reg.get("neurips")
+    assert spec.kind == "conference"
+    assert spec.metadata_source == "neurips_proceedings"
+    assert spec.fulltext_source == "neurips_proceedings"
+    assert spec.auth.level.value == "none"
+    assert spec.quirks["first_year"] == 1987
+    assert spec.identifiers["dblp_key"] == "conf/nips"
 
 
 @pytest.mark.parametrize("venue_id", sorted(_NON_ARXIV_VENUE_IDS))

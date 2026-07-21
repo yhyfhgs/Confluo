@@ -1,0 +1,29 @@
+<!--
+REAL citation_* meta values (docs/research/site-survey/neurips-proceedings.md SS4 [LIVE],
+2023 main-track sample). This adapter does NOT parse detail/Abstract pages this phase
+(design SS3.3: "metadata 深度" -- enumerate only reads the year-page list; per-paper detail
+pages are Phase 3 enrichment). This file is a recorded reference sample for that future
+work, not consumed by any parser in this package; the T3 test for this fixture only asserts
+the raw bytes contain the expected substrings (no golden-parsed-output comparison exists yet).
+Page chrome (<html>/<head>/<body> wrapper) is SYNTHETIC scaffolding around the real meta/
+abstract fragments -- the survey captured fragments, not a full page source.
+-->
+<html>
+<head>
+<meta name="citation_title" content="Modelling Cellular Perturbations with the Sparse Additive Mechanism Shift Variational Autoencoder">
+<meta name="citation_author" content="Bereket, Michael">
+<meta name="citation_author" content="Karaletsos, Theofanis">
+<meta name="citation_journal_title" content="Advances in Neural Information Processing Systems">
+<meta name="citation_volume" content="36">
+<meta name="citation_firstpage" content="1">
+<meta name="citation_lastpage" content="12">
+<meta name="citation_pdf_url" content="https://proceedings.neurips.cc/paper_files/paper/2023/file/0001ca33ba34ce0351e4612b744b3936-Paper-Conference.pdf">
+<meta name="citation_publication_date" content="2023-12-15">
+</head>
+<body>
+<section class="paper-section">
+    <h2 class="section-label">Abstract</h2>
+    <p class="paper-abstract"><p>Generative models of observations under interventions...</p></p>
+</section>
+</body>
+</html>
