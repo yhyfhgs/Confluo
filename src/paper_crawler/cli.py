@@ -135,27 +135,39 @@ def _http_client_factory(config: Config, rate_limiter: RateLimiter | None = None
     return HttpClient(user_agent=build_user_agent(config.identity_email), rate_limiter=rate_limiter)
 
 
+def _openreview_client_factory(
+    config: Config, rate_limiter: RateLimiter | None = None
+) -> HttpClient:
+    """构造 openreview 携 token cookie 的**专属** client（openreview.md §3）。
+
+    client 级附加头 `Cookie: openreview.accessToken=<token>`（config.openreview_token，
+    调用方须已确认非空）；共享 limiter 同桶计费。模块级函数是测试注入 `MockTransport`
+    client 的 seam（零真实网络），与 `_http_client_factory` 对称。
+    """
+    return HttpClient(
+        user_agent=build_user_agent(config.identity_email),
+        rate_limiter=rate_limiter,
+        extra_headers={"Cookie": f"openreview.accessToken={config.openreview_token}"},
+    )
+
+
 def _bind_openreview_token_client(
     adapters: dict[str, SourceAdapter], config: Config, rate_limiter: RateLimiter
 ) -> HttpClient | None:
-    """有 token 时为 openreview adapter 注入携 cookie 的**专属** client（openreview.md §3）。
+    """有 token 时为 openreview adapter 注入携 cookie 的专属 client（openreview.md §3）。
 
     token 缺省 → 返回 None：openreview 沿用 `bind_http_client` 注入的共享匿名 client
     （groups/healthcheck 可用，notes/pdf 会 403→auth_expired→BLOCKED，status 给配置指引）。
-    有 token → 构造携 `Cookie: openreview.accessToken=<token>` **client 级附加头**的独立
-    client（共享 limiter 同桶计费）并注入，**绝不把 cookie 挂到共享 http**（否则 cookie
-    随 arxiv 等请求外泄他站，违反凭证红线）。返回专属 client（供 `_env` 关闭）或 None。
+    有 token → 经 `_openreview_client_factory` 构造独立 client 并注入，**绝不把 cookie
+    挂到共享 http**（否则随 arxiv 等请求外泄他站，凭证红线）。返回专属 client（供 `_env`
+    关闭）或 None。
     """
     if not config.openreview_token:
         return None
     adapter = adapters.get("openreview")
     if not isinstance(adapter, HttpClientConsumer):
         return None
-    client = HttpClient(
-        user_agent=build_user_agent(config.identity_email),
-        rate_limiter=rate_limiter,
-        extra_headers={"Cookie": f"openreview.accessToken={config.openreview_token}"},
-    )
+    client = _openreview_client_factory(config, rate_limiter)
     adapter.set_http_client(client)
     return client
 
