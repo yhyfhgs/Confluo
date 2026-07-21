@@ -2,10 +2,13 @@
 title: Adapter 设计 · ACM Digital Library
 status: review
 owner: fable5
-updated: 2026-07-20
+updated: 2026-07-22
 ---
 
 # Adapter · `acm_dl`
+
+> **D-020（2026-07-22）：本 adapter 自动全文抓取 Phase 2 出列、Phase 4 重评**——LIVE 勘察（[research/site-survey/acm-dl.md](../../research/site-survey/acm-dl.md)）实测 OA 后仍有 Cloudflare 挑战门 + ToS 禁自动下载条款，红线（AC-0.2/0.5）优先。本文档维持 review、不按新标准重写；Phase 4 重评时依届时事实全文重写。以下为 Phase 0 原稿。
+
 
 ## 1. 定位
 

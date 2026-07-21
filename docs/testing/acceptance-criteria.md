@@ -30,7 +30,7 @@ updated: 2026-07-21
 | AC-2.3 | arXiv 订阅 7 天增量 | 连续 7 日 watch：抽样 20 篇与 arXiv 官方 listing 比对，命中且无重复、无遗漏 |
 | AC-2.4 | `pull cvpr --year 2023 --filter "diffusion"` | 过滤命中数=对 enumerate 全集本地过滤数；下载子集正确 |
 | AC-2.5 | ACL Anthology bulk 优先 | 回填某年 EMNLP 全量走 github 数据仓库路径（日志证据），无逐页在线爬取 |
-| AC-2.6 | ACM OA 会议（D-013） | `pull kdd --year 2026` 在无任何认证配置下成功下载全文 |
+| AC-2.6 | ACM OA 会议（D-013）——**deferred(D-020)，Phase 4 重评** | 原判据：`pull kdd --year 2026` 无认证下载全文。修订 2026-07-22：LIVE 勘察证实 OA 后仍有 Cloudflare 挑战门 + ToS 禁自动下载条款（红线 AC-0.2/0.5 优先）→ 本条**不计入 Phase 2 判定**；Phase 4 依 D-020 重评（核 ToS 原文/官方通道，或降级为 Crossref 元数据+人工取回口径） |
 
 ## AC-3 · 数据模型与合并（Phase 3）
 

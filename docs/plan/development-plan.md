@@ -59,7 +59,7 @@ updated: 2026-07-21
 5. `acl_anthology`（bulk 数据仓库优先）
 6. `neurips_proceedings`（papers.nips.cc 历史全量）
 7. `aaai_ojs`（AAAI/AIES 的 OJS 结构）
-8. `acm_dl`（ACM 2026 全面 OA，D-013；AC-2.6 载体。勘误补入 2026-07-21：D-013 影响声明既定，原列表漏列）
+8. ~~`acm_dl`~~（**Phase 2 出列，D-020 2026-07-22**：OA 后实测 Cloudflare 挑战门+ToS 禁自动下载，红线优先无合规路径；Phase 4 重评。2026-07-21 曾按 D-013 勘误补入）
 
 **DoD**：验收场景 AC-2.x 全过（如"列出 ICLR 2024 全部接收论文并下载指定 10 篇"）；每个 adapter 有离线 fixture 测试 + 1 个限量在线冒烟；canary 监控注册。
 

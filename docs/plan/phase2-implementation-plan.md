@@ -95,7 +95,7 @@ updated: 2026-07-21
 
 ## §4 Stage B 滚动模板（每 adapter 一个标准工作包）
 
-顺序（development-plan §Phase 2 + D-013 增补）：**openreview（AC-2.1/2.2）→ pmlr → cvf（AC-2.4）→ acl_anthology（AC-2.5）→ neurips_proceedings → aaai_ojs → acm_dl（AC-2.6，D-013）**。相邻无共享文件的 adapter 允许 2-3 线 worktree 并行；openreview 先行单独走（AC 载体，重件）。
+顺序（development-plan §Phase 2；acm_dl 已依 **D-020** 出列——红线优先，Phase 4 重评）：**openreview（AC-2.1/2.2）→ pmlr → cvf（AC-2.4）→ acl_anthology（AC-2.5）→ neurips_proceedings → aaai_ojs**。相邻无共享文件的 adapter 允许 2-3 线 worktree 并行；openreview 先行单独走（AC 载体，重件）。
 
 每包固定流程（= arxiv 模式复制）：
 1. **详设门禁**：`docs/design/adapters/<id>.md` 双评审（技术一致性+测试红线，档位按文档复杂度）→ 主 agent 裁决修订 → approved 提交。

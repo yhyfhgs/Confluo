@@ -169,3 +169,11 @@ updated: 2026-07-22
 - **背景**：AC-2.1 要求 timeline 与 DBLP 卷数"一致 ±0"，但 DBLP adapter 属 Phase 3、验收不能依赖在线拉取外源；openreview 勘察亦证实 2015/2016 届在两侧俱缺等特例需固化口径。后续 Stage B adapter（pmlr/cvf/acl 等）的完整性验收均将面对同构问题。
 - **决策**：外源比对类 AC 以**人工核准的锚点快照（anchor golden 表）**为可执行判定：①快照由实现期程序生成（本例：带 token 按 venueid 过滤取 count）；②**人工对照外源页面核准**后入库（UPDATE_GOLDEN 纪律+records 留痕）；③特例（缺届/跨源）在表内显式标注；④验收判定=系统输出与快照全等。快照生成与核准过程记入验收记录。
 - **影响**：openreview.md §7（AC-2.1 anchor 表）为首例；Stage B 各 adapter 的"与外源一致"类验收沿用本模式；与 D-018（时间维分层）互补——D-018 解"等不了的时间"，本条解"依赖不了的外源"。
+
+## D-020 acm_dl 自动全文抓取 Phase 2 出列（红线优先），Phase 4 重评
+
+- 状态：accepted · 日期：2026-07-22
+- **背景**：D-013（2026-07-20 调研）确认 ACM 2026 全面 OA 并将 acm_dl 纳入 Phase 2、设 AC-2.6（pull kdd 无认证下载全文）。2026-07-22 LIVE 勘察（research 归档于 scratchpad/acm-survey，3 请求即按纪律停站）实测：①OA 拆付费墙未拆机器人墙——匿名非浏览器请求对 landing/PDF 一律 Cloudflare 挑战（`cf-mitigated: challenge`，403 拦截页）；②ToS 明文禁"scripts/spiders 自动下载/harvest metadata"（搜索摘录证据——政策页本身对脚本 403，原文未直接取得）；③无官方 API/OAI-PMH；④robots 放行 /doi/ 与 WAF 拦截矛盾——以更严者为准。
+- **决策**：AC-0.2（不对抗挑战门）与 AC-0.5/AGENTS §6.3（ToS 合规）优先于 AC-2.6——**Phase 2 不实现 acm_dl 自动全文抓取**（无合规路径：httpx 必被拦；浏览器自动化仍属 ToS 禁止的 automated download 风险面）。AC-2.6 标注 deferred(D-020)，**Phase 4 重评**：届时人工核验 ToS 原文、官方 API/TDM 通道态势、挑战门策略；若仍无合规通道，acm 系会议降级为"元数据经 Crossref/DBLP（Phase 3 聚合层，member 320 实测畅通）+ landing 链接呈现 + 人工取回"。
+- **附带事实**：KDD 2026 尚未出版（8 月会议，proceedings 仅 3 篇预注册）——AC-2.6 字面场景本期亦无内容；WWW 2026（10.1145/3774904，719+222 篇）为已出版代理候选，重评时可换载体。
+- **影响**：Phase 2 范围 8→7 adapter（development-plan 注记）；acceptance-criteria AC-2.6 修订；acm-dl.md 维持 review 不重写（Phase 4 按届时事实重写）；Phase 2 收尾验收以 AC-2.1~2.5 + 各 adapter DoD 为准。

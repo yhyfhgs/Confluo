@@ -61,7 +61,7 @@
 | [design/adapters/acl-anthology.md](design/adapters/acl-anthology.md) | ACL Anthology | review | 2026-07-20 |
 | [design/adapters/neurips-proceedings.md](design/adapters/neurips-proceedings.md) | NeurIPS Proceedings | review | 2026-07-20 |
 | [design/adapters/aaai-ojs.md](design/adapters/aaai-ojs.md) | AAAI OJS | review | 2026-07-20 |
-| [design/adapters/acm-dl.md](design/adapters/acm-dl.md) | ACM Digital Library | review | 2026-07-20 |
+| [design/adapters/acm-dl.md](design/adapters/acm-dl.md) | ACM Digital Library（D-020：Phase 2 出列，Phase 4 重评） | review | 2026-07-22 |
 | [design/adapters/ieee-xplore.md](design/adapters/ieee-xplore.md) | IEEE Xplore | review | 2026-07-20 |
 | [design/adapters/aggregators.md](design/adapters/aggregators.md) | 聚合元数据源（6 合册） | review | 2026-07-20 |
 | [design/adapters/elsevier-sd.md](design/adapters/elsevier-sd.md) | Elsevier ScienceDirect | review | 2026-07-20 |
@@ -106,6 +106,7 @@
 |---|---|---|---|
 | [research/site-survey/arxiv.md](research/site-survey/arxiv.md) | 勘察：arXiv 全接口 | approved | 2026-07-20 |
 | [research/site-survey/openreview.md](research/site-survey/openreview.md) | 勘察：OpenReview API（v1/v2、鉴权、限流、届表） | approved | 2026-07-22 |
+| [research/site-survey/acm-dl.md](research/site-survey/acm-dl.md) | 勘察：ACM DL OA（挑战门/ToS/改道评估，D-020 依据） | approved | 2026-07-22 |
 | [research/site-survey/metadata-apis.md](research/site-survey/metadata-apis.md) | 勘察：Crossref/OpenAlex/S2 | approved | 2026-07-20 |
 | [research/site-survey/cs-ai-conferences.md](research/site-survey/cs-ai-conferences.md) | 勘察：CS/AI 顶会渠道 | approved | 2026-07-20 |
 | [research/site-survey/econ-fin-preprints.md](research/site-survey/econ-fin-preprints.md) | 勘察：SSRN/RePEc/NBER/CEPR | approved | 2026-07-20 |
