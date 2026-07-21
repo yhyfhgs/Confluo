@@ -33,6 +33,8 @@ Thumbs.db
 
 # ---- 测试快照的临时重录区（正式 fixtures 会入库）----
 tests/fixtures/_staging/
+# 每 adapter 的重录暂存区（如 arxiv 的 scripts/record_arxiv_fixtures.py 落 _staging）
+tests/fixtures/*/_staging/
 
 # ---- Phase 1 实现阶段增补（工具产物，绝不入库）----
 .coverage

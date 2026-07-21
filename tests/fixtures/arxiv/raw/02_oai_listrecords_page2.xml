@@ -1,0 +1,42 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- SYNTHETIC fixture (Phase 2 T5). Continuation page: the resumptionToken target of
+     02_oai_listrecords_page1.xml. No resumptionToken element = end of harvest. Includes
+     one OLD-STYLE arXiv id (cs.LG/0401001) for two-generation end-to-end coverage. -->
+<OAI-PMH xmlns="http://www.openarchives.org/OAI/2.0/">
+<responseDate>2024-02-01T08:00:03Z</responseDate>
+<request verb="ListRecords" resumptionToken="cs|2024-01|1000">https://oaipmh.arxiv.org/oai</request>
+<ListRecords>
+<record>
+<header>
+<identifier>oai:arXiv.org:cs.LG/0401001</identifier>
+<datestamp>2024-01-17</datestamp>
+<setSpec>cs</setSpec>
+</header>
+<metadata>
+<arXiv xmlns="http://arxiv.org/OAI/arXiv/">
+<id>cs.LG/0401001</id>
+<created>2004-01-05</created>
+<authors><author><keyname>Knuth</keyname><forenames>Donald E.</forenames></author></authors>
+<title>An Old-Style Identifier Paper on Combinatorial Search</title>
+<categories>cs.LG</categories>
+</arXiv>
+</metadata>
+</record>
+<record>
+<header>
+<identifier>oai:arXiv.org:2401.10003</identifier>
+<datestamp>2024-01-18</datestamp>
+<setSpec>cs</setSpec>
+</header>
+<metadata>
+<arXiv xmlns="http://arxiv.org/OAI/arXiv/">
+<id>2401.10003</id>
+<created>2024-01-12</created>
+<authors><author><keyname>Shannon</keyname><forenames>Claude E.</forenames></author></authors>
+<title>Information-Theoretic Bounds for Deep Ensembles</title>
+<categories>cs.LG</categories>
+</arXiv>
+</metadata>
+</record>
+</ListRecords>
+</OAI-PMH>

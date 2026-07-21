@@ -1,8 +1,13 @@
 """T2 契约测试（test-plan §1）：参数化遍历 `load_adapters()`，校验协议一致性。
 
-全体 adapter 都要过的元数据完备性检查，以及——对声明了 contract fixture 的
-adapter（目前只有 `mock_platform`；真实站点 stub 在 Phase 2/3/4 前 `pytest.skip`）——
-DISCOVER→ENUMERATE→RESOLVE→FETCH 全链路产出合法性检查。
+全体 adapter 都要过的元数据完备性检查，以及——对声明了 contract case 的 adapter
+（`mock_platform` 本地确定性；`arxiv` 经 `httpx.MockTransport` 注入合成 fixture，零真实
+网络）——DISCOVER→ENUMERATE→RESOLVE→FETCH 全链路产出合法性检查。真实站点 stub
+（crossref/openreview/elsevier_sd）在 Phase 3/4 前 `pytest.skip`（各 4 条，共 12 skip）。
+
+契约的 enumerate 计数口径按能力分层：声明了权威计数（`IssueRef.paper_count_claimed`）
+的 adapter（mock）严格等值；未声明的（arxiv 月度桶——预印本无权威"期"计数）只要求
+"至少产出且每篇形态合法"。这不是放宽契约，而是契约对"有/无权威计数"两类源的正确表述。
 
 未声明能力时的兜底行为（`CapabilityNotSupported`）用一个不声明任何能力的最小
 `FakeAdapter` 独立验证——这是 `AdapterBase` 本身的契约，不依赖具体哪个 adapter
@@ -11,11 +16,17 @@ DISCOVER→ENUMERATE→RESOLVE→FETCH 全链路产出合法性检查。
 
 from __future__ import annotations
 
+from collections.abc import Callable
+
+import httpx
 import pytest
 
-from helpers import FakeFetchIO, make_mock_venue
+from helpers import FakeFetchIO, make_arxiv_venue, make_mock_venue
+from helpers.arxiv_fixtures import fixture_bytes
 from paper_crawler.adapter import AdapterBase, AdapterFamily, SourceAdapter, load_adapters
+from paper_crawler.adapters.arxiv.adapter import ArxivAdapter
 from paper_crawler.errors import CapabilityNotSupported
+from paper_crawler.http import HttpClient
 from paper_crawler.types import (
     AssetKind,
     AssetPlan,
@@ -24,11 +35,40 @@ from paper_crawler.types import (
     IssueRef,
     PaperStub,
     RatePolicy,
+    VenueSpec,
 )
 
-# adapter_id -> venue 工厂。只有此处登记的 adapter 会跑完整能力链路检查；
-# 其余（stub）adapter 一律 pytest.skip（stub until Phase 2/3/4）。
-_CONTRACT_VENUE_FACTORIES = {"mock_platform": make_mock_venue}
+_CONTRACT_UA = "PaperCrawler/test (personal research; mailto:test@example.com)"
+
+# 一个最小的合成 PDF（首字节 %PDF- 魔数，供 fetch 契约的 %PDF 断言）。
+_CONTRACT_PDF = b"%PDF-1.4\n% contract\n" + b"0" * 512 + b"\n%%EOF\n"
+
+
+def _mock_case() -> tuple[SourceAdapter, VenueSpec]:
+    return load_adapters()["mock_platform"], make_mock_venue()
+
+
+def _arxiv_contract_handler(request: httpx.Request) -> httpx.Response:
+    """arxiv 契约链的 MockTransport：pdf 取回 → %PDF；OAI 首页/续页 → 合成 fixture。"""
+    if "/pdf/" in request.url.path:
+        return httpx.Response(200, content=_CONTRACT_PDF)
+    if "resumptionToken" in request.url.params:
+        return httpx.Response(200, content=fixture_bytes("02_oai_listrecords_page2.xml"))
+    return httpx.Response(200, content=fixture_bytes("02_oai_listrecords_page1.xml"))
+
+
+def _arxiv_case() -> tuple[SourceAdapter, VenueSpec]:
+    transport = httpx.MockTransport(_arxiv_contract_handler)
+    client = HttpClient(user_agent=_CONTRACT_UA, transport=transport)
+    return ArxivAdapter(http=client), make_arxiv_venue()
+
+
+# adapter_id -> (adapter, venue) 工厂。只有此处登记的 adapter 会跑完整能力链路检查；
+# 其余（stub）adapter 一律 pytest.skip（stub until Phase 3/4）。
+_CONTRACT_CASES: dict[str, Callable[[], tuple[SourceAdapter, VenueSpec]]] = {
+    "mock_platform": _mock_case,
+    "arxiv": _arxiv_case,
+}
 
 ADAPTER_IDS = sorted(load_adapters())
 
@@ -43,9 +83,11 @@ def adapter_id(request: pytest.FixtureRequest) -> str:
     return str(request.param)
 
 
-def _require_contract_fixture(adapter_id: str) -> None:
-    if adapter_id not in _CONTRACT_VENUE_FACTORIES:
-        pytest.skip(reason="stub until Phase 2/3/4")
+def _contract_case(adapter_id: str) -> tuple[SourceAdapter, VenueSpec]:
+    factory = _CONTRACT_CASES.get(adapter_id)
+    if factory is None:
+        pytest.skip(reason="no contract case (real-site stub deferred to Phase 3/4)")
+    return factory()
 
 
 # --- 全体 adapter：元数据完备性 -------------------------------------------------------
@@ -77,18 +119,14 @@ def test_domains_is_a_nonempty_tuple_of_strings(
     assert all(isinstance(d, str) and d for d in domains)
 
 
-# --- contract-fixture adapter：能力全链路 ----------------------------------------------
+# --- contract-case adapter：能力全链路 ------------------------------------------------
 
 
-def test_discover_yields_nonempty_legal_issue_refs(
-    adapter_id: str, adapters: dict[str, SourceAdapter]
-) -> None:
-    _require_contract_fixture(adapter_id)
-    adapter = adapters[adapter_id]
+def test_discover_yields_nonempty_legal_issue_refs(adapter_id: str) -> None:
+    adapter, venue = _contract_case(adapter_id)
     if Capability.DISCOVER not in adapter.capabilities:
         pytest.skip(reason=f"{adapter_id} lacks DISCOVER")
 
-    venue = _CONTRACT_VENUE_FACTORIES[adapter_id]()
     issues = list(adapter.discover_timeline(venue))
     assert issues
     for issue in issues:
@@ -96,34 +134,30 @@ def test_discover_yields_nonempty_legal_issue_refs(
         assert issue.venue_id == venue.id
 
 
-def test_enumerate_first_issue_yields_declared_paper_count_with_identifiers(
-    adapter_id: str, adapters: dict[str, SourceAdapter]
-) -> None:
-    _require_contract_fixture(adapter_id)
-    adapter = adapters[adapter_id]
+def test_enumerate_first_issue_yields_papers_with_identifiers(adapter_id: str) -> None:
+    adapter, venue = _contract_case(adapter_id)
     if Capability.ENUMERATE not in adapter.capabilities:
         pytest.skip(reason=f"{adapter_id} lacks ENUMERATE")
 
-    venue = _CONTRACT_VENUE_FACTORIES[adapter_id]()
     first_issue = next(iter(adapter.discover_timeline(venue)))
     papers = list(adapter.enumerate_issue(venue, first_issue))
 
-    assert first_issue.paper_count_claimed is not None
-    assert len(papers) == first_issue.paper_count_claimed
+    if first_issue.paper_count_claimed is not None:
+        # 声明权威计数者（mock）：严格等值。
+        assert len(papers) == first_issue.paper_count_claimed
+    else:
+        # 无权威计数者（arxiv 月度桶）：至少产出（形态合法性由下方逐篇断言）。
+        assert papers
     for paper in papers:
         assert isinstance(paper, PaperStub)
         assert len(paper.identifiers) >= 1
 
 
-def test_resolve_yields_nonempty_asset_plans(
-    adapter_id: str, adapters: dict[str, SourceAdapter]
-) -> None:
-    _require_contract_fixture(adapter_id)
-    adapter = adapters[adapter_id]
+def test_resolve_yields_nonempty_asset_plans(adapter_id: str) -> None:
+    adapter, venue = _contract_case(adapter_id)
     if Capability.RESOLVE not in adapter.capabilities:
         pytest.skip(reason=f"{adapter_id} lacks RESOLVE")
 
-    venue = _CONTRACT_VENUE_FACTORIES[adapter_id]()
     first_issue = next(iter(adapter.discover_timeline(venue)))
     paper = next(iter(adapter.enumerate_issue(venue, first_issue)))
     plans = adapter.resolve_assets(venue, paper)
@@ -132,15 +166,11 @@ def test_resolve_yields_nonempty_asset_plans(
     assert all(isinstance(plan, AssetPlan) for plan in plans)
 
 
-def test_fetch_via_fake_io_succeeds_and_writes_pdf_magic_bytes(
-    adapter_id: str, adapters: dict[str, SourceAdapter]
-) -> None:
-    _require_contract_fixture(adapter_id)
-    adapter = adapters[adapter_id]
+def test_fetch_via_fake_io_succeeds_and_writes_pdf_magic_bytes(adapter_id: str) -> None:
+    adapter, venue = _contract_case(adapter_id)
     if Capability.FETCH not in adapter.capabilities:
         pytest.skip(reason=f"{adapter_id} lacks FETCH")
 
-    venue = _CONTRACT_VENUE_FACTORIES[adapter_id]()
     first_issue = next(iter(adapter.discover_timeline(venue)))
     paper = next(iter(adapter.enumerate_issue(venue, first_issue)))
     plan = adapter.resolve_assets(venue, paper)[0]

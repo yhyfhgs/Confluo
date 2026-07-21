@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- SYNTHETIC fixture (Phase 2 T5). ANOMALY the real site should not emit: opensearch:totalResults
+     > 0 but zero <entry> elements → ErrorClass.PARSE (canary would flag red). Deliberately
+     synthetic (cannot be recorded from a healthy site); arxiv.md §6 ④. -->
+<feed xmlns="http://www.w3.org/2005/Atom" xmlns:opensearch="http://a9.com/-/spec/opensearch/1.1/" xmlns:arxiv="http://arxiv.org/schemas/atom">
+<title type="html">ArXiv Query: anomalous page</title>
+<id>http://arxiv.org/api/synthetic-total-mismatch</id>
+<updated>2024-01-31T00:00:00-05:00</updated>
+<opensearch:totalResults>1500</opensearch:totalResults>
+<opensearch:startIndex>0</opensearch:startIndex>
+<opensearch:itemsPerPage>10</opensearch:itemsPerPage>
+</feed>

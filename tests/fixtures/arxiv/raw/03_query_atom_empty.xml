@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- SYNTHETIC fixture (Phase 2 T5). Query API Atom empty result (opensearch:totalResults=0):
+     a BOUNDARY NORMAL state (no entries, no error), distinct from the totalResults>0-but-empty
+     PARSE case (04_query_atom_total_mismatch.xml). -->
+<feed xmlns="http://www.w3.org/2005/Atom" xmlns:opensearch="http://a9.com/-/spec/opensearch/1.1/" xmlns:arxiv="http://arxiv.org/schemas/atom">
+<title type="html">ArXiv Query: no results</title>
+<id>http://arxiv.org/api/synthetic-empty-page</id>
+<updated>2024-01-31T00:00:00-05:00</updated>
+<opensearch:totalResults>0</opensearch:totalResults>
+<opensearch:startIndex>0</opensearch:startIndex>
+<opensearch:itemsPerPage>10</opensearch:itemsPerPage>
+</feed>
