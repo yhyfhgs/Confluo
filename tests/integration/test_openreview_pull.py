@@ -337,6 +337,67 @@ def test_token_value_not_leaked_to_logs(tmp_path: Path, monkeypatch: pytest.Monk
     assert _TOKEN not in result.output  # 也不在 CLI 输出
 
 
+# --- CS-2 凭证红线：跨 adapter cookie 隔离回归 ----------------------------------------------
+
+
+def test_arxiv_client_never_carries_openreview_cookie(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """红线守护：配置 token 后，arxiv adapter 的 client 请求**不携** openreview cookie。
+
+    双 client 装配的隔离性——`bind_http_client` 把共享（无 cookie）client 注入所有
+    HttpClientConsumer（含 arxiv/openreview）；`_bind_openreview_token_client` **仅**为
+    openreview 覆盖为携 cookie 的专属 client。若未来重构把 token 挂到共享 client，arxiv
+    等他站请求就会外泄用户凭证（§3 红线）——本测试用 MockTransport 捕获请求头钉死隔离。
+    """
+    monkeypatch.setenv("PAPER_CRAWLER_OPENREVIEW_TOKEN", _TOKEN)
+    home = _write_iclr_home(tmp_path)
+    captured: list[tuple[str, str | None]] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        captured.append((request.url.host, request.headers.get("cookie")))
+        return httpx.Response(200, content=b"ok")
+
+    # 两个 seam 都注入 MockTransport（**不接 limiter**——离线无逐请求限速闸，避免未注册
+    # host 的 acquire fail-fast）；共享无 cookie，token client 携 config token cookie。
+    def shared_factory(_config: Config, _rate_limiter: RateLimiter | None = None) -> HttpClient:
+        return HttpClient(user_agent=_MOCK_UA, transport=httpx.MockTransport(handler))
+
+    def token_factory(config: Config, _rate_limiter: RateLimiter | None = None) -> HttpClient:
+        return HttpClient(
+            user_agent=_MOCK_UA,
+            transport=httpx.MockTransport(handler),
+            extra_headers={"Cookie": f"openreview.accessToken={config.openreview_token}"},
+        )
+
+    monkeypatch.setattr(cli_module, "_http_client_factory", shared_factory)
+    monkeypatch.setattr(cli_module, "_openreview_client_factory", token_factory)
+
+    env = cli_module._build_env(home, verbose=False)
+    try:
+        adapters = env.ctx.registry._adapters  # noqa: SLF001 (测试内省装配结果)
+        arxiv = adapters["arxiv"]
+        openreview = adapters["openreview"]
+
+        # 装配隔离：arxiv 用共享（无 cookie）client；openreview 用专属 token client；两者不同实例。
+        assert arxiv._client() is env.http  # type: ignore[attr-defined]
+        assert openreview._client() is env.openreview_http  # type: ignore[attr-defined]
+        assert env.http is not env.openreview_http
+
+        # 实证：arxiv 请求无 cookie；openreview 请求携 token cookie。
+        arxiv._client().get_bytes("https://export.arxiv.org/api/query")  # type: ignore[attr-defined]
+        openreview._client().get_bytes("https://api2.openreview.net/notes")  # type: ignore[attr-defined]
+    finally:
+        env.http.close()
+        if env.openreview_http is not None:
+            env.openreview_http.close()
+        env.ctx.db.close()
+
+    by_host = dict(captured)
+    assert by_host["export.arxiv.org"] is None  # 红线：arxiv 绝不携 openreview cookie
+    assert by_host["api2.openreview.net"] == f"openreview.accessToken={_TOKEN}"
+
+
 @pytest.fixture(autouse=True)
 def _reset_logger() -> Iterator[None]:
     """每个测试后清空 paper_crawler logger handler（避免跨测试文件句柄泄漏）。"""
