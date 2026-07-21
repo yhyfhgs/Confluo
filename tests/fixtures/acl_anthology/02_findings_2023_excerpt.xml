@@ -1,0 +1,81 @@
+<?xml version='1.0' encoding='UTF-8'?>
+<!--
+SYNTHETIC excerpt (Phase 2, design/adapters/acl-anthology.md §7 item ②). Structurally a
+verbatim-shaped slice of the real data/xml/2023.findings.xml (research/site-survey/
+acl-anthology.md §1/§8 [LIVE], full file 4,302,962 bytes; real volumes eacl=197,
+acl=901, emnlp=1059, ijcnlp=37; the collection is shared across venues, keyed by
+`<meta><venue>findings</venue></meta>` with the joining venue slug carried in the
+`volume id` attribute, NOT in meta/venue). This excerpt keeps volume id="emnlp" (2
+papers; paper[1] borrows the real public title/authors/abstract/doi for
+2023.findings-emnlp.1) plus volume id="acl" (1 synthetic paper) to exercise the
+cross-file join filter (adapter must include only the "emnlp" volume when enumerating
+the emnlp venue, and exclude the "acl" volume).
+-->
+<collection id="2023.findings">
+  <volume id="eacl" ingest-date="2023-05-02" type="proceedings">
+    <meta>
+      <booktitle>Findings of the Association for Computational Linguistics: EACL 2023</booktitle>
+      <publisher>Association for Computational Linguistics</publisher>
+      <address>Dubrovnik, Croatia</address>
+      <month>May</month>
+      <year>2023</year>
+      <venue>findings</venue>
+    </meta>
+  </volume>
+  <volume id="acl" ingest-date="2023-07-09" type="proceedings">
+    <meta>
+      <booktitle>Findings of the Association for Computational Linguistics: ACL 2023</booktitle>
+      <publisher>Association for Computational Linguistics</publisher>
+      <address>Toronto, Canada</address>
+      <month>July</month>
+      <year>2023</year>
+      <venue>findings</venue>
+    </meta>
+    <paper id="1">
+      <title>A Synthetic Findings-of-ACL Paper (Must Be Excluded From an EMNLP Join)</title>
+      <author><first>Eve</first><last>Placeholder</last></author>
+      <pages>1-11</pages>
+      <url hash="11223344">2023.findings-acl.1</url>
+      <bibkey>placeholder-2023-findings-acl</bibkey>
+      <doi>10.18653/v1/2023.findings-acl.1</doi>
+    </paper>
+  </volume>
+  <volume id="emnlp" ingest-date="2023-12-07" type="proceedings">
+    <meta>
+      <booktitle>Findings of the Association for Computational Linguistics: EMNLP 2023</booktitle>
+      <publisher>Association for Computational Linguistics</publisher>
+      <address>Singapore</address>
+      <month>December</month>
+      <year>2023</year>
+      <venue>findings</venue>
+    </meta>
+    <paper id="1">
+      <title>Multi Document Summarization Evaluation in the Presence of Damaging Content</title>
+      <author><first>Avshalom</first><last>Manevich</last></author>
+      <author><first>David</first><last>Carmel</last></author>
+      <author><first>Ori</first><last>Shapira</last></author>
+      <pages>1-12</pages>
+      <abstract>In the Multi-document summarization (MDS) task, a summary is produced for a given set of documents.</abstract>
+      <url hash="33715106">2023.findings-emnlp.1</url>
+      <bibkey>manevich-etal-2023-multi</bibkey>
+      <doi>10.18653/v1/2023.findings-emnlp.1</doi>
+    </paper>
+    <paper id="2">
+      <title>A Second Synthetic Findings-of-EMNLP Paper</title>
+      <author><first>Faye</first><last>Placeholder</last></author>
+      <pages>13-22</pages>
+      <url hash="55667788">2023.findings-emnlp.2</url>
+      <bibkey>placeholder-2023-findings-emnlp-2</bibkey>
+    </paper>
+  </volume>
+  <volume id="ijcnlp" ingest-date="2023-12-07" type="proceedings">
+    <meta>
+      <booktitle>Findings of the Association for Computational Linguistics: IJCNLP-AACL 2023</booktitle>
+      <publisher>Association for Computational Linguistics</publisher>
+      <address>Nusa Dua, Bali</address>
+      <month>November</month>
+      <year>2023</year>
+      <venue>findings</venue>
+    </meta>
+  </volume>
+</collection>

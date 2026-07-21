@@ -1,0 +1,13 @@
+<?xml version='1.0' encoding='UTF-8'?>
+<!-- SYNTHETIC (Phase 2, design/adapters/acl-anthology.md §7 item ⑤). Truncated mid-element
+     -> ET.fromstring raises ParseError -> adapter maps to CrawlerError(ErrorClass.PARSE). -->
+<collection id="2023.emnlp">
+  <volume id="main" type="proceedings">
+    <meta>
+      <booktitle>Truncated Collection</booktitle>
+      <year>2023</year>
+      <venue>emnlp</venue>
+    </meta>
+    <paper id="1">
+      <title>An Incomplete Paper Element
+      <author><first>Truncated</first><last>Mid-Tag</last></author>
