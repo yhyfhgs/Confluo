@@ -126,10 +126,18 @@ def route_for(ctx: StageContext, venue_id: str) -> Route:
 
     注册与 override 都单调不放宽（ratelimit 语义），因此每次调用重复登记是安全的，
     不需要缓存；`rate_overrides` 的键 = fulltext_adapter.domains[0]（registry 语义）。
+
+    多域 adapter（如 arxiv 的 export/oaipmh/arxiv.org）把 domains[1:] `alias` 到主域
+    domains[0]，使三域共用一份 ToU 预算（并发 1）——HttpClient 逐请求在实际请求 host
+    `acquire`（C4 红线修复）时，副域经别名落到主域同一桶，不会因未注册而 fail-fast，
+    也不会各自独立放行绕过「三域共享 1req/3s」。
     """
     route = ctx.registry.route(venue_id)
     for adapter in (route.metadata_adapter, route.fulltext_adapter):
-        ctx.limiter.register(adapter.domains[0], adapter.default_rate)
+        primary = adapter.domains[0]
+        ctx.limiter.register(primary, adapter.default_rate)
+        for secondary in adapter.domains[1:]:
+            ctx.limiter.alias(secondary, primary)
     for domain, rpm in route.rate_overrides.items():
         ctx.limiter.override(domain, rpm)
     return route

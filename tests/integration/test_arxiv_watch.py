@@ -23,7 +23,6 @@ import yaml
 from helpers.arxiv_fixtures import OaiRecord, build_oai_listrecords
 from paper_crawler.adapter import bind_http_client, load_adapters
 from paper_crawler.config import Config
-from paper_crawler.errors import CrawlerError, ErrorClass
 from paper_crawler.http import HttpClient
 from paper_crawler.obslog import setup_logging
 from paper_crawler.pipeline import PipelineRunner, RunReport, StageContext
@@ -312,9 +311,13 @@ def test_watch_rate_keying_uses_shared_export_domain(make_watch_env: EnvFactory)
     assert route.fulltext_adapter.domains[0] == "export.arxiv.org"
 
     env.watch(date(2024, 6, 15))
-    # watch 后 export.arxiv.org 桶已注册且被消费（enumerate 记账其上，不新建 oaipmh 桶）。
+    # watch 后 export.arxiv.org 桶已注册且被消费（enumerate 记账其上）。
     assert env.limiter.effective_rpm("export.arxiv.org") == 20.0
-    # oaipmh.arxiv.org 未单独注册为限速桶（三端点共享 export 键）→ 未注册域 fail-fast。
-    with pytest.raises(CrawlerError) as exc:
-        env.limiter.effective_rpm("oaipmh.arxiv.org")
-    assert exc.value.error_class is ErrorClass.CONFIG
+    # C4 红线修复：oaipmh/arxiv.org 经 route_for 的 alias 归并到 export **同一桶**——
+    # HttpClient 逐请求在实际请求 host（oaipmh）acquire 时落到 export 预算，故二者
+    # effective_rpm 一致（共享 20rpm=1req/3s，而非各自独立放行导致聚合 >1req/3s）。
+    assert env.limiter.effective_rpm("oaipmh.arxiv.org") == 20.0
+    assert env.limiter.effective_rpm("arxiv.org") == 20.0
+    # 收紧主域即收紧全簇（同一 _Bucket 对象）——证明确为共享而非各自独立。
+    env.limiter.override("export.arxiv.org", 10)
+    assert env.limiter.effective_rpm("oaipmh.arxiv.org") == 10.0

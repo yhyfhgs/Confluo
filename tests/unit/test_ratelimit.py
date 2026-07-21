@@ -193,3 +193,43 @@ def test_acquire_with_zero_rate_returns_infinite_wait_instead_of_dividing_by_zer
     second = limiter.acquire("mock.local")
 
     assert second == float("inf")
+
+
+# --- alias：多域共享一份预算（C4 红线修复的桶归并语义）------------------------
+
+
+def test_alias_shares_one_bucket_across_domains() -> None:
+    """arxiv 三域共用 1req/3s：对主域与别名域交替 acquire，欠账累加到同一份预算。"""
+    clock = FakeClock()
+    limiter = RateLimiter(clock=clock)
+    limiter.register("export.arxiv.org", RatePolicy(requests_per_minute=60, burst=1))
+    limiter.alias("oaipmh.arxiv.org", "export.arxiv.org")
+    limiter.alias("arxiv.org", "export.arxiv.org")
+
+    # 时钟不动：主域消费初始 token（0.0），两个别名域各再消费（排队累加 1.0/2.0）——
+    # 若三域各自独立成桶则每次都会返回 0.0。
+    assert limiter.acquire("export.arxiv.org") == pytest.approx(0.0, abs=1e-9)
+    assert limiter.acquire("oaipmh.arxiv.org") == pytest.approx(1.0, abs=1e-9)
+    assert limiter.acquire("arxiv.org") == pytest.approx(2.0, abs=1e-9)
+
+
+def test_alias_reflects_later_tightening_of_canonical_bucket() -> None:
+    """别名建立后再 override 主域（收紧），别名域 acquire 也按收紧后的速率排队（同一对象）。"""
+    clock = FakeClock()
+    limiter = RateLimiter(clock=clock)
+    limiter.register("export.arxiv.org", RatePolicy(requests_per_minute=60, burst=1))
+    limiter.alias("oaipmh.arxiv.org", "export.arxiv.org")
+    limiter.override("export.arxiv.org", 30)  # 收紧到 30rpm=0.5/s
+
+    assert limiter.effective_rpm("oaipmh.arxiv.org") == 30.0
+    limiter.acquire("oaipmh.arxiv.org")  # 初始 token → 0.0
+    # 30rpm → 0.5 token/s，欠 1 个 token 需 2s。
+    assert limiter.acquire("oaipmh.arxiv.org") == pytest.approx(2.0, abs=1e-9)
+
+
+def test_alias_to_unregistered_canonical_fails_fast() -> None:
+    """canonical 未注册即无桶可共享——fail-fast（同 override/acquire 的 CONFIG 口径）。"""
+    limiter = RateLimiter(clock=FakeClock())
+    with pytest.raises(CrawlerError) as exc_info:
+        limiter.alias("oaipmh.arxiv.org", "export.arxiv.org")
+    assert exc_info.value.error_class is ErrorClass.CONFIG

@@ -64,6 +64,21 @@ class RateLimiter:
         bucket = self._require_bucket(domain)
         bucket.rpm = min(bucket.rpm, requests_per_minute)
 
+    def alias(self, alias_domain: str, canonical_domain: str) -> None:
+        """让 `alias_domain` 与 `canonical_domain` 共享同一 token bucket（多域共用一份预算）。
+
+        `canonical_domain` 必须已 `register`——把 `alias_domain` 指向同一 `_Bucket`
+        对象（引用别名），此后对任一 key 的 `acquire` 都记入同一份预算。用于同一
+        adapter 声明的多个域共用一份 ToU 限速（如 arxiv 三域 export/oaipmh/arxiv.org
+        共用 1req/3s、「并发 1」）：pipeline 在主域 acquire、HttpClient 在实际请求
+        host acquire，二者落到同一桶，逐请求限速对整簇域生效而非各自独立放行。
+
+        `register` 首次建桶后从不替换该 `_Bucket` 对象（后续只就地收紧），故别名一经
+        建立即长期有效。alias 到自身是无操作（`canonical` 已注册时幂等）。
+        """
+        bucket = self._require_bucket(canonical_domain)
+        self._buckets[alias_domain] = bucket
+
     def acquire(self, domain: str) -> float:
         """消费一个 token；返回调用方应 sleep 的秒数（0=立即可用）。本方法不 sleep。"""
         bucket = self._require_bucket(domain)

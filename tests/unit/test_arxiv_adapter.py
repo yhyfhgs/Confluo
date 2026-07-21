@@ -626,3 +626,42 @@ def test_fetch_short_non_magic_body_passes_through() -> None:
     result = _adapter(handler).fetch_asset(plan, io)
     assert result.ok is True
     assert io.data == b"abc"
+
+
+# --- C4 红线：adapter 内部 OAI 翻页逐请求过限速闸（不再整段仅 acquire 一次）------------------
+
+
+class _SpyLimiter:
+    """记账每次 acquire 的 domain（返回 0 wait，离线不真睡）；HttpClient 只调 acquire。"""
+
+    def __init__(self) -> None:
+        self.calls: list[str] = []
+
+    def acquire(self, domain: str) -> float:
+        self.calls.append(domain)
+        return 0.0
+
+
+def test_enumerate_pagination_acquires_rate_limiter_once_per_page_request() -> None:
+    """C4 红线回归：两页 OAI 收割 = 两次 acquire（逐请求），而非整个 enumerate 仅一次。
+
+    修复前 adapter 内部翻页的第 2+ 页请求绕过限速器（pipeline 只在 enumerate 前
+    acquire 一次）。注入共享 limiter 的 HttpClient 后，每个 resumptionToken 页请求
+    发出前各 acquire 一次，且都记在实际请求 host `oaipmh.arxiv.org` 上（经 route_for
+    的 alias 归并到主域预算——此处直接断言逐请求触发）。
+    """
+    spy = _SpyLimiter()
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        if "resumptionToken" in request.url.params:
+            return httpx.Response(200, content=_OAI_PAGE2)
+        return httpx.Response(200, content=_OAI_PAGE1)
+
+    client = HttpClient(
+        user_agent=_TEST_UA, transport=httpx.MockTransport(handler), rate_limiter=spy
+    )
+    stubs = list(ArxivAdapter(http=client).enumerate_issue(make_arxiv_venue(), _bucket()))
+
+    # 两条命中（新+老格式）证明确实翻了页；限速器逐页 acquire 两次，都在 OAI host 上。
+    assert [dict(s.identifiers)["arxiv"] for s in stubs] == ["2401.00001", "cs.lg/0501001"]
+    assert spy.calls == ["oaipmh.arxiv.org", "oaipmh.arxiv.org"]

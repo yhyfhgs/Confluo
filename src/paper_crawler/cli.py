@@ -113,15 +113,20 @@ class CliEnv:
     http: HttpClient
 
 
-def _http_client_factory(config: Config) -> HttpClient:
+def _http_client_factory(config: Config, rate_limiter: RateLimiter | None = None) -> HttpClient:
     """从 config 组装 D-014 UA 的共享 `HttpClient`（真实 adapter 注入用）。
 
     UA `mailto:` 段取 `config.identity_email`（缺省 None → 省略 mailto，见
     `build_user_agent`）——优先级 **显式注入 > config > env**：本 client 经
     `bind_http_client` 注入 arxiv 等 adapter，覆盖其惰性 env 兜底（T5 过渡路径）。
     模块级函数是测试注入 `MockTransport` client 的 seam（零真实网络）。
+
+    `rate_limiter`（C4 红线修复，plan §7-6）= pipeline `StageContext.limiter` 同一实例，
+    使 adapter 内部翻页的逐请求限速与 pipeline 的 per-stage 限速落到同一预算（同桶共享）。
     """
-    return HttpClient(user_agent=build_user_agent(config.identity_email))
+    return HttpClient(
+        user_agent=build_user_agent(config.identity_email), rate_limiter=rate_limiter
+    )
 
 
 def _build_env(home: Path | None, verbose: bool, *, dry_run: bool = False) -> CliEnv:
@@ -133,12 +138,14 @@ def _build_env(home: Path | None, verbose: bool, *, dry_run: bool = False) -> Cl
     db.migrate()
     repo = Repo(db)
     adapters = load_adapters()
-    http = _http_client_factory(config)
-    bind_http_client(adapters, http)  # config UA 注入 http adapter（arxiv）
+    # C4 红线修复：limiter 先建，作为**同一实例**既进 StageContext（per-stage 限速）又进
+    # HttpClient（逐请求限速，含 adapter 内部翻页），保证同桶共享、不放宽速率。
+    limiter = RateLimiter(scale=config.rate_scale)
+    http = _http_client_factory(config, limiter)
+    bind_http_client(adapters, http)  # config UA + 共享 limiter 注入 http adapter（arxiv）
     registry = VenueRegistry(adapters)
     registry.load_dirs(list(config.venues_dirs))
     queue = TaskQueue(db)
-    limiter = RateLimiter(scale=config.rate_scale)
 
     stage_ctx = StageContext(
         config=config,
