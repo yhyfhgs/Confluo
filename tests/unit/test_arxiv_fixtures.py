@@ -98,8 +98,11 @@ def test_fixture_08_query_400_offset_maps_to_config() -> None:
 def test_fixture_09_healthcheck_canaries_present() -> None:
     feed = parse.parse_atom_feed(fixture_bytes("09_query_atom_healthcheck.xml"))
     records = {r.base_id: r for r in feed}
-    assert set(records) == {"2401.00001", "2312.00002", "2311.00003"}
-    assert records["2311.00003"].primary_category == "q-fin.PR"
+    # 真实 canary（T7 在线冒烟选定）：跨域 cs.LG(老式 id)/econ.EM/q-fin.PR 各 1。
+    assert set(records) == {"cs/9901001", "1801.00973", "1001.0615"}
+    assert records["cs/9901001"].primary_category == "cs.LG"
+    assert records["1801.00973"].primary_category == "econ.EM"
+    assert records["1001.0615"].primary_category == "q-fin.PR"
 
 
 def test_fixture_10_norecordsmatch_is_legal_empty_state() -> None:

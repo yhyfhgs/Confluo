@@ -97,15 +97,30 @@ class _Canary:
     primary_category: str
 
 
-# ⚠ 合成占位值：真实在线 healthcheck 需 3 篇**真实且稳定**的 arXiv 论文（cs.LG / econ.* /
-# q-fin.* 各 1，arxiv.md §6 canary）。当前 id/title 为合成 fixture 配套占位——T5/T7 在线
-# 冒烟必须用实测响应替换为经核验的真实 id + 规整化 title（见 concerns / fixtures README）。
+# 真实稳定 canary（T7 在线冒烟 2026-07-22 实测选定，tests/online/test_arxiv_smoke.py 的
+# canary 选样：跨域 cs.LG / econ.EM / q-fin.PR 各取一篇**主分类即该 category** 的早期原生
+# 论文——年代久远且主分类正确，最稳定，贴合 arxiv.md §6 跨域语义）。title 为 Query API 实测
+# 规整化后的标题（与 parse.parse_atom_feed 产物逐字对齐，healthcheck 直接等值比对）。
 _CANARIES: tuple[_Canary, ...] = (
-    _Canary("2401.00001", "2401.00001v1", "A Robust Canary for Machine Learning", "cs.LG"),
     _Canary(
-        "2312.00002", "2312.00002v1", "An Econometrics Canary for Empirical Methods", "econ.EM"
+        "cs/9901001",
+        "cs/9901001v1",
+        "TDLeaf(lambda): Combining Temporal Difference Learning with Game-Tree Search",
+        "cs.LG",
     ),
-    _Canary("2311.00003", "2311.00003v2", "A Quantitative Finance Canary on Pricing", "q-fin.PR"),
+    _Canary(
+        "1801.00973",
+        "1801.00973v1",
+        "A New Wald Test for Hypothesis Testing Based on MCMC outputs",
+        "econ.EM",
+    ),
+    _Canary(
+        "1001.0615",
+        "1001.0615v1",
+        "Adaptive Wave Models for Option Pricing Evolution: "
+        "Nonlinear and Quantum Schrödinger Approaches",
+        "q-fin.PR",
+    ),
 )
 
 

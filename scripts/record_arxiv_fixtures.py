@@ -53,7 +53,8 @@ _TARGETS: tuple[tuple[str, str], ...] = (
     ),
     (
         "09_query_atom_healthcheck.xml",
-        "https://export.arxiv.org/api/query?id_list=2401.00001v1,2312.00002v1,2311.00003v2",
+        # 真实 canary（T7 在线冒烟选定，与 adapter._CANARIES 对齐）：cs.LG(老式)/econ.EM/q-fin.PR。
+        "https://export.arxiv.org/api/query?id_list=cs/9901001v1,1801.00973v1,1001.0615v1",
     ),
 )
 

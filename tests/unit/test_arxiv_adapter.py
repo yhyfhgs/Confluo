@@ -105,22 +105,24 @@ _OAI_BAD_RESUMPTION = b"""<?xml version="1.0" encoding="UTF-8"?>
 </OAI-PMH>
 """
 
-# Query API Atom：3 条 canary（与 adapter._CANARIES 对齐；一元素一行以内避免超长）。
+# Query API Atom：3 条真实 canary（与 adapter._CANARIES 逐字对齐；T7 在线冒烟选定）。
+# cs.LG 用老式 slash id；q-fin 标题含 ö（bytes 字面量以 UTF-8 转义 \xc3\xb6）。
 _ATOM_HEALTHCHECK = b"""<?xml version="1.0" encoding="UTF-8"?>
 <feed xmlns="http://www.w3.org/2005/Atom" xmlns:arxiv="http://arxiv.org/schemas/atom">
 <entry>
-<id>http://arxiv.org/abs/2401.00001v1</id>
-<title>A Robust Canary for Machine Learning</title>
+<id>http://arxiv.org/abs/cs/9901001v1</id>
+<title>TDLeaf(lambda): Combining Temporal Difference Learning with Game-Tree Search</title>
 <arxiv:primary_category term="cs.LG" scheme="http://arxiv.org/schemas/atom"/>
 </entry>
 <entry>
-<id>http://arxiv.org/abs/2312.00002v1</id>
-<title>An Econometrics Canary for Empirical Methods</title>
+<id>http://arxiv.org/abs/1801.00973v1</id>
+<title>A New Wald Test for Hypothesis Testing Based on MCMC outputs</title>
 <arxiv:primary_category term="econ.EM" scheme="http://arxiv.org/schemas/atom"/>
 </entry>
 <entry>
-<id>http://arxiv.org/abs/2311.00003v2</id>
-<title>A Quantitative Finance Canary on Pricing</title>
+<id>http://arxiv.org/abs/1001.0615v1</id>
+<title>Adaptive Wave Models for Option Pricing Evolution: \
+Nonlinear and Quantum Schr\xc3\xb6dinger Approaches</title>
 <arxiv:primary_category term="q-fin.PR" scheme="http://arxiv.org/schemas/atom"/>
 </entry>
 </feed>
@@ -394,12 +396,13 @@ def test_healthcheck_queries_all_three_canary_ids() -> None:
 
     _adapter(handler).healthcheck()
     id_list = seen[0].params["id_list"]
-    assert id_list == "2401.00001v1,2312.00002v1,2311.00003v2"
+    assert id_list == "cs/9901001v1,1801.00973v1,1001.0615v1"
 
 
 def test_healthcheck_title_drift_is_unhealthy() -> None:
     drifted = _ATOM_HEALTHCHECK.replace(
-        b"A Robust Canary for Machine Learning", b"Some Totally Different Title"
+        b"TDLeaf(lambda): Combining Temporal Difference Learning with Game-Tree Search",
+        b"Some Totally Different Title",
     )
     handler: Handler = lambda request: httpx.Response(200, content=drifted)  # noqa: E731
     report = _adapter(handler).healthcheck()
@@ -412,7 +415,8 @@ def test_healthcheck_missing_canary_is_unhealthy() -> None:
     partial = b"""<?xml version="1.0" encoding="UTF-8"?>
 <feed xmlns="http://www.w3.org/2005/Atom" xmlns:arxiv="http://arxiv.org/schemas/atom" xmlns:opensearch="http://a9.com/-/spec/opensearch/1.1/">
 <opensearch:totalResults>1</opensearch:totalResults>
-<entry><id>http://arxiv.org/abs/2401.00001v1</id><title>A Robust Canary for Machine Learning</title>
+<entry><id>http://arxiv.org/abs/cs/9901001v1</id>
+<title>TDLeaf(lambda): Combining Temporal Difference Learning with Game-Tree Search</title>
 <arxiv:primary_category term="cs.LG" scheme="http://arxiv.org/schemas/atom"/></entry>
 </feed>
 """
