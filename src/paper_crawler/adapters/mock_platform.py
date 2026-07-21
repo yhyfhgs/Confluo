@@ -150,7 +150,14 @@ def _doi_paper_index(doi: str, venue_id: str) -> int:
     if not doi.startswith(prefix):
         raise CrawlerError(ErrorClass.PARSE, f"unrecognized mock doi: {doi}")
     _, _, index_part = doi.removeprefix(prefix).rpartition(".")
-    return int(index_part)
+    try:
+        return int(index_part)
+    except ValueError as exc:
+        # 畸形尾段（非数字）是解析失败，不能让裸 ValueError 穿透 pipeline 的
+        # CrawlerError 错误路由（design/05 §4：任何异常路径都须映射到 ErrorClass）。
+        raise CrawlerError(
+            ErrorClass.PARSE, f"malformed mock doi index segment {index_part!r} in {doi}"
+        ) from exc
 
 
 def _as_index_set(value: object) -> set[int]:
@@ -281,9 +288,15 @@ class MockPlatformAdapter(AdapterBase):
         fail_values = params.get("fail")
         if fail_values:
             error_class = fail_values[0]
-            raise CrawlerError(
-                ErrorClass(error_class), f"mock fetch fault injection: {error_class}"
-            )
+            try:
+                resolved_class = ErrorClass(error_class)
+            except ValueError as exc:
+                # 非法 error_class 编码进 url 是配置层问题（畸形 quirk），转 CONFIG；
+                # 裸 ValueError 不属 ErrorClass 语义、会绕过 pipeline 的错误路由。
+                raise CrawlerError(
+                    ErrorClass.CONFIG, f"unknown fail error_class in mock url: {error_class!r}"
+                ) from exc
+            raise CrawlerError(resolved_class, f"mock fetch fault injection: {error_class}")
 
         doi = parsed.path.removeprefix("/pdf/")
         payload = b"%PDF-1.4\n% " + doi.encode() + b"\n" + b"0" * 2048 + b"\n%%EOF\n"

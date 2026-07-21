@@ -300,6 +300,14 @@ class VenueRegistry:
         rate_overrides: dict[str, float] = {}
         rpm = spec.rate_limit.requests_per_minute
         if rpm is not None:
+            # 每域限速覆盖以 fulltext_adapter 主域为键；domains 为空元组（畸形 adapter）
+            # 时无键可用，早失败为 CONFIG（同上文两处未注册引用的处置），避免裸 IndexError。
+            if not fulltext_adapter.domains:
+                raise CrawlerError(
+                    ErrorClass.CONFIG,
+                    f"venue {venue_id!r} 声明了 rate_limit，但 fulltext_source "
+                    f"{spec.fulltext_source!r} 的 domains 为空，无主域可登记限速",
+                )
             rate_overrides[fulltext_adapter.domains[0]] = rpm
 
         return Route(

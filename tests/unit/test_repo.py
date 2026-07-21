@@ -7,6 +7,7 @@ paper_issue_link 幂等建链、外键约束、counts 对账口径。
 from __future__ import annotations
 
 import json
+import re
 import sqlite3
 from collections.abc import Iterator
 from pathlib import Path
@@ -14,8 +15,13 @@ from pathlib import Path
 import pytest
 
 from paper_crawler.storage.db import Database
-from paper_crawler.storage.repo import Repo
+from paper_crawler.storage.repo import FetchLogRow, Repo
 from paper_crawler.types import AssetKind, AssetPlan, AuthLevel, IssueRef, PaperStub, VenueSpec
+
+# AC-0.4 红线扫描：库内不得残留 (session|token|key) 的 key=value / 引号变体形态。
+_CREDENTIAL_LEAK = re.compile(
+    r"(session|token|key)['\"]?\s*[:=]\s*['\"]?[A-Za-z0-9]{6,}", re.IGNORECASE
+)
 
 VENUE_ID = "mock_journal"
 
@@ -184,6 +190,42 @@ def test_upsert_paper_merge_across_identifier_overlap(repo: Repo) -> None:
     )
     assert [r["scheme"] for r in idents] == ["arxiv", "doi"]
     assert len(repo.db.query("SELECT id FROM paper")) == 1
+
+
+def test_upsert_paper_merge_keeps_single_primary_identifier(repo: Repo) -> None:
+    """合并路径不得产生双 is_primary：既有 paper 已有 primary，新来 stub 的首个
+    （index==0）identifier 是新增的，应降为非 primary（既有 primary 保留）。"""
+    # 首建：doi X 成为 primary。
+    repo.upsert_paper(VENUE_ID, None, _stub(doi="10.9999/dp", title="First"))
+    # 二次：新 identifier 排在首位（index 0）、与既有 doi 重叠 → 并入同一 paper。
+    p2 = repo.upsert_paper(
+        VENUE_ID,
+        None,
+        PaperStub(
+            title="Second",
+            identifiers=(("arxiv", "2401.09999"), ("doi", "10.9999/dp")),
+        ),
+    )
+    primaries = repo.db.query(
+        "SELECT scheme, value FROM identifier WHERE paper_id = ? AND is_primary = 1", (p2,)
+    )
+    assert len(primaries) == 1  # 恰一个 primary（修复前 arxiv 会被误标 primary → 2 个）
+    assert primaries[0]["scheme"] == "doi"  # 既有 primary 不被新来者篡夺
+    assert len(repo.db.query("SELECT scheme FROM identifier WHERE paper_id = ?", (p2,))) == 2
+
+
+def test_upsert_paper_new_paper_first_identifier_is_primary(repo: Repo) -> None:
+    """回归护栏：全新 paper 的首个 identifier 仍标 primary（修复不误伤新建路径）。"""
+    paper_id = repo.upsert_paper(
+        VENUE_ID,
+        None,
+        PaperStub(title="New", identifiers=(("doi", "10.9999/np"), ("arxiv", "2402.00001"))),
+    )
+    primaries = repo.db.query(
+        "SELECT scheme FROM identifier WHERE paper_id = ? AND is_primary = 1", (paper_id,)
+    )
+    assert len(primaries) == 1
+    assert primaries[0]["scheme"] == "doi"
 
 
 def test_upsert_paper_meta_serialized(repo: Repo) -> None:
@@ -434,6 +476,150 @@ def test_add_and_query_fetch_logs(repo: Repo) -> None:
     assert len(mock_logs) == 1
     assert mock_logs[0]["rate_wait_ms"] == 5
     assert repo.fetch_logs(domain="other.local")[0]["error_class"] == "gone"
+
+
+def test_add_fetch_log_redacts_token_style_url(repo: Repo) -> None:
+    """AC-0.4 扩展到 fetch_log 表：含 token 样式的 URL 落库前必须经 redact。"""
+    repo.add_fetch_log(
+        asset_id=None,
+        task_id="t1",
+        domain="mock.local",
+        url="https://mock.local/pdf/x?api_key=deadbeef123456&session_id=abcdef987654",
+        http_status=200,
+        bytes_=2048,
+        elapsed_ms=12,
+        rate_wait_ms=5,
+    )
+    stored = str(repo.fetch_logs()[0]["url"])
+    assert stored == "https://mock.local/pdf/x?api_key=***&session_id=***"
+    assert "deadbeef123456" not in stored and "abcdef987654" not in stored
+    assert _CREDENTIAL_LEAK.search(stored) is None
+
+
+@pytest.mark.parametrize(
+    ("raw_url", "expected"),
+    [
+        # query-style（URL 最常见形态）。
+        ("https://mock.local/x?token=abc123456", "https://mock.local/x?token=***"),
+        # 引号变体（签名 URL 把凭证塞进 JSON 参数：`"token": "..."`）。
+        (
+            'https://mock.local/x?meta={"token": "abc123456"}',
+            'https://mock.local/x?meta={"token": "***"}',
+        ),
+        # header/冒号 + 单引号变体（`\'Authorization\': \'Bearer ...\'`）。
+        (
+            "https://mock.local/x#{'Authorization': 'Bearer abc123456'}",
+            "https://mock.local/x#{'Authorization': '***'}",
+        ),
+    ],
+)
+def test_add_fetch_log_redacts_quoted_url_forms(repo: Repo, raw_url: str, expected: str) -> None:
+    """fetch_log.url 走的是与 obslog 同一套 redact，引号/嵌套形态一并覆盖（AC-0.4）。"""
+    repo.add_fetch_log(
+        asset_id=None,
+        task_id="t",
+        domain="mock.local",
+        url=raw_url,
+        http_status=None,
+        bytes_=0,
+        elapsed_ms=0,
+        rate_wait_ms=0,
+    )
+    stored = str(repo.fetch_logs()[0]["url"])
+    assert stored == expected
+    assert _CREDENTIAL_LEAK.search(stored) is None
+
+
+# -- finalize_fetch（Phase 2 T1 组合事务：mark fetched + fetch_log 单事务）-----
+
+
+def _success_log_row(*, url: str = "https://mock.local/pdf/x", bytes_: int = 2048) -> FetchLogRow:
+    return FetchLogRow(
+        task_id="t1",
+        domain="mock.local",
+        url=url,
+        http_status=None,
+        bytes_=bytes_,
+        elapsed_ms=7,
+        rate_wait_ms=0,
+        error_class=None,
+    )
+
+
+def test_finalize_fetch_marks_asset_and_writes_single_log(repo: Repo) -> None:
+    """成功路径：单事务内 asset→fetched（补 file/bytes/sha/fetched_at）+ 恰一条成功 fetch_log。"""
+    paper_id = repo.upsert_paper(VENUE_ID, None, _stub(doi="10.9999/fin"))
+    asset_id = repo.plan_asset(paper_id, _pdf_plan(), "mock_platform")
+
+    repo.finalize_fetch(
+        asset_id,
+        file_path="/data/x.pdf",
+        bytes_=2048,
+        sha256="deadbeef",
+        fetch_log_row=_success_log_row(),
+    )
+
+    asset = repo.get_asset(asset_id)
+    assert asset is not None
+    assert asset["state"] == "fetched"
+    assert asset["file_path"] == "/data/x.pdf"
+    assert asset["bytes"] == 2048
+    assert asset["sha256"] == "deadbeef"
+    assert asset["fetched_at"] is not None
+    logs = repo.fetch_logs()
+    assert len(logs) == 1
+    assert logs[0]["asset_id"] == asset_id
+    assert logs[0]["error_class"] is None
+    assert logs[0]["bytes"] == 2048
+
+
+def test_finalize_fetch_redacts_fetch_log_url(repo: Repo) -> None:
+    """finalize_fetch 的 url 参数与 add_fetch_log 同源脱敏（AC-0.4 fetch_log 红线）。"""
+    paper_id = repo.upsert_paper(VENUE_ID, None, _stub(doi="10.9999/finr"))
+    asset_id = repo.plan_asset(paper_id, _pdf_plan(), "mock_platform")
+
+    repo.finalize_fetch(
+        asset_id,
+        file_path="/data/x.pdf",
+        bytes_=1,
+        sha256="h",
+        fetch_log_row=_success_log_row(url="https://mock.local/pdf/x?token=qwerty123456", bytes_=1),
+    )
+
+    stored = str(repo.fetch_logs()[0]["url"])
+    assert stored == "https://mock.local/pdf/x?token=***"
+    assert "qwerty123456" not in stored
+    assert _CREDENTIAL_LEAK.search(stored) is None
+
+
+def test_finalize_fetch_rolls_back_on_midtransaction_failure(
+    repo: Repo, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """注入中途异常（UPDATE 已执行、INSERT 生成 id 时抛错）→ 整事务回滚：
+    asset 停在 planned、无 fetch_log 行。这正是消除三步缝隙后 finalize 的原子性保证。"""
+    paper_id = repo.upsert_paper(VENUE_ID, None, _stub(doi="10.9999/atom"))
+    asset_id = repo.plan_asset(paper_id, _pdf_plan(), "mock_platform")
+
+    def _boom() -> str:
+        raise RuntimeError("injected mid-transaction failure")
+
+    monkeypatch.setattr("paper_crawler.storage.repo.new_ulid", _boom)
+    with pytest.raises(RuntimeError):
+        repo.finalize_fetch(
+            asset_id,
+            file_path="/data/x.pdf",
+            bytes_=2048,
+            sha256="deadbeef",
+            fetch_log_row=_success_log_row(),
+        )
+
+    asset = repo.get_asset(asset_id)
+    assert asset is not None
+    assert asset["state"] == "planned"  # UPDATE 与 INSERT 同回滚
+    assert asset["file_path"] is None
+    assert asset["sha256"] is None
+    assert asset["fetched_at"] is None
+    assert repo.fetch_logs() == []
 
 
 # -- counts 对账 -------------------------------------------------------------

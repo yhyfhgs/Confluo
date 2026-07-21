@@ -8,12 +8,23 @@ from pathlib import Path
 
 import pytest
 
-from paper_crawler.adapter import SourceAdapter, load_adapters
+from paper_crawler.adapter import AdapterBase, AdapterFamily, SourceAdapter, load_adapters
 from paper_crawler.errors import CrawlerError, ErrorClass
 from paper_crawler.registry import Route, VenueRegistry
-from paper_crawler.types import VenueSpec
+from paper_crawler.types import AuthLevel, Capability, RatePolicy, VenueSpec
 
 REPO_VENUES_DIR = Path(__file__).resolve().parents[2] / "venues"
+
+
+class _NoDomainAdapter(AdapterBase):
+    """domains 为空元组的畸形 adapter（防御性测试用；正常 adapter 恒有主域）。"""
+
+    adapter_id = "no_domain"
+    family: AdapterFamily = "open_access"
+    capabilities = Capability.RESOLVE | Capability.FETCH
+    default_rate = RatePolicy(600, source_note="test")
+    auth_requirement = AuthLevel.NONE
+    domains: tuple[str, ...] = ()
 
 
 @pytest.fixture
@@ -223,6 +234,50 @@ def test_route_unknown_adapter_reference_raises_config_error(
     with pytest.raises(CrawlerError) as exc_info:
         reg.route("broken")
     assert exc_info.value.error_class is ErrorClass.CONFIG
+
+
+def _write_no_domain_venue(venues_dir: Path, *, rate_limit_rpm: float | None = None) -> None:
+    lines = [
+        "id: nodomain_venue",
+        "kind: conference",
+        "names: {full: No Domain Venue}",
+        "field: [cs_ai]",
+        "metadata_source: mock_platform",
+        "fulltext_source: no_domain",
+    ]
+    if rate_limit_rpm is not None:
+        lines.append(f"rate_limit: {{requests_per_minute: {rate_limit_rpm}}}")
+    (venues_dir / "nodomain-venue.yaml").write_text("\n".join(lines), encoding="utf-8")
+
+
+def test_route_empty_fulltext_domains_with_rate_limit_raises_config_not_indexerror(
+    adapters: dict[str, SourceAdapter], tmp_path: Path
+) -> None:
+    """rate_limit 需要 fulltext_adapter.domains[0] 做键；domains 为空元组时必须以
+    CrawlerError(CONFIG) 早失败（周边 route() 风格），而非裸 IndexError 穿透。"""
+    adapters = {**adapters, "no_domain": _NoDomainAdapter()}
+    venues_dir = tmp_path / "venues"
+    venues_dir.mkdir()
+    _write_no_domain_venue(venues_dir, rate_limit_rpm=30.0)
+    reg = VenueRegistry(adapters)
+    reg.load_dirs([venues_dir])
+    with pytest.raises(CrawlerError) as exc_info:
+        reg.route("nodomain_venue")
+    assert exc_info.value.error_class is ErrorClass.CONFIG
+
+
+def test_route_empty_fulltext_domains_without_rate_limit_is_clean(
+    adapters: dict[str, SourceAdapter], tmp_path: Path
+) -> None:
+    """无 rate_limit 时 route() 不触碰 domains[0]，空 domains 不影响路由（overrides 空）。"""
+    adapters = {**adapters, "no_domain": _NoDomainAdapter()}
+    venues_dir = tmp_path / "venues"
+    venues_dir.mkdir()
+    _write_no_domain_venue(venues_dir, rate_limit_rpm=None)
+    reg = VenueRegistry(adapters)
+    reg.load_dirs([venues_dir])
+    route = reg.route("nodomain_venue")
+    assert route.rate_overrides == {}
 
 
 def test_route_unknown_fulltext_adapter_reference_raises_config_error(
