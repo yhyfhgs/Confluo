@@ -9,6 +9,12 @@ XML 依赖。
 （``journal-ref``）——本模块内部统一吸收这个差异，两个解析器产出同一套
 `ArxivRecord` 字段名。
 
+**OAI-PMH 信封层已上移共享核**（★C，design/adapters/aaai-ojs.md §9）：错误码表、
+`noRecordsMatch` 空态、墓碑遍历+计数、`resumptionToken`、`OaiListPage` 页形状统一
+由 `paper_crawler.adapters._oai` 提供（arxiv 与 aaai_ojs 共用，避免重复漂移）。本
+模块只保留 arxiv 的**体层**：Atom feed 解析器 + ``arXiv`` 私有 schema 的元素解析器
+（``_parse_oai_arxiv_element``），后者经 ``record_parser`` 回调注入共享核。
+
 异常形态识别（arxiv.md §5 失败模式映射 + 2026-07-22 §5 勘误）。**措辞校准**：§5
 表格给出站点现象→error_class 的映射，但 OAI 4xx→`CONFIG` 的细分归类（badArgument
 等）是 §5 勘误行与 http.py "其余 4xx→CONFIG" 口径的平行落地、属 design/05 §4 的
@@ -16,19 +22,11 @@ XML 依赖。
 
 - Atom feed 的 `opensearch:totalResults` > 0 但 `<entry>` 为空 → `ErrorClass.PARSE`
   （真实数据不应出现，出现即站点/查询异常）。
-- OAI-PMH 顶层 `<error code="...">`（arxiv.md §5 + 2026-07-22 勘误逐类归并）：
-  - `noRecordsMatch` → **非错误**：解析为空记录序列正常完成（空窗口/空桶的 OAI
-    合法响应；watch 空日、新 category 月初的常态——误归 PARSE 会使空日 watch 假故障）；
-  - `badResumptionToken` → `TRANSIENT`（token 每日过期，重跑天然恢复）；
-  - `badArgument` / `badVerb` / `cannotDisseminateFormat` → `CONFIG`（我方请求构造
-    缺陷，响亮停机，与 http.py 4xx→CONFIG 口径平行）；
-  - `idDoesNotExist` → `GONE`（单 id 查询场景，--all-versions deferred 本期低频）；
-  - 其余未知 code → `PARSE`（保守兜底）。
-- 任何 XML 语法错误（截断响应等）→ `ErrorClass.PARSE`。
+- OAI-PMH 顶层 `<error code="...">` 的逐类归并、墓碑跳过、`resumptionToken` 语义均由
+  共享核 `_oai` 实现（见其模块 docstring）；本模块的 arxiv 体层只负责"``<metadata>``
+  存在但缺 ``<arXiv>`` 子元素"这一真实解析失败 → `PARSE`（非墓碑）。
+- 任何 XML 语法错误（截断响应等）→ `ErrorClass.PARSE`（`_oai.fromstring`）。
 - 记录级必需字段（id/title）缺失 → `ErrorClass.PARSE`（单条记录级，非整页级）。
-- 墓碑记录（`<header status="deleted">` 或整条缺 `<metadata>`）静默跳过，但跳过
-  计数经 `parse_oai_page().skipped_tombstones` 暴露给 adapter（T5 在 enumerate 时经
-  obslog 记 debug 事件——墓碑不再是静默黑洞，可观测）。
 
 `to_paper_stub()` 是 arxiv.md §3 field mapping 的落地：``identifiers`` 恒为单
 一 ``(('arxiv', base_id),)``；``journal_ref``/``doi`` 放 `PaperStub.meta`
@@ -40,6 +38,8 @@ import xml.etree.ElementTree as ET
 from collections.abc import Iterator
 from dataclasses import dataclass
 
+from paper_crawler.adapters import _oai
+from paper_crawler.adapters._oai import OaiListPage  # 再导出：信封页形状（体层记录=ArxivRecord）
 from paper_crawler.adapters.arxiv import ids
 from paper_crawler.errors import CrawlerError, ErrorClass
 from paper_crawler.types import PaperStub
@@ -50,7 +50,6 @@ _ATOM_NS = "http://www.w3.org/2005/Atom"
 _ARXIV_ATOM_NS = "http://arxiv.org/schemas/atom"
 _OPENSEARCH_NS = "http://a9.com/-/spec/opensearch/1.1/"
 
-_OAI_NS = "http://www.openarchives.org/OAI/2.0/"
 _ARXIV_OAI_NS = "http://arxiv.org/OAI/arXiv/"
 
 
@@ -64,10 +63,6 @@ def _arxiv_atom(name: str) -> str:
 
 def _opensearch(name: str) -> str:
     return f"{{{_OPENSEARCH_NS}}}{name}"
-
-
-def _oai(name: str) -> str:
-    return f"{{{_OAI_NS}}}{name}"
 
 
 def _arxiv_oai(name: str) -> str:
@@ -99,26 +94,6 @@ class ArxivRecord:
     submitted: str | None
 
 
-@dataclass(frozen=True)
-class OaiListPage:
-    """一页 OAI-PMH `ListRecords` 的完整解析产物（供 T5 adapter 单遍消费）。
-
-    把"记录序列 + 续爬令牌 + 墓碑跳过数"三者在一次 XML 解析里一并给出，避免
-    adapter 对同一份响应体重复 `ET.fromstring`，并让墓碑跳过数可观测（T4 审查
-    Important 项：墓碑此前被静默跳过，无计数）。
-
-    - ``records``：已解析、**未过滤**的记录（子分类客户端过滤是 adapter 的职责，
-      不在解析层做——解析层只认 OAI 协议形态）。
-    - ``resumption_token``：下一页令牌；收割结束（无 token 或空 token 文本）为 None。
-    - ``skipped_tombstones``：本页被跳过的墓碑记录数（`status="deleted"` 或整条缺
-      `<metadata>` 二者合计）。
-    """
-
-    records: tuple[ArxivRecord, ...]
-    resumption_token: str | None
-    skipped_tombstones: int
-
-
 # --- 公开 API：Query API Atom -----------------------------------------------------------------
 
 
@@ -128,7 +103,7 @@ def parse_atom_feed(data: bytes) -> Iterator[ArxivRecord]:
     `opensearch:totalResults` 非零但 `<entry>` 为空时抛 `PARSE`（arxiv.md §5）；
     `totalResults` 为 0（正常空结果页）不抛错，直接产出空序列。
     """
-    root = _fromstring(data)
+    root = _oai.fromstring(data)
     total = _total_results(root)
     entries = root.findall(_atom("entry"))
     if total is not None and total > 0 and not entries:
@@ -151,7 +126,7 @@ def _total_results(root: ET.Element) -> int | None:
 
 
 def _parse_atom_entry(entry: ET.Element) -> ArxivRecord:
-    raw_id_url = _required_text(entry, _atom("id"), context="atom entry")
+    raw_id_url = _oai.required_text(entry, _atom("id"), context="atom entry")
     _, sep, raw_id = raw_id_url.partition("/abs/")
     if not sep:
         raise CrawlerError(
@@ -159,9 +134,9 @@ def _parse_atom_entry(entry: ET.Element) -> ArxivRecord:
         )
     base_id, version = ids.split_version(raw_id)
 
-    title = _required_text(entry, _atom("title"), context="atom entry")
-    abstract = _optional_text(entry, _atom("summary"))
-    submitted = _optional_text(entry, _atom("published"))
+    title = _oai.required_text(entry, _atom("title"), context="atom entry")
+    abstract = _oai.optional_text(entry, _atom("summary"))
+    submitted = _oai.optional_text(entry, _atom("published"))
 
     authors = tuple(
         name.strip()
@@ -176,8 +151,8 @@ def _parse_atom_entry(entry: ET.Element) -> ArxivRecord:
     primary_el = entry.find(_arxiv_atom("primary_category"))
     primary_category = primary_el.get("term") if primary_el is not None else None
 
-    journal_ref = _optional_text(entry, _arxiv_atom("journal_ref"))
-    doi = _optional_text(entry, _arxiv_atom("doi"))
+    journal_ref = _oai.optional_text(entry, _arxiv_atom("journal_ref"))
+    doi = _oai.optional_text(entry, _arxiv_atom("doi"))
 
     return ArxivRecord(
         base_id=base_id,
@@ -193,24 +168,17 @@ def _parse_atom_entry(entry: ET.Element) -> ArxivRecord:
     )
 
 
-# --- 公开 API：OAI-PMH ListRecords -------------------------------------------------------------
+# --- 公开 API：OAI-PMH ListRecords（信封层复用共享核，体层为 arxiv schema）---------------------
 
 
-def parse_oai_page(data: bytes) -> OaiListPage:
+def parse_oai_page(data: bytes) -> OaiListPage[ArxivRecord]:
     """解析一页 OAI-PMH `ListRecords`：一次解析给出记录 + 续爬令牌 + 墓碑跳过数。
 
-    顶层 `<error>` 先于任何记录被识别：`noRecordsMatch` 视为空页正常返回
-    （records 空、token None、skipped 0）；其余错误码按模块 docstring 归类抛出。
-    记录**未做子分类过滤**（adapter 职责——解析层只认 OAI 协议形态）。
+    信封遍历（错误码/墓碑/令牌）由共享核 `_oai.parse_oai_page` 承担；本函数仅注入
+    arxiv 体层回调 `_parse_oai_metadata`（``<metadata>`` → `ArxivRecord`）。记录
+    **未做子分类过滤**（adapter 职责——解析层只认 OAI 协议形态）。
     """
-    root = _fromstring(data)
-    _raise_if_oai_error(root)  # noRecordsMatch 在此被吸收为"不抛"，落到下方空页
-    records, skipped = _iter_oai_records(root)
-    return OaiListPage(
-        records=tuple(records),
-        resumption_token=_resumption_token_from(root),
-        skipped_tombstones=skipped,
-    )
+    return _oai.parse_oai_page(data, record_parser=_parse_oai_metadata)
 
 
 def parse_oai_list_records(data: bytes) -> Iterator[ArxivRecord]:
@@ -231,87 +199,37 @@ def oai_resumption_token(data: bytes) -> str | None:
     return parse_oai_page(data).resumption_token
 
 
-def _iter_oai_records(root: ET.Element) -> tuple[list[ArxivRecord], int]:
-    """遍历 `<ListRecords>` 下的 `<record>`，返回 (记录列表, 墓碑跳过数)。
+def _parse_oai_metadata(metadata: ET.Element) -> ArxivRecord:
+    """arxiv 体层回调：从 `<metadata>` 定位 ``<arXiv>`` 子元素并解析为 `ArxivRecord`。
 
-    墓碑（`status="deleted"` 或整条缺 `<metadata>`）计入跳过数而非静默丢弃；
-    `<metadata>` 存在但缺 `<arXiv>` 子元素属真实解析失败 → `PARSE`（非墓碑）。
-    调用前须已过 `_raise_if_oai_error`。
+    ``<metadata>`` 存在但缺 ``<arXiv>``（如误配 oai_dc）是真实解析失败 → `PARSE`
+    （不能被共享核的墓碑计数吞掉——墓碑是"整条缺 metadata"，此处是"metadata 在但
+    schema 错"）。
     """
-    list_records = root.find(_oai("ListRecords"))
-    if list_records is None:
-        return [], 0
-    records: list[ArxivRecord] = []
-    skipped = 0
-    for record in list_records.findall(_oai("record")):
-        header = record.find(_oai("header"))
-        if header is not None and header.get("status") == "deleted":
-            skipped += 1
-            continue
-        metadata = record.find(_oai("metadata"))
-        if metadata is None:
-            skipped += 1
-            continue
-        arxiv_el = metadata.find(_arxiv_oai("arXiv"))
-        if arxiv_el is None:
-            raise CrawlerError(ErrorClass.PARSE, "OAI record <metadata> missing <arXiv> element")
-        records.append(_parse_oai_arxiv_element(arxiv_el))
-    return records, skipped
-
-
-def _resumption_token_from(root: ET.Element) -> str | None:
-    list_records = root.find(_oai("ListRecords"))
-    if list_records is None:
-        return None
-    token_el = list_records.find(_oai("resumptionToken"))
-    if token_el is None or token_el.text is None:
-        return None
-    token = token_el.text.strip()
-    return token or None
-
-
-# OAI-PMH 顶层错误码 → ErrorClass（arxiv.md §5 + 2026-07-22 勘误；见模块 docstring）。
-# noRecordsMatch 不在表内——它是合法空态，由 _raise_if_oai_error 直接 return 吸收。
-_OAI_ERROR_CLASS: dict[str, ErrorClass] = {
-    "badResumptionToken": ErrorClass.TRANSIENT,
-    "badArgument": ErrorClass.CONFIG,
-    "badVerb": ErrorClass.CONFIG,
-    "cannotDisseminateFormat": ErrorClass.CONFIG,
-    "idDoesNotExist": ErrorClass.GONE,
-}
-
-
-def _raise_if_oai_error(root: ET.Element) -> None:
-    """顶层 `<error>` → 抛对应 `CrawlerError`；`noRecordsMatch` 是合法空态，直接返回。"""
-    error_el = root.find(_oai("error"))
-    if error_el is None:
-        return
-    code = error_el.get("code", "")
-    if code == "noRecordsMatch":
-        return  # arxiv.md §5 勘误：空窗口/空桶的合法响应，非错误
-    message = (error_el.text or "").strip()
-    error_class = _OAI_ERROR_CLASS.get(code, ErrorClass.PARSE)
-    raise CrawlerError(error_class, f"OAI-PMH error code={code!r}: {message}", detail=code)
+    arxiv_el = metadata.find(_arxiv_oai("arXiv"))
+    if arxiv_el is None:
+        raise CrawlerError(ErrorClass.PARSE, "OAI record <metadata> missing <arXiv> element")
+    return _parse_oai_arxiv_element(arxiv_el)
 
 
 def _parse_oai_arxiv_element(el: ET.Element) -> ArxivRecord:
-    raw_id = _required_text(el, _arxiv_oai("id"), context="OAI arXiv record")
+    raw_id = _oai.required_text(el, _arxiv_oai("id"), context="OAI arXiv record")
     base_id = ids.normalize(raw_id)
 
-    title = _required_text(el, _arxiv_oai("title"), context="OAI arXiv record")
-    abstract = _optional_text(el, _arxiv_oai("abstract"))
-    submitted = _optional_text(el, _arxiv_oai("created"))
+    title = _oai.required_text(el, _arxiv_oai("title"), context="OAI arXiv record")
+    abstract = _oai.optional_text(el, _arxiv_oai("abstract"))
+    submitted = _oai.optional_text(el, _arxiv_oai("created"))
 
     authors_el = el.find(_arxiv_oai("authors"))
     authors = _parse_oai_authors(authors_el) if authors_el is not None else ()
 
-    categories_text = _optional_text(el, _arxiv_oai("categories"))
+    categories_text = _oai.optional_text(el, _arxiv_oai("categories"))
     categories = tuple(categories_text.split()) if categories_text else ()
     primary_category = categories[0] if categories else None
 
     # OAI arXiv schema 用连字符命名（与 Atom 扩展命名空间的下划线命名不一致）。
-    journal_ref = _optional_text(el, _arxiv_oai("journal-ref"))
-    doi = _optional_text(el, _arxiv_oai("doi"))
+    journal_ref = _oai.optional_text(el, _arxiv_oai("journal-ref"))
+    doi = _oai.optional_text(el, _arxiv_oai("doi"))
 
     return ArxivRecord(
         base_id=base_id,
@@ -370,35 +288,6 @@ def _year_from_submitted(submitted: str | None) -> int | None:
     if submitted is None or len(submitted) < 4 or not submitted[:4].isdigit():
         return None
     return int(submitted[:4])
-
-
-# --- 共享小工具 -------------------------------------------------------------------------------
-
-
-def _fromstring(data: bytes) -> ET.Element:
-    try:
-        return ET.fromstring(data)
-    except ET.ParseError as exc:
-        raise CrawlerError(ErrorClass.PARSE, f"malformed xml: {exc}") from exc
-
-
-def _normalize_ws(text: str) -> str:
-    return " ".join(text.split())
-
-
-def _optional_text(parent: ET.Element, tag: str) -> str | None:
-    raw = parent.findtext(tag)
-    if raw is None:
-        return None
-    cleaned = _normalize_ws(raw)
-    return cleaned or None
-
-
-def _required_text(parent: ET.Element, tag: str, *, context: str) -> str:
-    value = _optional_text(parent, tag)
-    if value is None:
-        raise CrawlerError(ErrorClass.PARSE, f"{context}: missing required element {tag!r}")
-    return value
 
 
 __all__ = [
