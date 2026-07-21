@@ -50,7 +50,11 @@ def _parse_retry_after(response: httpx.Response) -> int | None:
     if raw is None:
         return None
     raw = raw.strip()
-    if raw.isdigit():  # 纯非负整数秒
+    # 必须 isascii()：str.isdigit() 对非 ASCII 数字字符（如 latin-1 的 "²"，畸形
+    # 头字节可解出）返回 True，但 int() 只接受十进制字符会抛 ValueError——而本段
+    # 不在 try 兜底内，裸异常会破坏"状态→CrawlerError"契约。isascii()+isdigit()
+    # 保证只剩 '0'-'9'，int() 必成功；非 ASCII 落到下方 HTTP-date 兜底（在 try 内）。
+    if raw.isascii() and raw.isdigit():  # 纯 ASCII 非负整数秒
         return int(raw)
     try:
         target = parsedate_to_datetime(raw)

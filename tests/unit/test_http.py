@@ -247,6 +247,22 @@ def test_retry_after_garbage_value_is_ignored() -> None:
     assert exc_info.value.detail == ""
 
 
+def test_retry_after_non_ascii_digit_header_does_not_raise_bare_exception() -> None:
+    """畸形 Retry-After：非 ASCII 数字字符（latin-1 `²`，`str.isdigit()` 为 True 但
+    `int()` 抛 ValueError）不得逃逸为裸异常——仍须产出 RATE_LIMITED 且省略 detail 段。"""
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        # 以原始 latin-1 字节注入（服务端在线上即这样发 header 字节，httpx 按 latin-1
+        # 解回字符串 "²"）；用 str 传会被 httpx ascii 编码拒绝，无法复现该畸形。
+        return httpx.Response(429, headers=[(b"Retry-After", b"\xb2")], text="err")
+
+    client = make_client(handler)
+    with pytest.raises(CrawlerError) as exc_info:
+        client.get_text("https://x.local/p")
+    assert exc_info.value.error_class is ErrorClass.RATE_LIMITED
+    assert exc_info.value.detail == ""
+
+
 def test_503_with_retry_after_maps_to_rate_limited() -> None:
     client = make_client(_status_handler(503, headers={"Retry-After": "30"}))
     with pytest.raises(CrawlerError) as exc_info:
@@ -349,6 +365,22 @@ def test_redirect_emits_debug_events_for_hop_and_final(tmp_path: Path) -> None:
     assert (200, "https://x.local/final") in statuses
     # 全部 obslog 事件都是 debug 级
     assert all(ev.get("level") == "DEBUG" for ev in events)
+
+
+def test_redirect_hop_event_omits_elapsed_ms_final_event_includes_it(tmp_path: Path) -> None:
+    """重定向跳事件不含 elapsed_ms（httpx history 响应 .elapsed 不可靠取用），
+    终响应事件含实测 elapsed_ms——钉死 concern #4 的实现契约。"""
+    setup_logging(tmp_path)
+    client = make_client(_redirect_handler)
+    client.get_text("https://x.local/start")
+
+    events = _read_events(tmp_path)
+    hop_event = next(ev for ev in events if ev.get("status") == 302)
+    final_event = next(ev for ev in events if ev.get("status") == 200)
+    # obslog 省略 None 值键：跳事件 elapsed_ms=None → 键缺席；终事件带实测值 → 键在场。
+    assert "elapsed_ms" not in hop_event
+    assert "elapsed_ms" in final_event
+    assert isinstance(final_event["elapsed_ms"], int | float)
 
 
 # ---------------------------------------------------------------------------
