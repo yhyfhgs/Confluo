@@ -21,10 +21,12 @@ from collections.abc import Callable
 import httpx
 import pytest
 
-from helpers import FakeFetchIO, make_arxiv_venue, make_mock_venue
+from helpers import FakeFetchIO, make_arxiv_venue, make_mock_venue, make_pmlr_venue
 from helpers.arxiv_fixtures import fixture_bytes
+from helpers.pmlr_fixtures import fixture_bytes as pmlr_fixture_bytes
 from paper_crawler.adapter import AdapterBase, AdapterFamily, SourceAdapter, load_adapters
 from paper_crawler.adapters.arxiv.adapter import ArxivAdapter
+from paper_crawler.adapters.pmlr.adapter import PmlrAdapter
 from paper_crawler.errors import CapabilityNotSupported
 from paper_crawler.http import HttpClient
 from paper_crawler.types import (
@@ -63,11 +65,30 @@ def _arxiv_case() -> tuple[SourceAdapter, VenueSpec]:
     return ArxivAdapter(http=client), make_arxiv_venue()
 
 
+def _pmlr_contract_handler(request: httpx.Request) -> httpx.Response:
+    """pmlr 契约链的 MockTransport：卷 index 页 → 合成 fixture；PDF 取回 → %PDF。
+
+    不区分请求的具体卷号（v202/v235 等）——contract 只关心链路机制是否走通，
+    fixture 内容与被请求的卷号是否语义一致由 T5 adapter 单测/T4 集成测试覆盖。
+    """
+    if str(request.url).endswith(".pdf"):
+        return httpx.Response(200, content=_CONTRACT_PDF)
+    return httpx.Response(200, content=pmlr_fixture_bytes("01_volume_index_normal.html"))
+
+
+def _pmlr_case() -> tuple[SourceAdapter, VenueSpec]:
+    transport = httpx.MockTransport(_pmlr_contract_handler)
+    client = HttpClient(user_agent=_CONTRACT_UA, transport=transport)
+    return PmlrAdapter(http=client), make_pmlr_venue()
+
+
 # adapter_id -> (adapter, venue) 工厂。只有此处登记的 adapter 会跑完整能力链路检查；
-# 其余（stub）adapter 一律 pytest.skip（stub until Phase 3/4）。
+# 其余（stub）adapter 一律 pytest.skip（stub until Phase 3/4）。pmlr 无 stub 阶段
+# （不同于 arxiv 曾有 T1-T4 的 stub 过渡期）——直接新增一行即完整接入契约套件。
 _CONTRACT_CASES: dict[str, Callable[[], tuple[SourceAdapter, VenueSpec]]] = {
     "mock_platform": _mock_case,
     "arxiv": _arxiv_case,
+    "pmlr": _pmlr_case,
 }
 
 ADAPTER_IDS = sorted(load_adapters())
