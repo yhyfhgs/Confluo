@@ -110,6 +110,39 @@ def test_venues_dirs_empty_when_none_exist(tmp_path: Path, monkeypatch: pytest.M
     assert cfg.venues_dirs == ()
 
 
+def test_identity_email_read_from_config_toml(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """`[identity].email` 读入 Config.identity_email（D-014 UA mailto 来源）。"""
+    monkeypatch.delenv("PAPER_CRAWLER_HOME", raising=False)
+    home = tmp_path / "home"
+    home.mkdir()
+    (home / "config.toml").write_text(
+        '[identity]\nemail = "researcher@example.edu"\n', encoding="utf-8"
+    )
+    cfg = Config.load(home=home)
+    assert cfg.identity_email == "researcher@example.edu"
+
+
+def test_identity_email_absent_is_none(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """无 config.toml → identity_email 缺省 None（UA 省略 mailto 段）。"""
+    monkeypatch.delenv("PAPER_CRAWLER_HOME", raising=False)
+    cfg = Config.load(home=tmp_path / "home")
+    assert cfg.identity_email is None
+
+
+def test_identity_email_blank_normalizes_to_none(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """空白 email 串归一为 None（等价未配置——不产生 `mailto:` 空值）。"""
+    monkeypatch.delenv("PAPER_CRAWLER_HOME", raising=False)
+    home = tmp_path / "home"
+    home.mkdir()
+    (home / "config.toml").write_text('[identity]\nemail = "   "\n', encoding="utf-8")
+    cfg = Config.load(home=home)
+    assert cfg.identity_email is None
+
+
 def test_ensure_dirs_creates_tree(tmp_path: Path) -> None:
     cfg = Config.load(home=tmp_path)
     cfg.ensure_dirs()

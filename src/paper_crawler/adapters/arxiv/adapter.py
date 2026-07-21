@@ -84,9 +84,17 @@ def _package_version() -> str:
         return __version__
 
 
-def build_user_agent(email: str, *, version: str | None = None) -> str:
-    """D-014 UA：``PaperCrawler/<ver> (personal research; mailto:<email>)``。"""
-    return f"PaperCrawler/{version or _package_version()} (personal research; mailto:{email})"
+def build_user_agent(email: str | None, *, version: str | None = None) -> str:
+    """D-014 UA：``PaperCrawler/<ver> (personal research; mailto:<email>)``。
+
+    `email=None`（config `[identity].email` 未配置）时省略 `mailto:` 段，产出
+    ``PaperCrawler/<ver> (personal research)``——不硬编码占位地址（隐私安全），
+    诚实反映"未提供联系方式"（CLI 网络命令另 obslog warn 一次）。
+    """
+    ver = version or _package_version()
+    if email:
+        return f"PaperCrawler/{ver} (personal research; mailto:{email})"
+    return f"PaperCrawler/{ver} (personal research)"
 
 
 def _default_user_agent() -> str:
@@ -149,6 +157,16 @@ class ArxivAdapter(AdapterBase):
     def __init__(self, http: HttpClient | None = None) -> None:
         # http=None：首次网络调用时惰性自建（见模块 docstring 的注入说明）。
         self._http = http
+
+    def set_http_client(self, client: HttpClient) -> None:
+        """注入组装好的 `HttpClient`（`adapter.HttpClientConsumer` 协议）。
+
+        CLI 经 `bind_http_client` 在 `load_adapters()` 后调用，把从 config 组装
+        （UA 携 `[identity].email`）的共享 client 注入本 adapter——优先级
+        **显式注入 > config > env**：注入覆盖 `__init__(http=None)` 的惰性 env 兜底
+        （见模块 docstring）。`load_adapters()` 无参实例化后由此接通 config。
+        """
+        self._http = client
 
     def _client(self) -> HttpClient:
         if self._http is None:

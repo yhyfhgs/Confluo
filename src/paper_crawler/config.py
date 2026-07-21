@@ -28,6 +28,9 @@ class Config:
     venues_dirs: tuple[Path, ...]
     rate_scale: float = 1.0
     retry_scale: float = 1.0
+    # D-014 联系人 email：真实 adapter 的 UA `mailto:` 段来源（不硬编码）。缺省
+    # None → UA 省略 mailto 段（CLI 网络命令 obslog warn 一次）。空白串归一为 None。
+    identity_email: str | None = None
 
     @classmethod
     def load(cls, home: Path | None = None) -> "Config":
@@ -49,6 +52,7 @@ class Config:
         data_dir = resolved_home / "data"
         rate_scale = 1.0
         retry_scale = 1.0
+        identity_email: str | None = None
         venues_dirs_override: tuple[Path, ...] | None = None
 
         config_file = resolved_home / "config.toml"
@@ -64,6 +68,10 @@ class Config:
                 )
             rate_scale = float(doc.get("rate", {}).get("scale", rate_scale))
             retry_scale = float(doc.get("retry", {}).get("scale", retry_scale))
+            # [identity].email：空白串归一为 None（等价未配置——UA 不带 mailto）。
+            raw_email = doc.get("identity", {}).get("email")
+            if isinstance(raw_email, str) and raw_email.strip():
+                identity_email = raw_email.strip()
 
         if venues_dirs_override is not None:
             venues_dirs = venues_dirs_override
@@ -86,6 +94,7 @@ class Config:
             venues_dirs=venues_dirs,
             rate_scale=rate_scale,
             retry_scale=retry_scale,
+            identity_email=identity_email,
         )
 
     def ensure_dirs(self) -> None:

@@ -5,11 +5,12 @@ mock），再扫描 entry point 组 `paper_crawler.adapters` 覆盖/新增（第
 "插"）。key = adapter_id。
 """
 
-from collections.abc import Iterable
+from collections.abc import Iterable, Mapping
 from importlib import metadata
 from typing import Literal, Protocol, runtime_checkable
 
 from paper_crawler.errors import CapabilityNotSupported
+from paper_crawler.http import HttpClient
 from paper_crawler.types import (
     AssetPlan,
     AuthLevel,
@@ -89,6 +90,31 @@ class AdapterBase:
 
     def healthcheck(self, session: SessionHandle | None = None) -> HealthReport:
         return HealthReport(healthy=True)
+
+
+@runtime_checkable
+class HttpClientConsumer(Protocol):
+    """真实 adapter 声明"可注入共享 `HttpClient`"的可选协议（duck-typed）。
+
+    `load_adapters()` 经 entry point 无参实例化 adapter，无法在构造期注入依赖；
+    实现本协议的 adapter（如 arxiv）暴露 `set_http_client`，供 CLI 在装配期经
+    `bind_http_client` 注入从 config 组装（UA 携 `[identity].email`）的共享 client。
+    """
+
+    def set_http_client(self, client: HttpClient) -> None: ...
+
+
+def bind_http_client(adapters: Mapping[str, SourceAdapter], client: HttpClient) -> list[str]:
+    """把共享 `client` 注入所有实现 `HttpClientConsumer` 的 adapter；返回被注入的 id 列表。
+
+    不实现该协议的 adapter（stub / mock）静默跳过——它们无网络访问、无需 client。
+    """
+    injected: list[str] = []
+    for adapter_id, adapter in adapters.items():
+        if isinstance(adapter, HttpClientConsumer):
+            adapter.set_http_client(client)
+            injected.append(adapter_id)
+    return injected
 
 
 def load_adapters() -> dict[str, SourceAdapter]:

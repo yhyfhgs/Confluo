@@ -2,8 +2,14 @@
 
 import pytest
 
-from paper_crawler.adapter import SourceAdapter, load_adapters
+from paper_crawler.adapter import (
+    HttpClientConsumer,
+    SourceAdapter,
+    bind_http_client,
+    load_adapters,
+)
 from paper_crawler.errors import CapabilityNotSupported
+from paper_crawler.http import HttpClient
 from paper_crawler.types import (
     AssetKind,
     AssetPlan,
@@ -147,6 +153,27 @@ def test_mock_platform_methods_are_implemented_after_t6(
     # 这里只验证经 load_adapters() 拿到的实例确实可用。
     issues = list(adapters["mock_platform"].discover_timeline(venue))
     assert issues
+
+
+# --- HttpClient 注入（bind_http_client / HttpClientConsumer 协议）--------------------------
+
+
+def test_arxiv_is_http_client_consumer(adapters: dict[str, SourceAdapter]) -> None:
+    """arxiv 实现 `HttpClientConsumer`（可注入共享 client）；stub/mock 不实现。"""
+    assert isinstance(adapters["arxiv"], HttpClientConsumer)
+    assert not isinstance(adapters["mock_platform"], HttpClientConsumer)
+    assert not isinstance(adapters["crossref"], HttpClientConsumer)
+
+
+def test_bind_http_client_injects_only_consumers(adapters: dict[str, SourceAdapter]) -> None:
+    """`bind_http_client` 只注入实现协议的 adapter，返回被注入的 id 列表。"""
+    client = HttpClient(user_agent="PaperCrawler/test (personal research)")
+    injected = bind_http_client(adapters, client)
+    assert injected == ["arxiv"]  # 唯一 http adapter
+    # 注入生效：arxiv 的 _client() 返回被注入的实例，不再惰性自建。
+    arxiv = adapters["arxiv"]
+    assert isinstance(arxiv, HttpClientConsumer)
+    assert arxiv._client() is client  # type: ignore[attr-defined]
 
 
 class _NullIO:

@@ -151,6 +151,26 @@ def test_build_user_agent_is_d014_shaped() -> None:
     assert ua == "PaperCrawler/9.9.9 (personal research; mailto:me@example.com)"
 
 
+def test_build_user_agent_omits_mailto_when_email_none() -> None:
+    """config `[identity].email` 未配置（None）→ UA 省略 mailto 段（不硬编码占位地址）。"""
+    ua = build_user_agent(None, version="9.9.9")
+    assert ua == "PaperCrawler/9.9.9 (personal research)"
+
+
+def test_build_user_agent_omits_mailto_when_email_empty() -> None:
+    """空串等价未配置（防御性）——同样省略 mailto 段。"""
+    assert build_user_agent("", version="9.9.9") == "PaperCrawler/9.9.9 (personal research)"
+
+
+def test_set_http_client_injection_overrides_lazy_env_build() -> None:
+    """`set_http_client` 注入的 client 优先于惰性 env 兜底（显式注入 > config > env）。"""
+    adapter = ArxivAdapter()  # http=None：否则会惰性自建
+    injected = HttpClient(user_agent=_TEST_UA)
+    adapter.set_http_client(injected)
+    # 私有字段验证注入生效（_client() 不再惰性自建）。
+    assert adapter._client() is injected
+
+
 # --- discover（零网络）------------------------------------------------------------------------
 
 
