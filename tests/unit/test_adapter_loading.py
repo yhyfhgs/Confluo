@@ -223,9 +223,8 @@ def test_bind_http_client_injects_only_consumers(adapters: dict[str, SourceAdapt
     """`bind_http_client` 只注入实现协议的 adapter，返回被注入的 id 列表。"""
     client = HttpClient(user_agent="PaperCrawler/test (personal research)")
     injected = bind_http_client(adapters, client)
-    assert set(injected) == {"arxiv", "openreview", "pmlr"}  # 三个真实 http adapter
-    # 注入生效：三者的 _client() 都返回被注入的实例，不再惰性自建。
-    assert set(injected) == {"arxiv", "openreview", "acl_anthology"}  # 三个 http adapter
+    # 四个真实 http adapter；注入生效——_client() 返回被注入实例，不再惰性自建。
+    assert set(injected) == {"arxiv", "openreview", "pmlr", "acl_anthology"}
     # 注入生效：arxiv 的 _client() 返回被注入的实例，不再惰性自建。
     arxiv = adapters["arxiv"]
     pmlr = adapters["pmlr"]

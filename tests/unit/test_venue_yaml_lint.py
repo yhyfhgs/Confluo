@@ -84,8 +84,7 @@ def test_icml_venue_routes_to_pmlr_adapter(adapters: dict[str, SourceAdapter]) -
     }
 
 
-@pytest.mark.parametrize("venue_id", ["mock_journal", "jfe", "iclr", "icml"])
-@pytest.mark.parametrize("venue_id", ["mock_journal", "jfe", "iclr", "emnlp"])
+@pytest.mark.parametrize("venue_id", ["mock_journal", "jfe", "iclr", "icml", "emnlp"])
 def test_each_shipped_venue_is_routable(adapters: dict[str, SourceAdapter], venue_id: str) -> None:
     reg = VenueRegistry(adapters)
     reg.load_dirs([REPO_VENUES_DIR])

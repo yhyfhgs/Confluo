@@ -22,11 +22,8 @@ crawler = "paper_crawler.cli:main"
 mock_platform = "paper_crawler.adapters.mock_platform:MockPlatformAdapter"
 arxiv = "paper_crawler.adapters.arxiv.adapter:ArxivAdapter"
 openreview = "paper_crawler.adapters.openreview.adapter:OpenReviewAdapter"
-<<<<<<< HEAD
 pmlr = "paper_crawler.adapters.pmlr.adapter:PmlrAdapter"
-=======
 acl_anthology = "paper_crawler.adapters.acl_anthology.adapter:AclAnthologyAdapter"
->>>>>>> adapter/acl-anthology
 
 [dependency-groups]
 dev = [

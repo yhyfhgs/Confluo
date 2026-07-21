@@ -23,17 +23,11 @@ import pytest
 
 from helpers import (
     FakeFetchIO,
-<<<<<<< HEAD
-    make_arxiv_venue,
-    make_mock_venue,
-    make_openreview_venue,
-    make_pmlr_venue,
-=======
     make_acl_anthology_venue,
     make_arxiv_venue,
     make_mock_venue,
     make_openreview_venue,
->>>>>>> adapter/acl-anthology
+    make_pmlr_venue,
 )
 from helpers.arxiv_fixtures import fixture_bytes
 from helpers.pmlr_fixtures import fixture_bytes as pmlr_fixture_bytes
@@ -109,7 +103,6 @@ def _openreview_case() -> tuple[SourceAdapter, VenueSpec]:
     return OpenReviewAdapter(http=client), make_openreview_venue()
 
 
-<<<<<<< HEAD
 def _pmlr_contract_handler(request: httpx.Request) -> httpx.Response:
     """pmlr 契约链的 MockTransport：卷 index 页 → 合成 fixture；PDF 取回 → %PDF。
 
@@ -125,7 +118,8 @@ def _pmlr_case() -> tuple[SourceAdapter, VenueSpec]:
     transport = httpx.MockTransport(_pmlr_contract_handler)
     client = HttpClient(user_agent=_CONTRACT_UA, transport=transport)
     return PmlrAdapter(http=client), make_pmlr_venue()
-=======
+
+
 # acl_anthology 契约链的 MockTransport：git-tree 清单只含一年（2023.emnlp.xml）→
 # discover 首个 issue 即该年；enumerate 读回一篇最小合法 paper（其余 raw 候选/findings
 # 文件 404→legal-empty，正常空跳过）；resolve/fetch 走标准 pdf plan → %PDF。
@@ -157,7 +151,6 @@ def _acl_anthology_case() -> tuple[SourceAdapter, VenueSpec]:
     transport = httpx.MockTransport(_acl_anthology_contract_handler)
     client = HttpClient(user_agent=_CONTRACT_UA, transport=transport)
     return AclAnthologyAdapter(http=client), make_acl_anthology_venue()
->>>>>>> adapter/acl-anthology
 
 
 # adapter_id -> (adapter, venue) 工厂。只有此处登记的 adapter 会跑完整能力链路检查；
@@ -167,11 +160,8 @@ _CONTRACT_CASES: dict[str, Callable[[], tuple[SourceAdapter, VenueSpec]]] = {
     "mock_platform": _mock_case,
     "arxiv": _arxiv_case,
     "openreview": _openreview_case,
-<<<<<<< HEAD
     "pmlr": _pmlr_case,
-=======
     "acl_anthology": _acl_anthology_case,
->>>>>>> adapter/acl-anthology
 }
 
 ADAPTER_IDS = sorted(load_adapters())
