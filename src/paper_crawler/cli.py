@@ -124,9 +124,7 @@ def _http_client_factory(config: Config, rate_limiter: RateLimiter | None = None
     `rate_limiter`（C4 红线修复，plan §7-6）= pipeline `StageContext.limiter` 同一实例，
     使 adapter 内部翻页的逐请求限速与 pipeline 的 per-stage 限速落到同一预算（同桶共享）。
     """
-    return HttpClient(
-        user_agent=build_user_agent(config.identity_email), rate_limiter=rate_limiter
-    )
+    return HttpClient(user_agent=build_user_agent(config.identity_email), rate_limiter=rate_limiter)
 
 
 def _build_env(home: Path | None, verbose: bool, *, dry_run: bool = False) -> CliEnv:
