@@ -87,7 +87,7 @@
 
 | 路径 | 标题 | status | updated |
 |---|---|---|---|
-| [testing/test-plan.md](testing/test-plan.md) | 测试计划与测试类型（T1–T6） | approved | 2026-07-20 |
+| [testing/test-plan.md](testing/test-plan.md) | 测试计划与测试类型（T1–T6） | approved | 2026-07-21 |
 | [testing/acceptance-criteria.md](testing/acceptance-criteria.md) | 验收标准总表（AC-0…AC-8） | approved | 2026-07-20 |
 | testing/records/ | 测试执行留痕（目录，随执行追加） | — | — |
 | [testing/records/2026-07-21-phase1-acceptance.md](testing/records/2026-07-21-phase1-acceptance.md) | Phase 1 验收记录（AC-1 全过） | — | 2026-07-21 |

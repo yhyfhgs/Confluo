@@ -2,7 +2,7 @@
 title: 测试计划与测试类型
 status: approved
 owner: fable5
-updated: 2026-07-20
+updated: 2026-07-21
 ---
 
 # 测试计划
@@ -70,3 +70,47 @@ updated: 2026-07-20
 
 - 本地优先：`make test`（T1–T4）、`make smoke`（T5 手动）；
 - 若托管远端（GitHub 私库）：push 跑 T1–T4；schedule 跑 canary——secrets 管理遵守 design/07（CI 中仅注入只读 API key，**绝不注入机构 session**；auth 族 canary 只在本机跑）。
+
+## 9. T5 执行细则（Phase 2 T3 落地）
+
+> 本节是在线测试基建（T3）落地后对 §1/§4/§5 的**补充性勘误**——只加执行细节，
+> 不改既有语义。T3 落地的是"adapter 能否正常应答"这一最基础层；§4 描述的
+> PASS/DRIFT/DEGRADED/BLOCKED（基于每个 adapter 注册的已知答案样本比对）是
+> 各 adapter 落地时（如 arxiv T7 的 canary 三样本注册）在此基础上叠加的更细
+> 粒度层，本节不涉及、不改变其定义。
+
+**marker 用法**：
+
+- pytest marker `online`（`pyproject.toml` `[tool.pytest.ini_options]` 的
+  `markers` 注册，`--strict-markers` 下未注册的标记会直接报错）；
+- `addopts` 默认含 `-m "not online"`——不显式指定时，`tests/online/` 下打
+  `online` 标记的用例一律不跑，这是 AGENTS §6"默认测试零真实网络"红线的落地
+  机制；
+- 显式 `pytest -m online [tests/online]` 才会真正执行在线用例；命令行给的
+  `-m` 覆盖 `addopts` 里的默认值（pytest 标准语义：同名选项以最后出现者为准）；
+- 每个在线测试文件放在 `tests/online/`，模块顶层声明
+  `MAX_REAL_REQUESTS = N`（该文件全部在线用例合计允许发起的真实请求数上限）。
+
+**预算契约**：
+
+- `tests/online/conftest.py` 提供 `real_request_budget` fixture：读取当前测试
+  模块声明的 `MAX_REAL_REQUESTS`，返回绑定该模块的预算句柄
+  （`RealRequestBudget`）；
+- 测试体内每次真实网络请求前调用 `real_request_budget.spend(n)`（默认
+  `n=1`）；
+- 累计花费一旦超过 `MAX_REAL_REQUESTS`，`spend()` 立即 `pytest.fail`（提示文本
+  含模块名/声明上限/已花费次数），当次真实请求不会真正发出；
+- 计数按模块名累加、在同一 pytest 会话内持续有效——同一文件内多个测试函数
+  共享同一份预算，不因每个测试函数各自拿到新的 fixture 实例而清零。
+
+**canary 退出码**：
+
+- `crawler canary [--adapter ID]` 遍历已注册 adapter（`load_adapters()`）
+  逐个调用 `healthcheck()`，输出 `adapter`/`healthy`/`detail` 三列的 markdown
+  健康矩阵；
+- `healthcheck()` 抛出 `NotImplementedError`（stub adapter 尚未实现健康检查）
+  归为 SKIP 行，不计入不健康；抛出其余异常按不健康处理，detail 记异常信息；
+- 退出码：`0` = 全部 healthy（SKIP 不影响判定）；`1` = 至少一个 unhealthy；
+  `2` = `--adapter` 给了未注册的 id（用法错）；
+- 本节落地的是命令本身的 stdout 输出；落盘到 `docs/testing/records/canary/`
+  的周期性归档（§4）留待接入已知答案样本比对（更细粒度层）时一并实现。
