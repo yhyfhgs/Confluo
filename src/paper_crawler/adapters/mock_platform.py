@@ -91,6 +91,10 @@ class _Quirks:
     fail_fetch: Mapping[str, object] | None = None
     fail_enumerate: Mapping[str, object] | None = None
     fetch_delay_ms: int = 0
+    # 测试专用开关：额外产出一条 si `AssetPlan`（`resolve_assets` 一节），供 pipeline
+    # 侧驱动 si 落位（design/06 §4）全链回归——默认关，向后兼容零回归（本 mock 语料
+    # 规格 phase1-implementation-plan Task 6 冻结时只有 pdf；这里是后补的测试夹具位）。
+    emit_si: bool = False
 
 
 def _quirk_int(raw: Mapping[str, object], key: str, default: int) -> int:
@@ -107,6 +111,11 @@ def _quirk_mapping(raw: Mapping[str, object], key: str) -> Mapping[str, object] 
     return value if isinstance(value, Mapping) else None
 
 
+def _quirk_bool(raw: Mapping[str, object], key: str, default: bool) -> bool:
+    value = raw.get(key, default)
+    return value if isinstance(value, bool) else default
+
+
 def _read_quirks(venue: VenueSpec) -> _Quirks:
     raw = venue.quirks
     return _Quirks(
@@ -117,6 +126,7 @@ def _read_quirks(venue: VenueSpec) -> _Quirks:
         fail_fetch=_quirk_mapping(raw, "fail_fetch"),
         fail_enumerate=_quirk_mapping(raw, "fail_enumerate"),
         fetch_delay_ms=_quirk_int(raw, "fetch_delay_ms", 0),
+        emit_si=_quirk_bool(raw, "emit_si", False),
     )
 
 
@@ -238,11 +248,16 @@ class MockPlatformAdapter(AdapterBase):
     def resolve_assets(
         self, venue: VenueSpec, paper: PaperStub, session: SessionHandle | None = None
     ) -> list[AssetPlan]:
-        """产出单个 PDF `AssetPlan`。
+        """产出 pdf `AssetPlan`（恒一条）；`emit_si` quirk 打开时额外追加一条 si。
 
-        `fail_fetch`/`fetch_delay_ms` 的效应编码进 URL 查询串（见模块 docstring：
-        `fetch_asset` 无 venue 参数，必须只凭 URL 就能复现故障注入）。未触发任何
-        quirk 时 URL 严格等于规格文本 `https://mock.local/pdf/{doi}`。
+        `fail_fetch`/`fetch_delay_ms` 的效应只编码进 pdf plan 的 URL 查询串（见模块
+        docstring：`fetch_asset` 无 venue 参数，必须只凭 URL 就能复现故障注入）；si
+        plan 不接入这两个故障注入通道——Phase 1 加这个 quirk 纯为驱动
+        `_asset_final_path` 的 si 落位分支（design/06 §4）做 pipeline 全链回归，
+        真实 si 故障语义留给将来真正产出 si 资产的 adapter。未触发任何 quirk 时
+        pdf URL 严格等于规格文本 `https://mock.local/pdf/{doi}`；`emit_si=True`
+        时 si URL 固定为 `https://mock.local/si/{doi}/supplement.zip`（保持原名
+        落位测试用的固定 basename）。
         """
         quirks = _read_quirks(venue)
         doi = _paper_doi(paper)
@@ -261,7 +276,7 @@ class MockPlatformAdapter(AdapterBase):
         if query_parts:
             url = f"{url}?{'&'.join(query_parts)}"
 
-        return [
+        plans = [
             AssetPlan(
                 kind=AssetKind.PDF,
                 url=url,
@@ -269,6 +284,16 @@ class MockPlatformAdapter(AdapterBase):
                 auth_needed=AuthLevel.NONE,
             )
         ]
+        if quirks.emit_si:
+            plans.append(
+                AssetPlan(
+                    kind=AssetKind.SI,
+                    url=f"https://mock.local/si/{doi}/supplement.zip",
+                    expected_type="application/zip",
+                    auth_needed=AuthLevel.NONE,
+                )
+            )
+        return plans
 
     def fetch_asset(
         self, plan: AssetPlan, io: FetchIO, session: SessionHandle | None = None

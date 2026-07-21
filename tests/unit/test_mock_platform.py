@@ -230,6 +230,54 @@ def test_resolve_assets_raises_parse_for_non_numeric_doi_index_segment(
     assert exc_info.value.error_class is ErrorClass.PARSE
 
 
+# --- resolve_assets: emit_si quirk（si 落位回归专用夹具，design/06 §4）-------------------
+
+
+def test_resolve_assets_emit_si_off_by_default(
+    adapter: MockPlatformAdapter, venue: VenueSpec
+) -> None:
+    """默认 quirks（未设 `emit_si`）：仍恒一条 pdf plan——向后兼容零回归。"""
+    issue = IssueRef(venue_id=venue.id, volume="1", number="1", year=2024)
+    paper = next(iter(adapter.enumerate_issue(venue, issue)))
+    plans = adapter.resolve_assets(venue, paper)
+    assert [p.kind for p in plans] == [AssetKind.PDF]
+
+
+def test_resolve_assets_emit_si_true_appends_si_plan(adapter: MockPlatformAdapter) -> None:
+    venue = make_mock_venue(emit_si=True)
+    issue = IssueRef(venue_id=venue.id, volume="1", number="1", year=2024)
+    paper = next(iter(adapter.enumerate_issue(venue, issue)))
+    doi = paper.identifiers[0][1]
+
+    plans = adapter.resolve_assets(venue, paper)
+
+    assert [p.kind for p in plans] == [AssetKind.PDF, AssetKind.SI]
+    si_plan = plans[1]
+    assert si_plan.url == f"https://mock.local/si/{doi}/supplement.zip"
+    assert si_plan.expected_type != "application/pdf"  # 不触发 stages 的 %PDF 魔数校验
+    assert si_plan.auth_needed == AuthLevel.NONE
+    assert si_plan.version is None  # 与 pdf 同构：(paper,kind,version) 幂等键靠 kind 区分
+
+
+def test_resolve_assets_emit_si_false_explicit_matches_default(
+    adapter: MockPlatformAdapter,
+) -> None:
+    venue = make_mock_venue(emit_si=False)
+    issue = IssueRef(venue_id=venue.id, volume="1", number="1", year=2024)
+    paper = next(iter(adapter.enumerate_issue(venue, issue)))
+    assert [p.kind for p in adapter.resolve_assets(venue, paper)] == [AssetKind.PDF]
+
+
+def test_resolve_assets_emit_si_malformed_value_falls_back_to_default(
+    adapter: MockPlatformAdapter,
+) -> None:
+    """非 bool 的 `emit_si`（如字符串 "yes"）不被误判为真——同其余 quirk 的健壮性口径。"""
+    venue = make_mock_venue(emit_si="yes")
+    issue = IssueRef(venue_id=venue.id, volume="1", number="1", year=2024)
+    paper = next(iter(adapter.enumerate_issue(venue, issue)))
+    assert [p.kind for p in adapter.resolve_assets(venue, paper)] == [AssetKind.PDF]
+
+
 # --- quirks 健壮性（畸形/边界输入不崩溃，退回默认值）----------------------------------------
 
 
