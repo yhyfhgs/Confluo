@@ -1,9 +1,9 @@
 """T2 契约测试（test-plan §1）：参数化遍历 `load_adapters()`，校验协议一致性。
 
 全体 adapter 都要过的元数据完备性检查，以及——对声明了 contract case 的 adapter
-（`mock_platform` 本地确定性；`arxiv` 经 `httpx.MockTransport` 注入合成 fixture，零真实
-网络）——DISCOVER→ENUMERATE→RESOLVE→FETCH 全链路产出合法性检查。真实站点 stub
-（crossref/openreview/elsevier_sd）在 Phase 3/4 前 `pytest.skip`（各 4 条，共 12 skip）。
+（`mock_platform` 本地确定性；`arxiv`/`openreview` 经 `httpx.MockTransport` 注入合成
+fixture，零真实网络）——DISCOVER→ENUMERATE→RESOLVE→FETCH 全链路产出合法性检查。剩余
+真实站点 stub（crossref/elsevier_sd）在 Phase 3/4 前 `pytest.skip`（各 4 条，共 8 skip）。
 
 契约的 enumerate 计数口径按能力分层：声明了权威计数（`IssueRef.paper_count_claimed`）
 的 adapter（mock）严格等值；未声明的（arxiv 月度桶——预印本无权威"期"计数）只要求
@@ -21,10 +21,11 @@ from collections.abc import Callable
 import httpx
 import pytest
 
-from helpers import FakeFetchIO, make_arxiv_venue, make_mock_venue
+from helpers import FakeFetchIO, make_arxiv_venue, make_mock_venue, make_openreview_venue
 from helpers.arxiv_fixtures import fixture_bytes
 from paper_crawler.adapter import AdapterBase, AdapterFamily, SourceAdapter, load_adapters
 from paper_crawler.adapters.arxiv.adapter import ArxivAdapter
+from paper_crawler.adapters.openreview.adapter import OpenReviewAdapter
 from paper_crawler.errors import CapabilityNotSupported
 from paper_crawler.http import HttpClient
 from paper_crawler.types import (
@@ -63,11 +64,41 @@ def _arxiv_case() -> tuple[SourceAdapter, VenueSpec]:
     return ArxivAdapter(http=client), make_arxiv_venue()
 
 
+def _openreview_contract_handler(request: httpx.Request) -> httpx.Response:
+    """openreview 契约链的 MockTransport：groups 判 v2 → notes（含 pdf）→ pdf 取回 %PDF。
+
+    合成响应（零真实网络）：groups 带 domain→v2；notes 返回一条接收+含 pdf 字段的 note，
+    使 discover→enumerate→resolve→fetch 全链有产出（无 pdf/0 plan 的分支由单测覆盖）。
+    """
+    if "/groups" in request.url.path:
+        vid = request.url.params.get("id", "ICLR.cc/2024/Conference")
+        body = f'{{"groups":[{{"id":"{vid}","domain":"{vid}"}}],"count":1}}'
+        return httpx.Response(200, content=body.encode("utf-8"))
+    if "/pdf" in request.url.path:
+        return httpx.Response(200, content=_CONTRACT_PDF)
+    # /notes：一条接收（venueid==主会 id）+ pdf 字段。
+    vid = request.url.params.get("content.venueid", "ICLR.cc/2024/Conference")
+    note = (
+        '{"notes":[{"id":"contract1","forum":"contract1","content":{'
+        '"title":{"value":"Contract Paper"},'
+        f'"venueid":{{"value":"{vid}"}},'
+        '"pdf":{"value":"/pdf/contract.pdf"}}}],"count":1}'
+    )
+    return httpx.Response(200, content=note.encode("utf-8"))
+
+
+def _openreview_case() -> tuple[SourceAdapter, VenueSpec]:
+    transport = httpx.MockTransport(_openreview_contract_handler)
+    client = HttpClient(user_agent=_CONTRACT_UA, transport=transport)
+    return OpenReviewAdapter(http=client), make_openreview_venue()
+
+
 # adapter_id -> (adapter, venue) 工厂。只有此处登记的 adapter 会跑完整能力链路检查；
 # 其余（stub）adapter 一律 pytest.skip（stub until Phase 3/4）。
 _CONTRACT_CASES: dict[str, Callable[[], tuple[SourceAdapter, VenueSpec]]] = {
     "mock_platform": _mock_case,
     "arxiv": _arxiv_case,
+    "openreview": _openreview_case,
 }
 
 ADAPTER_IDS = sorted(load_adapters())

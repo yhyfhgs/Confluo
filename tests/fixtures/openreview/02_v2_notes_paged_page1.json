@@ -1,0 +1,24 @@
+{
+  "_synthetic": "SYNTHETIC (Phase 2, no user token). Page 1 of a paged v2 result (count>page size); offset paging to count. Awaiting real-token fidelity check.",
+  "notes": [
+    {
+      "id": "page1a",
+      "forum": "page1a",
+      "content": {
+        "title": {"value": "Paged Paper One"},
+        "venueid": {"value": "ICLR.cc/2024/Conference"},
+        "pdf": {"value": "/pdf/1111111111111111111111111111111111111111.pdf"}
+      }
+    },
+    {
+      "id": "page1b",
+      "forum": "page1b",
+      "content": {
+        "title": {"value": "Paged Paper Two"},
+        "venueid": {"value": "ICLR.cc/2024/Conference"},
+        "pdf": {"value": "/pdf/2222222222222222222222222222222222222222.pdf"}
+      }
+    }
+  ],
+  "count": 3
+}

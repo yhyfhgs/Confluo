@@ -1,0 +1,17 @@
+{
+  "_synthetic": "SYNTHETIC (Phase 2, no user token). v1 (api.openreview.net) note shape: content.<field> read DIRECTLY (no .value wrapper), per site-survey §3 [DOC] (openreview-py migration notes). 2014-era; body typically on arXiv (no pdf field). Awaiting real-token fidelity check.",
+  "notes": [
+    {
+      "id": "v1old0001",
+      "forum": "v1old0001",
+      "content": {
+        "title": "An Early ICLR Paper With arXiv Body",
+        "abstract": "v1 direct-take content.",
+        "venueid": "ICLR.cc/2014/conference",
+        "authors": ["Geoffrey Everest"],
+        "arxiv": "1312.6173"
+      }
+    }
+  ],
+  "count": 1
+}

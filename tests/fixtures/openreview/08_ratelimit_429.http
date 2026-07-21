@@ -1,0 +1,12 @@
+# SYNTHETIC (Phase 2, no user token). 429 Too Many Requests with rate-limit
+# headers modeled on site-survey §6 [LIVE] x-ratelimit-* observations (60/60s
+# window). HttpClient maps 429 -> rate_limited (Retry-After -> detail retry_after_s).
+# Not observed live (challenge gate precedes rate limiting); shape synthesized.
+HTTP-STATUS: 429
+Content-Type: application/json
+Retry-After: 30
+x-ratelimit-limit: 60
+x-ratelimit-remaining: 0
+ratelimit-policy: 60;w=60
+
+{"name":"TooManyRequests","message":"Rate limit exceeded","status":429}

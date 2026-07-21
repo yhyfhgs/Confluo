@@ -1,0 +1,7 @@
+# SYNTHETIC (Phase 2, no user token). id-not-found -> 404 NotFoundError JSON,
+# per site-survey §4 [LIVE] (groups?id=ICLR.cc/1999/Conference). HttpClient maps
+# 404 -> gone. Distinct from the filter-zero-match 200 empty state (03_notes_empty).
+HTTP-STATUS: 404
+Content-Type: application/json
+
+{"name":"NotFoundError","message":"Group Not Found: ICLR.cc/1999/Conference","status":404,"details":{"reqId":"synthetic"}}
