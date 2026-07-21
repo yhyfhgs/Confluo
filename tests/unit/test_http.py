@@ -142,6 +142,7 @@ def _status_handler(status: int, *, headers: dict[str, str] | None = None) -> Ha
         (403, ErrorClass.NO_ENTITLEMENT),
         (404, ErrorClass.GONE),
         (410, ErrorClass.GONE),
+        (451, ErrorClass.GONE),  # 法律不可用（Unavailable For Legal Reasons）= 资源终态
         (500, ErrorClass.TRANSIENT),
         (502, ErrorClass.TRANSIENT),
         (504, ErrorClass.TRANSIENT),
@@ -154,13 +155,14 @@ def test_status_maps_to_error_class(status: int, expected: ErrorClass) -> None:
     assert exc_info.value.error_class is expected
 
 
-@pytest.mark.parametrize("status", [400, 405, 406, 451])
-def test_other_4xx_maps_to_gone(status: int) -> None:
-    """未列入冻结表的其余 4xx → GONE（终态、不重试，遵 design/03 '4xx 不重试'）。"""
+@pytest.mark.parametrize("status", [400, 405, 406])
+def test_other_4xx_maps_to_config(status: int) -> None:
+    """未列入冻结表的其余 4xx → CONFIG：请求构造缺陷（如 arxiv offset>30000→400）应
+    响亮停机（CONFIG 经 pipeline 特判转 BLOCKED），而非误标资源终态。"""
     client = make_client(_status_handler(status))
     with pytest.raises(CrawlerError) as exc_info:
         client.get_text("https://x.local/p")
-    assert exc_info.value.error_class is ErrorClass.GONE
+    assert exc_info.value.error_class is ErrorClass.CONFIG
 
 
 def test_429_maps_to_rate_limited() -> None:

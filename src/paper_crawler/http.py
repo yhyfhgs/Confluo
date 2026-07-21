@@ -16,8 +16,9 @@
 - 5xx → TRANSIENT（503 且带 Retry-After → RATE_LIMITED）
 - 401 → AUTH_EXPIRED
 - 403 → NO_ENTITLEMENT
-- 404 / 410 → GONE
-- 其余 4xx → GONE（终态、不重试，遵 design/03 §重试 "4xx 不重试(429 除外)"）
+- 404 / 410 / 451 → GONE（资源终态；451 法律不可用亦属资源终态）
+- 其余 4xx（400 / 405 / …）→ CONFIG（请求构造有缺陷，如 arxiv offset>30000→400，
+  应响亮停机而非标资源终态；CONFIG 经 pipeline 特判转 BLOCKED）
 - 重定向默认跟随（每一跳与终响应各记一条 obslog debug 事件）
 
 `transport` 构造参数是 T4 单测注入 `httpx.MockTransport` 的唯一通道——生产传 None
@@ -72,7 +73,8 @@ def _error_for_status(response: httpx.Response) -> CrawlerError:
         return CrawlerError(ErrorClass.AUTH_EXPIRED, msg)
     if status == 403:
         return CrawlerError(ErrorClass.NO_ENTITLEMENT, msg)
-    if status in (404, 410):
+    if status in (404, 410, 451):
+        # 404/410 资源消失；451 法律不可用——同属"资源终态、不重试"。
         return CrawlerError(ErrorClass.GONE, msg)
     if status == 503:
         # 5xx→TRANSIENT，但 503 带 Retry-After 视为限流信号 → RATE_LIMITED。
@@ -82,8 +84,9 @@ def _error_for_status(response: httpx.Response) -> CrawlerError:
         return CrawlerError(ErrorClass.TRANSIENT, msg)
     if 500 <= status < 600:
         return CrawlerError(ErrorClass.TRANSIENT, msg)
-    # 其余 4xx（400/405/406/451…）：客户端错误终态，不重试（design/03 "4xx 不重试"）。
-    return CrawlerError(ErrorClass.GONE, msg)
+    # 其余 4xx（400/405/406…）：请求构造有缺陷（如 arxiv offset>30000→400 属 config
+    # 类设计案例）——响亮停机而非标资源终态；CONFIG 经 pipeline 特判转 BLOCKED。
+    return CrawlerError(ErrorClass.CONFIG, msg)
 
 
 def _rate_limited(response: httpx.Response, msg: str) -> CrawlerError:
