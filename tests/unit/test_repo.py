@@ -496,6 +496,40 @@ def test_add_fetch_log_redacts_token_style_url(repo: Repo) -> None:
     assert _CREDENTIAL_LEAK.search(stored) is None
 
 
+@pytest.mark.parametrize(
+    ("raw_url", "expected"),
+    [
+        # query-style（URL 最常见形态）。
+        ("https://mock.local/x?token=abc123456", "https://mock.local/x?token=***"),
+        # 引号变体（签名 URL 把凭证塞进 JSON 参数：`"token": "..."`）。
+        (
+            'https://mock.local/x?meta={"token": "abc123456"}',
+            'https://mock.local/x?meta={"token": "***"}',
+        ),
+        # header/冒号 + 单引号变体（`\'Authorization\': \'Bearer ...\'`）。
+        (
+            "https://mock.local/x#{'Authorization': 'Bearer abc123456'}",
+            "https://mock.local/x#{'Authorization': '***'}",
+        ),
+    ],
+)
+def test_add_fetch_log_redacts_quoted_url_forms(repo: Repo, raw_url: str, expected: str) -> None:
+    """fetch_log.url 走的是与 obslog 同一套 redact，引号/嵌套形态一并覆盖（AC-0.4）。"""
+    repo.add_fetch_log(
+        asset_id=None,
+        task_id="t",
+        domain="mock.local",
+        url=raw_url,
+        http_status=None,
+        bytes_=0,
+        elapsed_ms=0,
+        rate_wait_ms=0,
+    )
+    stored = str(repo.fetch_logs()[0]["url"])
+    assert stored == expected
+    assert _CREDENTIAL_LEAK.search(stored) is None
+
+
 # -- finalize_fetch（Phase 2 T1 组合事务：mark fetched + fetch_log 单事务）-----
 
 

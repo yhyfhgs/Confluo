@@ -159,7 +159,7 @@ def test_kill9_resume_is_idempotent_and_matches_clean_run(
     # docstring 断言 2），故每个最终 fetched 的 asset 恒有且仅有 1 条成功日志：收紧为
     # "全部 16 个 asset 各恰 1 条"（此前该窗口只能断言 max ≤ 1）。
     per_asset = _success_logs_per_asset(home_a)
-    assert len(per_asset) == _EXPECTED_ASSETS, f"expected all {_EXPECTED_ASSETS} logged: {per_asset}"
+    assert len(per_asset) == _EXPECTED_ASSETS, f"expected {_EXPECTED_ASSETS} logged: {per_asset}"
     assert all(n == 1 for n in per_asset.values()), f"non-unique success FetchLog: {per_asset}"
 
     # 断言 3：重跑日志含 skipped（续爬跳过已完成工作；干净一跑无 skipped）

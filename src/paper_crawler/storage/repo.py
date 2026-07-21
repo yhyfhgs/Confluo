@@ -407,9 +407,9 @@ class Repo:
         rate_wait_ms: int,
         error_class: str | None = None,
     ) -> None:
-        """追加一条取回审计记录（FetchLog;限速合规证据源, design/05 §7）。
+        """追加一条取回审计记录（FetchLog；限速合规证据源，design/05 §7）。
 
-        `url` 落库前经 `obslog.redact`（AC-0.4/NFR-8: fetch_log.url 不得含未脱敏凭证——
+        `url` 落库前经 `obslog.redact`（AC-0.4/NFR-8：fetch_log.url 不得含未脱敏凭证——
         Phase 2 起签名 URL/token 会进入此审计路径）。
         """
         self.db.execute(
