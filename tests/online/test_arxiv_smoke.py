@@ -18,6 +18,7 @@ AC-2.3 在线证据层（D-018）：本冒烟证实真实站点应答 + 解析�
 
 from __future__ import annotations
 
+import os
 from collections.abc import Iterator
 from datetime import UTC, datetime
 from urllib.parse import urlencode
@@ -35,9 +36,15 @@ from paper_crawler.useragent import build_user_agent
 
 MAX_REAL_REQUESTS = 10
 
-# 用户真实邮箱（MEMORY / 任务卡）：D-014 UA `mailto:` 段的正当用途——真实网络请求
-# 需以联系人表明爬取身份，便于站点在异常时联系。不作他用。
-_CONTACT_EMAIL = "yhyfhgs@gmail.com"
+# D-014 UA `mailto:` 段：真实网络请求需以联系人表明爬取身份。邮箱来自环境变量
+# （与 scripts/record_arxiv_fixtures.py 同口径，不硬编码——T7 审查修订 2026-07-22）；
+# 缺失时整文件 skip（在线测试本就显式执行，操作者负责提供联络身份）。
+_CONTACT_EMAIL = os.environ.get("PAPER_CRAWLER_CONTACT_EMAIL", "")
+if not _CONTACT_EMAIL:
+    pytest.skip(
+        "PAPER_CRAWLER_CONTACT_EMAIL not set (required for D-014 UA identity)",
+        allow_module_level=True,
+    )
 
 _QUERY_ENDPOINT = "https://export.arxiv.org/api/query"
 _ROBOTS_URL = "https://export.arxiv.org/robots.txt"
