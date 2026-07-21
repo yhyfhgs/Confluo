@@ -21,7 +21,13 @@ from collections.abc import Callable
 import httpx
 import pytest
 
-from helpers import FakeFetchIO, make_arxiv_venue, make_mock_venue, make_openreview_venue, make_pmlr_venue
+from helpers import (
+    FakeFetchIO,
+    make_arxiv_venue,
+    make_mock_venue,
+    make_openreview_venue,
+    make_pmlr_venue,
+)
 from helpers.arxiv_fixtures import fixture_bytes
 from helpers.pmlr_fixtures import fixture_bytes as pmlr_fixture_bytes
 from paper_crawler.adapter import AdapterBase, AdapterFamily, SourceAdapter, load_adapters
@@ -93,6 +99,8 @@ def _openreview_case() -> tuple[SourceAdapter, VenueSpec]:
     transport = httpx.MockTransport(_openreview_contract_handler)
     client = HttpClient(user_agent=_CONTRACT_UA, transport=transport)
     return OpenReviewAdapter(http=client), make_openreview_venue()
+
+
 def _pmlr_contract_handler(request: httpx.Request) -> httpx.Response:
     """pmlr 契约链的 MockTransport：卷 index 页 → 合成 fixture；PDF 取回 → %PDF。
 
