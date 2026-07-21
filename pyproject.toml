@@ -23,6 +23,7 @@ mock_platform = "paper_crawler.adapters.mock_platform:MockPlatformAdapter"
 arxiv = "paper_crawler.adapters.arxiv.adapter:ArxivAdapter"
 openreview = "paper_crawler.adapters.openreview.adapter:OpenReviewAdapter"
 pmlr = "paper_crawler.adapters.pmlr.adapter:PmlrAdapter"
+neurips_proceedings = "paper_crawler.adapters.neurips_proceedings.adapter:NeuripsProceedingsAdapter"
 
 [dependency-groups]
 dev = [

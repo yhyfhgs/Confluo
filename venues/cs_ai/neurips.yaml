@@ -1,0 +1,22 @@
+# venues/cs_ai/neurips.yaml —— NeurIPS 正式 proceedings（评审版 neurips_openreview 本期推迟）
+#
+# design/adapters/neurips-proceedings.md 附录提案逐字落地（§8 裁决落定）。评审 channel
+# （OpenReview 评审版）未注册——单 channel（proceedings）即本 adapter；冻结 `VenueSpec`
+# 亦为单 `metadata_source`/`fulltext_source`，评审 channel 属未来独立 venue/adapter
+# （design/03-open-access-module.md §4）。
+id: neurips
+kind: conference
+names: { full: Conference on Neural Information Processing Systems, aliases: [NeurIPS, NIPS] }
+field: [cs_ai]
+tier: T1
+identifiers:
+  dblp_key: conf/nips # 锚点表比对源（tests/fixtures/neurips_proceedings/dblp-nips-anchor.json）
+metadata_source: neurips_proceedings
+fulltext_source: neurips_proceedings
+auth: { level: none } # [LIVE] 证实无认证（与 iclr.yaml 的 none-被证伪不同，此处 none 正确）
+quirks:
+  first_year: 1987 # [LIVE] §2：/1986→404 下界
+  # known_through_year: 2025   # 缺省＝当前年−1；track 确认新届后 bump（D-012）
+  # suffix_boundary_year: 2022 # 单一后缀边界（当前实现为常量 SUFFIX_BOUNDARY_YEAR，
+  #                             # 本 quirk 键暂未接线——留待需要按 venue 覆盖时再点亮）
+status: active

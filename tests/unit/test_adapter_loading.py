@@ -29,6 +29,7 @@ EXPECTED_ADAPTER_IDS = {
     "elsevier_sd",
     "arxiv",
     "pmlr",
+    "neurips_proceedings",
 }
 VALID_FAMILIES = {"open_access", "auth_gated", "aggregator"}
 
@@ -39,7 +40,8 @@ def adapters() -> dict[str, SourceAdapter]:
 
 
 def test_load_adapters_discovers_all_registered(adapters: dict[str, SourceAdapter]) -> None:
-    # 三个内置 stub + mock + arxiv + pmlr（Phase 2 经 entry point 注册的真实 adapter）。
+    # 三个内置 stub + mock + arxiv + pmlr + neurips_proceedings（Phase 2 经 entry point
+    # 注册的真实 adapter）。
     assert set(adapters) == EXPECTED_ADAPTER_IDS
 
 
@@ -142,6 +144,24 @@ def test_pmlr_attributes(adapters: dict[str, SourceAdapter]) -> None:
     assert pmlr.domains == ("proceedings.mlr.press", "raw.githubusercontent.com")
 
 
+def test_neurips_proceedings_attributes(adapters: dict[str, SourceAdapter]) -> None:
+    neurips = adapters["neurips_proceedings"]
+    assert neurips.family == "open_access"
+    # design/adapters/neurips-proceedings.md §1 裁决：DISCOVER|ENUMERATE|RESOLVE|FETCH，无 SEARCH。
+    assert (
+        neurips.capabilities
+        == Capability.DISCOVER | Capability.ENUMERATE | Capability.RESOLVE | Capability.FETCH
+    )
+    assert Capability.SEARCH not in neurips.capabilities
+    assert neurips.default_rate.requests_per_minute == 30.0  # 1 req/2s
+    assert neurips.auth_requirement is AuthLevel.NONE
+    assert neurips.domains == (
+        "proceedings.neurips.cc",
+        "papers.neurips.cc",
+        "papers.nips.cc",
+    )
+
+
 def test_healthcheck_defaults_healthy(adapters: dict[str, SourceAdapter]) -> None:
     # mock_platform 不覆写 healthcheck → 继承 AdapterBase 默认恒 healthy。
     # （stub adapter 现已覆写为抛 NotImplementedError，见下一个测试。）
@@ -209,10 +229,13 @@ def test_mock_platform_methods_are_implemented_after_t6(
 
 
 def test_arxiv_is_http_client_consumer(adapters: dict[str, SourceAdapter]) -> None:
-    """arxiv/openreview/pmlr 实现 `HttpClientConsumer`（可注入共享 client）；stub/mock 不实现。"""
+    """arxiv/openreview/pmlr/neurips_proceedings 实现 `HttpClientConsumer`（可注入共享
+    client）；stub/mock 不实现。
+    """
     assert isinstance(adapters["arxiv"], HttpClientConsumer)
     assert isinstance(adapters["openreview"], HttpClientConsumer)
     assert isinstance(adapters["pmlr"], HttpClientConsumer)
+    assert isinstance(adapters["neurips_proceedings"], HttpClientConsumer)
     assert not isinstance(adapters["mock_platform"], HttpClientConsumer)
     assert not isinstance(adapters["crossref"], HttpClientConsumer)
 
@@ -221,14 +244,18 @@ def test_bind_http_client_injects_only_consumers(adapters: dict[str, SourceAdapt
     """`bind_http_client` 只注入实现协议的 adapter，返回被注入的 id 列表。"""
     client = HttpClient(user_agent="PaperCrawler/test (personal research)")
     injected = bind_http_client(adapters, client)
-    assert set(injected) == {"arxiv", "openreview", "pmlr"}  # 三个真实 http adapter
-    # 注入生效：三者的 _client() 都返回被注入的实例，不再惰性自建。
+    # 四个真实 http adapter。
+    assert set(injected) == {"arxiv", "openreview", "pmlr", "neurips_proceedings"}
+    # 注入生效：四者的 _client() 都返回被注入的实例，不再惰性自建。
     arxiv = adapters["arxiv"]
     pmlr = adapters["pmlr"]
+    neurips = adapters["neurips_proceedings"]
     assert isinstance(arxiv, HttpClientConsumer)
     assert isinstance(pmlr, HttpClientConsumer)
+    assert isinstance(neurips, HttpClientConsumer)
     assert arxiv._client() is client  # type: ignore[attr-defined]
     assert pmlr._client() is client  # type: ignore[attr-defined]
+    assert neurips._client() is client  # type: ignore[attr-defined]
 
 
 class _NullIO:
