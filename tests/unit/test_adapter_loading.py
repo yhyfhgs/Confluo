@@ -43,9 +43,7 @@ def adapters() -> dict[str, SourceAdapter]:
 
 
 def test_load_adapters_discovers_all_registered(adapters: dict[str, SourceAdapter]) -> None:
-    # 三个内置 stub + mock + 五个真实 adapter（arxiv/openreview/pmlr/acl_anthology/cvf）。
-    # 三个内置 stub + mock + arxiv + pmlr + neurips_proceedings（Phase 2 经 entry point
-    # 注册的真实 adapter）。
+    # 三个内置 stub + mock + 七个真实 adapter（Phase 2 经 entry point 注册）。
     assert set(adapters) == EXPECTED_ADAPTER_IDS
 
 
@@ -248,23 +246,17 @@ def test_mock_platform_methods_are_implemented_after_t6(
 
 
 def test_arxiv_is_http_client_consumer(adapters: dict[str, SourceAdapter]) -> None:
-    """arxiv/openreview/pmlr/acl_anthology/cvf 实现 `HttpClientConsumer`；stub/mock 不实现。"""
-    assert isinstance(adapters["arxiv"], HttpClientConsumer)
-    assert isinstance(adapters["openreview"], HttpClientConsumer)
-    assert isinstance(adapters["pmlr"], HttpClientConsumer)
-    assert isinstance(adapters["acl_anthology"], HttpClientConsumer)
-    """真实 http adapter 实现 `HttpClientConsumer`（可注入共享 client）；stub/mock 不实现。"""
-    assert isinstance(adapters["arxiv"], HttpClientConsumer)
-    assert isinstance(adapters["openreview"], HttpClientConsumer)
-    assert isinstance(adapters["pmlr"], HttpClientConsumer)
-    assert isinstance(adapters["aaai_ojs"], HttpClientConsumer)
-    """arxiv/openreview/pmlr/neurips_proceedings 实现 `HttpClientConsumer`（可注入共享
-    client）；stub/mock 不实现。
-    """
-    assert isinstance(adapters["arxiv"], HttpClientConsumer)
-    assert isinstance(adapters["openreview"], HttpClientConsumer)
-    assert isinstance(adapters["pmlr"], HttpClientConsumer)
-    assert isinstance(adapters["neurips_proceedings"], HttpClientConsumer)
+    """七个真实 adapter 实现 `HttpClientConsumer`（可注入共享 client）；stub/mock 不实现。"""
+    for adapter_id in (
+        "arxiv",
+        "openreview",
+        "pmlr",
+        "acl_anthology",
+        "cvf",
+        "aaai_ojs",
+        "neurips_proceedings",
+    ):
+        assert isinstance(adapters[adapter_id], HttpClientConsumer)
 
     assert not isinstance(adapters["mock_platform"], HttpClientConsumer)
     assert not isinstance(adapters["crossref"], HttpClientConsumer)

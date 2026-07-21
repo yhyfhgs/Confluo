@@ -10,7 +10,7 @@ updated: 2026-07-20
 > 需求边界（FR-15/需求§5）：**只覆盖 CS/AI、Econ、Fin（含 OR 交叉）**，不扩展其他领域；靠 category/network 白名单防过载。
 > 分类体系经 subagent 2026-07-20 [VERIFIED]（原始报告：[research/site-survey/ai-journals-preprints-verification.md](../research/site-survey/ai-journals-preprints-verification.md)）；平台机制勘察见 [research/site-survey/arxiv.md](../research/site-survey/arxiv.md)、[econ-fin-preprints.md](../research/site-survey/econ-fin-preprints.md)。
 
-## 1. arXiv（`arxiv` adapter，T1 主源）
+## 1. arXiv（`arxiv` adapter，T1 主源；supported_since: phase-2，AC-2.3 已验收）
 
 **venue 切分**：每个订阅相关 category 一条 `preprint_channel` VenueSpec（`arxiv-cs-lg.yaml` 等），月度虚拟桶（design/08 §1）。
 

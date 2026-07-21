@@ -1,6 +1,6 @@
 ---
 title: Adapter 设计 · NeurIPS Proceedings
-status: approved
+status: implemented
 owner: fable5
 updated: 2026-07-22
 ---

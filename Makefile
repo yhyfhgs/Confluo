@@ -20,3 +20,7 @@ check: lint type test
 fmt:
 	uv run ruff format .
 	uv run ruff check --fix .
+
+# T5 在线冒烟（真实网络，限量+预算护栏；需 PAPER_CRAWLER_CONTACT_EMAIL）。
+smoke:
+	uv run pytest tests/online -m online -v
