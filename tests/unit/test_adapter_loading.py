@@ -110,9 +110,24 @@ def test_arxiv_attributes(adapters: dict[str, SourceAdapter]) -> None:
 
 
 def test_healthcheck_defaults_healthy(adapters: dict[str, SourceAdapter]) -> None:
-    report = adapters["crossref"].healthcheck()
+    # mock_platform 不覆写 healthcheck → 继承 AdapterBase 默认恒 healthy。
+    # （stub adapter 现已覆写为抛 NotImplementedError，见下一个测试。）
+    report = adapters["mock_platform"].healthcheck()
     assert isinstance(report, HealthReport)
     assert report.healthy is True
+
+
+@pytest.mark.parametrize("adapter_id", ["crossref", "openreview", "elsevier_sd"])
+def test_stub_healthcheck_raises_not_implemented_for_canary_skip(
+    adapters: dict[str, SourceAdapter], adapter_id: str
+) -> None:
+    """canary SKIP 语义修正：三 stub 的 healthcheck 抛 NotImplementedError。
+
+    此前继承 AdapterBase 默认恒 healthy，会让未实现的 stub 在 canary 假报"健康"；
+    改为抛 NotImplementedError 后 `run_canary` 归为 SKIP（不影响退出码，见 canary.py）。
+    """
+    with pytest.raises(NotImplementedError):
+        adapters[adapter_id].healthcheck()
 
 
 def test_undeclared_capability_raises_capability_not_supported(
