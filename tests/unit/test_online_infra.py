@@ -58,8 +58,12 @@ def test_online_marker_included_when_explicitly_requested() -> None:
 def test_online_placeholder_actually_passes_under_explicit_flag() -> None:
     """不只是"被收集"——显式 `-m online` 时占位用例也能真正跑通（验证 fixture 装配无误：
     `real_request_budget` 正确读到模块的 `MAX_REAL_REQUESTS` 并构造出句柄）。
+
+    **只跑占位文件**（零网络）——T7 起 `tests/online/` 下已有真实冒烟
+    （`test_arxiv_smoke.py`），若在此对整个 `tests/online` 目录执行会打真网、违反本元
+    测试的离线纪律（且断言 `1 passed` 会随真实用例数变化而脆断）。故显式钉住占位文件。
     """
-    result = _run_pytest("-q", "-m", "online", "tests/online")
+    result = _run_pytest("-q", "-m", "online", "tests/online/test_infra_placeholder.py")
     assert result.returncode == 0, result.stdout + result.stderr
     assert "1 passed" in result.stdout
 
