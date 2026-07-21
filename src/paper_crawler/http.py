@@ -139,9 +139,16 @@ class HttpClient:
         timeout_s: float = 30.0,
         transport: httpx.BaseTransport | None = None,
         rate_limiter: RateLimiter | None = None,
+        extra_headers: dict[str, str] | None = None,
     ) -> None:
+        # `extra_headers`（plan §7-4 冻结扩展）：client 级附加头，**纯附加**——与 UA 并列
+        # 挂在底层 httpx.Client 上，随每个请求自动发出。用途：free_account 级 adapter
+        # （openreview）注入 `Cookie: openreview.accessToken=<token>`；缺省 None 时行为与
+        # 扩展前完全一致（只带 UA）。附加头是**该 client 实例私有**的——token 通道须为
+        # 携密 adapter 单独构造 client，绝不复用共享 client（否则 cookie 会外泄到他站，
+        # 违反凭证红线）。同名键（如显式传 User-Agent）由附加头覆盖，调用方自负。
         self._client = httpx.Client(
-            headers={"User-Agent": user_agent},
+            headers={"User-Agent": user_agent, **(extra_headers or {})},
             timeout=timeout_s,
             transport=transport,
             follow_redirects=True,
