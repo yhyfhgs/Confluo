@@ -54,7 +54,7 @@ from paper_crawler.pipeline.report import RunReport
 from paper_crawler.ratelimit import RateLimiter
 from paper_crawler.registry import Route, VenueRegistry
 from paper_crawler.storage.db import Database
-from paper_crawler.storage.repo import Repo
+from paper_crawler.storage.repo import FetchLogRow, Repo
 from paper_crawler.tasks import TaskQueue
 from paper_crawler.types import AssetKind, AssetPlan, IssueRef, PaperStub, utcnow_iso
 
@@ -338,8 +338,8 @@ def _stage_fetch(ctx: StageContext, task: sqlite3.Row, report: RunReport) -> Sta
 
     顺序：幂等跳过判定 → re-resolve → refresh_asset_plan → acquire → sleeper →
     PartFileIO 写 → 校验（bytes>0 + pdf 魔数）→ 原子 commit 到
-    data/pdf/{venue_id}/{year}/{paper_ulid}.pdf → mark_asset(fetched) →
-    add_fetch_log（含 rate_wait_ms/elapsed_ms）。失败路径同样写 fetch_log
+    data/pdf/{venue_id}/{year}/{paper_ulid}.pdf → finalize_fetch（mark fetched +
+    add_fetch_log 单事务，含 rate_wait_ms/elapsed_ms）。失败路径单独写 fetch_log
     （error_class 填充）后抛出，由 runner 路由。mock 无 HTTP 层，http_status 恒 NULL。
     """
     task_id = str(task["id"])
@@ -405,23 +405,23 @@ def _stage_fetch(ctx: StageContext, task: sqlite3.Row, report: RunReport) -> Sta
 
     final_path = _asset_final_path(ctx.config, venue_id, paper, str(asset["kind"]))
     io.commit(final_path)
-    ctx.repo.mark_asset(
+    # 收尾单事务（Phase 2 T1）：mark_asset(fetched) + add_fetch_log 原子提交，消除
+    # 二者独立提交之间的 SIGKILL 缝隙（AC-1.3）。旧的两步调用路径已删除。
+    ctx.repo.finalize_fetch(
         asset_id,
-        state="fetched",
         file_path=str(final_path),
         bytes_=result.bytes_written,
         sha256=result.sha256,
-    )
-    ctx.repo.add_fetch_log(
-        asset_id=asset_id,
-        task_id=task_id,
-        domain=domain,
-        url=plan.url,
-        http_status=None,
-        bytes_=result.bytes_written,
-        elapsed_ms=elapsed_ms,
-        rate_wait_ms=rate_wait_ms,
-        error_class=None,
+        fetch_log_row=FetchLogRow(
+            task_id=task_id,
+            domain=domain,
+            url=plan.url,
+            http_status=None,
+            bytes_=result.bytes_written,
+            elapsed_ms=elapsed_ms,
+            rate_wait_ms=rate_wait_ms,
+            error_class=None,
+        ),
     )
     log_event(
         "INFO",

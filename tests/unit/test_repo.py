@@ -7,6 +7,7 @@ paper_issue_link 幂等建链、外键约束、counts 对账口径。
 from __future__ import annotations
 
 import json
+import re
 import sqlite3
 from collections.abc import Iterator
 from pathlib import Path
@@ -14,8 +15,13 @@ from pathlib import Path
 import pytest
 
 from paper_crawler.storage.db import Database
-from paper_crawler.storage.repo import Repo
+from paper_crawler.storage.repo import FetchLogRow, Repo
 from paper_crawler.types import AssetKind, AssetPlan, AuthLevel, IssueRef, PaperStub, VenueSpec
+
+# AC-0.4 红线扫描：库内不得残留 (session|token|key) 的 key=value / 引号变体形态。
+_CREDENTIAL_LEAK = re.compile(
+    r"(session|token|key)['\"]?\s*[:=]\s*['\"]?[A-Za-z0-9]{6,}", re.IGNORECASE
+)
 
 VENUE_ID = "mock_journal"
 
@@ -470,6 +476,116 @@ def test_add_and_query_fetch_logs(repo: Repo) -> None:
     assert len(mock_logs) == 1
     assert mock_logs[0]["rate_wait_ms"] == 5
     assert repo.fetch_logs(domain="other.local")[0]["error_class"] == "gone"
+
+
+def test_add_fetch_log_redacts_token_style_url(repo: Repo) -> None:
+    """AC-0.4 扩展到 fetch_log 表：含 token 样式的 URL 落库前必须经 redact。"""
+    repo.add_fetch_log(
+        asset_id=None,
+        task_id="t1",
+        domain="mock.local",
+        url="https://mock.local/pdf/x?api_key=deadbeef123456&session_id=abcdef987654",
+        http_status=200,
+        bytes_=2048,
+        elapsed_ms=12,
+        rate_wait_ms=5,
+    )
+    stored = str(repo.fetch_logs()[0]["url"])
+    assert stored == "https://mock.local/pdf/x?api_key=***&session_id=***"
+    assert "deadbeef123456" not in stored and "abcdef987654" not in stored
+    assert _CREDENTIAL_LEAK.search(stored) is None
+
+
+# -- finalize_fetch（Phase 2 T1 组合事务：mark fetched + fetch_log 单事务）-----
+
+
+def _success_log_row(*, url: str = "https://mock.local/pdf/x", bytes_: int = 2048) -> FetchLogRow:
+    return FetchLogRow(
+        task_id="t1",
+        domain="mock.local",
+        url=url,
+        http_status=None,
+        bytes_=bytes_,
+        elapsed_ms=7,
+        rate_wait_ms=0,
+        error_class=None,
+    )
+
+
+def test_finalize_fetch_marks_asset_and_writes_single_log(repo: Repo) -> None:
+    """成功路径：单事务内 asset→fetched（补 file/bytes/sha/fetched_at）+ 恰一条成功 fetch_log。"""
+    paper_id = repo.upsert_paper(VENUE_ID, None, _stub(doi="10.9999/fin"))
+    asset_id = repo.plan_asset(paper_id, _pdf_plan(), "mock_platform")
+
+    repo.finalize_fetch(
+        asset_id,
+        file_path="/data/x.pdf",
+        bytes_=2048,
+        sha256="deadbeef",
+        fetch_log_row=_success_log_row(),
+    )
+
+    asset = repo.get_asset(asset_id)
+    assert asset is not None
+    assert asset["state"] == "fetched"
+    assert asset["file_path"] == "/data/x.pdf"
+    assert asset["bytes"] == 2048
+    assert asset["sha256"] == "deadbeef"
+    assert asset["fetched_at"] is not None
+    logs = repo.fetch_logs()
+    assert len(logs) == 1
+    assert logs[0]["asset_id"] == asset_id
+    assert logs[0]["error_class"] is None
+    assert logs[0]["bytes"] == 2048
+
+
+def test_finalize_fetch_redacts_fetch_log_url(repo: Repo) -> None:
+    """finalize_fetch 的 url 参数与 add_fetch_log 同源脱敏（AC-0.4 fetch_log 红线）。"""
+    paper_id = repo.upsert_paper(VENUE_ID, None, _stub(doi="10.9999/finr"))
+    asset_id = repo.plan_asset(paper_id, _pdf_plan(), "mock_platform")
+
+    repo.finalize_fetch(
+        asset_id,
+        file_path="/data/x.pdf",
+        bytes_=1,
+        sha256="h",
+        fetch_log_row=_success_log_row(url="https://mock.local/pdf/x?token=qwerty123456", bytes_=1),
+    )
+
+    stored = str(repo.fetch_logs()[0]["url"])
+    assert stored == "https://mock.local/pdf/x?token=***"
+    assert "qwerty123456" not in stored
+    assert _CREDENTIAL_LEAK.search(stored) is None
+
+
+def test_finalize_fetch_rolls_back_on_midtransaction_failure(
+    repo: Repo, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """注入中途异常（UPDATE 已执行、INSERT 生成 id 时抛错）→ 整事务回滚：
+    asset 停在 planned、无 fetch_log 行。这正是消除三步缝隙后 finalize 的原子性保证。"""
+    paper_id = repo.upsert_paper(VENUE_ID, None, _stub(doi="10.9999/atom"))
+    asset_id = repo.plan_asset(paper_id, _pdf_plan(), "mock_platform")
+
+    def _boom() -> str:
+        raise RuntimeError("injected mid-transaction failure")
+
+    monkeypatch.setattr("paper_crawler.storage.repo.new_ulid", _boom)
+    with pytest.raises(RuntimeError):
+        repo.finalize_fetch(
+            asset_id,
+            file_path="/data/x.pdf",
+            bytes_=2048,
+            sha256="deadbeef",
+            fetch_log_row=_success_log_row(),
+        )
+
+    asset = repo.get_asset(asset_id)
+    assert asset is not None
+    assert asset["state"] == "planned"  # UPDATE 与 INSERT 同回滚
+    assert asset["file_path"] is None
+    assert asset["sha256"] is None
+    assert asset["fetched_at"] is None
+    assert repo.fetch_logs() == []
 
 
 # -- counts 对账 -------------------------------------------------------------

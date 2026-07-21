@@ -14,7 +14,9 @@ from __future__ import annotations
 
 import json
 import sqlite3
+from dataclasses import dataclass
 
+from paper_crawler.obslog import redact
 from paper_crawler.storage.db import Database
 from paper_crawler.types import (
     AssetPlan,
@@ -24,6 +26,24 @@ from paper_crawler.types import (
     new_ulid,
     utcnow_iso,
 )
+
+
+@dataclass(frozen=True)
+class FetchLogRow:
+    """`finalize_fetch` 的 fetch_log 载荷（id/asset_id/ts 由 repo 生成，不在此）。
+
+    与 `add_fetch_log` 的关键字参数一一对应，仅打包成一个不可变值对象，便于把"取回
+    审计行"作为一个整体传给组合事务 API。`url` 由 repo 落库前统一经 `redact` 脱敏。
+    """
+
+    task_id: str | None
+    domain: str
+    url: str
+    http_status: int | None
+    bytes_: int
+    elapsed_ms: int
+    rate_wait_ms: int
+    error_class: str | None = None
 
 
 def _meta_to_json(meta: tuple[tuple[str, str], ...]) -> str | None:
@@ -387,7 +407,11 @@ class Repo:
         rate_wait_ms: int,
         error_class: str | None = None,
     ) -> None:
-        """追加一条取回审计记录（FetchLog；限速合规证据源，design/05 §7）。"""
+        """追加一条取回审计记录（FetchLog;限速合规证据源, design/05 §7）。
+
+        `url` 落库前经 `obslog.redact`（AC-0.4/NFR-8: fetch_log.url 不得含未脱敏凭证——
+        Phase 2 起签名 URL/token 会进入此审计路径）。
+        """
         self.db.execute(
             "INSERT INTO fetch_log "
             "(id, asset_id, task_id, domain, url, http_status, bytes, elapsed_ms, "
@@ -398,7 +422,7 @@ class Repo:
                 asset_id,
                 task_id,
                 domain,
-                url,
+                redact(url),
                 http_status,
                 bytes_,
                 elapsed_ms,
@@ -407,6 +431,53 @@ class Repo:
                 utcnow_iso(),
             ),
         )
+
+    def finalize_fetch(
+        self,
+        asset_id: str,
+        *,
+        file_path: str,
+        bytes_: int,
+        sha256: str | None,
+        fetch_log_row: FetchLogRow,
+    ) -> None:
+        """fetch 成功收尾的组合事务 API（Phase 2 T1；仓储层唯一的组合事务入口）。
+
+        在单个 `BEGIN IMMEDIATE` 事务内原子完成两步：
+          1. asset → state='fetched'（并补 file_path/bytes/sha256/fetched_at）；
+          2. 追加一条成功 fetch_log 行（url 经 `redact` 脱敏，与 `add_fetch_log` 同源）。
+
+        取代旧的 `mark_asset(fetched)` + `add_fetch_log` 两次独立提交——消除二者之间的
+        SIGKILL 缝隙（AC-1.3："已 fetched 但成功日志缺失"的已知窗口）。**直接组合 SQL、
+        不调用自带事务的 `mark_asset`/`add_fetch_log`**（repo 事务不可嵌套）。事务中途
+        任何异常都整体 ROLLBACK（asset 状态与日志同进同退）。
+        """
+        now = utcnow_iso()
+        with self.db.tx() as conn:
+            conn.execute(
+                "UPDATE asset SET state = 'fetched', file_path = ?, bytes = ?, sha256 = ?, "
+                "fetched_at = ? WHERE id = ?",
+                (file_path, bytes_, sha256, now, asset_id),
+            )
+            conn.execute(
+                "INSERT INTO fetch_log "
+                "(id, asset_id, task_id, domain, url, http_status, bytes, elapsed_ms, "
+                " rate_wait_ms, error_class, ts) "
+                "VALUES (?,?,?,?,?,?,?,?,?,?,?)",
+                (
+                    new_ulid(),
+                    asset_id,
+                    fetch_log_row.task_id,
+                    fetch_log_row.domain,
+                    redact(fetch_log_row.url),
+                    fetch_log_row.http_status,
+                    fetch_log_row.bytes_,
+                    fetch_log_row.elapsed_ms,
+                    fetch_log_row.rate_wait_ms,
+                    fetch_log_row.error_class,
+                    now,
+                ),
+            )
 
     def fetch_logs(self, *, domain: str | None = None) -> list[sqlite3.Row]:
         """取回 FetchLog，可按 domain 过滤；按时间戳稳定排序。"""
