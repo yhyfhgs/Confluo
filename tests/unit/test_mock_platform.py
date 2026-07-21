@@ -15,7 +15,7 @@ from helpers import FakeFetchIO, make_mock_venue
 from helpers.golden import assert_matches_golden
 from paper_crawler.adapters.mock_platform import MockPlatformAdapter
 from paper_crawler.errors import CrawlerError, ErrorClass
-from paper_crawler.types import AssetKind, AuthLevel, IssueRef, PaperStub, VenueSpec
+from paper_crawler.types import AssetKind, AssetPlan, AuthLevel, IssueRef, PaperStub, VenueSpec
 
 GOLDEN_DIR = Path(__file__).resolve().parent.parent / "fixtures" / "mock_platform" / "golden"
 
@@ -220,6 +220,16 @@ def test_resolve_assets_raises_parse_for_doi_from_a_different_venue(
     assert exc_info.value.error_class is ErrorClass.PARSE
 
 
+def test_resolve_assets_raises_parse_for_non_numeric_doi_index_segment(
+    adapter: MockPlatformAdapter, venue: VenueSpec
+) -> None:
+    """畸形 doi 尾段（非数字）→ int() 解析失败必须转 CrawlerError(PARSE)，不裸抛 ValueError。"""
+    paper = PaperStub(title="T", identifiers=(("doi", f"10.9999/{venue.id}.1.1.x"),))
+    with pytest.raises(CrawlerError) as exc_info:
+        adapter.resolve_assets(venue, paper)
+    assert exc_info.value.error_class is ErrorClass.PARSE
+
+
 # --- quirks 健壮性（畸形/边界输入不崩溃，退回默认值）----------------------------------------
 
 
@@ -272,6 +282,21 @@ def test_fetch_asset_fail_fetch_quirk_raises_configured_error_class(
     with pytest.raises(CrawlerError) as exc_info:
         adapter.fetch_asset(plan, io=FakeFetchIO())
     assert exc_info.value.error_class is error_class
+
+
+def test_fetch_asset_unknown_fail_error_class_raises_config(
+    adapter: MockPlatformAdapter,
+) -> None:
+    """URL 里编码了非法 error_class → ErrorClass(...) 的 ValueError 必须转
+    CrawlerError(CONFIG)（畸形 quirk 是配置问题，非裸 ValueError 穿透）。"""
+    plan = AssetPlan(
+        kind=AssetKind.PDF,
+        url="https://mock.local/pdf/10.9999/mock_journal.1.1.0?fail=not_a_real_class",
+        auth_needed=AuthLevel.NONE,
+    )
+    with pytest.raises(CrawlerError) as exc_info:
+        adapter.fetch_asset(plan, io=FakeFetchIO())
+    assert exc_info.value.error_class is ErrorClass.CONFIG
 
 
 def test_fetch_asset_fail_fetch_quirk_spares_other_indexes(
