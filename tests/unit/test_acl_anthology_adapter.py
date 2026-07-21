@@ -392,3 +392,79 @@ def test_healthcheck_unhealthy_when_homepage_unreachable() -> None:
     report = adapter.healthcheck()
     assert report.healthy is False
     assert "aclanthology.org" in report.detail
+
+
+# --- 覆盖补强：UA 惰性自建 / 非 403 错误透传 / findings 无目标 volume / 无 legacy prefix ----------
+
+
+def test_default_user_agent_uses_env_email(monkeypatch: pytest.MonkeyPatch) -> None:
+    from paper_crawler.adapters.acl_anthology import adapter as mod
+
+    monkeypatch.setenv(mod._CONTACT_EMAIL_ENV, "real@lab.edu")
+    ua = mod._default_user_agent()
+    assert ua.startswith("PaperCrawler/")
+    assert ua.endswith("(personal research; mailto:real@lab.edu)")
+
+
+def test_default_user_agent_falls_back_to_placeholder(monkeypatch: pytest.MonkeyPatch) -> None:
+    from paper_crawler.adapters.acl_anthology import adapter as mod
+
+    monkeypatch.delenv(mod._CONTACT_EMAIL_ENV, raising=False)
+    ua = mod._default_user_agent()
+    assert ua.endswith("(personal research; mailto:anonymous@paper-crawler.invalid)")
+
+
+def test_lazy_client_builds_and_caches_httpclient_when_http_none() -> None:
+    adapter = AclAnthologyAdapter()
+    client = adapter._client()  # 惰性自建（仅构造，不发请求 → 零真实网络）
+    assert isinstance(client, HttpClient)
+    assert adapter._client() is client  # 幂等缓存
+    client.close()
+
+
+def test_discover_timeline_non_403_github_error_passes_through_unchanged() -> None:
+    """`_reclassify_github_403` 只重分类 403；5xx 等其余错误原样透传（覆盖 fallthrough 分支）。"""
+    adapter = _adapter(_handler(tree_response=_http_response("06_5xx.http")))
+    with pytest.raises(CrawlerError) as exc:
+        list(adapter.discover_timeline(_VENUE))
+    assert exc.value.error_class is ErrorClass.TRANSIENT
+
+
+def test_enumerate_findings_file_present_but_lacks_target_volume_yields_primary_only() -> None:
+    """Findings 文件确实存在（该年有 Findings），但恰巧不含目标 venue 的 volume——
+    产 primary 论文、findings 部分静默产出 0 篇（非错误，同 legal-empty 精神）。
+    """
+    findings_without_emnlp = (
+        b"<collection id='2023.findings'><volume id='acl' type='proceedings'>"
+        b"<meta><year>2023</year><venue>findings</venue></meta>"
+        b"<paper id='1'><title>Findings Of ACL Only</title><bibkey>x-2023</bibkey>"
+        b"<url hash='aaaaaaaa'>2023.findings-acl.1</url></paper>"
+        b"</volume></collection>"
+    )
+    adapter = _adapter(
+        _handler(
+            raw_files={
+                "2023.emnlp.xml": _raw_ok("01_emnlp_main_2023_excerpt.xml"),
+                "2023.findings.xml": httpx.Response(200, content=findings_without_emnlp),
+            }
+        )
+    )
+    stubs = list(
+        adapter.enumerate_issue(_VENUE, IssueRef(venue_id="emnlp", year=2023, label="2023"))
+    )
+    assert len(stubs) == 5  # 仅主文件的 5 篇；findings 文件虽 200 但无 emnlp volume
+    assert all(dict(s.meta)["track"] != "findings" for s in stubs)
+
+
+def test_enumerate_cold_cache_no_legacy_prefix_skips_old_style_probe_entirely() -> None:
+    """venue 未声明 `anthology_legacy_prefix`：新式 404 后不会尝试构造任何旧式候选，
+    直接 legal-empty（覆盖 `_resolve_and_fetch_primary` 的 `prefix is None` 分支）。
+    """
+    venue = make_acl_anthology_venue(anthology_legacy_prefix=None)
+    calls: list[str] = []
+    adapter = _adapter(_handler(request_log=calls))  # raw_files 全空 → 新式候选 404
+    issue = IssueRef(venue_id="emnlp", year=2019, label="2019")
+    stubs = list(adapter.enumerate_issue(venue, issue))
+    assert stubs == []
+    raw_calls = [u for u in calls if "raw.githubusercontent.com" in u]
+    assert len(raw_calls) == 2  # 仅新式主文件 + findings 各探测一次，无旧式候选

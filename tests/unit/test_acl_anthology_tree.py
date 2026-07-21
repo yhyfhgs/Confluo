@@ -65,6 +65,25 @@ def test_parse_tree_response_ignores_non_dict_entries_defensively() -> None:
     assert tree.parse_tree_response(body) == frozenset()
 
 
+def test_parse_tree_response_rejects_non_object_top_level() -> None:
+    with pytest.raises(CrawlerError) as exc:
+        tree.parse_tree_response(json.dumps(["a", "list", "not", "an", "object"]).encode())
+    assert exc.value.error_class is ErrorClass.PARSE
+
+
+def test_parse_tree_response_ignores_entries_with_non_string_path() -> None:
+    body = json.dumps(
+        {
+            "truncated": False,
+            "tree": [
+                {"path": 42, "type": "blob"},  # 非字符串 path，防御性跳过
+                {"path": "data/xml/2023.emnlp.xml", "type": "blob"},
+            ],
+        }
+    ).encode()
+    assert tree.parse_tree_response(body) == frozenset({"2023.emnlp.xml"})
+
+
 # --- legacy_prefix ------------------------------------------------------------------------------
 
 

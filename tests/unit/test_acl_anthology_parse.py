@@ -353,3 +353,74 @@ def test_paper_level_year_overrides_volume_level() -> None:
     )
     assert stub.year == 2020
     assert stub.pub_date == "2020-06"
+
+
+# --- 覆盖补强：可选字段全缺席 / 畸形数值 / 空标签文本 --------------------------------------------
+
+
+def test_paper_without_bibkey_omits_bibkey_meta_key() -> None:
+    xml = (
+        b"<collection id='2023.emnlp'><volume id='main' type='proceedings'>"
+        b"<meta><year>2023</year></meta>"
+        b"<paper id='1'><title>No Bibkey Here</title>"
+        b"<url hash='aaaaaaaa'>2023.emnlp-main.1</url></paper>"
+        b"</volume></collection>"
+    )
+    collection = parse.parse_collection_xml(xml)
+    volume = collection.volumes[0]
+    stub = parse.to_paper_stub(
+        collection.id,
+        volume.id,
+        volume.papers[0],
+        track=volume.id,
+        volume_year=volume.year,
+        volume_month=volume.month,
+    )
+    assert "bibkey" not in dict(stub.meta)
+
+
+def test_paper_without_any_year_omits_license_meta_key_and_leaves_year_none() -> None:
+    xml = (
+        b"<collection id='2023.emnlp'><volume id='main' type='proceedings'>"
+        b"<meta><booktitle>No Year Volume</booktitle></meta>"
+        b"<paper id='1'><title>No Year Anywhere</title><bibkey>x-synthetic</bibkey>"
+        b"<url hash='aaaaaaaa'>2023.emnlp-main.1</url></paper>"
+        b"</volume></collection>"
+    )
+    collection = parse.parse_collection_xml(xml)
+    volume = collection.volumes[0]
+    assert volume.year is None  # 无 <meta><year> 时优雅降级为 None，不抛错
+    stub = parse.to_paper_stub(
+        collection.id,
+        volume.id,
+        volume.papers[0],
+        track=volume.id,
+        volume_year=volume.year,
+        volume_month=volume.month,
+    )
+    assert stub.year is None
+    assert "license" not in dict(stub.meta)  # 无年份可依据 → 不产 license 线索
+    assert stub.pub_date is None
+
+
+def test_title_present_but_empty_after_whitespace_normalization_raises_parse() -> None:
+    xml = (
+        b"<collection id='2023.emnlp'><volume id='main' type='proceedings'>"
+        b"<meta><year>2023</year></meta>"
+        b"<paper id='1'><title>   </title><bibkey>x-2023</bibkey></paper>"
+        b"</volume></collection>"
+    )
+    with pytest.raises(CrawlerError) as exc:
+        parse.parse_collection_xml(xml)
+    assert exc.value.error_class is ErrorClass.PARSE
+
+
+def test_non_integer_year_text_degrades_to_none_instead_of_raising() -> None:
+    xml = (
+        b"<collection id='2023.emnlp'><volume id='main' type='proceedings'>"
+        b"<meta><year>not-a-year</year></meta>"
+        b"<paper id='1'><title>T</title><bibkey>x-2023</bibkey></paper>"
+        b"</volume></collection>"
+    )
+    collection = parse.parse_collection_xml(xml)
+    assert collection.volumes[0].year is None  # 畸形数值文本优雅降级，不炸解析
