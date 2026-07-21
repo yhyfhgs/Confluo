@@ -68,6 +68,9 @@ updated: 2026-07-21
 | id 不存在 / withdrawn 版本 | `gone` | Asset 标 gone，记录 withdrawn 备注 |
 | Atom 解析 0 条且 totalResults>0 | `parse` | canary 标红 |
 | OAI resumptionToken 过期（badResumptionToken） | `transient` | **token 契约**：resumptionToken 仅单次收割内有效、绝不持久化、绝不跨重试复用；transient 重试时从月度桶窗口**重建** `from/until` 请求（任务级重跑天然满足）。单日窗口不会超 token TTL（大回填不走此路） |
+| OAI `noRecordsMatch` | —（**非错误**） | 空窗口/空桶的 OAI 合法响应：解析为**空记录序列正常完成**（watch 空日、新 category 月初的常态）。勘误补全 2026-07-22：T4 审查 ⚠ 复核暴露的设计空白——若误归 parse 会使空日 watch 假故障 |
+| OAI badArgument / badVerb / cannotDisseminateFormat | `config` | 我方请求构造缺陷，响亮停机（与 HttpClient 4xx→CONFIG 口径一致，勘误同批） |
+| OAI idDoesNotExist | `gone` | 单 id 查询场景（--all-versions deferred，本期低频） |
 
 **已知冻结限制（本期承认，收紧随 Phase 4 走接口仲裁）**：①`FetchResult` 无 `http_status` 字段，`fetch_log.http_status` 本期恒 NULL；②metadata 阶段调用（OAI/Query）不入 FetchLog——其限速审计证据为 obslog jsonl（HttpClient 每请求 debug 事件：domain/url 脱敏/status/elapsed_ms）；③`Retry-After` 不驱动重试调度（仅观测）。
 
