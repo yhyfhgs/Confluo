@@ -32,7 +32,7 @@ updated: 2026-07-22
 | 术语 | 定义 |
 |---|---|
 | **PlatformAdapter** | 按"出版平台"组织的代码插件（一个平台一包，~40 个覆盖数百 venue，D-002/D-015） |
-| **SourceAdapter 协议** | 全部 adapter 实现的统一接口：discover_timeline / enumerate_issue / resolve_assets / fetch_asset / search / healthcheck |
+| **SourceAdapter 协议** | 全部 adapter 实现的统一接口：discover_timeline / enumerate_issue / resolve_assets / fetch_asset / healthcheck（勘误 2026-07-22：`search()` 不在冻结协议中，随 Phase 6 经仲裁新增——见 arxiv.md §1 先例） |
 | **Capability** | adapter 的能力声明位（DISCOVER/ENUMERATE/RESOLVE/FETCH/SEARCH）；**能力缺失即路由**——缺的阶段由 Registry 转交 metadata_source |
 | **family** | adapter 三族：`open_access`（无认证）/ `auth_gated`（自有凭证）/ `aggregator`（元数据层）；同一协议，仅绑定不同（D-003） |
 | **metadata_source / fulltext_source** | 同一 venue 的"元数据从哪来"与"全文从哪来"可以不同（D-005：期刊=Crossref、会议=DBLP 做元数据主干，出版社站点只做全文） |
