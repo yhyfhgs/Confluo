@@ -30,6 +30,11 @@ DEFAULT_ARXIV_QUIRKS: dict[str, object] = {
     "arxiv_category": "cs.LG",
 }
 
+# openreview 契约/集成测试用的 conference venue（id 必须为 'iclr'——adapter 内置届表按
+# venue.id 键取，见 adapters/openreview/venues._BUILTIN_TABLES）。auth free_account 匹配
+# adapter auth_requirement（否则 lint 不过）。overrides 通道默认空。
+DEFAULT_OPENREVIEW_QUIRKS: dict[str, object] = {"openreview_group_overrides": {}}
+
 
 def make_mock_venue(**quirks_overrides: object) -> VenueSpec:
     """构造 mock_platform 契约测试用的 venue（不依赖 `venues/` 目录文件）。
@@ -71,6 +76,28 @@ def make_arxiv_venue(**quirks_overrides: object) -> VenueSpec:
     )
 
 
+def make_openreview_venue(**quirks_overrides: object) -> VenueSpec:
+    """构造 openreview 契约/集成测试用的 `conference` venue（不依赖 `venues/` 目录文件）。
+
+    id='iclr'（adapter 内置 ICLR 届表按 venue.id 键取）；auth=free_account+provider_hint
+    （匹配 adapter auth_requirement）。`quirks_overrides` 可注入 `openreview_group_overrides`
+    覆盖届表。
+    """
+    quirks: dict[str, object] = dict(DEFAULT_OPENREVIEW_QUIRKS)
+    quirks.update(quirks_overrides)
+    return VenueSpec(
+        id="iclr",
+        kind="conference",
+        names={"full": "International Conference on Learning Representations", "aliases": ["ICLR"]},
+        field=["cs_ai"],
+        identifiers={"dblp_key": "conf/iclr"},
+        metadata_source="openreview",
+        fulltext_source="openreview",
+        auth={"level": "free_account", "provider_hint": "openreview"},
+        quirks=quirks,
+    )
+
+
 class FakeFetchIO:
     """`FetchIO` 协议的测试替身：把 chunks 缓冲进内存并计算 `(bytes_written, sha256)`。
 
@@ -93,7 +120,9 @@ class FakeFetchIO:
 __all__ = [
     "DEFAULT_ARXIV_QUIRKS",
     "DEFAULT_MOCK_QUIRKS",
+    "DEFAULT_OPENREVIEW_QUIRKS",
     "FakeFetchIO",
     "make_arxiv_venue",
     "make_mock_venue",
+    "make_openreview_venue",
 ]
