@@ -101,6 +101,10 @@ def make_openreview_venue(**quirks_overrides: object) -> VenueSpec:
         metadata_source="openreview",
         fulltext_source="openreview",
         auth={"level": "free_account", "provider_hint": "openreview"},
+        quirks=quirks,
+    )
+
+
 def make_pmlr_venue(**quirks_overrides: object) -> VenueSpec:
     """构造 pmlr 契约/集成测试用的 `conference` venue（不依赖 `venues/` 目录文件）。
 
