@@ -21,10 +21,17 @@ from collections.abc import Callable
 import httpx
 import pytest
 
-from helpers import FakeFetchIO, make_arxiv_venue, make_mock_venue, make_openreview_venue
+from helpers import (
+    FakeFetchIO,
+    make_arxiv_venue,
+    make_cvf_venue,
+    make_mock_venue,
+    make_openreview_venue,
+)
 from helpers.arxiv_fixtures import fixture_bytes
 from paper_crawler.adapter import AdapterBase, AdapterFamily, SourceAdapter, load_adapters
 from paper_crawler.adapters.arxiv.adapter import ArxivAdapter
+from paper_crawler.adapters.cvf.adapter import CVFAdapter
 from paper_crawler.adapters.openreview.adapter import OpenReviewAdapter
 from paper_crawler.errors import CapabilityNotSupported
 from paper_crawler.http import HttpClient
@@ -93,12 +100,37 @@ def _openreview_case() -> tuple[SourceAdapter, VenueSpec]:
     return OpenReviewAdapter(http=client), make_openreview_venue()
 
 
+def _cvf_contract_handler(request: httpx.Request) -> httpx.Response:
+    """cvf 契约链的 MockTransport：任意年份 bare GET → 单条目 flat 页 → pdf 取回 %PDF。
+
+    合成响应（零真实网络）：单条目自带 pdf href，使 discover→enumerate→resolve→fetch
+    全链有产出，无需模拟双请求 day-landing 分支（该分支的单测覆盖见
+    tests/unit/test_cvf_adapter.py）。
+    """
+    if request.url.path.endswith(".pdf"):
+        return httpx.Response(200, content=_CONTRACT_PDF)
+    html = (
+        '<dt class="ptitle"><br><a href="/content/X/html/contract_paper.html">'
+        "Contract Paper</a></dt>\n"
+        '<dd><input type="hidden" name="query_author" value="Contract Author"></dd>\n'
+        '<dd>[<a href="/content/X/papers/contract_paper.pdf">pdf</a>]</dd>\n'
+    )
+    return httpx.Response(200, content=f"<html><body><dl>{html}</dl></body></html>".encode())
+
+
+def _cvf_case() -> tuple[SourceAdapter, VenueSpec]:
+    transport = httpx.MockTransport(_cvf_contract_handler)
+    client = HttpClient(user_agent=_CONTRACT_UA, transport=transport)
+    return CVFAdapter(http=client, current_year=2026), make_cvf_venue()
+
+
 # adapter_id -> (adapter, venue) 工厂。只有此处登记的 adapter 会跑完整能力链路检查；
 # 其余（stub）adapter 一律 pytest.skip（stub until Phase 3/4）。
 _CONTRACT_CASES: dict[str, Callable[[], tuple[SourceAdapter, VenueSpec]]] = {
     "mock_platform": _mock_case,
     "arxiv": _arxiv_case,
     "openreview": _openreview_case,
+    "cvf": _cvf_case,
 }
 
 ADAPTER_IDS = sorted(load_adapters())
