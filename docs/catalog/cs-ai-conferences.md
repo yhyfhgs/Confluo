@@ -2,7 +2,7 @@
 title: CS/AI 顶会清单
 status: approved
 owner: fable5
-updated: 2026-07-20
+updated: 2026-07-22
 ---
 
 # CS/AI 顶会
@@ -17,9 +17,9 @@ updated: 2026-07-20
 | neurips | NeurIPS | T1 | neurips_proceedings | conf/nips | proceedings.neurips.cc | 1987 | 评审版另在 openreview(2022+) |
 | icml | ICML | T1 | pmlr | conf/icml | PMLR | 2013(v28)系统收录 | 卷号映射见 quirks |
 | iclr | ICLR | T1 | openreview | conf/iclr | OpenReview | 2013 | venue `ICLR.cc/{y}/Conference`；v1/v2 双端点 |
-| aistats | AISTATS | T1 | pmlr | conf/aistats | PMLR | 部分回溯 | 2007–2016 或在旧域 |
+| aistats | AISTATS | T1 | pmlr | conf/aistats | PMLR | 全程 | 勘误 2026-07-22：2007–2016 卷实测存活于 PMLR（v9/v15 HEAD 200，[LIVE] site-survey/pmlr）——"或在旧域"传闻证伪 |
 | uai | UAI | T2 | pmlr(2020+)/auai | conf/uai | PMLR/AUAI | 2020 起 PMLR | 平台迁移 |
-| colt | COLT | T1 | pmlr(2013+) | conf/colt | 多段 era | 1988 | ACM→Springer→PMLR 三段(D-012) |
+| colt | COLT | T1 | pmlr(2011+/v19 起，勘误 2026-07-22) | conf/colt | 多段 era | 1988 | ACM→Springer→PMLR 三段(D-012)；PMLR 段起点实测 v19/2011 |
 | corl | CoRL | T2 | pmlr | conf/corl | PMLR | 2017 | 最干净单一体系 |
 
 ## NLP（全在 ACL Anthology，`acl_anthology` adapter，GitHub bulk 优先）
@@ -46,7 +46,7 @@ updated: 2026-07-20
 
 | id | 名称 | tier | 平台/adapter | DBLP key | 备注 |
 |---|---|---|---|---|---|
-| aaai | AAAI | T1 | aaai_ojs | conf/aaai | archive 默认只显最新届 ⚠ |
+| aaai | AAAI | T1 | aaai_ojs（OJS 实例覆盖 2019+，更早届界外——D-012 走 DBLP+era） | conf/aaai | 勘误 2026-07-22：archive 为 25 issue/页 Next 翻页（"只显最新届"证伪）；主路径 OAI-PMH（[LIVE] site-survey/aaai-ojs） |
 | ijcai | IJCAI | T1 | ijcai(专用) | conf/ijcai | 主域稳定；2017+ 自出版 |
 
 ## 数据挖掘 / IR / Web（ACM 系，`acm_dl`，**2026 起全 OA** D-013）

@@ -137,3 +137,4 @@ updated: 2026-07-21
 | 3 | 2026-07-21 | §2.1 映射表补全：其余 4xx→CONFIG（否决 implementer 的 GONE 兜底——400 是请求缺陷非资源终态）、451→GONE、传输异常超集→TRANSIENT、close()/上下文管理器附加 | T2 DONE_WITH_CONCERNS 仲裁 |
 | 4 | 2026-07-22 | HttpClient 冻结件扩展立项：构造参数 `extra_headers: dict[str,str] \| None = None`（client 级附加头，纯附加带默认值）——openreview token 通道（cookie 注入）依赖；随 openreview 实现任务落地 | openreview.md §3（LIVE 勘察证实鉴权必需） |
 | 5 | 2026-07-22 | openreview.md 双评审 REJECT 后回炉：LIVE 勘察（25 请求）→ 主 agent 全文重写 → 复审；openreview 定位修正为 free_account 级（勘察证伪匿名可读），Phase 2 范围仅注册 iclr | 评审报告 + survey 归档 |
+| 6 | 2026-07-22 | HttpClient 冻结件扩展（T6-C4 红线修复）：构造参数 `rate_limiter: RateLimiter \| None = None`（纯附加）——有则每请求发出前 `acquire_and_wait(domain)`，使 adapter 内部翻页（resumptionToken 多页收割）逐请求过限速器；pipeline 任务级 acquire 保留（同桶幂等双保险）。T7 落地 | T6 审查 C4（翻页不逐页限速=AC-0.5 暴露面） |
