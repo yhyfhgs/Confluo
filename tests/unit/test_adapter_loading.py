@@ -22,7 +22,6 @@ from paper_crawler.types import (
     VenueSpec,
 )
 
-<<<<<<< HEAD
 EXPECTED_ADAPTER_IDS = {
     "mock_platform",
     "crossref",
@@ -31,10 +30,8 @@ EXPECTED_ADAPTER_IDS = {
     "arxiv",
     "pmlr",
     "acl_anthology",
+    "cvf",
 }
-=======
-EXPECTED_ADAPTER_IDS = {"mock_platform", "crossref", "openreview", "elsevier_sd", "arxiv", "cvf"}
->>>>>>> adapter/cvf
 VALID_FAMILIES = {"open_access", "auth_gated", "aggregator"}
 
 
@@ -44,11 +41,7 @@ def adapters() -> dict[str, SourceAdapter]:
 
 
 def test_load_adapters_discovers_all_registered(adapters: dict[str, SourceAdapter]) -> None:
-<<<<<<< HEAD
-    # 三个内置 stub + mock + arxiv + pmlr（Phase 2 经 entry point 注册的真实 adapter）。
-=======
-    # 三个内置 stub + mock + arxiv/openreview/cvf（Phase 2 经 entry point 注册的真实 adapter）。
->>>>>>> adapter/cvf
+    # 三个内置 stub + mock + 五个真实 adapter（arxiv/openreview/pmlr/acl_anthology/cvf）。
     assert set(adapters) == EXPECTED_ADAPTER_IDS
 
 
@@ -137,7 +130,6 @@ def test_arxiv_attributes(adapters: dict[str, SourceAdapter]) -> None:
     assert arxiv.domains == ("export.arxiv.org", "oaipmh.arxiv.org", "arxiv.org")
 
 
-<<<<<<< HEAD
 def test_pmlr_attributes(adapters: dict[str, SourceAdapter]) -> None:
     pmlr = adapters["pmlr"]
     assert pmlr.family == "open_access"
@@ -150,7 +142,8 @@ def test_pmlr_attributes(adapters: dict[str, SourceAdapter]) -> None:
     assert pmlr.default_rate.requests_per_minute == 30.0  # 1 req/2s
     assert pmlr.auth_requirement is AuthLevel.NONE
     assert pmlr.domains == ("proceedings.mlr.press", "raw.githubusercontent.com")
-=======
+
+
 def test_cvf_attributes(adapters: dict[str, SourceAdapter]) -> None:
     cvf = adapters["cvf"]
     assert cvf.family == "open_access"
@@ -164,7 +157,6 @@ def test_cvf_attributes(adapters: dict[str, SourceAdapter]) -> None:
     assert "site-survey/cvf.md" in cvf.default_rate.source_note  # 出处（非占位 ⚠）
     assert cvf.auth_requirement is AuthLevel.NONE  # 匿名可读、无认证（§2/§4）
     assert cvf.domains == ("openaccess.thecvf.com",)
->>>>>>> adapter/cvf
 
 
 def test_healthcheck_defaults_healthy(adapters: dict[str, SourceAdapter]) -> None:
@@ -234,18 +226,11 @@ def test_mock_platform_methods_are_implemented_after_t6(
 
 
 def test_arxiv_is_http_client_consumer(adapters: dict[str, SourceAdapter]) -> None:
-<<<<<<< HEAD
-    """arxiv/openreview/pmlr/acl_anthology 实现 `HttpClientConsumer`；stub/mock 不实现。"""
+    """arxiv/openreview/pmlr/acl_anthology/cvf 实现 `HttpClientConsumer`；stub/mock 不实现。"""
     assert isinstance(adapters["arxiv"], HttpClientConsumer)
     assert isinstance(adapters["openreview"], HttpClientConsumer)
     assert isinstance(adapters["pmlr"], HttpClientConsumer)
     assert isinstance(adapters["acl_anthology"], HttpClientConsumer)
-=======
-    """arxiv/openreview/cvf 实现 `HttpClientConsumer`（可注入共享 client）；stub/mock 不实现。"""
-    assert isinstance(adapters["arxiv"], HttpClientConsumer)
-    assert isinstance(adapters["openreview"], HttpClientConsumer)
-    assert isinstance(adapters["cvf"], HttpClientConsumer)
->>>>>>> adapter/cvf
     assert not isinstance(adapters["mock_platform"], HttpClientConsumer)
     assert not isinstance(adapters["crossref"], HttpClientConsumer)
 
@@ -254,12 +239,8 @@ def test_bind_http_client_injects_only_consumers(adapters: dict[str, SourceAdapt
     """`bind_http_client` 只注入实现协议的 adapter，返回被注入的 id 列表。"""
     client = HttpClient(user_agent="PaperCrawler/test (personal research)")
     injected = bind_http_client(adapters, client)
-<<<<<<< HEAD
-    # 四个真实 http adapter；注入生效——_client() 返回被注入实例，不再惰性自建。
-    assert set(injected) == {"arxiv", "openreview", "pmlr", "acl_anthology"}
-=======
-    assert set(injected) == {"arxiv", "openreview", "cvf"}  # 三个 http adapter
->>>>>>> adapter/cvf
+    # 五个真实 http adapter；注入生效——_client() 返回被注入实例，不再惰性自建。
+    assert set(injected) == {"arxiv", "openreview", "pmlr", "acl_anthology", "cvf"}
     # 注入生效：arxiv 的 _client() 返回被注入的实例，不再惰性自建。
     arxiv = adapters["arxiv"]
     pmlr = adapters["pmlr"]

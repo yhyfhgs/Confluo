@@ -97,8 +97,7 @@ def _make_env(tmp_path: Path, handler: Handler, *, inception: str = "2024-01") -
 
     adapters = load_adapters()
     client = HttpClient(user_agent=_UA, transport=httpx.MockTransport(handler))
-<<<<<<< HEAD
-    # arxiv/openreview/pmlr 均为 HttpClientConsumer（watch 只跑 preprint venue，
+    # arxiv/openreview/pmlr/acl_anthology/cvf 均为 HttpClientConsumer（watch 只跑 preprint venue，
     # 其余被注入但不参与——conference 不入 watch）。
     # arxiv + openreview + acl_anthology 均为 HttpClientConsumer（watch 只跑 preprint
     # venue，openreview/acl_anthology 被注入但不参与——conference 不入 watch）。
@@ -107,12 +106,8 @@ def _make_env(tmp_path: Path, handler: Handler, *, inception: str = "2024-01") -
         "openreview",
         "pmlr",
         "acl_anthology",
+        "cvf",
     }
-=======
-    # arxiv + openreview + cvf 均为 HttpClientConsumer（watch 只跑 preprint venue，
-    # openreview/cvf 被注入但不参与——conference 不入 watch）。
-    assert set(bind_http_client(adapters, client)) == {"arxiv", "openreview", "cvf"}
->>>>>>> adapter/cvf
     registry = VenueRegistry(adapters)
     assert registry.load_dirs([venues_dir]) == []
 

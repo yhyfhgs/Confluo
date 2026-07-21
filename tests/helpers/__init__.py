@@ -127,7 +127,6 @@ def make_openreview_venue(**quirks_overrides: object) -> VenueSpec:
     )
 
 
-<<<<<<< HEAD
 def make_pmlr_venue(**quirks_overrides: object) -> VenueSpec:
     """构造 pmlr 契约/集成测试用的 `conference` venue（不依赖 `venues/` 目录文件）。
 
@@ -168,7 +167,10 @@ def make_acl_anthology_venue(**quirks_overrides: object) -> VenueSpec:
         identifiers={"dblp_key": "conf/emnlp"},
         metadata_source="acl_anthology",
         fulltext_source="acl_anthology",
-=======
+        quirks=quirks,
+    )
+
+
 def make_cvf_venue(venue_id: str = "cvpr", **quirks_overrides: object) -> VenueSpec:
     """构造 cvf 契约/集成测试用的 `conference` venue（不依赖 `venues/` 目录文件）。
 
@@ -185,7 +187,6 @@ def make_cvf_venue(venue_id: str = "cvpr", **quirks_overrides: object) -> VenueS
         field=["cs_ai"],
         metadata_source="cvf",
         fulltext_source="cvf",
->>>>>>> adapter/cvf
         quirks=quirks,
     )
 

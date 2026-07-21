@@ -23,18 +23,12 @@ import pytest
 
 from helpers import (
     FakeFetchIO,
-<<<<<<< HEAD
     make_acl_anthology_venue,
-    make_arxiv_venue,
-    make_mock_venue,
-    make_openreview_venue,
-    make_pmlr_venue,
-=======
     make_arxiv_venue,
     make_cvf_venue,
     make_mock_venue,
     make_openreview_venue,
->>>>>>> adapter/cvf
+    make_pmlr_venue,
 )
 from helpers.arxiv_fixtures import fixture_bytes
 from helpers.pmlr_fixtures import fixture_bytes as pmlr_fixture_bytes
@@ -111,7 +105,6 @@ def _openreview_case() -> tuple[SourceAdapter, VenueSpec]:
     return OpenReviewAdapter(http=client), make_openreview_venue()
 
 
-<<<<<<< HEAD
 def _pmlr_contract_handler(request: httpx.Request) -> httpx.Response:
     """pmlr 契约链的 MockTransport：卷 index 页 → 合成 fixture；PDF 取回 → %PDF。
 
@@ -160,7 +153,8 @@ def _acl_anthology_case() -> tuple[SourceAdapter, VenueSpec]:
     transport = httpx.MockTransport(_acl_anthology_contract_handler)
     client = HttpClient(user_agent=_CONTRACT_UA, transport=transport)
     return AclAnthologyAdapter(http=client), make_acl_anthology_venue()
-=======
+
+
 def _cvf_contract_handler(request: httpx.Request) -> httpx.Response:
     """cvf 契约链的 MockTransport：任意年份 bare GET → 单条目 flat 页 → pdf 取回 %PDF。
 
@@ -186,7 +180,6 @@ def _cvf_case() -> tuple[SourceAdapter, VenueSpec]:
     transport = httpx.MockTransport(_cvf_contract_handler)
     client = HttpClient(user_agent=_CONTRACT_UA, transport=transport)
     return CVFAdapter(http=client, current_year=2026), make_cvf_venue()
->>>>>>> adapter/cvf
 
 
 # adapter_id -> (adapter, venue) 工厂。只有此处登记的 adapter 会跑完整能力链路检查；
@@ -196,12 +189,9 @@ _CONTRACT_CASES: dict[str, Callable[[], tuple[SourceAdapter, VenueSpec]]] = {
     "mock_platform": _mock_case,
     "arxiv": _arxiv_case,
     "openreview": _openreview_case,
-<<<<<<< HEAD
     "pmlr": _pmlr_case,
     "acl_anthology": _acl_anthology_case,
-=======
     "cvf": _cvf_case,
->>>>>>> adapter/cvf
 }
 
 ADAPTER_IDS = sorted(load_adapters())
