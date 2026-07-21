@@ -22,7 +22,14 @@ from paper_crawler.types import (
     VenueSpec,
 )
 
-EXPECTED_ADAPTER_IDS = {"mock_platform", "crossref", "openreview", "elsevier_sd", "arxiv"}
+EXPECTED_ADAPTER_IDS = {
+    "mock_platform",
+    "crossref",
+    "openreview",
+    "elsevier_sd",
+    "arxiv",
+    "acl_anthology",
+}
 VALID_FAMILIES = {"open_access", "auth_gated", "aggregator"}
 
 
@@ -188,9 +195,13 @@ def test_mock_platform_methods_are_implemented_after_t6(
 
 
 def test_arxiv_is_http_client_consumer(adapters: dict[str, SourceAdapter]) -> None:
-    """arxiv/openreview 实现 `HttpClientConsumer`（可注入共享 client）；stub/mock 不实现。"""
+    """arxiv/openreview/acl_anthology 实现 `HttpClientConsumer`（可注入共享 client）；
+
+    stub/mock 不实现。
+    """
     assert isinstance(adapters["arxiv"], HttpClientConsumer)
     assert isinstance(adapters["openreview"], HttpClientConsumer)
+    assert isinstance(adapters["acl_anthology"], HttpClientConsumer)
     assert not isinstance(adapters["mock_platform"], HttpClientConsumer)
     assert not isinstance(adapters["crossref"], HttpClientConsumer)
 
@@ -199,7 +210,7 @@ def test_bind_http_client_injects_only_consumers(adapters: dict[str, SourceAdapt
     """`bind_http_client` 只注入实现协议的 adapter，返回被注入的 id 列表。"""
     client = HttpClient(user_agent="PaperCrawler/test (personal research)")
     injected = bind_http_client(adapters, client)
-    assert set(injected) == {"arxiv", "openreview"}  # 两个 http adapter
+    assert set(injected) == {"arxiv", "openreview", "acl_anthology"}  # 三个 http adapter
     # 注入生效：arxiv 的 _client() 返回被注入的实例，不再惰性自建。
     arxiv = adapters["arxiv"]
     assert isinstance(arxiv, HttpClientConsumer)
