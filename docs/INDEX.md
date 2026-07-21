@@ -29,6 +29,7 @@
 |---|---|---|---|
 | [plan/development-plan.md](plan/development-plan.md) | 开发计划（Phase 0–7） | approved | 2026-07-20 |
 | [plan/phase1-implementation-plan.md](plan/phase1-implementation-plan.md) | Phase 1 实施计划（任务切分+接口冻结） | approved | 2026-07-21 |
+| [plan/phase2-implementation-plan.md](plan/phase2-implementation-plan.md) | Phase 2 实施计划（Stage A 地基+arxiv；Stage B adapter 滚动） | approved | 2026-07-21 |
 | [plan/progress.md](plan/progress.md) | 项目进度跟踪 | approved | 2026-07-20 |
 | [plan/decision-log.md](plan/decision-log.md) | 架构决策记录（D-001…D-017） | approved | 2026-07-21 |
 
@@ -52,7 +53,7 @@
 | 路径 | 标题 | status | updated |
 |---|---|---|---|
 | [design/adapters/README.md](design/adapters/README.md) | 模板 + 索引 + 勘察清单 | approved | 2026-07-20 |
-| [design/adapters/arxiv.md](design/adapters/arxiv.md) | arXiv | review | 2026-07-20 |
+| [design/adapters/arxiv.md](design/adapters/arxiv.md) | arXiv | approved | 2026-07-21 |
 | [design/adapters/ssrn.md](design/adapters/ssrn.md) | SSRN | review | 2026-07-20 |
 | [design/adapters/openreview.md](design/adapters/openreview.md) | OpenReview | review | 2026-07-20 |
 | [design/adapters/pmlr.md](design/adapters/pmlr.md) | PMLR | review | 2026-07-20 |

@@ -155,3 +155,10 @@ updated: 2026-07-21
   3. **依赖最小化**：Phase 1 运行时仅 `typer`、`pydantic>=2`、`pyyaml`、`python-ulid`；**httpx 推迟到 Phase 2、Playwright 推迟到 Phase 4** 首个真实需求出现时引入（Phase 1 零网络，mock adapter 本地生成语料）。SQLite 经标准库 `sqlite3` 直接执行 DDL/DML，不引入 ORM——保持 SQL 方言中性（D-001 的 PG 迁移路径）。
   4. **FTS5 推迟**：design/06 §2 的 paper FTS5 虚表**不进 schema v1**，推迟到 Phase 6（搜索需求）以独立 migration 追加。理由：FTS5 是 SQLite 专有特性，与 06 文档"避免 SQLite 专有特性"的迁移原则冲突；推迟到需要时以附加虚表实现（可在 PG 侧以 tsvector 等价替换），主 schema 保持中性。
 - **影响**：phase1-implementation-plan §Global Constraints 与各任务以本条为准；Phase 2/4 引入 httpx/Playwright 时无需新 ADR（本条已预留），版本约束届时在 pyproject 记录。
+
+## D-018 AC-2.3（arXiv 订阅 7 日增量）验收证据分层
+
+- 状态：accepted · 日期：2026-07-21
+- **背景**：AC-2.3 字面要求"连续 7 日 watch，抽样 20 篇与官方 listing 比对无重复无遗漏"。CI 无法等待 7 个自然日；arxiv 详设评审（Phase 2 W0 双评审）指出若仅以离线回放+单次冒烟判定，与 AC 字面存在真实差距，不应静默弱化。
+- **决策**：AC-2.3 证据分三层——①T4 fixture 回放模拟 7 个收割日（含重叠窗口与 announce 延迟注入，CI 化，证机制正确）；②T5 限量在线冒烟单日 1 次（证真实响应可解析入库）。**①+② 为 Phase 2 的 AC-2.3 判定依据**（验收记录标注"PASS（Phase 2 口径，D-018）"）。③真实连续 7 自然日 watch + 第 7 天抽样 20 篇人工比对官方 listing = T6 runbook，**随 Phase 6 AC-6.1 联合执行**，届时 AC-2.3 完成字面口径复验。
+- **影响**：arxiv.md §6、phase2-implementation-plan T6/T7 按此口径；Phase 6 验收清单须包含 T6 runbook 执行；后续 7 日类验收（如 SSRN watch）沿用同分层模式。

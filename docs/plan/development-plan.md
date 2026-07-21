@@ -2,7 +2,7 @@
 title: 开发计划（Phase 0–7）
 status: approved
 owner: fable5
-updated: 2026-07-20
+updated: 2026-07-21
 ---
 
 # 开发计划
@@ -14,16 +14,16 @@ updated: 2026-07-20
 
 | Phase | 名称 | 交付物 | 依赖 | 状态 |
 |---|---|---|---|---|
-| 0 | 设计与文本系统 | 全套设计文档、SVG、清单、流程规范 | — | **进行中** |
-| 1 | 核心框架 | plugin registry、数据模型与 DB、pipeline 骨架、CLI 骨架、日志 | 0 | planned |
-| 2 | Open-Access MVP | arXiv + OpenReview + PMLR + CVF + ACL Anthology + NeurIPS adapters | 1 | planned |
+| 0 | 设计与文本系统 | 全套设计文档、SVG、清单、流程规范 | — | done |
+| 1 | 核心框架 | plugin registry、数据模型与 DB、pipeline 骨架、CLI 骨架、日志 | 0 | done |
+| 2 | Open-Access MVP | arXiv + OpenReview + PMLR + CVF + ACL Anthology + NeurIPS + AAAI + ACM adapters | 1 | **in_progress** |
 | 3 | 聚合元数据层 | Crossref/OpenAlex/DBLP/S2/Unpaywall 客户端与 metadata spine | 1 | planned |
 | 4 | 认证框架 + 出版社 adapters | AuthProvider 四实现；Elsevier/Wiley/OUP/UChicago/INFORMS/IEEE/ACM/AAAI | 1,3 | planned |
 | 5 | SSRN 与特殊源 | SSRN、NBER、AEA、Econometric Society、RePEc adapters | 2,4 | planned |
 | 6 | 订阅与搜索 | topic/tag 订阅 DSL、增量 watch、dry-run、日报 | 2,3 | planned |
 | 7 | 全文抽取与库增强 | GROBID 集成、全文索引、preprint↔正式版关联审核工具 | 2–5 | planned |
 
-## Phase 0 — 设计与文本系统（当前）
+## Phase 0 — 设计与文本系统
 
 **目标**：完成全部设计文档，达到"任何一个模块可以按文档独立开工"的程度。
 
@@ -59,6 +59,7 @@ updated: 2026-07-20
 5. `acl_anthology`（bulk 数据仓库优先）
 6. `neurips_proceedings`（papers.nips.cc 历史全量）
 7. `aaai_ojs`（AAAI/AIES 的 OJS 结构）
+8. `acm_dl`（ACM 2026 全面 OA，D-013；AC-2.6 载体。勘误补入 2026-07-21：D-013 影响声明既定，原列表漏列）
 
 **DoD**：验收场景 AC-2.x 全过（如"列出 ICLR 2024 全部接收论文并下载指定 10 篇"）；每个 adapter 有离线 fixture 测试 + 1 个限量在线冒烟；canary 监控注册。
 

@@ -94,7 +94,7 @@ crawler verify / report [--last-run]                   # 对账与报告
 ## 7. 观测性（FR-14）
 
 - **结构化日志**：jsonl，每行含 `ts, level, task_id, venue, stage, domain, url(脱敏), error_class, msg`；控制台人读摘要，文件机读全量。
-- **FetchLog 表**：每次网络取回一行（含字节数、耗时、HTTP 状态、限速等待时长）——限速合规的审计证据（AC-4.4 数据源）。
+- **FetchLog 表**：每次**资产**取回一行（含字节数、耗时、HTTP 状态、限速等待时长）——限速合规的审计证据（AC-4.4 数据源）。（勘误 2026-07-21：口径澄清为资产取回；metadata 侧请求（聚合 API/OAI 收割等）不入本表，其限速审计证据为 obslog jsonl 的逐请求事件——Phase 2 HttpClient 义务，见 phase2-implementation-plan §2.1。）
 - **运行报告**：每次命令结束输出 markdown 摘要（成功/失败/阻塞/跳过计数、失败清单 top、下一步提示），`report` 子命令可重打印；watch 模式报告落 `docs/reports/watch/`（运行产物目录，不入 git 的 data 区）。
 - **canary**：独立命令 `crawler canary`（testing/test-plan §canary 定义样本集），CI/cron 周跑，产出 adapter 健康矩阵。
 

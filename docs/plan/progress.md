@@ -12,9 +12,10 @@ updated: 2026-07-21
 
 ## 当前快照（2026-07-21）
 
-- **当前 Phase**：1 **已完成**（DoD 全项达成，AC-1.1~1.6 全过，见 [Phase 1 报告](../reports/2026-07-21-phase1-report.md) 与 [验收记录](../testing/records/2026-07-21-phase1-acceptance.md)）→ 下一 Phase：2（Open-Access MVP）
-- **总体进度**：Phase 0/1 = 100%。代码基线：`src/paper_crawler` 全核心框架（registry/storage/tasks/ratelimit/obslog/pipeline/cli/verify + mock_platform），519 测试 / 覆盖率 99.13%，tag `phase-1`、`schema-v1`
-- **下一步**：Phase 2 开工（arxiv adapter 先行，`adapter/arxiv` 分支）；并行提交外部 API 申请（Elsevier/S2/Kaggle）；Phase 2 开工检查单见阶段报告 §6（置顶：fetch_log.url 脱敏评估）
+- **当前 Phase**：2 **进行中**（Open-Access MVP，用户 2026-07-21 授权开工）。W0 门禁完成：arxiv 详设双评审（2 BLOCKER + 10 CONCERN 全闭合）→ **approved**；[Phase 2 实施计划](phase2-implementation-plan.md) approved；D-018（AC-2.3 证据分层）。
+- **执行中**：T1 核心硬化包（fix/core-hardening，opus）、T2 HttpClient（feat/core-http，opus）并行开发中；T3 在线测试基建待派；随后 arxiv 三件套（T4-T6）→ T7 收束 → Stage B 其余 7 adapter 滚动。
+- **总体进度**：Phase 0/1 = 100%（519 测试 / 覆盖率 99.13%，tag `phase-1`、`schema-v1`）；Phase 2 = W0 完成。
+- **待用户执行**：外部 API 申请（Elsevier/S2/Kaggle——Phase 3/4 前 1-2 周提交即可，Phase 2 不阻塞）。
 - **阻塞**：无
 
 ## Phase 进度板
@@ -23,7 +24,7 @@ updated: 2026-07-21
 |---|---|---|---|
 | 0 设计与文本系统 | done | 100% | 报告：reports/2026-07-20-phase0-report.md |
 | 1 核心框架 | **done** | 100% | 报告：reports/2026-07-21-phase1-report.md；tag phase-1 + schema-v1 |
-| 2 Open-Access MVP | planned | 0% | 依赖满足，可开工 |
+| 2 Open-Access MVP | **in_progress** | W0 完成 | 实施计划 approved；arxiv 详设 approved；T1/T2 开发中 |
 | 3 聚合元数据层 | planned | 0% | |
 | 4 认证框架+出版社 | planned | 0% | |
 | 5 SSRN 与特殊源 | planned | 0% | |
