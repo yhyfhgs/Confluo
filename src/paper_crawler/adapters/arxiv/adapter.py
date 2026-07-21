@@ -239,9 +239,9 @@ class ArxivAdapter(AdapterBase):
         """纯 URL 构造：单个 PDF `AssetPlan`（``https://arxiv.org/pdf/{id}``、最新版语义）。
 
         `version=None`（最新版）与 `(paper_id, kind, version)` 幂等键、re-resolve `_match_plan`
-        复位稳定对齐。abs landing（HTML）本期不物化为可取回 asset——Phase 2 pipeline fetch
-        仅落 pdf（`_asset_final_path` 非 pdf 即 CONFIG），materialize landing 推迟至全文库
-        增强需求（见报告 concerns）。
+        复位稳定对齐。abs landing（HTML）本期不物化为可取回 asset——`_asset_final_path`
+        目前只给 pdf/si 两种 kind 定义了落位布局（design/06 §4），html 落位仍会响亮 CONFIG，
+        materialize landing 推迟至全文库增强需求（见报告 concerns）。
         """
         arxiv_id = _arxiv_id_of(paper)
         return [

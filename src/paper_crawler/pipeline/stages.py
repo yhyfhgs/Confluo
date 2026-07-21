@@ -45,6 +45,7 @@ from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Literal
+from urllib.parse import urlsplit
 
 from paper_crawler.config import Config
 from paper_crawler.errors import CrawlerError, ErrorClass
@@ -219,17 +220,39 @@ def fetched_file_ok(asset: sqlite3.Row) -> bool:
     return hashlib.sha256(path.read_bytes()).hexdigest() == str(sha_raw)
 
 
-def _asset_final_path(config: Config, venue_id: str, paper: sqlite3.Row, kind: str) -> Path:
-    """fetch 落位路径（design/06 §4）：data/pdf/{venue_id}/{year}/{paper_ulid}.pdf。
+def _asset_final_path(config: Config, venue_id: str, paper: sqlite3.Row, plan: AssetPlan) -> Path:
+    """fetch 落位路径（design/06 §4 文件存储布局）。
 
-    Phase 1 只有 pdf 资产会走到 fetch（mock resolve 只产 pdf 计划）；paper.year
-    为 NULL 时落 "unknown" 子目录（布局键要求 year 段存在）。
+    - pdf → `data/pdf/{venue_id}/{year}/{paper_ulid}.pdf`（主全文，固定命名）。
+    - si  → `data/si/{venue_id}/{year}/{paper_ulid}/{原名}`（按 paper 分子目录、
+      保持原文件名；原名取 `plan.url` 的 basename，见 `_asset_url_basename`）。
+    - 其余 kind（html/bibtex/source）：§4 未给出落位布局，本阶段不支持——响亮抛
+      CONFIG（经 pipeline 特判转 BLOCKED；人工可读的报错优于静默落到一个未经
+      设计审的路径，或放任资产永久卡在 planned/BLOCKED 却无从得知原因）。
+
+    paper.year 为 NULL 时落 "unknown" 子目录（布局键要求 year 段存在）。
     """
-    if kind != AssetKind.PDF.value:
-        raise CrawlerError(ErrorClass.CONFIG, f"Phase 1 only lands pdf assets, got kind={kind!r}")
     year_raw = paper["year"]
     year_part = str(int(year_raw)) if year_raw is not None else "unknown"
-    return config.data_dir / "pdf" / venue_id / year_part / f"{paper['id']}.pdf"
+    paper_id = str(paper["id"])
+    if plan.kind is AssetKind.PDF:
+        return config.data_dir / "pdf" / venue_id / year_part / f"{paper_id}.pdf"
+    if plan.kind is AssetKind.SI:
+        filename = _asset_url_basename(plan.url)
+        return config.data_dir / "si" / venue_id / year_part / paper_id / filename
+    raise CrawlerError(
+        ErrorClass.CONFIG, f"unsupported asset kind for fetch landing: {plan.kind.value!r}"
+    )
+
+
+def _asset_url_basename(url: str) -> str:
+    """从资产 URL 取原始文件名（design/06 §4 si 资产"保持原名"的取名规则）。
+
+    剥离 query string / fragment 后取 path 最后一段；取不到文件名（path 为空、
+    或以 "/" 结尾）时兜底为 "si.bin"——避免把落位路径退化成目录本身或空文件名。
+    """
+    name = urlsplit(url).path.rsplit("/", 1)[-1]
+    return name if name else "si.bin"
 
 
 def _match_plan(plans: list[AssetPlan], asset: sqlite3.Row) -> AssetPlan:
@@ -367,9 +390,10 @@ def _stage_fetch(ctx: StageContext, task: sqlite3.Row, report: RunReport) -> Sta
     """阶段 4 fetch：单 asset 原子下载（§5.2 + T7c re-resolve 裁决）。
 
     顺序：幂等跳过判定 → re-resolve → refresh_asset_plan → acquire → sleeper →
-    PartFileIO 写 → 校验（bytes>0 + pdf 魔数）→ 原子 commit 到
-    data/pdf/{venue_id}/{year}/{paper_ulid}.pdf → finalize_fetch（mark fetched +
-    add_fetch_log 单事务，含 rate_wait_ms/elapsed_ms）。失败路径单独写 fetch_log
+    PartFileIO 写 → 校验（bytes>0 + pdf 魔数）→ 按 kind 解析落位路径（design/06 §4：
+    pdf/si 有布局，其余 kind 响亮 CONFIG，见 `_asset_final_path`）→ 原子 commit →
+    finalize_fetch（mark fetched + add_fetch_log 单事务，含 rate_wait_ms/elapsed_ms）。
+    失败路径（含"落位路径解析失败"——如不支持的 kind）统一单独写 fetch_log
     （error_class 填充）后抛出，由 runner 路由。mock 无 HTTP 层，http_status 恒 NULL。
     """
     task_id = str(task["id"])
@@ -415,6 +439,9 @@ def _stage_fetch(ctx: StageContext, task: sqlite3.Row, report: RunReport) -> Sta
             raise CrawlerError(ErrorClass.INTEGRITY, "empty download (0 bytes)")
         if plan.expected_type == "application/pdf" and not validate_pdf_magic(io.part_path):
             raise CrawlerError(ErrorClass.INTEGRITY, "downloaded file lacks %PDF- magic")
+        # 落位路径解析纳入同一 try：不支持的 kind（design/06 §4 未给出布局）与
+        # 下载/校验失败共用一套失败处置（fetch_log 审计 + .part 清理），不留特例缝隙。
+        final_path = _asset_final_path(ctx.config, venue_id, paper, plan)
     except Exception as exc:
         elapsed_ms = round((time.monotonic() - started) * 1000)
         io.abort()
@@ -433,7 +460,6 @@ def _stage_fetch(ctx: StageContext, task: sqlite3.Row, report: RunReport) -> Sta
         raise
     elapsed_ms = round((time.monotonic() - started) * 1000)
 
-    final_path = _asset_final_path(ctx.config, venue_id, paper, str(asset["kind"]))
     io.commit(final_path)
     # 收尾单事务（Phase 2 T1）：mark_asset(fetched) + add_fetch_log 原子提交，消除
     # 二者独立提交之间的 SIGKILL 缝隙（AC-1.3）。旧的两步调用路径已删除。
