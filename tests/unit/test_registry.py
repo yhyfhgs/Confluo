@@ -66,8 +66,12 @@ def test_load_dirs_returns_empty_list_for_shipped_venues(
     assert issues == []
 
 
-def test_load_dirs_finds_all_three_shipped_venues(registry: VenueRegistry) -> None:
-    assert {spec.id for spec in registry.all()} == {"mock_journal", "jfe", "iclr"}
+def test_load_dirs_finds_shipped_venues(registry: VenueRegistry) -> None:
+    ids = {spec.id for spec in registry.all()}
+    # 基础三件 + arxiv preprint_channel 白名单（catalog §1，31 个）；全集校验见
+    # test_venue_yaml_lint.test_shipped_venues_pass_lint_cleanly。
+    assert {"mock_journal", "jfe", "iclr"} <= ids
+    assert len([i for i in ids if i.startswith("arxiv_")]) == 31
 
 
 def test_load_dirs_skips_nonexistent_directory(
@@ -311,7 +315,10 @@ def test_route_unknown_fulltext_adapter_reference_raises_config_error(
 
 def test_all_returns_sorted_by_id(registry: VenueRegistry) -> None:
     ids = [spec.id for spec in registry.all()]
-    assert ids == ["iclr", "jfe", "mock_journal"]
+    # 确定性输出 = 全按 id 升序（不钉死具体集合——arxiv 白名单会增补；集合校验见
+    # test_load_dirs_finds_shipped_venues）。
+    assert ids == sorted(ids)
+    assert {"iclr", "jfe", "mock_journal"} <= set(ids)
 
 
 # -- lint(): 干净通过（细节规则见 test_venue_yaml_lint.py） ----------------------
