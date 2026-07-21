@@ -1,0 +1,25 @@
+# venues/cs_ai/icml.yaml —— ICML（International Conference on Machine Learning）
+#
+# 只覆盖 PMLR 时代（v28 起，2013+；[LIVE] 2026-07-22 research/site-survey/pmlr.md）。
+# volume_map 年份区间与数值取自 docs/design/adapters/pmlr.md §附（同一勘察表来源）；
+# D-019 完整性锚点（v235=2610 已核验、余届待人工核准 pending）见
+# tests/fixtures/pmlr/dblp-icml-anchor.json。
+id: icml
+kind: conference
+names: {full: International Conference on Machine Learning, aliases: [ICML]}
+field: [cs_ai]
+tier: T1
+identifiers:
+  dblp_key: conf/icml
+metadata_source: pmlr
+fulltext_source: pmlr
+auth: {level: none}
+quirks:
+  volume_map: {2013: 28, 2014: 32, 2015: 37, 2016: 48, 2017: 70, 2018: 80,
+               2019: 97, 2020: 119, 2021: 139, 2022: 162, 2023: 202,
+               2024: 235, 2025: 267}
+status: active
+notes: >-
+  PMLR 时代卷号映射（quirks.volume_map）覆盖 2013-2025；托管迁移（2024 起新卷
+  PDF 转至 raw.githubusercontent.com，边界按上传时间非卷号）对本 venue 配置透明
+  ——resolve 阶段域无关，见 docs/design/adapters/pmlr.md §3.3/§7.1。

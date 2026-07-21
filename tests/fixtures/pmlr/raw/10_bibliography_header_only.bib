@@ -1,0 +1,20 @@
+% SYNTHETIC fixture (Phase 2 pmlr adapter, T3 fixture #6 companion, variant B --
+% design/adapters/pmlr.md Sec6.2 item 6 / independent review 2026-07-22 MEDIUM
+% finding). Represents the specific risk the review flagged for the B5 "legal
+% empty volume" branch: a bibliography.bib that HAS the real leading
+% @Proceedings{} volume-metadata entry (see 02_bibliography_normal.bib's header
+% comment for the real-shape evidence) but ZERO @InProceedings{} paper entries
+% -- i.e. a freshly-created volume whose bib file was already generated from
+% _config.yml before any papers were added. Whether this exact state occurs in
+% production is unverified (review's Cannot-verify #1 -- no real volume was
+% observed in this state), but count_bib_entries() MUST return 0 here (not 1)
+% for the B5 "legal empty, non-error" branch to stay reachable if it does.
+% Pairs with 06_volume_index_empty.html the same way 07_bibliography_empty.bib
+% does (both are valid "0 papers" bib shapes); see test_pmlr_fixtures.py's
+% fixture-10 test.
+@Proceedings{ICML2099,
+  booktitle = 	 {Proceedings of a Not-Yet-Populated Volume},
+  volume = 	 {9998},
+  year = 	 {2099},
+  publisher =    {PMLR}
+}

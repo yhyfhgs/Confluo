@@ -22,7 +22,14 @@ from paper_crawler.types import (
     VenueSpec,
 )
 
-EXPECTED_ADAPTER_IDS = {"mock_platform", "crossref", "openreview", "elsevier_sd", "arxiv"}
+EXPECTED_ADAPTER_IDS = {
+    "mock_platform",
+    "crossref",
+    "openreview",
+    "elsevier_sd",
+    "arxiv",
+    "pmlr",
+}
 VALID_FAMILIES = {"open_access", "auth_gated", "aggregator"}
 
 
@@ -32,7 +39,7 @@ def adapters() -> dict[str, SourceAdapter]:
 
 
 def test_load_adapters_discovers_all_registered(adapters: dict[str, SourceAdapter]) -> None:
-    # 三个内置 stub + mock + arxiv（Phase 2 T5 经 entry point 注册的第一个真实 adapter）。
+    # 三个内置 stub + mock + arxiv + pmlr（Phase 2 经 entry point 注册的真实 adapter）。
     assert set(adapters) == EXPECTED_ADAPTER_IDS
 
 
@@ -121,6 +128,20 @@ def test_arxiv_attributes(adapters: dict[str, SourceAdapter]) -> None:
     assert arxiv.domains == ("export.arxiv.org", "oaipmh.arxiv.org", "arxiv.org")
 
 
+def test_pmlr_attributes(adapters: dict[str, SourceAdapter]) -> None:
+    pmlr = adapters["pmlr"]
+    assert pmlr.family == "open_access"
+    # pmlr.md §1 裁决：DISCOVER|ENUMERATE|RESOLVE|FETCH，无 SEARCH。
+    assert (
+        pmlr.capabilities
+        == Capability.DISCOVER | Capability.ENUMERATE | Capability.RESOLVE | Capability.FETCH
+    )
+    assert Capability.SEARCH not in pmlr.capabilities
+    assert pmlr.default_rate.requests_per_minute == 30.0  # 1 req/2s
+    assert pmlr.auth_requirement is AuthLevel.NONE
+    assert pmlr.domains == ("proceedings.mlr.press", "raw.githubusercontent.com")
+
+
 def test_healthcheck_defaults_healthy(adapters: dict[str, SourceAdapter]) -> None:
     # mock_platform 不覆写 healthcheck → 继承 AdapterBase 默认恒 healthy。
     # （stub adapter 现已覆写为抛 NotImplementedError，见下一个测试。）
@@ -188,9 +209,10 @@ def test_mock_platform_methods_are_implemented_after_t6(
 
 
 def test_arxiv_is_http_client_consumer(adapters: dict[str, SourceAdapter]) -> None:
-    """arxiv/openreview 实现 `HttpClientConsumer`（可注入共享 client）；stub/mock 不实现。"""
+    """arxiv/openreview/pmlr 实现 `HttpClientConsumer`（可注入共享 client）；stub/mock 不实现。"""
     assert isinstance(adapters["arxiv"], HttpClientConsumer)
     assert isinstance(adapters["openreview"], HttpClientConsumer)
+    assert isinstance(adapters["pmlr"], HttpClientConsumer)
     assert not isinstance(adapters["mock_platform"], HttpClientConsumer)
     assert not isinstance(adapters["crossref"], HttpClientConsumer)
 
@@ -199,11 +221,14 @@ def test_bind_http_client_injects_only_consumers(adapters: dict[str, SourceAdapt
     """`bind_http_client` 只注入实现协议的 adapter，返回被注入的 id 列表。"""
     client = HttpClient(user_agent="PaperCrawler/test (personal research)")
     injected = bind_http_client(adapters, client)
-    assert set(injected) == {"arxiv", "openreview"}  # 两个 http adapter
-    # 注入生效：arxiv 的 _client() 返回被注入的实例，不再惰性自建。
+    assert set(injected) == {"arxiv", "openreview", "pmlr"}  # 三个真实 http adapter
+    # 注入生效：三者的 _client() 都返回被注入的实例，不再惰性自建。
     arxiv = adapters["arxiv"]
+    pmlr = adapters["pmlr"]
     assert isinstance(arxiv, HttpClientConsumer)
+    assert isinstance(pmlr, HttpClientConsumer)
     assert arxiv._client() is client  # type: ignore[attr-defined]
+    assert pmlr._client() is client  # type: ignore[attr-defined]
 
 
 class _NullIO:
