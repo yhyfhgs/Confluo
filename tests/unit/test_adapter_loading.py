@@ -22,7 +22,7 @@ from paper_crawler.types import (
     VenueSpec,
 )
 
-EXPECTED_ADAPTER_IDS = {"mock_platform", "crossref", "openreview", "elsevier_sd", "arxiv"}
+EXPECTED_ADAPTER_IDS = {"mock_platform", "crossref", "openreview", "elsevier_sd", "arxiv", "cvf"}
 VALID_FAMILIES = {"open_access", "auth_gated", "aggregator"}
 
 
@@ -32,7 +32,7 @@ def adapters() -> dict[str, SourceAdapter]:
 
 
 def test_load_adapters_discovers_all_registered(adapters: dict[str, SourceAdapter]) -> None:
-    # 三个内置 stub + mock + arxiv（Phase 2 T5 经 entry point 注册的第一个真实 adapter）。
+    # 三个内置 stub + mock + arxiv/openreview/cvf（Phase 2 经 entry point 注册的真实 adapter）。
     assert set(adapters) == EXPECTED_ADAPTER_IDS
 
 
@@ -121,6 +121,21 @@ def test_arxiv_attributes(adapters: dict[str, SourceAdapter]) -> None:
     assert arxiv.domains == ("export.arxiv.org", "oaipmh.arxiv.org", "arxiv.org")
 
 
+def test_cvf_attributes(adapters: dict[str, SourceAdapter]) -> None:
+    cvf = adapters["cvf"]
+    assert cvf.family == "open_access"
+    # design/adapters/cvf.md §1 裁决：DISCOVER|ENUMERATE|RESOLVE|FETCH，无 SEARCH。
+    assert (
+        cvf.capabilities
+        == Capability.DISCOVER | Capability.ENUMERATE | Capability.RESOLVE | Capability.FETCH
+    )
+    assert Capability.SEARCH not in cvf.capabilities
+    assert cvf.default_rate.requests_per_minute == 30.0  # 1 req/2s
+    assert "site-survey/cvf.md" in cvf.default_rate.source_note  # 出处（非占位 ⚠）
+    assert cvf.auth_requirement is AuthLevel.NONE  # 匿名可读、无认证（§2/§4）
+    assert cvf.domains == ("openaccess.thecvf.com",)
+
+
 def test_healthcheck_defaults_healthy(adapters: dict[str, SourceAdapter]) -> None:
     # mock_platform 不覆写 healthcheck → 继承 AdapterBase 默认恒 healthy。
     # （stub adapter 现已覆写为抛 NotImplementedError，见下一个测试。）
@@ -188,9 +203,10 @@ def test_mock_platform_methods_are_implemented_after_t6(
 
 
 def test_arxiv_is_http_client_consumer(adapters: dict[str, SourceAdapter]) -> None:
-    """arxiv/openreview 实现 `HttpClientConsumer`（可注入共享 client）；stub/mock 不实现。"""
+    """arxiv/openreview/cvf 实现 `HttpClientConsumer`（可注入共享 client）；stub/mock 不实现。"""
     assert isinstance(adapters["arxiv"], HttpClientConsumer)
     assert isinstance(adapters["openreview"], HttpClientConsumer)
+    assert isinstance(adapters["cvf"], HttpClientConsumer)
     assert not isinstance(adapters["mock_platform"], HttpClientConsumer)
     assert not isinstance(adapters["crossref"], HttpClientConsumer)
 
@@ -199,7 +215,7 @@ def test_bind_http_client_injects_only_consumers(adapters: dict[str, SourceAdapt
     """`bind_http_client` 只注入实现协议的 adapter，返回被注入的 id 列表。"""
     client = HttpClient(user_agent="PaperCrawler/test (personal research)")
     injected = bind_http_client(adapters, client)
-    assert set(injected) == {"arxiv", "openreview"}  # 两个 http adapter
+    assert set(injected) == {"arxiv", "openreview", "cvf"}  # 三个 http adapter
     # 注入生效：arxiv 的 _client() 返回被注入的实例，不再惰性自建。
     arxiv = adapters["arxiv"]
     assert isinstance(arxiv, HttpClientConsumer)
