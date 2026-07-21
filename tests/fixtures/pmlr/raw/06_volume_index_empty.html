@@ -1,0 +1,22 @@
+<!--
+  SYNTHETIC fixture (Phase 2 pmlr adapter, T3 fixture #6 -- design/adapters/pmlr.md
+  Sec6.2 item 6). A legitimately empty / placeholder volume page: valid page shell,
+  zero paper blocks below, because no papers have been uploaded yet. Paired with
+  07_bibliography_empty.bib (0 entries) to exercise the 0-div + bib==0 ->
+  legal-empty-volume (non-error, count=0) branch (design Sec3.2/Sec5 "合法空卷").
+  design/adapters/pmlr.md Sec2 notes this exact "200 but empty" shape was not
+  observed live during site-survey (a predicted state, not an observed one) --
+  hence synthetic. NOTE: do not spell out the real div/class markup literally in
+  this comment block -- the adapter's regex-based parser has no concept of HTML
+  comments and will happily match example markup written here.
+-->
+<!DOCTYPE html>
+<html lang="en">
+<head><meta charset="utf-8"><title>Volume 9998: Placeholder</title></head>
+<body>
+<div id="content">
+<h1>Volume 9998: Placeholder</h1>
+<p>Proceedings coming soon.</p>
+</div>
+</body>
+</html>
