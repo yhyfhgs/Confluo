@@ -228,6 +228,92 @@ def test_fetch_without_session_raises_auth_required() -> None:
 
 
 # ---------------------------------------------------------------------------
+# MINOR-1：非 PDF SI 附录不做 %PDF 魔数断言 / 不误报 auth_leak（expected_type 门控）
+# ---------------------------------------------------------------------------
+
+_SI_ZIP_URL = (
+    "https://academic.oup.com/qje/article-pdf/141/3/2205/61701561/appendix_supplementary.zip"
+)
+
+
+def _si_plan(url: str = _SI_ZIP_URL, *, expected_type: str = "application/zip") -> AssetPlan:
+    return AssetPlan(kind=AssetKind.SI, url=url, expected_type=expected_type)
+
+
+@pytest.mark.parametrize(
+    ("url", "expected"),
+    [
+        ("https://x/a_supplementary.pdf", "application/pdf"),
+        ("https://x/a_supplementary.zip", "application/zip"),
+        (
+            "https://x/a_supplementary.xlsx",
+            "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        ),
+        ("https://x/a_supplementary.bin", "application/octet-stream"),  # 未知扩展名回落
+    ],
+)
+def test_expected_type_inferred_by_extension(url: str, expected: str) -> None:
+    from paper_crawler.adapters.oup_silverchair.adapter import _expected_type_for
+
+    assert _expected_type_for(url) == expected
+
+
+def test_resolve_infers_si_zip_expected_type() -> None:
+    # 落地页含 .zip SI 附录 → SI plan.expected_type 按扩展名推断为 application/zip（非硬编）。
+    body = (
+        b'<head><meta name="citation_pdf_url" '
+        b'content="https://academic.oup.com/qje/article-pdf/1/1/1/F/main.pdf"/></head>'
+        b"<body><a href='/user/logout'>Sign out</a>"
+        b'<a href="/qje/article-pdf/1/1/1/F/appendix_supplementary.zip">'
+        b"Supplementary Data</a></body>"
+    )
+    transport = landing_transport("https://academic.oup.com/qje/article/1/1/1/1", 200, {}, body)
+    plans = _adapter(transport).resolve_assets(_VENUE, _paper(), session=_session())
+    si = next(p for p in plans if p.kind is AssetKind.SI)
+    assert si.expected_type == "application/zip"
+
+
+def test_fetch_non_pdf_si_writes_without_magic_and_no_auth_leak() -> None:
+    # 关键 MINOR-1 断言：zip 形态 SI（首字节 PK，非 %PDF）200 → 正常写，**不误报** auth_leak。
+    zip_body = b"PK\x03\x04" + b"\x00" * 64
+    adapter = _adapter(direct_transport(200, {"content-type": "application/zip"}, zip_body))
+    io = FakeFetchIO()
+    result = adapter.fetch_asset(_si_plan(), io, session=_session())
+    assert result.ok is True
+    assert io.data == zip_body
+
+
+def test_fetch_non_pdf_si_challenge_still_detected() -> None:
+    # 魔数门控不削弱挑战判读：SI 请求被 challenge 拦截仍如实上报（红线不变）。
+    _, headers, _, body = oup_fixture("01_challenge_cf_mitigated")
+    adapter = _adapter(direct_transport(403, headers, body))
+    with pytest.raises(Challenged):
+        adapter.fetch_asset(_si_plan(), FakeFetchIO(), session=_session())
+
+
+def test_fetch_non_pdf_si_non_200_is_integrity_not_auth_leak() -> None:
+    # 非 PDF 资产非 200 且分类 OK（罕见，如 5xx 良性体）→ 泛 integrity（**非** auth_leak，
+    # auth_leak 仅属 PDF 主路的魔数失败——门控生效的负向证据）。
+    adapter = _adapter(direct_transport(500, {}, b"upstream hiccup, not a challenge"))
+    with pytest.raises(CrawlerError) as exc:
+        adapter.fetch_asset(_si_plan(), FakeFetchIO(), session=_session())
+    assert exc.value.error_class is ErrorClass.INTEGRITY
+    assert exc.value.detail != "auth_leak"
+
+
+def test_fetch_pdf_main_path_magic_protection_unchanged() -> None:
+    # 正例：真 PDF（%PDF）写入成功；反例：HTML 伪装 → auth_leak——PDF 主路防护逐字不变。
+    ok = _adapter(direct_transport(200, {"content-type": "application/pdf"}, MINIMAL_PDF))
+    assert ok.fetch_asset(_pdf_plan(), FakeFetchIO(), session=_session()).ok is True
+
+    fake = b"<html><body><a href='/user/logout'>Sign out</a>not pdf</body></html>"
+    bad = _adapter(direct_transport(200, {"content-type": "text/html"}, fake))
+    with pytest.raises(CrawlerError) as exc:
+        bad.fetch_asset(_pdf_plan(), FakeFetchIO(), session=_session())
+    assert exc.value.error_class is ErrorClass.INTEGRITY and exc.value.detail == "auth_leak"
+
+
+# ---------------------------------------------------------------------------
 # healthcheck（§3.3；SKIP 语义）
 # ---------------------------------------------------------------------------
 

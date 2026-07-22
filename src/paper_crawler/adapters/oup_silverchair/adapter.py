@@ -213,8 +213,10 @@ class OupSilverchairAdapter(AdapterBase):
             plans.append(
                 AssetPlan(
                     kind=AssetKind.SI,
+                    # MINOR-1：按扩展名推断（参照 cvf `_expected_type_for`）——SI 附录多为
+                    # zip/xlsx/pdf，硬编 octet-stream 会令 fetch 对非 PDF 附录误做 %PDF 魔数断言。
+                    expected_type=_expected_type_for(si_url),
                     url=si_url,
-                    expected_type="application/octet-stream",
                     url_strategy=UrlStrategy.DIRECT,
                     auth_needed=AuthLevel.INSTITUTIONAL,
                     version=None,
@@ -229,14 +231,17 @@ class OupSilverchairAdapter(AdapterBase):
     ) -> FetchResult:
         """session cookie jar 注入专属 client → GET `article-pdf` 直取 → `io.write_stream`。
 
-        成功判据：`200` + body 起始 `%PDF` 魔数 → 写入、返回 `FetchResult(ok=True)`。否则
-        经 `ChallengeDetector` 判读**被拒/伪装**（design §5，**不做 BrowserFetcher 兜底**——
-        `[auth-browser]` 路径留 T7b/runbook 评估）：
+        成功判据按 `plan.expected_type` 分层（MINOR-1）：**PDF 主路**（`application/pdf`）
+        要求 `200` + body 起始 `%PDF` 魔数；**非 PDF 资产**（SI zip/xlsx…）只要求 `200`
+        （不做 `%PDF` 魔数断言——附录起始字节非 %PDF 属正常）。否则经 `ChallengeDetector`
+        判读**被拒/伪装**（design §5，**不做 BrowserFetcher 兜底**——`[auth-browser]` 留
+        T7b/runbook）：
 
-        - CHALLENGE → `Challenged`；LOGIN_REDIRECT → `AuthRequired`；
+        - CHALLENGE → `Challenged`；LOGIN_REDIRECT → `AuthRequired`（对所有 kind 一致）；
         - NO_ENTITLEMENT → `CrawlerError(NO_ENTITLEMENT)`；
-        - OK 但非 `%PDF`（下载物为 HTML 伪装 PDF）→ `CrawlerError(INTEGRITY, detail="auth_leak")`
-          （魔数校验失败 → 触发 healthcheck 判拦截页伪装，design §3.2/§5）。
+        - **仅 PDF 主路** OK 却非 `%PDF`（下载物为 HTML 伪装 PDF）→ `CrawlerError(INTEGRITY,
+          detail="auth_leak")`（魔数校验失败 → 触发 healthcheck 判拦截页伪装，design §3.2/§5）；
+          非 PDF 资产不做此断言（MINOR-1：zip/xlsx 附录不误报 auth_leak）。
 
         **流式化 seam 备注**：本 Phase 为覆盖魔数 + auth_leak + 挑战判读，`_authed_get` 一次
         读全 body 再经 `io.write_stream(iter([body]))` 单块写入（低频个人科研量级可接受）；
@@ -245,30 +250,44 @@ class OupSilverchairAdapter(AdapterBase):
         if session is None:
             raise AuthRequired("oup session 未配置", detail="crawler auth login oup@campus")
         resp = self._authed_get(plan.url, session)
+        pdf_expected = plan.expected_type == "application/pdf"
 
-        if resp.status == 200 and resp.body.startswith(b"%PDF"):
+        # PDF 主路快路：200 + %PDF 魔数 → 直接写（登录态泄漏防护的正锚，门控 pdf_expected）。
+        if pdf_expected and resp.status == 200 and resp.body.startswith(b"%PDF"):
             bytes_written, sha256 = io.write_stream(iter([resp.body]))
             return FetchResult(ok=True, bytes_written=bytes_written, sha256=sha256)
 
+        # 其余先经 ChallengeDetector 判读被拒/伪装（challenge/login/entitlement 对所有 kind 一致）。
         result = self._classify(resp)
         if result is ClassifyResult.CHALLENGE:
-            raise Challenged("oup PDF 取回命中风控挑战", detail=_redacted_where(resp.final_url))
+            raise Challenged("oup 取回命中风控挑战", detail=_redacted_where(resp.final_url))
         if result is ClassifyResult.LOGIN_REDIRECT:
             raise AuthRequired(
-                "oup PDF 取回 302→signin（session 过期）",
+                "oup 取回 302→signin（session 过期）",
                 detail="crawler auth login oup@campus",
             )
         if result is ClassifyResult.NO_ENTITLEMENT:
             raise CrawlerError(
                 ErrorClass.NO_ENTITLEMENT,
-                "oup PDF 取回落 no_entitlement（无全文权限）",
+                "oup 取回落 no_entitlement（无全文权限）",
                 detail=_redacted_where(resp.final_url),
             )
-        # OK 分类但非 %PDF：登录态泄漏/拦截页伪装成 PDF 响应 → integrity(auth_leak)。
+
+        # 到此 classify=OK。分两支：
+        if pdf_expected:
+            # PDF 主路 OK 却非 %PDF（或非 200）：登录态泄漏/拦截页伪装成 PDF 响应 → auth_leak。
+            raise CrawlerError(
+                ErrorClass.INTEGRITY,
+                f"oup 下载物非 PDF（HTML 伪装，status={resp.status}）",
+                detail="auth_leak",
+            )
+        # 非 PDF 资产（SI）：200+OK → 正常写（不做 %PDF 魔数断言，MINOR-1）；非 200 → integrity。
+        if resp.status == 200:
+            bytes_written, sha256 = io.write_stream(iter([resp.body]))
+            return FetchResult(ok=True, bytes_written=bytes_written, sha256=sha256)
         raise CrawlerError(
             ErrorClass.INTEGRITY,
-            f"oup 下载物非 PDF（HTML 伪装，status={resp.status}）",
-            detail="auth_leak",
+            f"oup 非 PDF 资产取回非 200（status={resp.status}，type={plan.expected_type}）",
         )
 
     # -- healthcheck（探针账号页，design §3.3）------------------------------------------------
@@ -366,6 +385,29 @@ class OupSilverchairAdapter(AdapterBase):
             )
         finally:
             client.close()
+
+
+# SI 附件扩展名 → expected_type 推断（参照 cvf `_expected_type_for` 先例，MINOR-1）。
+# 未知扩展名回落 `application/octet-stream`——fetch 对非 `application/pdf` 资产不做 %PDF
+# 魔数断言（zip/xlsx 等附录起始字节非 %PDF 属正常，不误报 auth_leak）。`.pdf` 附录仍归
+# `application/pdf` → 走 PDF 主路魔数 + auth_leak 防护（附录若是真 PDF，%PDF 校验正确）。
+_SI_EXPECTED_TYPES: dict[str, str] = {
+    ".pdf": "application/pdf",
+    ".zip": "application/zip",
+    ".xlsx": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+    ".docx": "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+    ".csv": "text/csv",
+    ".txt": "text/plain",
+}
+
+
+def _expected_type_for(url: str) -> str:
+    """SI URL 扩展名 → expected_type；未知扩展名回落 `application/octet-stream`（参照 cvf）。"""
+    lower = url.lower()
+    for ext, mime in _SI_EXPECTED_TYPES.items():
+        if lower.endswith(ext):
+            return mime
+    return "application/octet-stream"
 
 
 def _redacted_where(final_url: str) -> str:
