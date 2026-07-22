@@ -221,8 +221,11 @@ def test_dblp_icml_anchor_seed_row_matches_live_verified_count() -> None:
     assert seed["volume"] == 235
     assert seed["paper_count_claimed"] == 2610
     assert seed["dblp_slug"] == "conf/icml/icml2024"
-    # D-019：每行人工核准状态显式标 pending（未做真实 DBLP 交叉核对，见勘察 [UNRESOLVED]）。
-    assert seed["dblp_cross_check"] == "pending"
+    # D-019：2026-07-23 M2a 在线债务清理完成人工 DBLP 交叉核对（dblp.org/db/conf/icml/
+    # icml2024.html，2610 条 inproceedings，与种子值精确匹配）——种子行状态由 pending
+    # 转正为 LIVE 核准值，见 tests/fixtures/pmlr/dblp-icml-anchor.json 行内 note。
+    assert seed["dblp_cross_check"] == "LIVE_2026-07-23_MATCH"
+    assert seed["dblp_toc_count"] == 2610
 
 
 def test_dblp_icml_anchor_years_are_subset_of_venue_yaml_volume_map() -> None:
@@ -238,11 +241,14 @@ def test_dblp_icml_anchor_years_are_subset_of_venue_yaml_volume_map() -> None:
         assert row["volume"] == venue_volume_map[row["year"]]
 
 
-def test_dblp_icml_anchor_all_rows_pending_human_confirmation() -> None:
-    # D-019：本次实现未做真实网络录制/DBLP 交叉核对，所有行必须诚实标 pending
-    # （不得把种子行以外的行悄悄标记为已核准）。
+def test_dblp_icml_anchor_non_seed_rows_still_pending_human_confirmation() -> None:
+    # D-019：2026-07-23 M2a 在线债务清理仅对种子行（2024）做了真实 DBLP 交叉核对
+    # （见 test_dblp_icml_anchor_seed_row_matches_live_verified_count）；其余年份未
+    # 触碰，必须继续诚实标 pending（不得悄悄标记为已核准）。
     anchor = json.loads(_ANCHOR_PATH.read_text(encoding="utf-8"))
-    assert all(row["dblp_cross_check"] == "pending" for row in anchor["rows"])
+    non_seed_rows = [row for row in anchor["rows"] if row["year"] != 2024]
+    assert len(non_seed_rows) == len(anchor["rows"]) - 1
+    assert all(row["dblp_cross_check"] == "pending" for row in non_seed_rows)
 
 
 # --- 反例：非 pmlr 结构的输入不应被误判为"有效卷页" -----------------------------------------------

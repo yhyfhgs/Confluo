@@ -12,7 +12,15 @@
   "total": 2241,
   "cross_source": {
     "dblp": "conf/emnlp",
-    "status": "PENDING_HUMAN_CROSS_CHECK",
-    "note": "seed counts are exact tallies from a full bulk-XML download (site-survey §8), not estimates; formal human reconciliation against DBLP conf/emnlp (dblp.org/db/conf/emnlp/emnlp2023.html; Findings tallied separately there) and/or aclanthology.org/events/emnlp-2023/ is a Phase 2 acceptance follow-up per D-019's 'human-approved anchor snapshot' step"
+    "status": "LIVE_2026-07-23_MATCH_WITH_NOTED_RESIDUAL",
+    "note": "seed counts are exact tallies from a full bulk-XML download (site-survey §8), not estimates. D-019 human cross-check CLOSED 2026-07-23 (M2a online debt cleanup): fetched all 5 DBLP TOC pages under dblp.org/db/conf/emnlp/ (slugs discovered via the emnlp index page: emnlp2023=main, emnlp2023t=tutorial, emnlp2023d=demo, emnlp2023i=industry, emnlp2023f=findings -- a clean 1:1 match to this fixture's 5 volumes). Each DBLP TOC page counts exactly 1 more 'entry inproceedings' than this fixture's per-volume paper_count; inspecting the extra entry in main/tutorial/demo/industry confirms it is a single DBLP-catalogued 'Frontmatter.' record (aclanthology.org/2023.emnlp-main.0 etc., the volume cover page) that this fixture's XML-derived counts correctly exclude as a non-paper -- so main/tutorial/demo/industry reconcile to an EXACT MATCH once the Frontmatter entry is subtracted. findings is the one exception: DBLP counts 1061 = 1 Frontmatter + 1060 contiguously-indexed real papers (2023.findings-emnlp.1..1060), vs this fixture's findings paper_count=1059 -- a residual +1 discrepancy that survives Frontmatter exclusion and was not further diagnosed within this task's request budget (no duplicate/withdrawn DBLP entries found; cause undetermined -- possibly a DBLP/Anthology snapshot-timing difference). Net: DBLP total (5 volumes, all inproceedings) = 1048+7+53+78+1061 = 2247; minus 5 Frontmatter entries = 2242; vs this fixture's total=2241 -- the entire net +1 gap traces to the findings residual above.",
+    "dblp_toc_counts": {
+      "main": {"raw": 1048, "frontmatter": 1, "real_papers": 1047, "fixture_paper_count": 1047, "reconciled": true},
+      "tutorial": {"raw": 7, "frontmatter": 1, "real_papers": 6, "fixture_paper_count": 6, "reconciled": true},
+      "demo": {"raw": 53, "frontmatter": 1, "real_papers": 52, "fixture_paper_count": 52, "reconciled": true},
+      "industry": {"raw": 78, "frontmatter": 1, "real_papers": 77, "fixture_paper_count": 77, "reconciled": true},
+      "findings": {"raw": 1061, "frontmatter": 1, "real_papers": 1060, "fixture_paper_count": 1059, "reconciled": false, "residual": 1}
+    },
+    "verification": "curl, UA PaperCrawler/0.1.0 (personal research; mailto:yhyfhgs@gmail.com), dblp.org/robots.txt re-read same session (Crawl-delay:4 honored, /db in Allow zone); 6 GET requests total (index discovery + 5 TOC pages)"
   }
 }

@@ -287,9 +287,18 @@ def test_dblp_nips_anchor_seed_rows_match_live_verified_counts() -> None:
         2022: 2834,
         2023: 3540,
     }
+    # D-019：2026-07-23 M2a 在线债务清理完成 2023 行的真实 DBLP 交叉核对（dblp.org/db/
+    # conf/nips/neurips2023.html，3540 条 inproceedings，与种子值精确匹配；slug 同时由
+    # 错误的 'conf/nips/nips2023'（活测 404）纠正为 'conf/nips/neurips2023'）——2023 行
+    # 状态由 pending 转正为 LIVE 核准值，其余种子年份未触碰，继续诚实标 pending。
+    live_confirmed_years = {2023}
     for year, count in expected_seeds.items():
         assert rows[year]["paper_count_claimed"] == count
-        assert rows[year]["dblp_cross_check"] == "pending"
+        if year in live_confirmed_years:
+            assert rows[year]["dblp_cross_check"] == "LIVE_2026-07-23_MATCH"
+            assert rows[year]["dblp_toc_count"] == count
+        else:
+            assert rows[year]["dblp_cross_check"] == "pending"
 
 
 def test_dblp_nips_anchor_has_39_rows_spanning_1987_to_2025() -> None:
@@ -300,13 +309,19 @@ def test_dblp_nips_anchor_has_39_rows_spanning_1987_to_2025() -> None:
 
 def test_dblp_nips_anchor_non_seed_rows_are_honestly_pending() -> None:
     # D-019：本次实现未做真实网络录制/DBLP 交叉核对，种子行之外一律 paper_count_claimed
-    # =null（不得悄悄标记为已核准）。
+    # =null（不得悄悄标记为已核准）。2026-07-23 M2a 在线债务清理额外把 2023 行的
+    # dblp_cross_check 由 pending 转正（真实 DBLP TOC 核对，见上方 test_..._seed_rows_...
+    # 用例）——2023 从本测试的"仍应 pending"论域中显式排除，其余行未触碰。
     anchor = json.loads(_ANCHOR_PATH.read_text(encoding="utf-8"))
     seed_years = {1987, 1993, 2019, 2020, 2021, 2022, 2023}
+    live_confirmed_years = {2023}
     for row in anchor["rows"]:
         if row["year"] not in seed_years:
             assert row["paper_count_claimed"] is None
-        assert row["dblp_cross_check"] == "pending"
+        if row["year"] in live_confirmed_years:
+            assert row["dblp_cross_check"] == "LIVE_2026-07-23_MATCH"
+        else:
+            assert row["dblp_cross_check"] == "pending"
 
 
 def test_dblp_nips_anchor_matches_discover_timeline_when_known_through_year_pinned() -> None:

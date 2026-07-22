@@ -2,7 +2,7 @@
 title: Adapter 设计 · PMLR
 status: implemented
 owner: fable5
-updated: 2026-07-22
+updated: 2026-07-23
 ---
 
 # Adapter · `pmlr`
@@ -239,7 +239,7 @@ PaperStub(
 
 | year | volume | paper_count_claimed | dblp_slug | pdf_host | note |
 |---|---|---|---|---|---|
-| 2024 | 235 | **2610** | conf/icml/icml2024 | raw.githubusercontent.com | count 三重互证（div/Download PDF/去重 slug 各 2610，[LIVE]）；DBLP count API 勘察时 503 → 实现期重试核准 |
+| 2024 | 235 | **2610** | conf/icml/icml2024 | raw.githubusercontent.com | count 三重互证（div/Download PDF/去重 slug 各 2610，[LIVE]）；**D-019 人工 DBLP 核准已闭合 [LIVE 2026-07-23]**：`GET dblp.org/db/conf/icml/icml2024.html` 实测 2610 条 `inproceedings`，与站内三法计数**精确匹配**（原 2026-07-22 site-survey 走 `/search/publ/api` count 端点 503，且该路径本属 robots `/search` 禁区；本次改走 `.html` TOC 页，`/db` 允许区内）。核准出处：M2a 在线债务清理 session，台账见 `tests/fixtures/pmlr/dblp-icml-anchor.json` 该行 `note`/`dblp_toc_count`/`dblp_cross_check` |
 | 2023 | 202 | (实现期填) | conf/icml/icml2023 | proceedings.mlr.press | 自托管旧卷 |
 | 2025 | 267 | (实现期填) | conf/icml/icml2025 | raw.githubusercontent.com | GitHub 托管 |
 | … | … | … | conf/icml/icml{year} | (逐卷实测) | volume_map 全区间逐年补 |
@@ -271,7 +271,7 @@ PaperStub(
 ### 7.4 常规维护
 - **volume_map 年度追加**：track 探测器（design/08 §4）从 `feed.xml`（RSS，优于 diff HTML 首页）或首页锚点 `Volume N Proceedings of CONF YEAR`（注意相对链接无前导斜杠形态）产候选 → 人工 confirm（D-012）→ 写回各 venue YAML `quirks.volume_map`（多段 era venue 写对应 era 切片）。
 - **Reissue r0–r6 本期不纳入**（pre-2007 AISTATS/UAI）：若后续纳入，IssueRef `label` 需区分 `r` 卷与 `v` 卷（如 `label='r5'`）、volume 存 `"r5"` 形态——届时补设计；当前明确排除（Phase 2 范围为 PMLR-era `v` 卷）。
-- **[UNRESOLVED / 实现期]**：①`raw.githubusercontent.com` 限速/滥用阈值属 GitHub Fastly 基础设施、无文档化数字，查 GitHub 官方 ToS/rate-limit 后在 §4 下调并注明；②DBLP 锚点交叉核对（勘察时 count API 503）实现期重试补 `paper_count_claimed` 外源列。
+- **[UNRESOLVED / 实现期]**：①`raw.githubusercontent.com` 限速/滥用阈值属 GitHub Fastly 基础设施、无文档化数字，查 GitHub 官方 ToS/rate-limit 后在 §4 下调并注明；②~~DBLP 锚点交叉核对（勘察时 count API 503）实现期重试补 `paper_count_claimed` 外源列~~——**2026-07-23 种子行（2024）已闭合**（见 §6.5 表，`.html` TOC 页 2610 精确匹配）；其余年份仍待补（fixture 逐行 `dblp_cross_check` 现状为准）。
 
 ### 附：venue YAML `quirks` 形态（实现期落地，示例）
 ```yaml
