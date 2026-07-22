@@ -230,6 +230,29 @@ def make_aaai_venue(**quirks_overrides: object) -> VenueSpec:
     )
 
 
+def make_crossref_venue(**quirks_overrides: object) -> VenueSpec:
+    """构造 crossref 契约测试用的 `journal` venue（不依赖 `venues/` 目录文件）。
+
+    id/names 借用真实 QJE 身份（与 crossref adapter 自身单测 `tests/unit/
+    test_crossref_adapter.py` 的本地 `_venue()` 同一识别号，便于跨文件对照），
+    `identifiers.issn` 是 `adapter._issn_of` 的唯一输入（D-015：期刊+crossref 必填，
+    lint 已保证）——契约 handler 不校验请求里的实际 ISSN 值，故该值本身不需要与任何
+    fixture 内容对应，只需形态合法。`quirks_overrides` 目前无消费方（crossref 不读
+    quirks），保留形参只为与其余 `make_*_venue` 签名一致。
+    """
+    quirks: dict[str, object] = dict(quirks_overrides)
+    return VenueSpec(
+        id="qje",
+        kind="journal",
+        names={"full": "Quarterly Journal of Economics", "aliases": ["QJE"]},
+        field=["econ"],
+        identifiers={"issn": ["0033-5533"]},
+        metadata_source="crossref",
+        fulltext_source="mock_platform",
+        quirks=quirks,
+    )
+
+
 def make_neurips_venue(**quirks_overrides: object) -> VenueSpec:
     """构造 neurips_proceedings 契约/集成测试用的 `conference` venue（不依赖 `venues/` 目录）。
 
@@ -283,6 +306,7 @@ __all__ = [
     "make_aaai_venue",
     "make_acl_anthology_venue",
     "make_arxiv_venue",
+    "make_crossref_venue",
     "make_cvf_venue",
     "make_mock_venue",
     "make_openreview_venue",

@@ -1,15 +1,31 @@
 """T2 契约测试（test-plan §1）：参数化遍历 `load_adapters()`，校验协议一致性。
 
 全体 adapter 都要过的元数据完备性检查，以及——对声明了 contract case 的 adapter
-（`mock_platform` 本地确定性；`arxiv`/`openreview` 经 `httpx.MockTransport` 注入合成
-fixture，零真实网络）——DISCOVER→ENUMERATE→RESOLVE→FETCH 全链路产出合法性检查。剩余
-无 contract-case factory 的 adapter 经 `pytest.skip` 占位（各 4 条能力链）：Phase 3 落地的
-五源（crossref/dblp/unpaywall/openalex/s2）factory 补齐移交 Phase 4 测试补强批次；
-elsevier_sd 仍为 stub——共 24 skip。
+（`mock_platform` 本地确定性；`arxiv`/`openreview`/`crossref`/`dblp`/`unpaywall` 经
+`httpx.MockTransport` 注入合成 fixture，零真实网络）——DISCOVER→ENUMERATE→RESOLVE→FETCH
+全链路产出合法性检查。**Phase 4 M2b 检查单 #15c 补强**：crossref/dblp（均
+DISCOVER|ENUMERATE，无 RESOLVE/FETCH）与 unpaywall（RESOLVE only，无 DISCOVER/
+ENUMERATE/FETCH）三源已补 factory；openalex/s2（`capabilities=Capability(0)` 空集——
+T6 裁决的 duck-typed enrich-only 通道，不参与本协议，非"未补"而是"无契可契"）与
+elsevier_sd（仍为 `NotImplementedError` stub）维持 `pytest.skip` 占位——共 19 skip
+（较 Phase 3 末的 24 skip 收窄 5：crossref/dblp 各贡献 discover+enumerate 2 个、
+unpaywall 贡献 resolve 1 个，全部转为真实通过）。
 
 契约的 enumerate 计数口径按能力分层：声明了权威计数（`IssueRef.paper_count_claimed`）
-的 adapter（mock）严格等值；未声明的（arxiv 月度桶——预印本无权威"期"计数）只要求
-"至少产出且每篇形态合法"。这不是放宽契约，而是契约对"有/无权威计数"两类源的正确表述。
+的 adapter（mock）严格等值；未声明的（arxiv 月度桶、dblp 会议届——预印本/会议无权威
+"期"计数）只要求"至少产出且每篇形态合法"。这不是放宽契约，而是契约对"有/无权威计数"
+两类源的正确表述。crossref 声明了权威计数（facet 逐年计数），contract fixture 为此
+自建一组数值自洽的最小合成响应（1 年/1 篇），不复用 `tests/fixtures/crossref/` 下
+adapter 自身单测的既有 fixture——那些文件的 `paper_count_claimed`（如 46）与其
+enumerate 页面的有效记录数（如 3，因单测刻意混入跳过样例）并不相等，直接挪用会在
+本契约的严格等值断言上装配性失败，同 acl_anthology/cvf/neurips 已有先例（那三个
+contract case 同样是自建最小合成响应，不复用各自 adapter 单测 fixture）。
+
+resolve/fetch 契约测试取"样本 paper"的口径按 adapter 形状分层（`_sample_paper_for`）：
+多数 adapter 是 DISCOVER→ENUMERATE→RESOLVE→FETCH 全链路（样本 paper 从真实
+discover→enumerate 产出取得）；unpaywall 这类 RESOLVE-only 聚合源（按外部已知 DOI
+定位 OA 副本，不产出自己的论文列表——`_RESOLVE_ONLY_SAMPLE_PAPERS` 登记）改用直接
+登记的样本 paper，不强行伪造它并不具备的 DISCOVER/ENUMERATE。
 
 未声明能力时的兜底行为（`CapabilityNotSupported`）用一个不声明任何能力的最小
 `FakeAdapter` 独立验证——这是 `AdapterBase` 本身的契约，不依赖具体哪个 adapter
@@ -28,6 +44,7 @@ from helpers import (
     make_aaai_venue,
     make_acl_anthology_venue,
     make_arxiv_venue,
+    make_crossref_venue,
     make_cvf_venue,
     make_mock_venue,
     make_neurips_venue,
@@ -36,15 +53,21 @@ from helpers import (
 )
 from helpers.aaai_fixtures import fixture_bytes as aaai_fixture_bytes
 from helpers.arxiv_fixtures import fixture_bytes
+from helpers.dblp_fixtures import fixture_bytes as dblp_fixture_bytes
+from helpers.dblp_fixtures import make_dblp_venue
 from helpers.pmlr_fixtures import fixture_bytes as pmlr_fixture_bytes
+from helpers.unpaywall_fixtures import fixture_bytes as unpaywall_fixture_bytes
 from paper_crawler.adapter import AdapterBase, AdapterFamily, SourceAdapter, load_adapters
 from paper_crawler.adapters.aaai_ojs.adapter import AaaiOjsAdapter
 from paper_crawler.adapters.acl_anthology.adapter import AclAnthologyAdapter
 from paper_crawler.adapters.arxiv.adapter import ArxivAdapter
+from paper_crawler.adapters.crossref.adapter import CrossrefAdapter
 from paper_crawler.adapters.cvf.adapter import CVFAdapter
+from paper_crawler.adapters.dblp.adapter import DblpAdapter
 from paper_crawler.adapters.neurips_proceedings.adapter import NeuripsProceedingsAdapter
 from paper_crawler.adapters.openreview.adapter import OpenReviewAdapter
 from paper_crawler.adapters.pmlr.adapter import PmlrAdapter
+from paper_crawler.adapters.unpaywall.adapter import UnpaywallAdapter
 from paper_crawler.errors import CapabilityNotSupported
 from paper_crawler.http import HttpClient
 from paper_crawler.types import (
@@ -235,9 +258,105 @@ def _neurips_proceedings_case() -> tuple[SourceAdapter, VenueSpec]:
     return NeuripsProceedingsAdapter(http=client), make_neurips_venue()
 
 
+# crossref 契约链的 MockTransport：facet 年计数（discover） → cursor works 页
+# （enumerate）。**自建最小合成响应**（不复用 `tests/fixtures/crossref/` 下 adapter
+# 自身单测的既有 fixture）——crossref 声明权威计数（`paper_count_claimed`），本契约
+# 套件对声明权威计数的 adapter 做严格等值断言（`len(papers) == first_issue.
+# paper_count_claimed`），既有单测 fixture 的计数值（如 46）与其页面有效记录数
+# （如 3，单测刻意混入跳过样例）并不相等，直接挪用会在该断言上装配性失败——见模块
+# 顶部 docstring。1 年/1 篇是满足严格等值的最小自洽取值；`next-cursor: null` 使
+# enumerate 恰 1 请求即终止（不需要额外一页空结果）。
+_CROSSREF_CONTRACT_FACET = (
+    b'{"status":"ok","message-type":"work-list","message":{'
+    b'"total-results":1,"facets":{"published":{"values":{"2024":1}}}}}'
+)
+_CROSSREF_CONTRACT_WORKS_PAGE = (
+    b'{"status":"ok","message-type":"work-list","message":{'
+    b'"total-results":1,"next-cursor":null,"items-per-page":1,"items":[{'
+    b'"DOI":"10.1234/contract.paper","title":["Contract Test Paper"],'
+    b'"author":[{"given":"Contract","family":"Author","sequence":"first"}],'
+    b'"published-print":{"date-parts":[[2024,1]]}}]}}'
+)
+
+
+def _crossref_contract_handler(request: httpx.Request) -> httpx.Response:
+    if request.url.params.get("facet"):
+        return httpx.Response(200, content=_CROSSREF_CONTRACT_FACET)
+    return httpx.Response(200, content=_CROSSREF_CONTRACT_WORKS_PAGE)
+
+
+def _crossref_case() -> tuple[SourceAdapter, VenueSpec]:
+    transport = httpx.MockTransport(_crossref_contract_handler)
+    client = HttpClient(user_agent=_CONTRACT_UA, transport=transport)
+    return CrossrefAdapter(http=client), make_crossref_venue()
+
+
+def _dblp_contract_handler(request: httpx.Request) -> httpx.Response:
+    """dblp 契约链的 MockTransport：conf 索引页（discover） → 卷 XML（enumerate）。
+
+    复用 adapter 自身单测的既有 fixture（`10_volume_xml_bht_schema_normal.xml`，非
+    1828 条真实全量的 `11_..._full_real_icml2023.xml`——契约只需"链路走通+形态合法"，
+    无需大体量）：dblp **不**声明权威计数（`IssueRef.paper_count_claimed` 恒 None），
+    不受 crossref 那种严格等值断言约束，故可以像 pmlr/neurips 先例一样不区分请求的
+    具体年份/卷号，任何 `.xml` 请求都回同一份卷内容。
+    """
+    if request.url.path.endswith(".xml"):
+        body = dblp_fixture_bytes("10_volume_xml_bht_schema_normal.xml")
+        return httpx.Response(200, content=body)
+    return httpx.Response(200, content=dblp_fixture_bytes("01_conf_index_normal.html"))
+
+
+def _dblp_case() -> tuple[SourceAdapter, VenueSpec]:
+    transport = httpx.MockTransport(_dblp_contract_handler)
+    client = HttpClient(user_agent=_CONTRACT_UA, transport=transport)
+    return DblpAdapter(http=client), make_dblp_venue()
+
+
+def _unpaywall_contract_handler(request: httpx.Request) -> httpx.Response:
+    """unpaywall 契约链的 MockTransport：唯一端点 `GET /v2/{doi}` → 复用 adapter 自身
+    单测的既有 fixture（`02_direct_pdf_hit_hybrid.json`：`is_oa=true` 且
+    `best_oa_location.url_for_pdf` 非空，产出恰 1 个 `AssetPlan`）。unpaywall
+    `parse_response` 以调用方传入的 DOI 为键、不读响应体自带的 `doi` 字段（§5.5），
+    故复用哪个 DOI 的 fixture 与契约测试实际查询的样本 DOI 是否一致无关紧要。
+    """
+    return httpx.Response(200, content=unpaywall_fixture_bytes("02_direct_pdf_hit_hybrid.json"))
+
+
+def _unpaywall_case() -> tuple[SourceAdapter, VenueSpec]:
+    transport = httpx.MockTransport(_unpaywall_contract_handler)
+    client = HttpClient(user_agent=_CONTRACT_UA, transport=transport)
+    # unpaywall `resolve_assets` 不读 `venue` 参数（跨 venue 的 OA 兜底源，adapter
+    # 模块 docstring）——复用泛用 mock venue 即可，同 `test_unpaywall_adapter.py`
+    # 既有先例（该文件的 resolve 测试同样直接 `from helpers import make_mock_venue`）。
+    return UnpaywallAdapter(http=client), make_mock_venue()
+
+
+# RESOLVE-only、无 DISCOVER/ENUMERATE 的 adapter（目前仅 unpaywall）：resolve/fetch
+# 契约测试不能像其余全链路 adapter 那样从 discover→enumerate 派生样本 paper（那两个
+# 能力它压根没有），改直接登记一个现成样本——见 `_sample_paper_for`。
+_RESOLVE_ONLY_SAMPLE_PAPERS: dict[str, PaperStub] = {
+    "unpaywall": PaperStub(
+        title="Contract Test Paper (Resolve-Only Adapter)",
+        identifiers=(("doi", "10.9999/contract.unpaywall"),),
+    ),
+}
+
+
+def _sample_paper_for(adapter_id: str, adapter: SourceAdapter, venue: VenueSpec) -> PaperStub:
+    """resolve/fetch 契约测试的样本 paper：`_RESOLVE_ONLY_SAMPLE_PAPERS` 登记的
+    adapter（无 DISCOVER/ENUMERATE）直接用登记样本；其余（有 DISCOVER+ENUMERATE 的
+    全链路 adapter）沿用既有口径——从真实 discover→enumerate 产出取第一条。"""
+    sample = _RESOLVE_ONLY_SAMPLE_PAPERS.get(adapter_id)
+    if sample is not None:
+        return sample
+    first_issue = next(iter(adapter.discover_timeline(venue)))
+    return next(iter(adapter.enumerate_issue(venue, first_issue)))
+
+
 # adapter_id -> (adapter, venue) 工厂。只有此处登记的 adapter 会跑完整能力链路检查；
-# 其余（stub）adapter 一律 pytest.skip（stub until Phase 3/4）。pmlr 无 stub 阶段
-# （不同于 arxiv 曾有 T1-T4 的 stub 过渡期）——直接新增一行即完整接入契约套件。
+# 其余（stub / 空能力集）adapter 一律 pytest.skip——见模块顶部 docstring 的 19-skip
+# 分解。pmlr 无 stub 阶段（不同于 arxiv 曾有 T1-T4 的 stub 过渡期）——直接新增一行
+# 即完整接入契约套件。
 _CONTRACT_CASES: dict[str, Callable[[], tuple[SourceAdapter, VenueSpec]]] = {
     "mock_platform": _mock_case,
     "arxiv": _arxiv_case,
@@ -247,6 +366,9 @@ _CONTRACT_CASES: dict[str, Callable[[], tuple[SourceAdapter, VenueSpec]]] = {
     "cvf": _cvf_case,
     "aaai_ojs": _aaai_case,
     "neurips_proceedings": _neurips_proceedings_case,
+    "crossref": _crossref_case,
+    "dblp": _dblp_case,
+    "unpaywall": _unpaywall_case,
 }
 
 ADAPTER_IDS = sorted(load_adapters())
@@ -265,7 +387,13 @@ def adapter_id(request: pytest.FixtureRequest) -> str:
 def _contract_case(adapter_id: str) -> tuple[SourceAdapter, VenueSpec]:
     factory = _CONTRACT_CASES.get(adapter_id)
     if factory is None:
-        pytest.skip(reason="no contract case (real-site stub deferred to Phase 3/4)")
+        pytest.skip(
+            reason=(
+                "no contract case: openalex/s2 are duck-typed enrich-only "
+                "(capabilities=Capability(0), do not participate in this protocol by "
+                "design, T6); elsevier_sd is still an unimplemented stub (Phase 4)"
+            )
+        )
     return factory()
 
 
@@ -322,10 +450,10 @@ def test_enumerate_first_issue_yields_papers_with_identifiers(adapter_id: str) -
     papers = list(adapter.enumerate_issue(venue, first_issue))
 
     if first_issue.paper_count_claimed is not None:
-        # 声明权威计数者（mock）：严格等值。
+        # 声明权威计数者（mock、crossref facet 逐年计数）：严格等值。
         assert len(papers) == first_issue.paper_count_claimed
     else:
-        # 无权威计数者（arxiv 月度桶）：至少产出（形态合法性由下方逐篇断言）。
+        # 无权威计数者（arxiv 月度桶、dblp 会议届）：至少产出（形态合法性由下方逐篇断言）。
         assert papers
     for paper in papers:
         assert isinstance(paper, PaperStub)
@@ -337,8 +465,7 @@ def test_resolve_yields_nonempty_asset_plans(adapter_id: str) -> None:
     if Capability.RESOLVE not in adapter.capabilities:
         pytest.skip(reason=f"{adapter_id} lacks RESOLVE")
 
-    first_issue = next(iter(adapter.discover_timeline(venue)))
-    paper = next(iter(adapter.enumerate_issue(venue, first_issue)))
+    paper = _sample_paper_for(adapter_id, adapter, venue)
     plans = adapter.resolve_assets(venue, paper)
 
     assert plans
@@ -350,8 +477,7 @@ def test_fetch_via_fake_io_succeeds_and_writes_pdf_magic_bytes(adapter_id: str) 
     if Capability.FETCH not in adapter.capabilities:
         pytest.skip(reason=f"{adapter_id} lacks FETCH")
 
-    first_issue = next(iter(adapter.discover_timeline(venue)))
-    paper = next(iter(adapter.enumerate_issue(venue, first_issue)))
+    paper = _sample_paper_for(adapter_id, adapter, venue)
     plan = adapter.resolve_assets(venue, paper)[0]
 
     io = FakeFetchIO()
