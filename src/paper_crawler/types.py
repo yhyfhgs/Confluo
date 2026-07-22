@@ -7,9 +7,9 @@
 
 from collections.abc import Iterable
 from dataclasses import dataclass
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from enum import Flag, StrEnum, auto
-from typing import Any, Literal, Protocol
+from typing import Literal, Protocol
 
 from pydantic import BaseModel, ConfigDict, Field
 from ulid import ULID
@@ -125,8 +125,37 @@ class HealthReport:
     detail: str = ""
 
 
-# Phase 4 具体化（design/07）；Phase 1 恒 None。
-SessionHandle = Any
+# ---------------------------------------------------------------------------
+# 认证会话（Phase 4 具体化，design/07 + auth-framework §2.1 冻结签名；Phase 1-3 恒传 None）
+# ---------------------------------------------------------------------------
+
+
+class HealthStatus(StrEnum):
+    OK = "ok"
+    EXPIRED = "expired"
+    CHALLENGED = "challenged"
+
+
+class SessionBackend(StrEnum):
+    HTTPX_COOKIES = "httpx_cookies"  # cookie jar → httpx（Silverchair 直取）
+    PLAYWRIGHT_STATE = "playwright_state"  # storage_state（浏览器上下文复用）
+    BEARER_TOKEN = "bearer_token"  # API key / TDM token（无状态凭证）
+
+
+@dataclass(frozen=True)
+class SessionHandle:
+    """认证会话把手（auth-framework §2.1 冻结签名）。
+
+    值语义：`SessionHandle` 是**指针**（`payload_ref` 指向加密存储），**绝不内联
+    凭证明文**——handle 可安全进日志（`payload_ref` 是条目名非密文；仍经 obslog
+    兜底脱敏）。frozen + hashable 与既有 dataclass 约定一致（本模块 docstring）。
+    """
+
+    provider_id: str  # 'elsevier' / 'oup@campus' / 'ezproxy_myuniv'
+    backend: SessionBackend
+    payload_ref: str  # CredentialStore 内加密条目引用（state/ 文件名 或 keyring 条目名）
+    established_at: datetime
+    est_ttl: timedelta | None = None  # 经验估计，仅用于主动提前 health_check（07 §2）
 
 
 class FetchIO(Protocol):
@@ -212,9 +241,11 @@ __all__ = [
     "FetchIO",
     "FetchResult",
     "HealthReport",
+    "HealthStatus",
     "IssueRef",
     "PaperStub",
     "RatePolicy",
+    "SessionBackend",
     "SessionHandle",
     "UrlStrategy",
     "VenueAuth",
