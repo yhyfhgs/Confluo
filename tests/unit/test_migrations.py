@@ -6,6 +6,7 @@ WAL/foreign_keys pragma、每步事务备份、tx 提交/回滚、语句切分�
 
 from __future__ import annotations
 
+import shutil
 import sqlite3
 from collections.abc import Iterator
 from pathlib import Path
@@ -14,6 +15,18 @@ import pytest
 
 from paper_crawler.storage import db as db_module
 from paper_crawler.storage.db import Database, _iter_statements
+
+_REAL_MIGRATIONS_DIR = Path(db_module.__file__).parent / "migrations"
+
+
+def _staged_migrations_dir(tmp_path: Path, *names: str) -> Path:
+    """把指定真实迁移文件拷进临时目录（保留原文件名，Python 步按文件名绑定才生效）。"""
+    mig_dir = tmp_path / "migrations"
+    mig_dir.mkdir(exist_ok=True)
+    for name in names:
+        shutil.copy(_REAL_MIGRATIONS_DIR / name, mig_dir / name)
+    return mig_dir
+
 
 # schema v1 全表清单（design/06 §2 十二张 + plan §2.4 补三张 + schema_version）。
 EXPECTED_TABLES = {
@@ -40,7 +53,12 @@ EXPECTED_INDEXES = {
     "idx_task_state_kind",
     "idx_fetch_log_domain_ts",
     "idx_asset_state",
+    "idx_paper_title_norm",  # schema v2（0002_title_norm.sql，Phase 3 T1）
 }
+
+# 当前最新 schema 版本 = migrations/ 下迁移文件数。schema v2（Phase 3 T1）新增
+# 0002_title_norm.sql（title_norm 列 + doi identifier 归一回填）。
+LATEST_SCHEMA_VERSION = 2
 
 
 @pytest.fixture
@@ -63,8 +81,8 @@ def _index_names(database: Database) -> set[str]:
 # -- 建表与版本 --------------------------------------------------------------
 
 
-def test_migrate_returns_version_one(db: Database) -> None:
-    assert db.migrate() == 1
+def test_migrate_returns_latest_version(db: Database) -> None:
+    assert db.migrate() == LATEST_SCHEMA_VERSION
 
 
 def test_migrate_creates_all_tables(db: Database) -> None:
@@ -81,14 +99,14 @@ def test_schema_version_single_row(db: Database) -> None:
     db.migrate()
     rows = db.query("SELECT version FROM schema_version")
     assert len(rows) == 1
-    assert rows[0]["version"] == 1
+    assert rows[0]["version"] == LATEST_SCHEMA_VERSION
 
 
 def test_migrate_idempotent(db: Database) -> None:
     """连跑 2 次：版本不变、无异常、表不重复建。"""
-    assert db.migrate() == 1
+    assert db.migrate() == LATEST_SCHEMA_VERSION
     tables_after_first = _table_names(db)
-    assert db.migrate() == 1  # 第二次不报错、版本不变
+    assert db.migrate() == LATEST_SCHEMA_VERSION  # 第二次不报错、版本不变
     assert _table_names(db) == tables_after_first
 
 
@@ -155,13 +173,22 @@ def _write_migration(dir_: Path, name: str, body: str) -> None:
     (dir_ / name).write_text(body, encoding="utf-8")
 
 
-def test_first_build_skips_backup(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    """首次建库（version 0→1）不产生备份文件。"""
+def test_first_build_skips_backup_of_empty_v0(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """version 0 空库不备份（无 .v0.bak）。
+
+    真实迁移目录含 0001+0002 后，一次全新建库跨 0→1→2：0→1 步（from_version=0）跳过备份，
+    1→2 步（from_version=1>0）会对 v1 中间态备份——故断言"无 .v0.bak"而非"零 .bak"，精确
+    锁定「初始空库不备份」这一规则（migrate() 的 `if current > 0` 分支）。
+    """
     db_path = tmp_path / "app.sqlite"
     database = Database(db_path)
-    database.migrate()
+    assert database.migrate() == 2
     database.close()
-    assert list(tmp_path.glob("*.bak")) == []
+    assert list(tmp_path.glob("*.v0.bak")) == []
+    # 跨到 0002 时对 v1 中间态备份（from_version=1）。
+    assert [p.name for p in tmp_path.glob("*.bak")] == ["app.sqlite.v1.bak"]
 
 
 def test_second_migration_creates_backup(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
@@ -311,4 +338,120 @@ def test_migrate_ignores_non_numeric_sql_files(
     database = Database(tmp_path / "app.sqlite")
     assert database.migrate() == 1
     assert "ignored" not in _table_names(database)
+    database.close()
+
+
+# -- schema v2（0002）v1→v2 自动升级 + Python 回填 -----------------------------
+
+
+def _seed_v1(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Database:
+    """建一个停在 v1 的库（仅应用 0001_init.sql）；MIGRATIONS_DIR 已被 monkeypatch。"""
+    mig_dir = _staged_migrations_dir(tmp_path, "0001_init.sql")
+    monkeypatch.setattr(db_module, "MIGRATIONS_DIR", mig_dir)
+    database = Database(tmp_path / "app.sqlite")
+    assert database.migrate() == 1
+    database.execute(
+        "INSERT INTO venue (id, kind, name, field_json) VALUES (?,?,?,?)",
+        ("v", "journal", "V", "[]"),
+    )
+    return database
+
+
+def _add_0002(tmp_path: Path) -> None:
+    shutil.copy(_REAL_MIGRATIONS_DIR / "0002_title_norm.sql", tmp_path / "migrations")
+
+
+def _insert_paper(database: Database, pid: str, title: str) -> None:
+    database.execute(
+        "INSERT INTO paper (id, title, ingest_state) VALUES (?,?,?)",
+        (pid, title, "metadata_only"),
+    )
+
+
+def test_v1_to_v2_upgrade_backfills_title_norm(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """v1 存量 paper 行升级到 v2 时用 Python 步回填 title_norm（含 LaTeX/Unicode 归一）。"""
+    database = _seed_v1(tmp_path, monkeypatch)
+    _insert_paper(database, "p1", r"Erd\H{o}s--R\'enyi!")
+    _insert_paper(database, "p2", "Café Society")
+
+    _add_0002(tmp_path)
+    assert database.migrate() == 2
+
+    norms = {r["id"]: r["title_norm"] for r in database.query("SELECT id, title_norm FROM paper")}
+    assert norms == {"p1": "erdos renyi", "p2": "cafe society"}
+    idx = database.query(
+        "SELECT name FROM sqlite_master WHERE type='index' AND name='idx_paper_title_norm'"
+    )
+    assert len(idx) == 1
+    database.close()
+
+
+def _insert_doi(database: Database, paper_id: str, value: str) -> None:
+    database.execute(
+        "INSERT INTO identifier (paper_id, scheme, value, is_primary) VALUES (?,?,?,?)",
+        (paper_id, "doi", value, 0),
+    )
+
+
+def test_v1_to_v2_normalizes_doi_identifier_in_place(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """存量 doi 大小写异形、无归一形冲突 → 就地归一（小写化），行不丢。"""
+    database = _seed_v1(tmp_path, monkeypatch)
+    _insert_paper(database, "p1", "Some Paper")
+    _insert_doi(database, "p1", "10.1016/J.X")
+
+    _add_0002(tmp_path)
+    assert database.migrate() == 2
+
+    ids = database.query("SELECT paper_id, value FROM identifier WHERE scheme='doi'")
+    assert [(r["paper_id"], r["value"]) for r in ids] == [("p1", "10.1016/j.x")]
+    database.close()
+
+
+def test_v1_to_v2_doi_case_collision_cross_paper_builds_candidate(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """两 paper 各持同一 DOI 的大小写异形 → 留归一形行、删异形行、建 candidate 留人审。"""
+    database = _seed_v1(tmp_path, monkeypatch)
+    _insert_paper(database, "p_lower", "Same Work")
+    _insert_paper(database, "p_upper", "Same Work WP")
+    _insert_doi(database, "p_lower", "10.1/abc")  # 已归一形
+    _insert_doi(database, "p_upper", "10.1/ABC")  # 异形，归一后碰撞
+
+    _add_0002(tmp_path)
+    assert database.migrate() == 2
+
+    # 归一形行保留（指向 p_lower），异形行删除——不静默丢 paper。
+    ids = database.query("SELECT paper_id, value FROM identifier WHERE scheme='doi'")
+    assert [(r["paper_id"], r["value"]) for r in ids] == [("p_lower", "10.1/abc")]
+    # 两 paper 行都在。
+    papers = {r["id"] for r in database.query("SELECT id FROM paper")}
+    assert {"p_lower", "p_upper"} <= papers
+    # candidate_duplicate(decided=NULL, evidence=doi-case-collision) 建成，端点按 id 升序。
+    rel = database.query("SELECT * FROM paper_relation WHERE kind='candidate_duplicate'")
+    assert len(rel) == 1
+    assert rel[0]["decided"] is None
+    assert {rel[0]["from_paper"], rel[0]["to_paper"]} == {"p_lower", "p_upper"}
+    assert "doi-case-collision" in rel[0]["evidence_json"]
+    database.close()
+
+
+def test_v1_to_v2_doi_case_collision_same_paper_drops_redundant(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """同一 paper 上大小写异形冗余 doi → 删冗余行、不建 candidate（非跨 paper）。"""
+    database = _seed_v1(tmp_path, monkeypatch)
+    _insert_paper(database, "p1", "Some Paper")
+    _insert_doi(database, "p1", "10.1/abc")
+    _insert_doi(database, "p1", "10.1/ABC")
+
+    _add_0002(tmp_path)
+    assert database.migrate() == 2
+
+    ids = database.query("SELECT paper_id, value FROM identifier WHERE scheme='doi'")
+    assert [(r["paper_id"], r["value"]) for r in ids] == [("p1", "10.1/abc")]
+    assert database.query("SELECT COUNT(*) AS n FROM paper_relation")[0]["n"] == 0
     database.close()
