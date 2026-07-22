@@ -77,7 +77,9 @@ _PLACEHOLDER_EMAIL = "anonymous@paper-crawler.invalid"
 # **[PENDING online-smoke UPDATE_GOLDEN]**：真值（规整化 title[0]）留待在线冒烟捕获后
 # 替换 `_HEALTHCHECK_TITLE`（§5.1/§7 同批未决项）；捕获前 healthcheck 作结构性探测。
 _HEALTHCHECK_DOI = "10.1038/nature14539"
-_HEALTHCHECK_TITLE: str | None = None
+_HEALTHCHECK_TITLE: str | None = (
+    "Deep learning"  # [LIVE] 2026-07-23 双源捕获（T3 审查+T7 冒烟实跑），UPDATE_GOLDEN 纪律转正
+)
 
 
 def _default_user_agent() -> str:

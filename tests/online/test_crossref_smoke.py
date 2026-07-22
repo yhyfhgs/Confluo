@@ -126,4 +126,6 @@ def test_enumerate_qje_2024_sample_field_mapping(
     schemes = {scheme for scheme, _ in sample.identifiers}
     assert "doi" in schemes, f"sample stub 无 doi identifier: {sample.identifiers!r}"
     assert sample.title.strip(), "sample stub title 为空"
-    assert sample.year == 2024, f"sample stub year {sample.year} != 2024"
+    # QJE online-first 语义（AC-3.5 实跑实证）：2024 出版窗口内条目的 print year 可为
+    # 2025（published-print 后置）——按日期窗口过滤正确，year 断言容两值。
+    assert sample.year in (2024, 2025), f"sample stub year {sample.year} not in 2024/2025"

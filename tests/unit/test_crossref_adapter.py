@@ -249,21 +249,19 @@ def test_enumerate_500_maps_transient() -> None:
 # --- healthcheck -----------------------------------------------------------------------------
 
 
-def test_healthcheck_pending_golden_structural_healthy() -> None:
+def test_healthcheck_golden_title_match_healthy() -> None:
     def handler(request: httpx.Request) -> httpx.Response:
         assert str(request.url).endswith("/works/10.1038/nature14539")
         return _resp(fixture_bytes("06_works_healthcheck.json"))
 
     report = _adapter(handler).healthcheck()
     assert report.healthy is True
-    assert "PENDING" in report.detail
-    assert "Synthetic Canary Title for Works Healthcheck" in report.detail
 
 
 def test_healthcheck_exact_match_when_golden_captured(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(
         "paper_crawler.adapters.crossref.adapter._HEALTHCHECK_TITLE",
-        "Synthetic Canary Title for Works Healthcheck",
+        "Deep learning",  # golden 已转正（[LIVE] 2026-07-23），与 fixture 真值一致
     )
     report = _adapter(lambda r: _resp(fixture_bytes("06_works_healthcheck.json"))).healthcheck()
     assert report.healthy is True
