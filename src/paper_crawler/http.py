@@ -25,6 +25,11 @@
 即用 httpx 默认传输，测试传 MockTransport 即零真实网络。UA 由调用方（从 config 组装
 D-014 格式 `PaperCrawler/<ver> (personal research; mailto:<email>)`）注入，本模块不读
 config。
+
+**T6 纯附加扩展**：新增 `post_json`（S2 `POST /paper/batch` 批查通道所需——冻结的
+GET-only 三方法 `get_text`/`get_bytes`/`stream` 签名与行为完全未改动，仅在 `_request`
+内部新增可选 `method`/`json_body` 参数，缺省值保证既有调用点零回归）。错误映射表/
+限速闸/obslog 记录机制对 POST 路径同样适用（同一套 `_request`）。
 """
 
 import time
@@ -168,6 +173,19 @@ class HttpClient:
         """GET 并返回原始字节正文；错误状态/异常 → `CrawlerError`。"""
         return self._request(url, accept=accept).content
 
+    def post_json(
+        self, url: str, *, json_body: object, accept: str | None = "application/json"
+    ) -> bytes:
+        """POST 一个 JSON 请求体，返回原始字节正文；错误映射同 GET 路径（§2.1 冻结表）。
+
+        **纯附加扩展**（T6，S2 `POST /paper/batch` 批查通道所需——冻结接口原仅有
+        GET-only 的 `get_text`/`get_bytes`/`stream` 三方法，均未改动签名/行为；本方法
+        复用同一套 `_request` 机制：限速闸/超时映射/状态码→CrawlerError 映射/obslog
+        记录与 GET 路径完全一致，只是 HTTP method 与请求体不同）。`json_body` 交给
+        httpx 的 `json=` 参数序列化（自动置 `Content-Type: application/json`）。
+        """
+        return self._request(url, accept=accept, method="POST", json_body=json_body).content
+
     def stream(self, url: str) -> Iterator[bytes]:
         """GET 流式取字节（供 `fetch_asset` 交给 `io.write_stream`）。
 
@@ -213,12 +231,28 @@ class HttpClient:
         if wait > 0:
             time.sleep(wait)
 
-    def _request(self, url: str, *, accept: str | None) -> httpx.Response:
-        """非流式 GET：限速闸 → 发请求、记 obslog、按状态映射错误，返回已读响应。"""
+    def _request(
+        self,
+        url: str,
+        *,
+        accept: str | None,
+        method: str = "GET",
+        json_body: object = None,
+    ) -> httpx.Response:
+        """限速闸 → 发请求、记 obslog、按状态映射错误，返回已读响应。
+
+        `method`/`json_body` 缺省值（`"GET"`/`None`）保证既有 `get_text`/`get_bytes`
+        调用点行为逐字不变；`post_json` 是唯一传非默认值的调用方（T6 纯附加扩展）。
+        """
         self._throttle(url)
         start = time.monotonic()
         try:
-            response = self._client.get(url, headers=_accept_headers(accept))
+            if method == "GET":
+                response = self._client.get(url, headers=_accept_headers(accept))
+            else:
+                response = self._client.request(
+                    method, url, headers=_accept_headers(accept), json=json_body
+                )
         except httpx.TimeoutException as exc:
             raise CrawlerError(
                 ErrorClass.TRANSIENT, f"timeout for {redact(url)}", detail="timeout"
