@@ -7,9 +7,15 @@
 DISCOVER|ENUMERATE，无 RESOLVE/FETCH）与 unpaywall（RESOLVE only，无 DISCOVER/
 ENUMERATE/FETCH）三源已补 factory；openalex/s2（`capabilities=Capability(0)` 空集——
 T6 裁决的 duck-typed enrich-only 通道，不参与本协议，非"未补"而是"无契可契"）与
-elsevier_sd（仍为 `NotImplementedError` stub）维持 `pytest.skip` 占位——共 19 skip
-（较 Phase 3 末的 24 skip 收窄 5：crossref/dblp 各贡献 discover+enumerate 2 个、
-unpaywall 贡献 resolve 1 个，全部转为真实通过）。
+elsevier_sd（仍为 `NotImplementedError` stub）维持 `pytest.skip` 占位。
+
+**Phase 4 T4**：oup_silverchair 是**首个 auth_gated 契约 case**（RESOLVE|FETCH，无
+DISCOVER/ENUMERATE）——resolve/fetch 契约用 `_RESOLVE_ONLY_SAMPLE_PAPERS` 登记的 QJE DOI
+样本 + `_CONTRACT_SESSIONS`/`_session_for` 注入的假 session（其余源 session=None，行为
+逐字不变）走通全链（注入的 cookie supplier + landing_transport 达成零真实网络）；discover/
+enumerate 两测因缺能力 skip。故 skip 计由 19（含 crossref/dblp/unpaywall 已补 factory 后
+较 Phase 3 末 24 收窄 5）增至 21（oup 贡献 discover+enumerate 2 个 capability-gated skip，
+resolve+fetch 转真实通过）。
 
 契约的 enumerate 计数口径按能力分层：声明了权威计数（`IssueRef.paper_count_claimed`）
 的 adapter（mock）严格等值；未声明的（arxiv 月度桶、dblp 会议届——预印本/会议无权威
@@ -35,6 +41,7 @@ discover→enumerate 产出取得）；unpaywall 这类 RESOLVE-only 聚合源�
 from __future__ import annotations
 
 from collections.abc import Callable
+from datetime import UTC, datetime
 
 import httpx
 import pytest
@@ -49,12 +56,14 @@ from helpers import (
     make_mock_venue,
     make_neurips_venue,
     make_openreview_venue,
+    make_oup_venue,
     make_pmlr_venue,
 )
 from helpers.aaai_fixtures import fixture_bytes as aaai_fixture_bytes
 from helpers.arxiv_fixtures import fixture_bytes
 from helpers.dblp_fixtures import fixture_bytes as dblp_fixture_bytes
 from helpers.dblp_fixtures import make_dblp_venue
+from helpers.oup_silverchair_fixtures import landing_transport, oup_fixture, static_cookie_supplier
 from helpers.pmlr_fixtures import fixture_bytes as pmlr_fixture_bytes
 from helpers.unpaywall_fixtures import fixture_bytes as unpaywall_fixture_bytes
 from paper_crawler.adapter import AdapterBase, AdapterFamily, SourceAdapter, load_adapters
@@ -66,6 +75,7 @@ from paper_crawler.adapters.cvf.adapter import CVFAdapter
 from paper_crawler.adapters.dblp.adapter import DblpAdapter
 from paper_crawler.adapters.neurips_proceedings.adapter import NeuripsProceedingsAdapter
 from paper_crawler.adapters.openreview.adapter import OpenReviewAdapter
+from paper_crawler.adapters.oup_silverchair.adapter import OupSilverchairAdapter
 from paper_crawler.adapters.pmlr.adapter import PmlrAdapter
 from paper_crawler.adapters.unpaywall.adapter import UnpaywallAdapter
 from paper_crawler.errors import CapabilityNotSupported
@@ -78,6 +88,8 @@ from paper_crawler.types import (
     IssueRef,
     PaperStub,
     RatePolicy,
+    SessionBackend,
+    SessionHandle,
     VenueSpec,
 )
 
@@ -312,6 +324,21 @@ def _dblp_case() -> tuple[SourceAdapter, VenueSpec]:
     return DblpAdapter(http=client), make_dblp_venue()
 
 
+def _oup_silverchair_case() -> tuple[SourceAdapter, VenueSpec]:
+    """oup_silverchair 契约链：**首个 auth_gated 契约 case**（RESOLVE|FETCH，无 DISCOVER/
+    ENUMERATE——resolve/fetch 契约用 `_RESOLVE_ONLY_SAMPLE_PAPERS` 登记的 QJE DOI 样本 +
+    `_CONTRACT_SESSIONS` 注入的假 session）。
+
+    专属 client 经注入的 `static_cookie_supplier` + `landing_transport`（doi.org→302→全文页
+    fixture；article-pdf→%PDF）达成零真实网络：resolve 解析 citation_pdf_url→AssetPlan(PDF)，
+    fetch 直取 %PDF。session 由通用 resolve/fetch 契约测试经 `_session_for` 线程注入。
+    """
+    _, _, final_url, body = oup_fixture("04_fulltext_logged_in")
+    transport = landing_transport(final_url, 200, {}, body)
+    adapter = OupSilverchairAdapter(cookie_supplier=static_cookie_supplier(), transport=transport)
+    return adapter, make_oup_venue()
+
+
 def _unpaywall_contract_handler(request: httpx.Request) -> httpx.Response:
     """unpaywall 契约链的 MockTransport：唯一端点 `GET /v2/{doi}` → 复用 adapter 自身
     单测的既有 fixture（`02_direct_pdf_hit_hybrid.json`：`is_oa=true` 且
@@ -339,7 +366,29 @@ _RESOLVE_ONLY_SAMPLE_PAPERS: dict[str, PaperStub] = {
         title="Contract Test Paper (Resolve-Only Adapter)",
         identifiers=(("doi", "10.9999/contract.unpaywall"),),
     ),
+    # oup_silverchair 是 auth_gated（RESOLVE|FETCH），无 DISCOVER/ENUMERATE——按 QJE DOI
+    # 定位落地页（US-9 样例前缀 10.1093/qje/…），同 unpaywall 直接登记样本。
+    "oup_silverchair": PaperStub(
+        title="A Synthetic Placeholder Article",
+        identifiers=(("doi", "10.1093/qje/qjae044"),),
+    ),
 }
+
+# auth_gated adapter 的 resolve/fetch 契约需要 session（其余源 session=None，行为不变）。
+# 首个 auth_gated 契约 case=oup_silverchair；假 session 配合注入的 cookie supplier 走通全链。
+_CONTRACT_SESSIONS: dict[str, SessionHandle] = {
+    "oup_silverchair": SessionHandle(
+        provider_id="oup@campus",
+        backend=SessionBackend.HTTPX_COOKIES,
+        payload_ref="oup-contract-state",
+        established_at=datetime(2026, 7, 23, tzinfo=UTC),
+    ),
+}
+
+
+def _session_for(adapter_id: str) -> SessionHandle | None:
+    """契约 resolve/fetch 的 session 入参：仅 auth_gated case 有值，其余 None（默认，不变）。"""
+    return _CONTRACT_SESSIONS.get(adapter_id)
 
 
 def _sample_paper_for(adapter_id: str, adapter: SourceAdapter, venue: VenueSpec) -> PaperStub:
@@ -369,6 +418,7 @@ _CONTRACT_CASES: dict[str, Callable[[], tuple[SourceAdapter, VenueSpec]]] = {
     "crossref": _crossref_case,
     "dblp": _dblp_case,
     "unpaywall": _unpaywall_case,
+    "oup_silverchair": _oup_silverchair_case,
 }
 
 ADAPTER_IDS = sorted(load_adapters())
@@ -466,7 +516,7 @@ def test_resolve_yields_nonempty_asset_plans(adapter_id: str) -> None:
         pytest.skip(reason=f"{adapter_id} lacks RESOLVE")
 
     paper = _sample_paper_for(adapter_id, adapter, venue)
-    plans = adapter.resolve_assets(venue, paper)
+    plans = adapter.resolve_assets(venue, paper, session=_session_for(adapter_id))
 
     assert plans
     assert all(isinstance(plan, AssetPlan) for plan in plans)
@@ -478,10 +528,11 @@ def test_fetch_via_fake_io_succeeds_and_writes_pdf_magic_bytes(adapter_id: str) 
         pytest.skip(reason=f"{adapter_id} lacks FETCH")
 
     paper = _sample_paper_for(adapter_id, adapter, venue)
-    plan = adapter.resolve_assets(venue, paper)[0]
+    session = _session_for(adapter_id)
+    plan = adapter.resolve_assets(venue, paper, session=session)[0]
 
     io = FakeFetchIO()
-    result = adapter.fetch_asset(plan, io)
+    result = adapter.fetch_asset(plan, io, session=session)
 
     assert result.ok is True
     assert io.data.startswith(b"%PDF")
