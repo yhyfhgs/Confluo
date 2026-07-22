@@ -2,18 +2,294 @@
 
 所有路径经 `Config` 注入，禁止硬编码 `~/.paper-crawler`（Global Constraints §8）——
 kill-9 子进程测试依赖 `PAPER_CRAWLER_HOME` 隔离。
+
+**分层加载链（D-025 / [design/10-config-layout.md](../../docs/design/10-config-layout.md)）**——
+优先级（高→低，逐键覆盖）：
+
+1. `env`（`PAPER_CRAWLER_*` / 各 `[auth.*]` env 覆盖）      ← 最高（CI/临时会话不落盘凭证）
+2. 项目级 `./paper-crawler.toml`（**仅非敏感键**）           ← 本机工作区层（路径/限速/venue 目录）
+3. config-home `config.toml`（`$PAPER_CRAWLER_HOME` 或 `~/.paper-crawler`）  ← 家目录，可含敏感槽
+4. 内置默认（`Config` dataclass 字段默认值）                ← 兜底
+
+- **既有优先级保持**：home 解析（显式 home > `$PAPER_CRAWLER_HOME` > `~/.paper-crawler`）与
+  既有家目录 `config.toml` 读取语义**逐字段不变**；项目级 `./paper-crawler.toml` 为**新增
+  非敏感层**，插在 env 与 home 之间，纯附加——无项目级文件 + 无新 env 时结果与旧版逐字段一致。
+- **项目级定位**：自 `cwd` 起向上查 `paper-crawler.toml`（仓库根惯例），首个命中即读；缺失静默跳过。
+- **敏感键防误提交护栏**（§3.1）：项目级文件（易随 `git add .` 误提交）出现敏感键形态 →
+  `CrawlerError(CONFIG)` **拒启动**，指引挪至家目录/env。敏感键正则与 obslog 脱敏键**单一同源**
+  （`sensitive.CONFIG_GUARD_KEY_PATTERN`，防两套清单漂移）。
+
+`describe_config()` 暴露分层解析中间态（每键生效值 + winning 来源层 + 敏感标记）供
+`crawler config show` 渲染（脱敏在 CLI presentation 层，config.py 不依赖 obslog）。
 """
 
 import os
+import re
 import tomllib
 from dataclasses import dataclass
 from pathlib import Path
+
+from paper_crawler.errors import CrawlerError, ErrorClass
+from paper_crawler.sensitive import CONFIG_GUARD_KEY_PATTERN
+
+_PROJECT_CONFIG_NAME = "paper-crawler.toml"
+_HOME_CONFIG_NAME = "config.toml"
+
+# 项目级 `./paper-crawler.toml` 敏感键护栏（§3.1）。子串 `re.search`（大小写不敏感）——
+# 与 obslog 脱敏键单一同源（`sensitive.py`），不含裸 `key`（误伤 `key_ref`）与 `email`
+# （`identity.email` 属合法非凭证键）。
+_SENSITIVE_CONFIG_KEY_RE = re.compile(CONFIG_GUARD_KEY_PATTERN, re.IGNORECASE)
 
 
 def _resolve_under(home: Path, raw: object) -> Path:
     """把 config.toml 里的路径解析为绝对路径：绝对则原样，相对则挂在 home 下。"""
     path = Path(str(raw)).expanduser()
     return path if path.is_absolute() else home / path
+
+
+def _to_float(raw: object) -> float:
+    """toml 数值（int/float/str）→ float。`bool` 显式拒绝（避免 True→1.0 意外）。"""
+    if isinstance(raw, bool):
+        raise TypeError("expected a number for a scale/budget field, got bool")
+    if isinstance(raw, int | float | str):
+        return float(raw)
+    raise TypeError(f"expected a number, got {type(raw).__name__}")
+
+
+# --- 分层解析核心（Config.load 与 describe_config 共享，防两条路径漂移）------------------------
+
+
+def _resolve_home(home: Path | None) -> tuple[Path, str]:
+    """解析 config-home 及其来源：显式 home > `$PAPER_CRAWLER_HOME` > `~/.paper-crawler`。"""
+    if home is not None:
+        return home.expanduser(), "explicit"
+    if env_home := os.environ.get("PAPER_CRAWLER_HOME"):
+        return Path(env_home).expanduser(), "env"
+    return (Path.home() / ".paper-crawler").expanduser(), "default"
+
+
+def _find_project_config(start: Path) -> Path | None:
+    """自 `start` 起向上查 `paper-crawler.toml`；首个命中即返回，无则 None（可选层）。"""
+    current = start.resolve()
+    for directory in (current, *current.parents):
+        candidate = directory / _PROJECT_CONFIG_NAME
+        if candidate.is_file():
+            return candidate
+    return None
+
+
+def _load_toml(path: Path) -> dict[str, object]:
+    with path.open("rb") as handle:
+        return tomllib.load(handle)
+
+
+def _scan_sensitive_keys(node: object, path: tuple[str, ...] = ()) -> str | None:
+    """递归 dict/list，返回首个键名命中敏感模式的**点号路径**；无命中 → None。
+
+    检查每一层的键名（不止叶子——`[credentials]` 这类敏感表名也拦），子串匹配（§3.1）。
+    合法结构键（`auth`/`paths`/`rate`/`identity`/`email`/…）均不命中，无误伤。
+    """
+    if isinstance(node, dict):
+        for key, value in node.items():
+            key_str = str(key)
+            if _SENSITIVE_CONFIG_KEY_RE.search(key_str):
+                return ".".join((*path, key_str))
+            hit = _scan_sensitive_keys(value, (*path, key_str))
+            if hit is not None:
+                return hit
+    elif isinstance(node, list):
+        for index, item in enumerate(node):
+            hit = _scan_sensitive_keys(item, (*path, f"[{index}]"))
+            if hit is not None:
+                return hit
+    return None
+
+
+def _guard_project_config(project_doc: dict[str, object]) -> None:
+    """项目级敏感键护栏：命中即 `CrawlerError(CONFIG)` 拒启动（§3.1 指引文案逐字）。"""
+    hit = _scan_sensitive_keys(project_doc)
+    if hit is not None:
+        raise CrawlerError(
+            ErrorClass.CONFIG,
+            f"项目级 ./paper-crawler.toml 含敏感键 {hit}；凭证禁入项目文件（易误提交）——"
+            "挪至家目录 config.toml（$PAPER_CRAWLER_HOME，仓库外）或环境变量 PAPER_CRAWLER_*",
+            detail=hit,
+        )
+
+
+def _lookup_toml(doc: dict[str, object], table: tuple[str, ...], leaf: str) -> object | None:
+    """取 `doc[table[0]][table[1]]…[leaf]`；任一层缺失/非表 → None。"""
+    node: object = doc
+    for part in table:
+        if not isinstance(node, dict):
+            return None
+        node = node.get(part)
+    if not isinstance(node, dict):
+        return None
+    return node.get(leaf)
+
+
+@dataclass(frozen=True)
+class _Resolved:
+    """一个配置键的生效值 + winning 来源层。"""
+
+    value: object | None
+    source: str  # "env" | "project" | "home" | "default"
+
+
+@dataclass(frozen=True)
+class _FieldSpec:
+    """一个配置键的分层解析规格。"""
+
+    key: str  # 点号显示路径，如 "auth.elsevier.api_key"
+    table: tuple[str, ...]  # toml 表路径
+    leaf: str  # 叶键名
+    kind: str  # "str" | "float" | "path" | "paths"
+    env: str | None = None  # 环境变量名（仅 str 类有）
+    default: object = None  # str→None；float→数值；path/paths 特殊（见 _resolve_field）
+    sensitive: bool = False  # 硬凭证（config show 整值脱敏）
+    is_email: bool = False  # email（config show 部分脱敏；护栏放行）
+
+
+# 全部配置键的分层解析规格（顺序即 config show 呈现顺序）。
+_FIELD_SPECS: tuple[_FieldSpec, ...] = (
+    _FieldSpec("identity.email", ("identity",), "email", "str", is_email=True),
+    _FieldSpec(
+        "auth.elsevier.api_key",
+        ("auth", "elsevier"),
+        "api_key",
+        "str",
+        env="PAPER_CRAWLER_ELSEVIER_API_KEY",
+        sensitive=True,
+    ),
+    _FieldSpec(
+        "auth.elsevier.insttoken",
+        ("auth", "elsevier"),
+        "insttoken",
+        "str",
+        env="PAPER_CRAWLER_ELSEVIER_INSTTOKEN",
+        sensitive=True,
+    ),
+    _FieldSpec(
+        "auth.wiley.token",
+        ("auth", "wiley"),
+        "token",
+        "str",
+        env="PAPER_CRAWLER_WILEY_TDM_TOKEN",
+        sensitive=True,
+    ),
+    _FieldSpec(
+        "auth.openreview.token",
+        ("auth", "openreview"),
+        "token",
+        "str",
+        env="PAPER_CRAWLER_OPENREVIEW_TOKEN",
+        sensitive=True,
+    ),
+    _FieldSpec(
+        "auth.openalex.api_key",
+        ("auth", "openalex"),
+        "api_key",
+        "str",
+        env="PAPER_CRAWLER_OPENALEX_API_KEY",
+        sensitive=True,
+    ),
+    _FieldSpec(
+        "auth.s2.api_key",
+        ("auth", "s2"),
+        "api_key",
+        "str",
+        env="PAPER_CRAWLER_S2_API_KEY",
+        sensitive=True,
+    ),
+    _FieldSpec("paths.data_dir", ("paths",), "data_dir", "path"),
+    _FieldSpec("paths.venues_dirs", ("paths",), "venues_dirs", "paths"),
+    _FieldSpec("rate.scale", ("rate",), "scale", "float", default=1.0),
+    _FieldSpec("retry.scale", ("retry",), "scale", "float", default=1.0),
+    _FieldSpec(
+        "openalex.daily_budget_usd", ("openalex",), "daily_budget_usd", "float", default=0.50
+    ),
+)
+
+
+def _default_venues_dirs(home: Path) -> tuple[Path, ...]:
+    """venues_dirs 无任何层配置时的默认检测（cwd/venues 在前，home/venues 在后）。"""
+    candidates: list[Path] = []
+    cwd_venues = Path.cwd() / "venues"
+    if cwd_venues.is_dir():
+        candidates.append(cwd_venues)
+    home_venues = home / "venues"
+    if home_venues.is_dir():
+        candidates.append(home_venues)
+    return tuple(candidates)
+
+
+def _resolve_field(
+    spec: _FieldSpec,
+    *,
+    home: Path,
+    project_doc: dict[str, object],
+    home_doc: dict[str, object],
+) -> _Resolved:
+    """按 env > project > home > default 逐键解析一个字段（各 kind 的规范化见内联）。"""
+    if spec.kind == "str":
+        # 空白串归一为"未提供"（等价未配置——同既有 token/email 口径）。
+        if spec.env:
+            env_value = os.environ.get(spec.env, "").strip()
+            if env_value:
+                return _Resolved(env_value, "env")
+        for doc, source in ((project_doc, "project"), (home_doc, "home")):
+            raw = _lookup_toml(doc, spec.table, spec.leaf)
+            if isinstance(raw, str) and raw.strip():
+                return _Resolved(raw.strip(), source)
+        return _Resolved(None, "default")
+
+    if spec.kind == "float":
+        for doc, source in ((project_doc, "project"), (home_doc, "home")):
+            raw = _lookup_toml(doc, spec.table, spec.leaf)
+            if raw is not None:
+                return _Resolved(_to_float(raw), source)
+        return _Resolved(spec.default, "default")
+
+    if spec.kind == "path":
+        for doc, source in ((project_doc, "project"), (home_doc, "home")):
+            raw = _lookup_toml(doc, spec.table, spec.leaf)
+            if raw is not None:
+                return _Resolved(_resolve_under(home, raw), source)
+        return _Resolved(home / "data", "default")
+
+    # kind == "paths"
+    for doc, source in ((project_doc, "project"), (home_doc, "home")):
+        raw = _lookup_toml(doc, spec.table, spec.leaf)
+        if isinstance(raw, list):
+            return _Resolved(tuple(_resolve_under(home, entry) for entry in raw), source)
+    return _Resolved(_default_venues_dirs(home), "default")
+
+
+def _resolve_all(home: Path | None) -> tuple[Path, str, dict[str, _Resolved]]:
+    """分层解析全部字段（Config.load 与 describe_config 共享核心）。
+
+    返回 `(resolved_home, home_source, {key: _Resolved})`。项目级敏感键护栏在此触发
+    （命中 → `CrawlerError(CONFIG)` 拒启动，波及所有走 `_resolve_all` 的入口）。
+    """
+    resolved_home, home_source = _resolve_home(home)
+
+    home_config = resolved_home / _HOME_CONFIG_NAME
+    home_doc: dict[str, object] = _load_toml(home_config) if home_config.is_file() else {}
+
+    project_path = _find_project_config(Path.cwd())
+    project_doc: dict[str, object] = {}
+    if project_path is not None:
+        project_doc = _load_toml(project_path)
+        _guard_project_config(project_doc)  # 敏感键 → 拒启动（家目录层不受此约束）
+
+    resolved = {
+        spec.key: _resolve_field(
+            spec, home=resolved_home, project_doc=project_doc, home_doc=home_doc
+        )
+        for spec in _FIELD_SPECS
+    }
+    return resolved_home, home_source, resolved
 
 
 @dataclass(frozen=True)
@@ -45,95 +321,40 @@ class Config:
     # （无 key `enrich_batch` 直接 CONFIG，不发请求，D2）。
     openalex_api_key: str | None = None
     s2_api_key: str | None = None
+    # Phase 4（auth-framework §3.4 / D-023 两级凭证模型①类简单串；D-025 config 归集）：
+    # elsevier `X-ELS-APIKey`(+`X-ELS-Insttoken`) 与 wiley TDM `Wiley-TDM-Client-Token`
+    # 走 `[auth.elsevier]`/`[auth.wiley]` Config-slot（家目录 config 仓库外 + env 覆盖，空白
+    # 归一 None，obslog redact 覆盖）——**不触 AES-GCM/keyring**（纯 API 路径无 storage_state）。
+    # 不入日志/报告。env：PAPER_CRAWLER_ELSEVIER_API_KEY / _ELSEVIER_INSTTOKEN / _WILEY_TDM_TOKEN。
+    elsevier_api_key: str | None = None
+    elsevier_insttoken: str | None = None
+    wiley_tdm_token: str | None = None
     # OpenAlex 每日 credit 预算上限（美元；aggregators.md §4 伪代码）：保守默认 0.50
     # （≈ 无 key 5000 credits 的一半量级）。非凭证，可入日志/报告。
     openalex_daily_budget_usd: float = 0.50
 
     @classmethod
     def load(cls, home: Path | None = None) -> "Config":
-        """按优先级解析 home 并加载可选的 config.toml。
+        """按分层加载链（env > 项目级 > home > 默认，模块 docstring）解析出一份 `Config`。
 
-        优先级：显式 home 参数 > $PAPER_CRAWLER_HOME > ~/.paper-crawler。
-        若 home/config.toml 存在，读取 [paths].data_dir、[paths].venues_dirs、
-        [rate].scale、[retry].scale。venues_dirs 缺省 = (cwd/"venues" 若存在,
-        home/"venues" 若存在)；后目录同 id 覆盖前目录（design/02 §4）。
+        无项目级 `./paper-crawler.toml` + 无新 env 时结果与旧版**逐字段一致**（纯附加）。
+        项目级文件含敏感键 → `CrawlerError(CONFIG)` 拒启动（`_guard_project_config`）。
         """
-        if home is not None:
-            resolved_home = home
-        elif env_home := os.environ.get("PAPER_CRAWLER_HOME"):
-            resolved_home = Path(env_home)
-        else:
-            resolved_home = Path.home() / ".paper-crawler"
-        resolved_home = resolved_home.expanduser()
+        resolved_home, _home_source, resolved = _resolve_all(home)
 
-        data_dir = resolved_home / "data"
-        rate_scale = 1.0
-        retry_scale = 1.0
-        identity_email: str | None = None
-        openreview_token: str | None = None
-        openalex_api_key: str | None = None
-        s2_api_key: str | None = None
-        openalex_daily_budget_usd = 0.50
-        venues_dirs_override: tuple[Path, ...] | None = None
+        def _str(key: str) -> str | None:
+            value = resolved[key].value
+            return value if isinstance(value, str) else None
 
-        config_file = resolved_home / "config.toml"
-        if config_file.is_file():
-            with config_file.open("rb") as handle:
-                doc = tomllib.load(handle)
-            paths = doc.get("paths", {})
-            if "data_dir" in paths:
-                data_dir = _resolve_under(resolved_home, paths["data_dir"])
-            if "venues_dirs" in paths:
-                venues_dirs_override = tuple(
-                    _resolve_under(resolved_home, entry) for entry in paths["venues_dirs"]
-                )
-            rate_scale = float(doc.get("rate", {}).get("scale", rate_scale))
-            retry_scale = float(doc.get("retry", {}).get("scale", retry_scale))
-            # [identity].email：空白串归一为 None（等价未配置——UA 不带 mailto）。
-            raw_email = doc.get("identity", {}).get("email")
-            if isinstance(raw_email, str) and raw_email.strip():
-                identity_email = raw_email.strip()
-            # [auth.openreview].token：空白串归一为 None（openreview.md §3）。
-            raw_token = doc.get("auth", {}).get("openreview", {}).get("token")
-            if isinstance(raw_token, str) and raw_token.strip():
-                openreview_token = raw_token.strip()
-            # [auth.openalex].api_key / [auth.s2].api_key（T6，aggregators.md §5.3/§5.4）：
-            # 空白串归一为 None，同 openreview token 口径。
-            auth_doc = doc.get("auth", {})
-            raw_openalex_key = auth_doc.get("openalex", {}).get("api_key")
-            if isinstance(raw_openalex_key, str) and raw_openalex_key.strip():
-                openalex_api_key = raw_openalex_key.strip()
-            raw_s2_key = auth_doc.get("s2", {}).get("api_key")
-            if isinstance(raw_s2_key, str) and raw_s2_key.strip():
-                s2_api_key = raw_s2_key.strip()
-            # [openalex].daily_budget_usd（T6，aggregators.md §4 伪代码）：非凭证数值。
-            openalex_daily_budget_usd = float(
-                doc.get("openalex", {}).get("daily_budget_usd", openalex_daily_budget_usd)
-            )
+        def _float(key: str) -> float:
+            value = resolved[key].value
+            assert isinstance(value, int | float)  # 解析器保证 float 类字段恒有值
+            return float(value)
 
-        # 环境变量覆盖 config.toml（12-factor 惯例；CI/临时会话不落盘凭证的通道）。
-        # 空白归一为 None——同 PAPER_CRAWLER_OPENREVIEW_TOKEN 既有先例。
-        env_token = os.environ.get("PAPER_CRAWLER_OPENREVIEW_TOKEN", "").strip()
-        if env_token:
-            openreview_token = env_token
-        env_openalex_key = os.environ.get("PAPER_CRAWLER_OPENALEX_API_KEY", "").strip()
-        if env_openalex_key:
-            openalex_api_key = env_openalex_key
-        env_s2_key = os.environ.get("PAPER_CRAWLER_S2_API_KEY", "").strip()
-        if env_s2_key:
-            s2_api_key = env_s2_key
-
-        if venues_dirs_override is not None:
-            venues_dirs = venues_dirs_override
-        else:
-            candidates: list[Path] = []
-            cwd_venues = Path.cwd() / "venues"
-            if cwd_venues.is_dir():
-                candidates.append(cwd_venues)
-            home_venues = resolved_home / "venues"
-            if home_venues.is_dir():
-                candidates.append(home_venues)
-            venues_dirs = tuple(candidates)
+        data_dir = resolved["paths.data_dir"].value
+        assert isinstance(data_dir, Path)
+        venues_dirs = resolved["paths.venues_dirs"].value
+        assert isinstance(venues_dirs, tuple)
 
         return cls(
             home=resolved_home,
@@ -142,13 +363,16 @@ class Config:
             log_dir=resolved_home / "logs",
             reports_dir=resolved_home / "reports",
             venues_dirs=venues_dirs,
-            rate_scale=rate_scale,
-            retry_scale=retry_scale,
-            identity_email=identity_email,
-            openreview_token=openreview_token,
-            openalex_api_key=openalex_api_key,
-            s2_api_key=s2_api_key,
-            openalex_daily_budget_usd=openalex_daily_budget_usd,
+            rate_scale=_float("rate.scale"),
+            retry_scale=_float("retry.scale"),
+            identity_email=_str("identity.email"),
+            openreview_token=_str("auth.openreview.token"),
+            openalex_api_key=_str("auth.openalex.api_key"),
+            s2_api_key=_str("auth.s2.api_key"),
+            elsevier_api_key=_str("auth.elsevier.api_key"),
+            elsevier_insttoken=_str("auth.elsevier.insttoken"),
+            wiley_tdm_token=_str("auth.wiley.token"),
+            openalex_daily_budget_usd=_float("openalex.daily_budget_usd"),
         )
 
     def ensure_dirs(self) -> None:
@@ -157,3 +381,45 @@ class Config:
             (self.data_dir / sub).mkdir(parents=True, exist_ok=True)
         self.log_dir.mkdir(parents=True, exist_ok=True)
         self.reports_dir.mkdir(parents=True, exist_ok=True)
+
+
+@dataclass(frozen=True)
+class ConfigLayer:
+    """`describe_config` 产出的一行：一个配置键的生效值 + winning 来源层 + 脱敏标记。
+
+    `value` 是**已类型化的原始值**（Path/tuple/float/str）或 None（未配置）——脱敏/渲染由
+    CLI presentation 层（`crawler config show`）据 `sensitive`/`is_email` 施加，config.py
+    不回显凭证也不依赖 obslog（关注点分离）。
+    """
+
+    key: str
+    value: object | None
+    source: str  # "env" | "project" | "home" | "default"
+    sensitive: bool
+    is_email: bool
+
+
+def describe_config(home: Path | None = None) -> list[ConfigLayer]:
+    """分层解析全部配置键 → 每键 (值, winning 来源层, 敏感标记)（`crawler config show` 用）。
+
+    与 `Config.load` 共享 `_resolve_all` 核心（含项目级敏感键护栏——含敏感键则同样拒启动）。
+    首行是 `home` 及其来源（explicit/env/default），随后按 `_FIELD_SPECS` 顺序。
+    """
+    resolved_home, home_source, resolved = _resolve_all(home)
+    rows = [
+        ConfigLayer(
+            key="home", value=resolved_home, source=home_source, sensitive=False, is_email=False
+        )
+    ]
+    for spec in _FIELD_SPECS:
+        entry = resolved[spec.key]
+        rows.append(
+            ConfigLayer(
+                key=spec.key,
+                value=entry.value,
+                source=entry.source,
+                sensitive=spec.sensitive,
+                is_email=spec.is_email,
+            )
+        )
+    return rows

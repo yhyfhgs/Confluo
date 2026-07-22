@@ -90,11 +90,11 @@ from paper_crawler.canary import (
     render_canary_record,
     run_canary,
 )
-from paper_crawler.config import Config
+from paper_crawler.config import Config, ConfigLayer, describe_config
 from paper_crawler.errors import CrawlerError, ErrorClass, IllegalTransition
 from paper_crawler.http import HttpClient
 from paper_crawler.merge import MergeEngine
-from paper_crawler.obslog import log_event, setup_logging
+from paper_crawler.obslog import log_event, redact, setup_logging
 from paper_crawler.pipeline import PipelineRunner, RunReport, Selector, StageContext
 from paper_crawler.ratelimit import RateLimiter
 from paper_crawler.registry import VenueRegistry
@@ -226,8 +226,17 @@ def _env(home: Path | None, verbose: bool, *, dry_run: bool = False) -> Iterator
     CLI 每次调用在真实使用中对应一个独立进程（连接随进程退出自然释放）；
     `typer.testing.CliRunner` 是进程内反复调用同一 Python 解释器，必须显式
     `close()` 避免一次测试函数内多次调用间的连接堆积。
+
+    **分层加载护栏（D-025）**：`_build_env` 首行 `Config.load` 若命中项目级敏感键护栏
+    （`./paper-crawler.toml` 含凭证形态键）→ `CrawlerError(CONFIG)`；在此统一转 `typer.Exit(2)`
+    优雅拒启动（此前 Config.load 从不抛 CrawlerError，本 catch 纯附加只作用于新护栏路径，
+    覆盖所有走 `_env` 的命令）。此时尚未开 DB/日志，无资源需清理。
     """
-    cli_env = _build_env(home, verbose, dry_run=dry_run)
+    try:
+        cli_env = _build_env(home, verbose, dry_run=dry_run)
+    except CrawlerError as exc:
+        _echo_error(exc)
+        raise typer.Exit(code=2) from exc
     try:
         yield cli_env
     finally:
@@ -372,6 +381,8 @@ app = typer.Typer(
 )
 venues_app = typer.Typer(no_args_is_help=True, help="venue 注册表浏览与校验。")
 app.add_typer(venues_app, name="venues")
+config_app = typer.Typer(no_args_is_help=True, help="生效配置自查（分层来源 + 脱敏）。")
+app.add_typer(config_app, name="config")
 
 
 # -- venues -------------------------------------------------------------------
@@ -940,6 +951,43 @@ def _chunked(items: list[str], size: int) -> Iterator[list[str]]:
         yield items[i : i + size]
 
 
+def _apply_enrich_key(
+    env: CliEnv, adapter: object, source_id: str, dedicated: list[HttpClient]
+) -> None:
+    """为 enrich source（openalex/s2）注入 key/client（抽自 `_prepare_enrich_source`，供
+    `canary` 装配 `_bind_healthcheck_credentials` 复用——单一装配语义，不两处各写一份）。
+
+    - s2 有 key → 构造携 `x-api-key` 头的**专属** `HttpClient`（append 到 `dedicated`，调用
+      方负责 `close()`；绝不复用共享 `env.http`——头会随他域请求外泄，凭证红线）；无 key →
+      注入共享 client（`enrich_batch` 入口会直接 CONFIG、不发请求，s2 adapter docstring）。
+    - openalex 的 key 走每请求 URL 查询参数（非 client 级头），复用共享 client 即可。
+    """
+    if source_id == "s2":
+        key = env.ctx.config.s2_api_key
+        if key and isinstance(adapter, HttpClientConsumer):
+            client = HttpClient(
+                user_agent=build_user_agent(env.ctx.config.identity_email),
+                rate_limiter=env.ctx.limiter,
+                extra_headers={"x-api-key": key},
+            )
+            adapter.set_http_client(client)
+            dedicated.append(client)
+        elif isinstance(adapter, HttpClientConsumer):
+            adapter.set_http_client(env.http)
+        if isinstance(adapter, ApiKeyConsumer):
+            adapter.set_api_key(key)
+    elif source_id == "openalex":
+        if isinstance(adapter, HttpClientConsumer):
+            adapter.set_http_client(env.http)
+        if isinstance(adapter, ApiKeyConsumer):
+            adapter.set_api_key(env.ctx.config.openalex_api_key)
+        if isinstance(adapter, OpenAlexAdapter):
+            adapter.configure_budget(
+                daily_budget_usd=env.ctx.config.openalex_daily_budget_usd,
+                state_path=env.ctx.config.home / "state" / "openalex-budget.json",
+            )
+
+
 def _prepare_enrich_source(
     env: CliEnv, source_id: str
 ) -> tuple[EnrichmentSource, HttpClient | None]:
@@ -949,10 +997,7 @@ def _prepare_enrich_source(
     metadata_source/fulltext_source，不会天然出现在 registry 路由里）。
 
     返回 `(adapter, dedicated_client)`：`dedicated_client` 非 `None` 时调用方负责
-    `close()`——s2 有 key 时构造携 `x-api-key` 头的**专属** `HttpClient`，绝不复用
-    跨 adapter 共享的 `env.http`（否则该头会随 crossref/dblp/... 等其它域的请求外泄，
-    凭证红线；沿 openreview token 专属 client 先例，`_bind_openreview_token_client`）。
-    openalex 的 key 走每请求 URL 查询参数（非 client 级头），可安全复用共享 client。
+    `close()`（s2 有 key 时的专属 client，见 `_apply_enrich_key`）。
 
     `source_id` 给出未注册、或已注册但未实现 duck-typed `enrich_batch` 的 id → 用法错
     退出 2（同 `oa-report`/`canary --adapter` 既有口径）。
@@ -965,35 +1010,10 @@ def _prepare_enrich_source(
             "（未注册，或未实现 duck-typed enrich_batch）"
         )
 
-    dedicated: HttpClient | None = None
-    if source_id == "s2":
-        key = env.ctx.config.s2_api_key
-        if key and isinstance(candidate, HttpClientConsumer):
-            dedicated = HttpClient(
-                user_agent=build_user_agent(env.ctx.config.identity_email),
-                rate_limiter=env.ctx.limiter,
-                extra_headers={"x-api-key": key},
-            )
-            candidate.set_http_client(dedicated)
-        elif isinstance(candidate, HttpClientConsumer):
-            # 无 key：enrich_batch 会在函数入口直接 CONFIG、不发请求（s2 adapter
-            # docstring）；仍注入共享 client 只为保持"已装配"的一致状态，不会被用到。
-            candidate.set_http_client(env.http)
-        if isinstance(candidate, ApiKeyConsumer):
-            candidate.set_api_key(key)
-    elif source_id == "openalex":
-        if isinstance(candidate, HttpClientConsumer):
-            candidate.set_http_client(env.http)
-        if isinstance(candidate, ApiKeyConsumer):
-            candidate.set_api_key(env.ctx.config.openalex_api_key)
-        if isinstance(candidate, OpenAlexAdapter):
-            candidate.configure_budget(
-                daily_budget_usd=env.ctx.config.openalex_daily_budget_usd,
-                state_path=env.ctx.config.home / "state" / "openalex-budget.json",
-            )
-
+    dedicated: list[HttpClient] = []
+    _apply_enrich_key(env, candidate, source_id, dedicated)
     env.ctx.limiter.register(candidate.domains[0], candidate.default_rate)
-    return candidate, dedicated
+    return candidate, (dedicated[0] if dedicated else None)
 
 
 def _run_enrich_source(
@@ -1140,6 +1160,55 @@ def report(
 # -- canary -------------------------------------------------------------------
 
 
+def _register_rate_domains(env: CliEnv, adapters: dict[str, SourceAdapter]) -> None:
+    """canary 探测前登记每 adapter 的限速域（A-M1，仿 `_prepare_enrich_source` 的
+    register+alias）。
+
+    canary 逐 adapter 探测走**注入的共享 client**（携 `env.ctx.limiter`）逐请求 `acquire(host)`；
+    host 未注册 → `RateLimiter` CONFIG fail-fast，会被 healthcheck 误当成"不健康"（伪不健康）。
+    故先登记主域 `domains[0]`（`register` 幂等取最保守值）+ 副域别名到主域（arxiv 三域先例，
+    `RateLimiter.alias`）——`register` 紧接 `alias` 保证 canonical 已注册。空 domains 跳过。
+    """
+    for adapter in adapters.values():
+        domains: tuple[str, ...] = getattr(adapter, "domains", ())
+        if not domains:
+            continue
+        env.ctx.limiter.register(domains[0], adapter.default_rate)
+        for secondary in domains[1:]:
+            env.ctx.limiter.alias(secondary, domains[0])
+
+
+def _bind_healthcheck_credentials(
+    env: CliEnv, adapters: dict[str, SourceAdapter]
+) -> list[HttpClient]:
+    """canary 探测前对每 adapter 施加与 pull/enrich 同款凭证注入（检查单 #3 闭合，
+    auth-framework §7）——收敛"canary 另起 `load_adapters()` 新鲜实例却不注入凭证，即便用户
+    已配置 token/key 仍体现为匿名"的缺陷。返回专属 client 列表供调用方 `close()`。
+
+    装配步（与 `_build_env` 同语义）：
+    - `bind_http_client`：共享 UA+limiter client 注入 http adapter（arxiv 等），同 `_build_env`。
+    - `_register_rate_domains`（A-M1）：登记限速域——否则注入了带 limiter 的共享 client 后，
+      逐请求 `acquire(host)` 撞未注册域 → CONFIG fail-fast（伪不健康）。
+    - `_bind_openreview_token_client`：有 token → 携 `Cookie` 专属 client（复用既有，不污染共享）。
+    - `_apply_enrich_key`（openalex/s2）：有 key → s2 专属 client / openalex 共享 client。
+
+    **auth_gated 平台的 session 注入归 T5（AuthManager 装配），本函数不注入 session**——故
+    auth_gated adapter 无 session 时 healthcheck 抛 `NotImplementedError` → canary SKIP（B-M4：
+    与 pipeline fetch 路径的 `AuthRequired`→BLOCKED 二义分离，canary healthcheck 专用 SKIP）。
+    """
+    dedicated: list[HttpClient] = []
+    bind_http_client(adapters, env.http)
+    _register_rate_domains(env, adapters)
+    openreview_client = _bind_openreview_token_client(adapters, env.ctx.config, env.ctx.limiter)
+    if openreview_client is not None:
+        dedicated.append(openreview_client)
+    for source_id in _ENRICH_SOURCES:
+        adapter = adapters.get(source_id)
+        if isinstance(adapter, EnrichmentSource):
+            _apply_enrich_key(env, adapter, source_id, dedicated)
+    return dedicated
+
+
 @app.command()
 def canary(
     adapter: Annotated[str | None, typer.Option("--adapter", help="仅检查指定 adapter id")] = None,
@@ -1168,14 +1237,21 @@ def canary(
     -canary.md`（相对当前工作目录，预期仓库根目录下调用，见 `canary.canary_record_path`
     docstring）。省略 `--record` 时行为与此前完全一致，不建目录、不写文件。
     """
-    with _env(home, verbose):
+    with _env(home, verbose) as env:
         adapters = load_adapters()
         if adapter is not None:
             if adapter not in adapters:
                 _usage_error(f"未注册的 adapter: {adapter!r}")
             adapters = {adapter: adapters[adapter]}
 
-        rows = run_canary(adapters)
+        # 检查单 #3：注入 token/key + 登记限速域，使已配置凭证的 adapter 不再体现为匿名态。
+        dedicated = _bind_healthcheck_credentials(env, adapters)
+        try:
+            rows = run_canary(adapters)
+        finally:
+            for client in dedicated:
+                client.close()
+
         typer.echo(render_canary_markdown(rows))
         if record:
             today = dt.date.today()
@@ -1185,6 +1261,61 @@ def canary(
             typer.echo(f"健康矩阵已落盘：{path}")
         exit_code = canary_exit_code(rows)
     raise typer.Exit(code=exit_code)
+
+
+# -- config show --------------------------------------------------------------
+
+
+def _mask_email(value: str) -> str:
+    """email 部分脱敏（首字符 + `***` + 域）：`yhyfhgs@gmail.com` → `y***@gmail.com`。
+
+    email 属半私 PII 但非硬凭证（config 护栏放行 `identity.email`）——config show 部分掩码
+    以便确认"配的是哪个账号"，又不回显完整地址。无 `@`/空 local 段 → 整值 `***`。
+    """
+    local, sep, domain = value.partition("@")
+    if not sep or not local:
+        return "***"
+    return f"{local[0]}***@{domain}"
+
+
+def _format_config_value(layer: ConfigLayer) -> str:
+    """`config show` 单元格：绝不回显凭证明文（10-config-layout §4）。
+
+    未配置 → `(unset)`；硬凭证（api_key/token/insttoken/…）→ 整值 `***`；email → 部分脱敏；
+    venues_dirs 空 → `(none)`、非空 → 逗号连接；余者过 `redact()`（纵深防御，路径/数值无影响）。
+    """
+    value = layer.value
+    if value is None:
+        return "(unset)"
+    if layer.sensitive:
+        return "***"
+    if layer.is_email and isinstance(value, str):
+        return _mask_email(value)
+    if isinstance(value, tuple):  # paths.venues_dirs
+        return ", ".join(str(entry) for entry in value) if value else "(none)"
+    return redact(str(value))
+
+
+@config_app.command("show")
+def config_show(home: HomeOpt = None) -> None:
+    """打印全部生效配置项 + winning 来源层（env/project/home/default），敏感值脱敏。
+
+    用于确认"配了没 / 来自哪层"，**绝不回显凭证明文**（10-config-layout §4）：敏感键整值
+    `***`、email 部分脱敏、未配置 `(unset)`（来源列 `-`）。退出码恒 0（只读自查，非对账
+    判据）；项目级 `./paper-crawler.toml` 含敏感键 → 分层加载护栏 `CrawlerError(CONFIG)`
+    拒启动（退出 2，指引挪至家目录/env）。
+    """
+    try:
+        layers = describe_config(home)
+    except CrawlerError as exc:
+        _echo_error(exc)
+        raise typer.Exit(code=2) from exc
+    rows = [
+        [layer.key, _format_config_value(layer), layer.source if layer.value is not None else "-"]
+        for layer in layers
+    ]
+    typer.echo(_render_table(["key", "value", "source"], rows))
+    raise typer.Exit(code=0)
 
 
 # ---------------------------------------------------------------------------

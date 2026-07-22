@@ -239,3 +239,111 @@ def test_canary_record_persists_even_when_unhealthy(
     )
     assert record_path.is_file()
     assert "| mock_platform | unhealthy | site down |" in record_path.read_text(encoding="utf-8")
+
+
+# --- 凭证注入（检查单 #3：canary 装配 token/key + 限速域，不再体现匿名/未配置态）----------
+
+
+def _cookie_header(adapter: object) -> str:
+    """取 adapter 注入的 client 的 Cookie 头（无 client → 空串）。"""
+    client = getattr(adapter, "_http", None)
+    if client is None:
+        return ""
+    return client._client.headers.get("cookie", "")
+
+
+def test_canary_binds_openreview_token_client(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """配置了 openreview_token → canary 为 openreview 注入携 `Cookie` 的专属 client（非匿名态）。
+
+    openreview healthcheck 本身匿名可跑，故用 patched healthcheck 检视注入的 client 是否携
+    token cookie——直证 canary 现在会装配凭证（此前用未绑定的新鲜实例，恒匿名）。
+    """
+    from paper_crawler.adapters.openreview.adapter import OpenReviewAdapter
+
+    home = tmp_path / "home"
+    home.mkdir()
+    (home / "config.toml").write_text("[auth.openreview]\ntoken = 'tok-abc'\n", encoding="utf-8")
+
+    def _probe(self: OpenReviewAdapter, session: object = None) -> HealthReport:
+        bound = "accessToken" in _cookie_header(self)
+        return HealthReport(healthy=bound, detail="token-bound" if bound else "anonymous")
+
+    monkeypatch.setattr(OpenReviewAdapter, "healthcheck", _probe)
+    result = runner.invoke(app, ["canary", "--adapter", "openreview", "--home", str(home)])
+    assert result.exit_code == 0, result.output
+    assert "token-bound" in result.output
+    assert "anonymous" not in result.output
+
+
+def test_canary_openreview_anonymous_without_token(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """无 token → openreview 沿用共享匿名 client（对照组：确认上例的差异来自 token 注入）。"""
+    from paper_crawler.adapters.openreview.adapter import OpenReviewAdapter
+
+    monkeypatch.delenv("PAPER_CRAWLER_OPENREVIEW_TOKEN", raising=False)
+
+    def _probe(self: OpenReviewAdapter, session: object = None) -> HealthReport:
+        bound = "accessToken" in _cookie_header(self)
+        return HealthReport(healthy=True, detail="token-bound" if bound else "anonymous")
+
+    monkeypatch.setattr(OpenReviewAdapter, "healthcheck", _probe)
+    result = runner.invoke(
+        app, ["canary", "--adapter", "openreview", "--home", str(_home(tmp_path))]
+    )
+    assert result.exit_code == 0, result.output
+    assert "anonymous" in result.output
+    assert "token-bound" not in result.output
+
+
+def test_canary_auth_gated_stub_skips(tmp_path: Path) -> None:
+    """auth_gated 平台（elsevier_sd stub）无 session → healthcheck NotImplementedError → SKIP
+    （B-M4：canary 不注入 session，二义分离于 pipeline 的 AuthRequired→BLOCKED）。"""
+    result = runner.invoke(
+        app, ["canary", "--adapter", "elsevier_sd", "--home", str(_home(tmp_path))]
+    )
+    assert result.exit_code == 0, result.output
+    assert "| elsevier_sd | SKIP |" in result.output
+
+
+def test_bind_healthcheck_credentials_returns_dedicated_clients(tmp_path: Path) -> None:
+    """`_bind_healthcheck_credentials`：有 token/key → openreview + s2 各得专属携密 client。"""
+    from paper_crawler.adapter import load_adapters
+    from paper_crawler.cli import _bind_healthcheck_credentials, _env
+
+    home = tmp_path / "home"
+    home.mkdir()
+    (home / "config.toml").write_text(
+        "[auth.openreview]\ntoken = 't'\n[auth.s2]\napi_key = 'k'\n", encoding="utf-8"
+    )
+    with _env(home, False) as env:
+        adapters = load_adapters()
+        dedicated = _bind_healthcheck_credentials(env, adapters)
+        try:
+            assert len(dedicated) == 2  # openreview token client + s2 key client
+            assert "accessToken" in _cookie_header(adapters["openreview"])
+            s2_client = adapters["s2"]._http  # type: ignore[attr-defined]
+            assert s2_client._client.headers.get("x-api-key") == "k"
+        finally:
+            for client in dedicated:
+                client.close()
+
+
+def test_register_rate_domains_prevents_config_failfast(tmp_path: Path) -> None:
+    """A-M1：登记后每 adapter 的域可 `acquire` 不抛 CONFIG（否则注入带 limiter 的共享 client
+    后 canary 逐请求探测撞未注册域 → 伪不健康）。"""
+    from paper_crawler.adapter import load_adapters
+    from paper_crawler.cli import _bind_healthcheck_credentials, _env
+
+    with _env(_home(tmp_path), False) as env:
+        adapters = load_adapters()
+        dedicated = _bind_healthcheck_credentials(env, adapters)
+        try:
+            for adapter in adapters.values():
+                for domain in adapter.domains:
+                    env.ctx.limiter.acquire(domain)  # 已注册（含 alias）→ 不抛 CONFIG
+        finally:
+            for client in dedicated:
+                client.close()
