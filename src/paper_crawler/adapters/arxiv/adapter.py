@@ -149,6 +149,8 @@ class ArxivAdapter(AdapterBase):
     auth_requirement = AuthLevel.NONE
     # [0] 主域 = 限速/日志账本键（三域共享一份 1req/3s 预算，ToU「并发 1」）。
     domains: tuple[str, ...] = ("export.arxiv.org", "oaipmh.arxiv.org", "arxiv.org")
+    # resolve_assets 为纯 URL 构造（arxiv_id → arxiv.org/pdf/{id}），零网络 → 豁免 resolve 限速闸。
+    resolve_offline = True
 
     def __init__(self, http: HttpClient | None = None) -> None:
         # http=None：首次网络调用时惰性自建（见模块 docstring 的注入说明）。

@@ -104,6 +104,9 @@ class OpenReviewAdapter(AdapterBase):
     # [0] 主域 = 限速/日志账本键；api/openreview.net 经 route_for 的 alias 落到同一桶
     # （三域共享一份 30rpm 预算，§5 口径统一）。
     domains: tuple[str, ...] = ("api2.openreview.net", "api.openreview.net", "openreview.net")
+    # resolve_assets 只读 enumerate 携带的 meta（pdf/SI 相对路径）拼绝对 URL，零网络 →
+    # 豁免 resolve 限速闸（fetch 仍走限速——2260 篇不再被逐篇 resolve 限速空转，缺陷 C-C）。
+    resolve_offline = True
 
     def __init__(self, http: HttpClient | None = None) -> None:
         # http=None：首次网络调用惰性自建（匿名、无 token——仅 discover/healthcheck 可用，

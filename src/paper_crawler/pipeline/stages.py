@@ -9,10 +9,13 @@ fetch/extract/ingest 六类；`pull` 的级联编排在 `runner.py`）。任务�
 - 阶段间只通过持久化实体通信（§1 不变式）：handler 的输入全部从任务参数 + DB 行
   重建（`{"issue": <ulid>}` / `{"paper": <ulid>}` / `{"asset": <ulid>}`），不依赖
   进程内的上游对象——kill-9 后重跑（AC-1.3）与 resume（AC-1.5）都靠这一点成立。
-- 限速接入：每次 adapter 网络型调用（discover/enumerate/resolve/fetch）前
-  `limiter.acquire(domain)` → `sleeper(wait)`；discover/enumerate 记账在
+- 限速接入：每次 adapter **网络型**调用（discover/enumerate/fetch，及需发请求的
+  resolve）前 `limiter.acquire(domain)` → `sleeper(wait)`；discover/enumerate 记账在
   metadata_adapter.domains[0]，resolve/fetch 在 fulltext_adapter.domains[0]
   （与 `Route.rate_overrides` 的键一致）。fetch 的 wait 记入 FetchLog.rate_wait_ms。
+  **例外（缺陷 C-C）**：adapter 声明 `resolve_offline=True`（`resolve_assets` 可证明
+  零网络、纯 URL 构造）时 resolve 阶段跳过闸——大 venue（2260 篇量级）不再逐篇限速
+  空转；豁免只给已证明零网络的路径，真实网络 resolve 策略（未声明）仍过闸。
 - fetch 前 re-resolve（phase1-plan "T7c 追加设计裁决"）：fetch 子任务执行时现场
   调 `resolve_assets` 取最新 `AssetPlan` → `Repo.refresh_asset_plan` 同步 asset 行
   → 再用**新 plan**（而非 DB 旧 url）执行 fetch。mock 的故障注入编译在 url 查询串
@@ -71,7 +74,9 @@ class Selector:
     - `volume`/`issue`/`year` 圈定 issues（`issue` 对应 IssueRef.number）；
     - `dois` 圈定 papers（按 identifier，DOI 比较大小写不敏感）；
     - `filter_expr` = 标题大小写不敏感子串（FR-05 关键词过滤；DSL 属 Phase 6）；
-    - `limit` = fetch 的 asset 数上限（resolve 全量完成后截断候选列表）。
+    - `limit` = fetch 的 asset 数上限。**前置到 resolve 圈选**（缺陷 C-C）：确定性顺序
+      下只对前 N 篇 paper 做 resolve（而非全量 resolve 后才截断），再对其候选做 asset
+      级截断——语义仍是"最多 N 个 asset"，但大 venue 不再对将丢弃的绝大多数做无谓 resolve。
     """
 
     volume: str | None = None
@@ -368,7 +373,11 @@ def _stage_resolve(ctx: StageContext, task: sqlite3.Row, report: RunReport) -> S
     route = route_for(ctx, venue_id)
     adapter = route.fulltext_adapter
     domain = adapter.domains[0]
-    acquire_and_wait(ctx, domain)
+    # 缺陷 C-C：可证明零网络的 resolve（`resolve_offline=True`——纯 URL 构造、不发请求）
+    # 豁免 per-domain 限速闸，大 venue（如 ICLR 2024 的 2260 篇）不再被逐篇限速空转。安全侧
+    # 默认 False（getattr 兜底），真实网络 resolve 策略仍过闸——豁免只给已证明零网络的路径。
+    if not getattr(adapter, "resolve_offline", False):
+        acquire_and_wait(ctx, domain)
 
     plans = adapter.resolve_assets(route.venue, _paper_stub(ctx, paper), session=None)
     for plan in plans:

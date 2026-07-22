@@ -28,12 +28,13 @@
   ≥10KB**。**需有效 OpenReview token**（env `PAPER_CRAWLER_OPENREVIEW_TOKEN`）；未设则 skip。
   > 契约（AC-2.2 final，2026-07-22）：本层与 5 个兄弟 adapter 在线冒烟同构——**enumerate
   > 计数对锚点 + 单篇 PDF %PDF 探测**（pmlr/cvf/neurips/acl/aaai 同款），验证「真实站点
-  > 应答 + accepted 集合 + 真 PDF 下载」。**不**走 `pull --limit 10` 全级联：pipeline 的
-  > resolve 阶段对**每篇** enumerate 出的 paper 逐个 `acquire_and_wait`（30rpm 闸），而
-  > openreview 的 `resolve_assets` 是零网络纯构造——2024 的 2260 篇会被逐个限速空转（≈数十
-  > 分钟墙钟，见 pipeline/stages.py:371 与 runner.py:465-473「resolve 全量后按 limit 截断」），
-  > 对 10 篇的在线冒烟不切实际。`pull --year 2024 --limit 10` 的「10 落盘 + DB↔文件对账」
-  > 全链仍由离线 tests/integration/test_openreview_pull.py（mock HTTP，确定性）全绿覆盖。
+  > 应答 + accepted 集合 + 真 PDF 下载」。**不**走 `pull --limit 10` 全级联——但**理由是
+  > 在线请求预算对齐**（MAX_REAL_REQUESTS=10，与兄弟 adapter 同款轻量探测），而非性能：
+  > 缺陷 C-C 修复后 openreview 的零网络 `resolve_assets`（`resolve_offline=True`）已豁免
+  > resolve 限速闸，且 --limit 前置到 resolve 圈选，2024 的 2260 篇不再被逐篇限速空转，
+  > 全级联本身已可行（历史：修复前 resolve 对每篇过 30rpm 闸 ≈ 数十分钟墙钟）。
+  > `pull --year 2024 --limit 10` 的「10 落盘 + DB↔文件对账」全链由离线
+  > tests/integration/test_openreview_pull.py（mock HTTP，确定性）全绿覆盖。
 
 MAX_REAL_REQUESTS=10 = AC-2.1(venues 1 + dblp index 1) + healthcheck(2) + AC-2.2(groups 1
 + notes 3〔2260 accepted @1000/页〕+ pdf 首 chunk 1 = 5)。真实执行结果归档

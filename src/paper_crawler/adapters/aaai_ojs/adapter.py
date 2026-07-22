@@ -118,6 +118,8 @@ class AaaiOjsAdapter(AdapterBase):
     )
     auth_requirement = AuthLevel.NONE
     domains: tuple[str, ...] = ("ojs.aaai.org",)
+    # resolve_assets 纯读 meta['pdf_url'] 做 view→download 换写，零网络 → 豁免限速闸。
+    resolve_offline = True
 
     def __init__(self, http: HttpClient | None = None) -> None:
         # http=None：首次网络调用时惰性自建（见模块 docstring 的注入说明）。

@@ -114,6 +114,8 @@ class AclAnthologyAdapter(AdapterBase):
     # [0] 主域 = 限速/日志账本键（§5 表：raw.githubusercontent.com 标注"主域 [0]"）；
     # aclanthology.org/api.github.com 经 route_for 的 domains[1:] alias 落到同一桶。
     domains: tuple[str, ...] = ("raw.githubusercontent.com", "aclanthology.org", "api.github.com")
+    # resolve_assets 读 anthology_id 拼 PDF URL + 逐条 attachment，零网络 → 豁免限速闸。
+    resolve_offline = True
 
     def __init__(
         self, http: HttpClient | None = None, *, clock: Callable[[], float] = time.monotonic

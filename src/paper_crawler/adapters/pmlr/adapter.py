@@ -116,6 +116,8 @@ class PmlrAdapter(AdapterBase):
     auth_requirement = AuthLevel.NONE
     # [0] 主域（元数据 + 旧卷 PDF）；[1] 新卷 PDF 托管（2024 起，边界按上传时间非卷号）。
     domains: tuple[str, ...] = ("proceedings.mlr.press", "raw.githubusercontent.com")
+    # resolve_assets 纯读 meta['pdf_url'] 透传（域无关、不重发请求），零网络 → 豁免限速闸。
+    resolve_offline = True
 
     def __init__(self, http: HttpClient | None = None) -> None:
         # http=None：首次网络调用时惰性自建（见模块 docstring 的注入说明）。

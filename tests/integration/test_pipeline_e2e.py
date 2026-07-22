@@ -286,11 +286,16 @@ def test_selector_filter_title_substring_case_insensitive(env: PipelineEnv) -> N
     assert report.succeeded == 1
 
 
-def test_selector_limit_truncates_after_resolve(env: PipelineEnv) -> None:
-    """limit = fetch 的 asset 数上限（resolve 全量后截断）。"""
+def test_selector_limit_is_forward_to_resolve(env: PipelineEnv) -> None:
+    """limit 前置到 resolve 圈选（缺陷 C-C）：10 篇中只 resolve 前 3 篇，而非全量后截断。
+
+    深度覆盖（--limit 前置的确定性/对账语义）在 test_ac_pull_usability.py；此处守 e2e
+    的计数口径：assets_planned 随 limit 收缩（曾为"resolve 不受 limit 影响 → 10"）。
+    """
     report = env.make_runner().pull(VENUE, Selector(year=2024, limit=3))
     counts = env.repo.counts(VENUE)
-    assert counts["assets_planned"] == 10  # resolve 不受 limit 影响
+    assert counts["papers"] == 10  # enumerate 仍全量落库
+    assert counts["assets_planned"] == 3  # 只前 3 篇 resolve（前置，非全量 resolve 后截断）
     assert counts["assets_fetched"] == 3
     assert report.succeeded == 3
 
