@@ -132,11 +132,13 @@ def group_ids(data: bytes) -> list[str]:
 # --- notes 解析（v1/v2 双套）------------------------------------------------------------------
 
 
-def parse_notes_page(data: bytes, version: ApiVersion) -> NotesPage:
-    """解析一页 `/notes` 响应为 `NotesPage`（`version` 决定 content 取值方式）。
+def raw_notes_envelope(data: bytes) -> tuple[list[object], int]:
+    """加载 `/notes` 响应信封 → ``(原始 note 条目列表, count)``（malformed → `PARSE`）。
 
-    顶层 ``notes`` 缺失或非列表 → `PARSE`；``count`` 缺失回退为页内条数（保守）。
-    单条 note 的 content 结构与版本预期不符（v2 缺 `.value` 包裹等）→ `PARSE`（错配信号）。
+    全 Note 解析器（`parse_notes_page`）与逐届 accepted quirk 规则（决定帖 join /
+    directReplies，见 `accepted_forums` / `accepted_notes_by_replies`）**共享**的底层加载器
+    ——把信封校验与逐条解析解耦，避免各 quirk 规则各自重写信封校验。``count`` 缺失/非整数
+    （含 bool）回退为页内条数（保守；分页据此判续页）。
     """
     doc = _load_json(data)
     if not isinstance(doc, dict):
@@ -144,14 +146,28 @@ def parse_notes_page(data: bytes, version: ApiVersion) -> NotesPage:
     raw_notes = doc.get("notes")
     if not isinstance(raw_notes, list):
         raise CrawlerError(ErrorClass.PARSE, "openreview notes response missing 'notes' array")
-    notes = tuple(_parse_note(entry, version) for entry in raw_notes)
     raw_count = doc.get("count")
-    # count 缺失/非整数（含 bool）回退为页内条数（保守）。
-    if isinstance(raw_count, int) and not isinstance(raw_count, bool):
-        count = raw_count
-    else:
-        count = len(notes)
-    return NotesPage(notes=notes, count=count)
+    count = (
+        raw_count
+        if isinstance(raw_count, int) and not isinstance(raw_count, bool)
+        else len(raw_notes)
+    )
+    return raw_notes, count
+
+
+def notes_from_raw(raw_notes: list[object], version: ApiVersion) -> tuple[Note, ...]:
+    """原始 note 条目列表 → 解析后的 `Note` 元组（`version` 决定 content 取值方式）。"""
+    return tuple(_parse_note(entry, version) for entry in raw_notes)
+
+
+def parse_notes_page(data: bytes, version: ApiVersion) -> NotesPage:
+    """解析一页 `/notes` 响应为 `NotesPage`（`version` 决定 content 取值方式）。
+
+    顶层 ``notes`` 缺失或非列表 → `PARSE`；``count`` 缺失回退为页内条数（保守）。
+    单条 note 的 content 结构与版本预期不符（v2 缺 `.value` 包裹等）→ `PARSE`（错配信号）。
+    """
+    raw_notes, count = raw_notes_envelope(data)
+    return NotesPage(notes=notes_from_raw(raw_notes, version), count=count)
 
 
 def _parse_note(entry: object, version: ApiVersion) -> Note:
@@ -242,12 +258,119 @@ def _content_authors(
 
 
 def is_accepted(note: Note, venueid: str) -> bool:
-    """接收判定（§4 ④）：``content.venueid == 主会 venue id`` 即接收。
+    """接收判定（§4 ④，默认 venueid 规约）：``content.venueid == 主会 venue id`` 即接收。
 
     被拒/撤稿/desk-reject 的 venueid 落 `*_Submission/Withdrawn/Desk_Rejected` 类值
     （≠ 主会 id）→ 排除。venueid 缺失（None）→ 非接收（保守）。
+
+    **适用面**：venueid 规约成立的届（2017、2020-2026）。**不适用** 2013/2014（venueid
+    尚未产生，接收判定在 submission 自身 `content.decision`）与 2018/2019（venueid 缺席，
+    接收态在**独立决定帖**）——这两类走 quirk 规则（`accepted_forums` /
+    `accepted_notes_by_replies`，见 `acceptance.py`），[LIVE] 2026-07-22 实测惯例见
+    research/site-survey/openreview.md §11。
     """
     return note.venueid == venueid
+
+
+# --- 逐届 accepted quirk 判定（venueid 惯例外的早届；design §4④/§8）--------------------------
+#
+# [LIVE] 2026-07-22 实测（research/site-survey/openreview.md §11）：ICLR 2018/2019 的**接收
+# 论文 blind submission 帖无 `content.venueid`/`content.venue`**——venueid 过滤枚举 0 篇（缺陷
+# C-D）。接收态记在独立的**决定帖**：
+#   - 2018：venue 级 `ICLR.cc/2018/Conference/-/Acceptance_Decision` 帖，`content.decision`
+#     取 'Accept (Oral|Poster)' / 'Reject' / 'Invite to Workshop Track'。
+#   - 2019：per-paper `.../Paper<N>/Meta_Review` 帖，`content.recommendation` 取 'Accept (…)'。
+# 下列纯函数把「决定值 → 接收 forum 集合」与「submission + directReplies → 接收 Note」抽象为
+# 与届无关的谓词，供 `acceptance.py` 的规则表数据驱动调用（禁止散落 if-else）。
+
+
+def _startswith_any(value: str, prefixes: tuple[str, ...]) -> bool:
+    return any(value.startswith(p) for p in prefixes)
+
+
+def accepted_forums(
+    raw_notes: list[object],
+    version: ApiVersion,
+    *,
+    field: str,
+    accept_prefixes: tuple[str, ...],
+) -> set[str]:
+    """决定帖页 → 接收论文的 forum id 集合（venue 级决定帖 join；2018 形态）。
+
+    逐决定帖读 ``content.<field>``（v1 直取 / v2 `.value`）；值以 `accept_prefixes` 之一开头即
+    该 `forum` 接收（如 field='decision' 值 'Accept (Oral)'）。非接收态（'Reject' /
+    'Invite to Workshop Track' 等）与缺 forum 者不计入。条目非对象 / 缺 content / 版本错配
+    → `PARSE`（§6 canary）。
+    """
+    out: set[str] = set()
+    for entry in raw_notes:
+        if not isinstance(entry, dict):
+            raise CrawlerError(ErrorClass.PARSE, "openreview decision entry is not a JSON object")
+        content = entry.get("content")
+        if not isinstance(content, dict):
+            raise CrawlerError(
+                ErrorClass.PARSE, f"openreview decision {entry.get('id')!r} missing 'content'"
+            )
+        nid = entry.get("id")
+        value = _content_str(content, field, version, nid if isinstance(nid, str) else "?")
+        forum = entry.get("forum")
+        if value is not None and isinstance(forum, str) and _startswith_any(value, accept_prefixes):
+            out.add(forum)
+    return out
+
+
+def accepted_notes_by_replies(
+    raw_notes: list[object],
+    version: ApiVersion,
+    *,
+    reply_invitation_contains: str,
+    field: str,
+    accept_prefixes: tuple[str, ...],
+) -> list[Note]:
+    """提交帖页（带 `details.directReplies`）→ 接收论文的 `Note` 列表（per-paper 决定帖 join；
+    2019 形态）。
+
+    逐提交帖：其 `details.directReplies` 中若有一帖 `invitation` 含 `reply_invitation_contains`
+    （如 'Meta_Review'）且 ``content.<field>``（如 'recommendation'）以 `accept_prefixes` 之一
+    开头，即该提交接收。提交帖本体经 `_parse_note` 解析为 `Note`（title/pdf/authors 映射照旧）。
+    无 replies / 无接收帖 → 非接收（保守）。
+    """
+    out: list[Note] = []
+    for entry in raw_notes:
+        note = _parse_note(entry, version)  # 提交帖本体（非对象/缺 id/缺 content → PARSE）
+        details = entry.get("details") if isinstance(entry, dict) else None
+        replies = details.get("directReplies") if isinstance(details, dict) else None
+        if _replies_have_accept(
+            replies, version, reply_invitation_contains, field, accept_prefixes
+        ):
+            out.append(note)
+    return out
+
+
+def _replies_have_accept(
+    replies: object,
+    version: ApiVersion,
+    inv_contains: str,
+    field: str,
+    accept_prefixes: tuple[str, ...],
+) -> bool:
+    """directReplies 里是否有一条 `invitation` 含 `inv_contains` 且 `content.<field>` 判接收。"""
+    if not isinstance(replies, list):
+        return False
+    for reply in replies:
+        if not isinstance(reply, dict):
+            continue
+        inv = reply.get("invitation")
+        if not (isinstance(inv, str) and inv_contains in inv):
+            continue
+        content = reply.get("content")
+        if not isinstance(content, dict):
+            continue
+        rid = reply.get("id")
+        value = _content_str(content, field, version, rid if isinstance(rid, str) else "?")
+        if value is not None and _startswith_any(value, accept_prefixes):
+            return True
+    return False
 
 
 # 资产定位符的 meta 键（adapter 私有）：enumerate 把 note 的 pdf/SI 相对路径经 meta
@@ -304,10 +427,14 @@ __all__ = [
     "ApiVersion",
     "Note",
     "NotesPage",
+    "accepted_forums",
+    "accepted_notes_by_replies",
     "api_base_url",
     "api_version_from_groups",
     "group_ids",
     "is_accepted",
+    "notes_from_raw",
     "parse_notes_page",
+    "raw_notes_envelope",
     "to_paper_stub",
 ]

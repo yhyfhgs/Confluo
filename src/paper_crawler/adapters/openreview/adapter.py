@@ -35,10 +35,9 @@ from collections.abc import Iterable, Iterator
 from urllib.parse import urlencode
 
 from paper_crawler.adapter import AdapterBase, AdapterFamily
-from paper_crawler.adapters.openreview import parse, venues
+from paper_crawler.adapters.openreview import acceptance, parse, venues
 from paper_crawler.errors import CrawlerError, ErrorClass
 from paper_crawler.http import HttpClient
-from paper_crawler.obslog import log_event
 from paper_crawler.types import (
     AssetKind,
     AssetPlan,
@@ -60,7 +59,6 @@ from paper_crawler.useragent import build_user_agent
 
 _GROUPS_ENDPOINT = "https://api2.openreview.net/groups"  # 匿名可读；判 domain / healthcheck
 _PDF_SITE = "https://openreview.net"  # PDF/forum 页主站（非 api2）
-_PAGE_LIMIT = 1000  # 勘察 §5：limit≤1000，offset 翻页至 count
 _HTML_SNIFF = 512  # fetch HTML 嗅探读取的首字节数
 
 _CONTACT_EMAIL_ENV = "PAPER_CRAWLER_CONTACT_EMAIL"
@@ -150,16 +148,27 @@ class OpenReviewAdapter(AdapterBase):
     # -- enumerate（groups 判版本 → notes 翻页 → accepted 过滤）------------------------------
 
     def enumerate_issue(self, venue: VenueSpec, issue: IssueRef) -> Iterable[PaperStub]:
-        """一届 → 全部**接收**论文的 `PaperStub`（accepted 过滤 venueid==主会 id）。
+        """一届 → 全部**接收**论文的 `PaperStub`（逐届 accepted 规则，见 `acceptance.py`）。
 
-        急切求值届表查询与版本判定（非法早失败为 CONFIG）；notes 翻页与解析在返回的
-        生成器惰性执行。403（无/失效 token）在网络层经 `_reclassify_403` 重分类为
-        auth_expired（整批 BLOCKED——AC-1.5 路由）。
+        急切求值届表查询、版本判定与规则选取（非法早失败为 CONFIG）；notes 翻页与解析在返回的
+        生成器惰性执行。403（无/失效 token）在网络层经 `_reclassify_403` 重分类为 auth_expired
+        （整批 BLOCKED——AC-1.5 路由）。默认规则 venueid 过滤（§4④，venueid 规约成立的届）；
+        2018/2019 走决定帖 join（venueid 惯例外——缺陷 C-D 修复，勘察 §11）。
         """
         venueid = _venueid_for_issue(venue, issue)
         version = self._api_version(venueid)
-        base = parse.api_base_url(version)
-        return self._enumerate_pages(venue, issue, venueid, version, base)
+        rule = acceptance.rule_for(venue, issue.year)
+        ctx = acceptance.EnumContext(
+            fetch=self._get_bytes,
+            base=parse.api_base_url(version),
+            venueid=venueid,
+            version=version,
+            year=issue.year,
+            venue_id=venue.id,
+            issue_label=issue.label,
+            domain=self.domains[0],
+        )
+        return rule.iter_accepted(ctx)
 
     def _api_version(self, venueid: str) -> parse.ApiVersion:
         """判定 venueid 的 note 归属版本（进程内缓存；每届一次 groups 查询，§4 ②）。"""
@@ -171,38 +180,6 @@ class OpenReviewAdapter(AdapterBase):
         version = parse.api_version_from_groups(data, venueid)
         self._version_cache[venueid] = version
         return version
-
-    def _enumerate_pages(
-        self,
-        venue: VenueSpec,
-        issue: IssueRef,
-        venueid: str,
-        version: parse.ApiVersion,
-        base: str,
-    ) -> Iterator[PaperStub]:
-        offset = 0
-        emitted = 0
-        excluded = 0
-        while True:
-            url = _notes_url(base, venueid, offset)
-            page = parse.parse_notes_page(self._get_bytes(url), version)
-            for note in page.notes:
-                if parse.is_accepted(note, venueid):
-                    yield parse.to_paper_stub(note, year=issue.year)
-                    emitted += 1
-                else:
-                    excluded += 1
-            offset += len(page.notes)
-            # 翻页终止：累计已覆盖 count，或本页空（防御 count 与实际不符的死循环）。
-            if offset >= page.count or not page.notes:
-                break
-        log_event(
-            "INFO",
-            f"enumerate {issue.label}: {emitted} accepted ({excluded} excluded by venueid filter)",
-            venue=venue.id,
-            stage="enumerate",
-            domain=self.domains[0],
-        )
 
     # -- resolve（零网络纯构造）--------------------------------------------------------------
 
@@ -348,16 +325,6 @@ def _venueid_for_issue(venue: VenueSpec, issue: IssueRef) -> str:
             "(missing year, or not in the built-in table / overrides)",
         )
     return venueid
-
-
-def _notes_url(base: str, venueid: str, offset: int) -> str:
-    """构造 notes 翻页 URL（禁携 email 参数——robots `/*?*email=` 唯一禁则 + 隐私红线）。"""
-    params = {
-        "content.venueid": venueid,
-        "limit": str(_PAGE_LIMIT),
-        "offset": str(offset),
-    }
-    return f"{base}/notes?{urlencode(params)}"
 
 
 def _absolute_asset_url(relative_path: str) -> str:
