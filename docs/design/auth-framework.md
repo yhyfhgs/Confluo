@@ -126,7 +126,7 @@ class AuthProvider(Protocol):
         """使 session 失效并从 CredentialStore 删除其 payload（AC-4.5 取证式彻底删除）。"""
 
     def rewrite_url(self, url: str) -> str:
-        """默认恒等（AdapterProviderBase 提供）；仅 EZProxyProvider 覆盖为真实重写（07 §2/§3.2）。"""
+        """默认恒等（AuthProviderBase 提供）；仅 EZProxyProvider 覆盖为真实重写（07 §2/§3.2）。"""
 ```
 
 - **异常契约**：`ensure_session(interactive=False)` 无 session → `AuthRequired`；探针命中风控 →
