@@ -5,7 +5,7 @@ mock），再扫描 entry point 组 `paper_crawler.adapters` 覆盖/新增（第
 "插"）。key = adapter_id。
 """
 
-from collections.abc import Iterable, Mapping
+from collections.abc import Iterable, Mapping, Sequence
 from importlib import metadata
 from typing import Literal, Protocol, runtime_checkable
 
@@ -125,6 +125,44 @@ class EmailConsumer(Protocol):
     """
 
     def set_email(self, email: str | None) -> None: ...
+
+
+@runtime_checkable
+class ApiKeyConsumer(Protocol):
+    """真实 adapter 声明"可注入可选 API key 字符串"的可选协议（duck-typed，沿
+    `EmailConsumer` 先例；T6 openalex/s2 引入）。
+
+    与 `EmailConsumer` 同构但语义不同：本协议注入的是**服务端认证密钥**（openalex
+    的 `api_key` 查询参数、s2 的 `x-api-key` 请求头），而非联系邮箱。key 缺省
+    （`None`）时由各 adapter 自行决定匿名/降级行为——openalex 匿名仍可用（key 只是
+    提升每日 credit 额度），s2 无 key 时 `enrich_batch` 直接判定 `CONFIG`、不发请求
+    （aggregators.md §5.3/§5.4）。CLI 装配期传入值来源 `Config.openalex_api_key`/
+    `Config.s2_api_key`。**头级 key（s2）不可经本协议反过来影响已注入的 `HttpClient`
+    实例**——`x-api-key` 头必须随专属 client 的构造一次性注入（凭证隔离义务在调用
+    方，避免头随共享 client 外泄到其它域，见 `adapters/s2/__init__.py` docstring）；
+    本协议只负责让 adapter 自己知道"key 是否已配置"，用于 `enrich_batch`/
+    `healthcheck` 的判定分支。
+    """
+
+    def set_api_key(self, key: str | None) -> None: ...
+
+
+@runtime_checkable
+class EnrichSource(Protocol):
+    """补充层富化源的 duck-typed 可选接口（**立于 SourceAdapter 冻结协议之外**，非五
+    方法之一；plan §2-5 冻结契约，T6 openalex/s2 引入，沿 `HttpClientConsumer` 先例：
+    运行期 duck-typed 甄别，不实现者静默不参与）。
+
+    实现者（如 openalex/s2）的 `capabilities` 恒为空集——不声明 DISCOVER/ENUMERATE/
+    RESOLVE/FETCH/SEARCH 中任一项，不参与 `crawler pull` 六阶段主流程。驱动路径是
+    独立的 `crawler enrich` CLI 命令：扫库内带 `doi` identifier 的 paper → 按本方法
+    分批查询 → 产出的 `PaperStub` 经 `MergeEngine.ingest(stub, source=…)` 回注既有
+    paper（字段级来源优先级收敛天然实现"补缺不覆盖"）。`dois` 去重/长度处理是实现者
+    自己的职责（不同源批量机制不同：openalex 按 URL 长度自算批量，s2 按官方文档
+    ≤500/批固定切分）。
+    """
+
+    def enrich_batch(self, dois: Sequence[str]) -> list[PaperStub]: ...
 
 
 def bind_http_client(adapters: Mapping[str, SourceAdapter], client: HttpClient) -> list[str]:
