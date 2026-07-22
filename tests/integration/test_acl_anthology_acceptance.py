@@ -252,10 +252,11 @@ def test_ac_2_5_pull_cli_matches_anchor_and_log_evidence_is_bulk_not_page_scrapi
     )
     assert result.exit_code == 0, result.output
 
-    # D-019 锚点判据：DB 落库 2241 篇（enumerate 全量含 Findings join），
-    # resolve 全量产 2241 个 pdf plan。
+    # D-019 锚点判据：DB 落库 2241 篇（enumerate 全量含 Findings join，不受 --limit 影响）。
+    # resolve 前置（缺陷 C-C）：--limit 25 只对前 25 篇建 resolve → 25 个 pdf plan（前 25 篇
+    # 均无 attachment，故其 pdf 恰是候选前 25 个 asset——落盘子集与全量 resolve 时逐字一致）。
     assert _papers_count(home) == TOTAL_EMNLP_2023 == _ANCHOR["total"]
-    assert _pdf_asset_count(home) == TOTAL_EMNLP_2023
+    assert _pdf_asset_count(home) == 25
 
     events = _obslog_events(home)
     urls = [str(e["url"]) for e in events if "url" in e]

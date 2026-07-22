@@ -431,8 +431,8 @@ class PipelineRunner:
 
     def _run_pull(self, task: sqlite3.Row, report: RunReport) -> None:
         """pull 级联（design/05 §1）：discover → Selector 圈定 issues → 每期
-        enumerate → 每 paper resolve →（dry-run 止步并填 planned_*）→ 每候选
-        asset fetch →（with_extract）extract → ingest 尾部必跑。
+        enumerate → resolve（--limit 时仅前 N 篇，缺陷 C-C）→（dry-run 止步并填
+        planned_*）→ 每候选 asset fetch →（with_extract）extract → ingest 尾部必跑。
 
         每阶段 = "enqueue 子任务（parent_id=pull，fresh_skip 记 skipped）→ 嵌套
         drain"；阶段边界从 DB 重新选定输入（无论上一阶段是刚执行还是 fresh_skip，
@@ -463,14 +463,22 @@ class PipelineRunner:
 
         # 阶段 3 resolve（dois/filter_expr 圈定 papers）
         papers = self._select_papers(venue_id, issues, sel)
-        for paper in papers:
+        # 缺陷 C-C：--limit 前置到 resolve 圈选——只对确定性顺序（`_select_papers` 稳定序：
+        # issue 有序 × 标题有序）的前 N 篇建 resolve 任务，而非全量 resolve 后才截断
+        # （2260 篇量级 pull 不再对将被丢弃的绝大多数做无谓 resolve）。稳定序保证断点续爬
+        # 重跑圈选同一子集。limit=None 时保持全量 resolve。
+        resolve_papers = papers if sel.limit is None else papers[: sel.limit]
+        for paper in resolve_papers:
             self._enqueue_child(
                 report, "resolve", venue_id, {"paper": str(paper["id"])}, pull_id, force
             )
         self._drain_loop(report)
 
-        # 候选资产（resolve 全量后按 limit 截断；gone/no_entitlement 不再进 fetch）
-        candidates = self._candidate_assets(papers, sel.limit)
+        # 候选资产：只来自已 resolve 的前 N 篇；再按 limit 做 **asset 级**截断——多资产/零
+        # 资产 paper 下 asset 数≠paper 数，asset 级截断保持 --limit 的"asset 数上限"语义
+        # 且与 dry-run 对账一致（前 N 篇的前 limit 个 asset == 旧全量 resolve 后前 limit 个
+        # asset，故落盘子集与修复前逐字一致）。gone/no_entitlement 不进 fetch。
+        candidates = self._candidate_assets(resolve_papers, sel.limit)
 
         if ctx.dry_run:
             # planned_* 仅 dry-run 填充（T7b 渲染契约）。planned_bytes：mock 的

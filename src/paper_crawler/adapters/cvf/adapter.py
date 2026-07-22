@@ -113,6 +113,8 @@ class CVFAdapter(AdapterBase):
     auth_requirement = AuthLevel.NONE
     # [0] 主域 = 限速/日志账本键；PDF/supp 同源直出，单域（§4，对比 pmlr 双域教训）。
     domains: tuple[str, ...] = ("openaccess.thecvf.com",)
+    # resolve_assets 纯读 meta 的 pdf/supp 绝对 URL，零网络 → 豁免 resolve 限速闸。
+    resolve_offline = True
 
     def __init__(self, http: HttpClient | None = None, *, current_year: int | None = None) -> None:
         # http=None：首次网络调用惰性自建（仅 discover/cadence 零网络可用，其余方法需要

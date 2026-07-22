@@ -195,6 +195,8 @@ class MockPlatformAdapter(AdapterBase):
     default_rate = RatePolicy(600, burst=10, source_note="本地 mock，无真实站点约束")
     auth_requirement = AuthLevel.NONE
     domains: tuple[str, ...] = ("mock.local",)
+    # resolve_assets 为程序内生成、零网络（本 doi → 固定 URL 拼接）→ 豁免 resolve 限速闸。
+    resolve_offline = True
 
     def discover_timeline(self, venue: VenueSpec, since: str | None = None) -> Iterable[IssueRef]:
         """生成 venue 的全量 timeline（`volumes` x `issues_per_volume` 期，确定性）。

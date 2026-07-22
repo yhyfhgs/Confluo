@@ -177,6 +177,8 @@ class NeuripsProceedingsAdapter(AdapterBase):
         "papers.neurips.cc",
         "papers.nips.cc",
     )
+    # resolve_assets 为规则 URL 构造（hash+year+后缀），零网络 → 豁免 resolve 限速闸。
+    resolve_offline = True
 
     def __init__(self, http: HttpClient | None = None) -> None:
         # http=None：首次网络调用时惰性自建（见模块 docstring 的注入说明）。

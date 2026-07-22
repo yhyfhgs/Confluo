@@ -296,6 +296,20 @@ def test_list_papers_all_and_by_issue(repo: Repo) -> None:
     assert len(in_issue) == 1 and in_issue[0]["title"] == "Alpha"
 
 
+def test_list_papers_duplicate_titles_id_tiebreaker(repo: Repo) -> None:
+    """并列标题的序由唯一 id 收尾（F1 审查 MEDIUM）。
+
+    --limit 前置圈选把 list_papers 的序抬成 load-bearing 确定性保证——标题
+    并列时不可依赖 SQLite 实现定义序，ORDER BY (title, id) 由主键背书。
+    """
+    ids = [
+        repo.upsert_paper(VENUE_ID, None, _stub(doi=f"10.9999/dup{i}", title="Same Title"))
+        for i in range(3)
+    ]
+    listed = [r["id"] for r in repo.list_papers(VENUE_ID) if r["title"] == "Same Title"]
+    assert listed == sorted(ids), "并列标题必须按 id 升序稳定"
+
+
 def test_set_paper_state(repo: Repo) -> None:
     paper_id = repo.upsert_paper(VENUE_ID, None, _stub(doi="10.9999/s"))
     repo.set_paper_state(paper_id, "resolved")

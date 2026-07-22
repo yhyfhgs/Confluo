@@ -71,6 +71,14 @@ class AdapterBase:
     default_rate: RatePolicy
     auth_requirement: AuthLevel
     domains: tuple[str, ...]
+    # 可选加固标记（**不进** SourceAdapter 冻结协议——纯附加，缺省语义与既有一致）：声明本
+    # adapter 的 `resolve_assets` 是**可证明零网络**的纯 URL 构造（从 identifier / enumerate
+    # 携带的 meta 直接拼 URL，不发任何 HTTP 请求）。pipeline 据此在 resolve 阶段豁免
+    # per-domain 限速闸——大 venue pull 可用性：2260 篇量级不再被逐篇限速空转（缺陷 C-C）。
+    # 默认 False = 安全侧（保留限速闸）：只有子类**逐个证明**零网络后才显式置 True；真实网络
+    # resolve 策略（需发请求）绝不置 True——其限速仍由闸 + HttpClient 逐请求限速承担。未继承
+    # 本基类的第三方 adapter 无此属性时，pipeline 经 getattr 兜底 False（同样保留闸）。
+    resolve_offline: bool = False
 
     def discover_timeline(self, venue: VenueSpec, since: str | None = None) -> Iterable[IssueRef]:
         raise CapabilityNotSupported(f"{self.adapter_id} lacks DISCOVER")
