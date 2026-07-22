@@ -277,10 +277,12 @@ class Repo:
                 "SELECT p.* FROM paper p "
                 "JOIN paper_issue_link l ON p.id = l.paper_id "
                 "WHERE p.venue_id = ? AND l.issue_id = ? "
-                "ORDER BY p.title",
+                "ORDER BY p.title, p.id",
                 (venue_id, issue_id),
             )
-        return self.db.query("SELECT * FROM paper WHERE venue_id = ? ORDER BY title", (venue_id,))
+        return self.db.query(
+            "SELECT * FROM paper WHERE venue_id = ? ORDER BY title, id", (venue_id,)
+        )
 
     def set_paper_state(self, paper_id: str, ingest_state: str) -> None:
         """更新 paper.ingest_state（metadata_only|resolved|fetched|extracted）。"""
