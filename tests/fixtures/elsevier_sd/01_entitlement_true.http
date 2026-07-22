@@ -1,0 +1,12 @@
+# 出处等级：⚠[DOCS]-合成（不可活验）—— entitlement 端点"有权"响应。
+# 依据：Elsevier Article Entitlement API 官方文档形态——GET /content/article/entitlement/doi/{doi}
+#   → entitlement-response.document-entitlement.entitled (bool)（elsevier-sd.md §3.1）。
+# **⚠ 字段名/类型待核验**：BLOCKER-1（R0 keyless 429 拦在 auth 层前），`entitled` 字段名、
+#   布尔类型、@status/eid/pii 伴随字段均为官方文档假设，非活验。
+# 脱敏：eid/pii 值占位化；doi 用真实 JFE 识别号（Journal of Financial Economics）。
+# 核验计划：T7b 真实 key 对已订阅 JFE DOI 取回时捕获真实 entitlement 封套，比对字段名/类型，
+#   UPDATE_GOLDEN 转正（elsevier-sd.md §2 "⚠ 待核验"；healthcheck _HEALTHCHECK_EXPECT_ENTITLED 同批）。
+HTTP-STATUS: 200
+Content-Type: application/json;charset=UTF-8
+
+{"entitlement-response":{"document-entitlement":{"@status":"found","eid":"1-s2.0-REDACTED","doi":"10.1016/j.jfineco.2011.03.021","pii":"S0304405X11REDACTED","entitled":true,"audit":{"@type":"entitlement"}}}}

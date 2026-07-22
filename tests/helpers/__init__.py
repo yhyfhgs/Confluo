@@ -276,6 +276,29 @@ def make_neurips_venue(**quirks_overrides: object) -> VenueSpec:
     )
 
 
+def make_elsevier_venue(**quirks_overrides: object) -> VenueSpec:
+    """构造 elsevier_sd 契约/单测用的 `journal` venue（不依赖 `venues/` 目录文件）。
+
+    借用真实 JFE 身份（Journal of Financial Economics，ISSN 0304-405X）；`metadata_source=
+    crossref`（D-005：enumerate 走 crossref，elsevier 无 DISCOVER/ENUMERATE）、`fulltext_source=
+    elsevier_sd`、`auth.level=institutional`（匹配 adapter `auth_requirement`）。elsevier resolve
+    只读 `paper.identifiers` 的 doi（非 venue.issn），故 issn 值本身只需形态合法。`quirks_overrides`
+    可注入 `elsevier_want_xml_source=True` 开启 XML SOURCE 备选（§3.1"可选同存"）。
+    """
+    quirks: dict[str, object] = dict(quirks_overrides)
+    return VenueSpec(
+        id="jfe",
+        kind="journal",
+        names={"full": "Journal of Financial Economics", "aliases": ["JFE"]},
+        field=["finance"],
+        identifiers={"issn": ["0304-405X"]},
+        metadata_source="crossref",
+        fulltext_source="elsevier_sd",
+        auth={"level": "institutional", "provider_hint": "elsevier"},
+        quirks=quirks,
+    )
+
+
 class FakeFetchIO:
     """`FetchIO` 协议的测试替身：把 chunks 缓冲进内存并计算 `(bytes_written, sha256)`。
 
@@ -308,6 +331,7 @@ __all__ = [
     "make_arxiv_venue",
     "make_crossref_venue",
     "make_cvf_venue",
+    "make_elsevier_venue",
     "make_mock_venue",
     "make_openreview_venue",
     "make_pmlr_venue",
