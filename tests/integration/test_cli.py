@@ -391,7 +391,13 @@ def test_retry_unknown_error_class_exits_2(tmp_path: Path) -> None:
 
 
 # ---------------------------------------------------------------------------
-# verify：干净 / 人为制造缺文件
+# verify：干净 / 人为制造三类不一致（AC-3.3；phase3-implementation-plan §4 T2）
+#
+# 三类各自独立用例 + 组合场景 + 干净库 0 误报（deliverable #4）。missing_file/
+# hash_mismatch 各附一条"照建议命令实际执行 → 复检转清洁"的用例，不止断言建议
+# 文本包含正确的命令形态，还证明其真实有效（deliverable #2"正确修复建议"的
+# 最强验证）。orphan_file 没有对应的自动纳管命令（现有 CLI 命令面核实结论，见
+# cli.py `_verify_fix_hint`），故只断言建议文本如实说明、不臆造命令。
 # ---------------------------------------------------------------------------
 
 
@@ -418,6 +424,168 @@ def test_verify_detects_missing_file_exits_1(tmp_path: Path) -> None:
     assert result.exit_code == 1
     assert "missing_file" in result.output
     assert "re-fetch" in result.output
+    # 正确修复建议（AC-3.3）：真实存在的恢复命令，不是 `resume`/`retry`（那两个只管
+    # BLOCKED/FAILED 任务，对"已 DONE 但文件被删"的本情形无效——见现状盘点结论）。
+    assert "--force" in result.output
+    assert "crawler pull" in result.output
+
+
+def test_verify_detects_orphan_file_exits_1(tmp_path: Path) -> None:
+    home = _make_home(tmp_path)
+    pull_result = runner.invoke(app, ["pull", VENUE, "--year", "2024", "--home", str(home)])
+    assert pull_result.exit_code == 0, pull_result.output
+    orphan_path = home / "data" / "pdf" / "stray-orphan.pdf"
+    orphan_path.write_bytes(b"%PDF-1.4\n% orphan\n%%EOF\n")  # 人为制造孤儿文件
+
+    result = runner.invoke(app, ["verify", "--home", str(home)])
+
+    assert result.exit_code == 1
+    assert "orphan_file" in result.output
+    assert "adopt" in result.output
+    assert str(orphan_path) in result.output
+    # 正确修复建议（AC-3.3"纳管或清理提示"）：CLI 命令面核实结论是当前无自动纳管
+    # 命令，如实说明而非编造一个不存在的 `crawler adopt`。
+    assert "纳管" in result.output
+
+
+def test_verify_detects_hash_mismatch_exits_1(tmp_path: Path) -> None:
+    home = _make_home(tmp_path)
+    pull_result = runner.invoke(app, ["pull", VENUE, "--year", "2024", "--home", str(home)])
+    assert pull_result.exit_code == 0, pull_result.output
+    victim = _pdf_files(home)[0]
+    victim.write_bytes(b"%PDF-1.4\n% corrupted-in-place\n%%EOF\n")  # 人为制造哈希不符
+
+    result = runner.invoke(app, ["verify", "--home", str(home)])
+
+    assert result.exit_code == 1
+    assert "hash_mismatch" in result.output
+    assert "quarantine" in result.output
+    # 正确修复建议（AC-3.3"标记 corrupt+re-fetch"）：两个动作都要出现。
+    assert "corrupt" in result.output
+    assert "--force" in result.output
+
+
+def test_verify_detects_all_three_kinds_combined_exits_1(tmp_path: Path) -> None:
+    """组合场景：三类不一致同时存在，`verify` 一次跑全部检出（deliverable #4）。"""
+    home = _make_home(tmp_path)
+    pull_result = runner.invoke(app, ["pull", VENUE, "--year", "2024", "--home", str(home)])
+    assert pull_result.exit_code == 0, pull_result.output
+    files = _pdf_files(home)
+    assert len(files) >= 3  # 需要至少 3 个互不相同的受害文件
+
+    missing_victim, hash_victim = files[0], files[1]
+    missing_victim.unlink()
+    hash_victim.write_bytes(b"%PDF-1.4\n% corrupted-in-place\n%%EOF\n")
+    orphan_path = home / "data" / "pdf" / "stray-orphan.pdf"
+    orphan_path.write_bytes(b"%PDF-1.4\n% orphan\n%%EOF\n")
+
+    result = runner.invoke(app, ["verify", "--home", str(home)])
+
+    assert result.exit_code == 1
+    assert "missing_file" in result.output
+    assert "hash_mismatch" in result.output
+    assert "orphan_file" in result.output
+    assert "发现 3 处不一致。" in result.output
+
+
+def test_verify_missing_file_fix_command_actually_repairs_it(tmp_path: Path) -> None:
+    """锁定"正确修复建议"而不止是文本包含：照建议的命令形态真的执行一遍，
+    verify 复检必须转清洁——证明建议不是空话（AC-3.3 最强验证形态）。
+    """
+    home = _make_home(tmp_path)
+    pull_result = runner.invoke(app, ["pull", VENUE, "--year", "2024", "--home", str(home)])
+    assert pull_result.exit_code == 0, pull_result.output
+    victim = _pdf_files(home)[0]
+    original = victim.read_bytes()
+    victim.unlink()
+
+    broken = runner.invoke(app, ["verify", "--home", str(home)])
+    assert broken.exit_code == 1
+
+    # 建议命令形态：`crawler pull <venue> --year <year> --force`（真实 CLI 能力：
+    # fetch 任务一旦 DONE 永久新鲜，须 --force 绕过——见 tasks.py FRESHNESS_TTL）。
+    repair = runner.invoke(app, ["pull", VENUE, "--year", "2024", "--force", "--home", str(home)])
+    assert repair.exit_code == 0, repair.output
+
+    healed = runner.invoke(app, ["verify", "--home", str(home)])
+    assert healed.exit_code == 0
+    assert "一致" in healed.output
+    assert victim.is_file()
+    assert victim.read_bytes() == original  # mock fetch 内容确定性（同 doi 同字节）
+
+
+def test_verify_hash_mismatch_fix_command_actually_repairs_it(tmp_path: Path) -> None:
+    home = _make_home(tmp_path)
+    pull_result = runner.invoke(app, ["pull", VENUE, "--year", "2024", "--home", str(home)])
+    assert pull_result.exit_code == 0, pull_result.output
+    victim = _pdf_files(home)[0]
+    original = victim.read_bytes()
+    victim.write_bytes(b"%PDF-1.4\n% corrupted-in-place\n%%EOF\n")
+
+    broken = runner.invoke(app, ["verify", "--home", str(home)])
+    assert broken.exit_code == 1
+
+    repair = runner.invoke(app, ["pull", VENUE, "--year", "2024", "--force", "--home", str(home)])
+    assert repair.exit_code == 0, repair.output
+
+    healed = runner.invoke(app, ["verify", "--home", str(home)])
+    assert healed.exit_code == 0
+    assert victim.read_bytes() == original
+
+
+# ---------------------------------------------------------------------------
+# verify 修复建议 helper：`_pdf_layout_scope`/`_pull_force_cmd` 边界分支直测
+#
+# 正向路径（venue_id+year 均能从真实 pull 产出的路径解析）已被上面的集成用例
+# 覆盖；这里直调私有函数补 CLI 端到端难以自然触达的边界——空 file_path、相对
+# 路径、pdf/ 树外路径、year 段非数字、venue 已知但 scope 缺失、两者皆缺——同
+# `_papers_in_scope` 直调私有函数的既有先例（见上方
+# test_papers_in_scope_dedupes_paper_shared_across_issues）。
+# ---------------------------------------------------------------------------
+
+
+def test_pdf_layout_scope_empty_file_path_returns_none_none(tmp_path: Path) -> None:
+    """`missing_file` 且 `file_path` 本身为空的异常路径（见
+    tests/unit/test_verify.py::test_verify_store_detects_missing_file_when_file_path_empty）。
+    """
+    assert cli_module._pdf_layout_scope(tmp_path, "") == (None, None)
+
+
+def test_pdf_layout_scope_resolves_relative_path_under_data_dir(tmp_path: Path) -> None:
+    """相对 file_path 按 data_dir 展开（与 verify.py `_resolve` 的兼容语义对齐）。"""
+    relative = "pdf/mock_journal/2024/paper123.pdf"
+    assert cli_module._pdf_layout_scope(tmp_path, relative) == ("mock_journal", "2024")
+
+
+def test_pdf_layout_scope_path_outside_pdf_tree_returns_none_none(tmp_path: Path) -> None:
+    outside = str(tmp_path / "si" / "mock_journal" / "2024" / "extra.zip")
+    assert cli_module._pdf_layout_scope(tmp_path, outside) == (None, None)
+
+
+def test_pdf_layout_scope_non_digit_year_segment_returns_none_year(tmp_path: Path) -> None:
+    """`_asset_final_path`（pipeline/stages.py）对缺失 year 落目录名 "unknown"；
+    不是合法 `--year` 输入，`_pdf_layout_scope` 须识别为不可用而非当真年份返回。
+    """
+    unknown_year_path = str(tmp_path / "pdf" / "mock_journal" / "unknown" / "paper123.pdf")
+    assert cli_module._pdf_layout_scope(tmp_path, unknown_year_path) == ("mock_journal", None)
+
+
+def test_pull_force_cmd_venue_only_prompts_for_scope_flag() -> None:
+    cmd = cli_module._pull_force_cmd("mock_journal", None, "asset-1")
+    assert "crawler pull mock_journal --force" in cmd
+    assert "--volume" in cmd and "--year" in cmd and "--doi" in cmd
+
+
+def test_pull_force_cmd_neither_known_includes_asset_id() -> None:
+    cmd = cli_module._pull_force_cmd(None, None, "asset-42")
+    assert "<venue_id>" in cmd
+    assert "asset-42" in cmd
+
+
+def test_pull_force_cmd_neither_known_without_asset_id_omits_asset_marker() -> None:
+    cmd = cli_module._pull_force_cmd(None, None, None)
+    assert "<venue_id>" in cmd
+    assert "asset=" not in cmd  # 无 asset_id 时不留残缺占位
 
 
 # ---------------------------------------------------------------------------
