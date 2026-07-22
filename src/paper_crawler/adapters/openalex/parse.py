@@ -33,7 +33,6 @@ from paper_crawler.ids import normalize_doi
 from paper_crawler.types import PaperStub
 
 _OPENALEX_ID_PREFIX = "https://openalex.org/"
-_DOI_URL_PREFIXES = ("https://doi.org/", "http://doi.org/", "https://dx.doi.org/")
 
 
 # --- 中间/输出类型 -----------------------------------------------------------------------------

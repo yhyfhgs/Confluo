@@ -2,7 +2,7 @@
 
 **能力面**：`capabilities = Capability(0)`（空集）。不进 `SourceAdapter` 五方法冻结
 协议，不参与 `crawler pull` 六阶段主流程、无任何 AC 依赖它（同 openalex，plan §2-5）。
-经 duck-typed `enrich_batch`（`adapter.EnrichSource` 协议）由 `crawler enrich` CLI 驱动。
+经 duck-typed `enrich_batch`（`adapter.EnrichmentSource` 协议）由 `crawler enrich` CLI 驱动。
 
 **无 key → 不发任何请求**（D2 [LIVE] 修订：无 key 现症状是单请求被受理但返回 404
 "not found"——连已收录 DOI 亦然，非 429；生产必须申请 key 才可用）：`enrich_batch`
@@ -126,7 +126,7 @@ class S2Adapter(AdapterBase):
             self._http = HttpClient(user_agent=_default_user_agent())
         return self._http
 
-    # -- enrich_batch（duck-typed EnrichSource；真实网络，1 req/s）-----------------------------
+    # -- enrich_batch（duck-typed EnrichmentSource；真实网络，1 req/s）-----------------------------
 
     def enrich_batch(self, dois: Sequence[str]) -> list[PaperStub]:
         """无 key → 直接 `CrawlerError(CONFIG)`（不发请求）；有 key → 分批 `POST /paper/batch`。

@@ -15,7 +15,7 @@ import httpx
 import pytest
 
 from helpers.openalex_fixtures import fixture_bytes, http_fixture
-from paper_crawler.adapter import ApiKeyConsumer, EnrichSource, HttpClientConsumer
+from paper_crawler.adapter import ApiKeyConsumer, EnrichmentSource, HttpClientConsumer
 from paper_crawler.adapters.openalex import budget
 from paper_crawler.adapters.openalex.adapter import (
     _MAX_URL_CHARS,
@@ -65,7 +65,7 @@ def test_adapter_attributes() -> None:
 
 def test_adapter_is_enrich_source_and_api_key_consumer_and_http_client_consumer() -> None:
     adapter = OpenAlexAdapter()
-    assert isinstance(adapter, EnrichSource)
+    assert isinstance(adapter, EnrichmentSource)
     assert isinstance(adapter, ApiKeyConsumer)
     assert isinstance(adapter, HttpClientConsumer)
 

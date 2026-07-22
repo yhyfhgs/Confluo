@@ -3,7 +3,7 @@
 **能力面**：`capabilities = Capability(0)`（空集——无 DISCOVER/ENUMERATE/RESOLVE/FETCH/
 SEARCH）。本 adapter **不进** `SourceAdapter` 五方法冻结协议的取回语义，不参与
 `crawler pull` 六阶段主流程、无任何 AC 依赖它（AC-3.5 五刊全史由 crossref 独立完成，
-plan §2-5）。改经冻结协议之外的 duck-typed `enrich_batch`（`adapter.EnrichSource`
+plan §2-5）。改经冻结协议之外的 duck-typed `enrich_batch`（`adapter.EnrichmentSource`
 协议）——由 `crawler enrich` CLI 驱动，扫库内带 `doi` identifier 的 paper、分批查询、
 经 `MergeEngine.ingest` 回注（字段级来源优先级收敛天然补缺不覆盖，`SOURCE_PRIORITY`
 表 openalex 位阶低于 crossref/dblp，merge.py）。
@@ -193,7 +193,7 @@ class OpenAlexAdapter(AdapterBase):
             return self._state_path
         return Path.home().joinpath(".paper-crawler", *_STATE_SUBPATH)
 
-    # -- enrich_batch（duck-typed EnrichSource；真实网络）------------------------------------
+    # -- enrich_batch（duck-typed EnrichmentSource；真实网络）------------------------------------
 
     def enrich_batch(self, dois: Sequence[str]) -> list[PaperStub]:
         """按 DOI 批查 works（`filter=doi:` OR 拼）→ `PaperStub` 列表（§5.3 enrich 通道）。

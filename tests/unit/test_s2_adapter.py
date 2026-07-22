@@ -15,7 +15,7 @@ import httpx
 import pytest
 
 from helpers.s2_fixtures import fixture_bytes, http_fixture
-from paper_crawler.adapter import ApiKeyConsumer, EnrichSource, HttpClientConsumer
+from paper_crawler.adapter import ApiKeyConsumer, EnrichmentSource, HttpClientConsumer
 from paper_crawler.adapters.s2.adapter import S2Adapter, _batch_url, _default_user_agent
 from paper_crawler.errors import CrawlerError, ErrorClass
 from paper_crawler.http import HttpClient
@@ -59,7 +59,7 @@ def test_adapter_attributes() -> None:
 
 def test_adapter_is_enrich_source_and_api_key_consumer_and_http_client_consumer() -> None:
     adapter = S2Adapter()
-    assert isinstance(adapter, EnrichSource)
+    assert isinstance(adapter, EnrichmentSource)
     assert isinstance(adapter, ApiKeyConsumer)
     assert isinstance(adapter, HttpClientConsumer)
 

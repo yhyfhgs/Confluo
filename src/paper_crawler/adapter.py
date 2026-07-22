@@ -148,7 +148,7 @@ class ApiKeyConsumer(Protocol):
 
 
 @runtime_checkable
-class EnrichSource(Protocol):
+class EnrichmentSource(Protocol):
     """补充层富化源的 duck-typed 可选接口（**立于 SourceAdapter 冻结协议之外**，非五
     方法之一；plan §2-5 冻结契约，T6 openalex/s2 引入，沿 `HttpClientConsumer` 先例：
     运行期 duck-typed 甄别，不实现者静默不参与）。

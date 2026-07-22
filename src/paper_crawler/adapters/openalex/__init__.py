@@ -2,7 +2,7 @@
 
 **enrich 通道，非 pull 六阶段成员**：capabilities 空集（无 DISCOVER/ENUMERATE/RESOLVE/
 FETCH/SEARCH——不进 `SourceAdapter` 冻结协议的枚举/取回语义，不参与 `crawler pull`）。
-本包只经 duck-typed 可选接口 `enrich_batch(dois)`（`adapter.EnrichSource` 协议，立于
+本包只经 duck-typed 可选接口 `enrich_batch(dois)`（`adapter.EnrichmentSource` 协议，立于
 冻结协议之外，沿 `HttpClientConsumer`/`EmailConsumer` 先例）驱动，由 `crawler enrich`
 CLI 调用：按 DOI 批量补摘要/OA 链接/topics，经 `MergeEngine.ingest` 回注既有 paper
 （字段级来源优先级收敛天然补缺不覆盖）。

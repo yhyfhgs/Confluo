@@ -73,7 +73,7 @@ import typer
 from paper_crawler.adapter import (
     ApiKeyConsumer,
     EmailConsumer,
-    EnrichSource,
+    EnrichmentSource,
     HttpClientConsumer,
     SourceAdapter,
     bind_http_client,
@@ -910,7 +910,7 @@ def oa_report_cmd(
 #
 # T6（design/adapters/aggregators.md §5.3/§5.4；plan §2-5 冻结契约）：openalex/s2
 # 补充层 enrich 通道的驱动命令。二者 capabilities 空集、不进 `SourceAdapter` 冻结
-# 协议的枚举/取回语义，只经 duck-typed `EnrichSource.enrich_batch` 参与——**不进
+# 协议的枚举/取回语义，只经 duck-typed `EnrichmentSource.enrich_batch` 参与——**不进
 # pull 六阶段、不产 RunReport、无任何 AC 依赖它**（同 `oa-report` 的定位/退出码
 # 口径：薄包装接线，纯逻辑在各 adapter 自身，本节只做装配 + 循环编排 + 摘要渲染）。
 
@@ -924,7 +924,7 @@ _ENRICH_PAGE_SIZE = 200
 
 
 @dataclass(frozen=True)
-class _EnrichSourceSummary:
+class _EnrichmentSourceSummary:
     """单个 source 一次 `crawler enrich` 运行的摘要行数据。"""
 
     source: str
@@ -940,7 +940,9 @@ def _chunked(items: list[str], size: int) -> Iterator[list[str]]:
         yield items[i : i + size]
 
 
-def _prepare_enrich_source(env: CliEnv, source_id: str) -> tuple[EnrichSource, HttpClient | None]:
+def _prepare_enrich_source(
+    env: CliEnv, source_id: str
+) -> tuple[EnrichmentSource, HttpClient | None]:
     """装配一个可用的 enrich source adapter（`enrich` 命令对单个 `--source` 取值的专用
     装配，接线风格仿 `_prepare_unpaywall_adapter`：fresh `load_adapters()` + 手工注入
     + 手工限速登记，不复用 `env.ctx.registry`——openalex/s2 不是任何 venue 的
@@ -957,7 +959,7 @@ def _prepare_enrich_source(env: CliEnv, source_id: str) -> tuple[EnrichSource, H
     """
     adapters = load_adapters()
     candidate = adapters.get(source_id)
-    if candidate is None or not isinstance(candidate, EnrichSource):
+    if candidate is None or not isinstance(candidate, EnrichmentSource):
         _usage_error(
             f"{source_id!r} 不是已注册且支持 enrich 的 source"
             "（未注册，或未实现 duck-typed enrich_batch）"
@@ -995,8 +997,8 @@ def _prepare_enrich_source(env: CliEnv, source_id: str) -> tuple[EnrichSource, H
 
 
 def _run_enrich_source(
-    adapter: EnrichSource, engine: MergeEngine, source_id: str, dois: list[str]
-) -> _EnrichSourceSummary:
+    adapter: EnrichmentSource, engine: MergeEngine, source_id: str, dois: list[str]
+) -> _EnrichmentSourceSummary:
     """驱动一个 source 对整批 `dois` 的 enrich 循环：外层分页调 `enrich_batch` → 逐
     `PaperStub` 经 `MergeEngine.ingest(stub, source=source_id)` 回注（字段级来源优先级
     收敛天然补缺不覆盖，merge.py `SOURCE_PRIORITY`）。
@@ -1023,7 +1025,7 @@ def _run_enrich_source(
                 merged += 1
             else:
                 candidate_flagged += 1
-    return _EnrichSourceSummary(
+    return _EnrichmentSourceSummary(
         source=source_id,
         processed=processed,
         created=created,
@@ -1033,7 +1035,9 @@ def _run_enrich_source(
     )
 
 
-def _render_enrich_summary(summary: _EnrichSourceSummary, *, extra_note: str | None = None) -> str:
+def _render_enrich_summary(
+    summary: _EnrichmentSourceSummary, *, extra_note: str | None = None
+) -> str:
     line = (
         f"[{summary.source}] 处理 {summary.processed} 篇"
         f"（created={summary.created} merged={summary.merged} candidate={summary.candidate}）"
