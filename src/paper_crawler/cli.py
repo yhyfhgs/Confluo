@@ -94,7 +94,7 @@ from paper_crawler.storage.db import Database
 from paper_crawler.storage.repo import Repo
 from paper_crawler.tasks import TASK_STATES, TaskQueue
 from paper_crawler.useragent import build_user_agent
-from paper_crawler.verify import verify_store
+from paper_crawler.verify import VerifyIssue, verify_store
 
 # ---------------------------------------------------------------------------
 # 全局选项（每条命令各自声明——Click 的解析模型不支持父组选项出现在子命令 token
@@ -706,16 +706,110 @@ def retry(
 
 
 # -- verify -------------------------------------------------------------------
+#
+# AC-3.3（acceptance-criteria.md）判据："人为制造丢文件/孤儿文件/哈希不符三类 →
+# `verify` 全部检出并给正确修复建议"。三类检出本身自 Phase 1 T8a 起已在
+# `verify_store`（verify.py）完整实现（100% 覆盖，接口冻结，本次未改动）；本节
+# 三个私有 helper 是 Phase 3 T2 补的差距——CLI 层把冻结的短关键词
+# suggestion（re-fetch/adopt/quarantine）翻成人可读、且与现有 CLI 命令面真实
+# 一致的修复建议文本（不发明不存在的命令）。
+
+
+def _pdf_layout_scope(data_dir: Path, file_path: str) -> tuple[str | None, str | None]:
+    """从 `data_dir/pdf/<venue_id>/<year>/...` 前缀推断 (venue_id, year)（design/06 §4
+    文件存储布局）；仅用于把修复建议拼成可直接执行的 `crawler pull` 命令。
+
+    解析不出时返回的对应位置为 None（调用方回退到占位提示），绝不臆造：
+    - `file_path` 为空（`missing_file` 的"file_path 本身为空"异常路径，见
+      `tests/unit/test_verify.py::test_verify_store_detects_missing_file_when_file_path_empty`）；
+    - 路径不落在 `data_dir/pdf` 下；
+    - year 段不是纯数字——`_asset_final_path`（pipeline/stages.py）对缺失 year 落
+      目录名 "unknown"，不是合法的 `--year` 输入。
+
+    只做纯路径字符串运算，不 stat 磁盘（missing_file 场景文件本就不存在）。
+    """
+    if not file_path:
+        return None, None
+    candidate = Path(file_path)
+    if not candidate.is_absolute():
+        candidate = data_dir / candidate
+    try:
+        parts = candidate.relative_to(data_dir / "pdf").parts
+    except ValueError:
+        return None, None
+    venue_id = parts[0] if len(parts) >= 1 else None
+    year = parts[1] if len(parts) >= 2 and parts[1].isdigit() else None
+    return venue_id, year
+
+
+def _pull_force_cmd(venue_id: str | None, year: str | None, asset_id: str | None) -> str:
+    """拼一条真实可用的 `crawler pull ... --force` 提示（现状盘点结论见模块顶部）。
+
+    `--force` 是唯一能让已 DONE 的 fetch 任务真正重新下载的现有 CLI 能力：
+    `tasks.py` `FRESHNESS_TTL["fetch"] = None`——fetch 任务一旦 DONE 永久视为新鲜，
+    普通重跑 `pull` 会 fresh_skip、不会真的重新调用 fetch handler；`crawler resume`
+    只处理 BLOCKED 任务、`crawler retry` 只处理 FAILED 任务，均不覆盖"asset 记录
+    fetched 但磁盘证据被破坏"这种场景（task 本身仍是 DONE）。`pull` 要求
+    `--volume`/`--year`/`--doi` 三选一，故 venue_id 已知但 year 未知时仍需提示
+    用户补一个 scope 参数。
+    """
+    if venue_id and year:
+        return f"`crawler pull {venue_id} --year {year} --force`"
+    if venue_id:
+        return (
+            f"`crawler pull {venue_id} --force`"
+            "（须再加 `--volume <volume>`/`--year <year>`/`--doi <doi>` 之一定位该 asset）"
+        )
+    asset_part = f"；asset={asset_id}" if asset_id else ""
+    return (
+        "`crawler pull <venue_id> --force`"
+        f"（须再加 `--volume <volume>`/`--year <year>`/`--doi <doi>` 定位该 asset{asset_part}）"
+    )
+
+
+def _verify_fix_hint(issue: VerifyIssue, data_dir: Path) -> str:
+    """把一条 `VerifyIssue` 翻成人可读的修复建议（AC-3.3"正确修复建议"）。
+
+    `verify_store` 本身只读、不自动修（design/05 §5.4）；本函数同样只读——只拼
+    文本，不执行任何命令、不碰 DB/磁盘。三类分别对应 AC-3.3 判据原文：
+    - missing_file →"re-fetch 提示"：见 `_pull_force_cmd`。
+    - hash_mismatch →"标记 corrupt+re-fetch"：verify 只读，"标记 corrupt"是本行
+      输出对该文件的判定说明（不是 DB 状态机新增一个 corrupt 值——`asset.state`
+      的合法取值见 migrations/0001_init.sql，没有 corrupt），随后同样给 re-fetch。
+    - orphan_file →"纳管或清理提示"：现有 CLI 命令面（`crawler --help`）核实结论
+      是没有任何"把磁盘文件登记为 asset"的命令，如实告知而非编造一个
+      `crawler adopt`。
+    """
+    if issue.kind == "missing_file":
+        venue_id, year = _pdf_layout_scope(data_dir, issue.file_path)
+        return (
+            "    fix: DB 记录该 asset 已 fetched，但磁盘文件缺失；fetch 任务一旦 DONE "
+            "永久视为新鲜（`resume`/`retry` 分别只对 BLOCKED/FAILED 任务生效，对本情形"
+            f"无效），需强制重新拉取：{_pull_force_cmd(venue_id, year, issue.asset_id)}"
+        )
+    if issue.kind == "hash_mismatch":
+        venue_id, year = _pdf_layout_scope(data_dir, issue.file_path)
+        return (
+            "    fix: 文件内容与记录的 sha256 不符，判定为 corrupt——不要信任现有文件，"
+            f"先隔离/勿使用，再强制重新拉取覆盖：{_pull_force_cmd(venue_id, year, issue.asset_id)}"
+        )
+    return (
+        "    fix: 磁盘有文件但 DB 无对应记录；当前 CLI 无自动纳管（adopt）命令——"
+        "若确认是有效产物，需人工核实来源后手动登记；若为陈旧/无效文件，可直接删除该"
+        "路径清理。"
+    )
 
 
 @app.command()
 def verify(home: HomeOpt = None, verbose: VerboseOpt = False) -> None:
     """DB↔文件双向对账（design/05 §5.4）；只读、不自动修，发现不一致退出 1。"""
     with _env(home, verbose) as env:
-        issues = verify_store(env.ctx.repo, env.ctx.config.data_dir)
+        data_dir = env.ctx.config.data_dir
+        issues = verify_store(env.ctx.repo, data_dir)
         for issue in issues:
             asset_part = f" asset={issue.asset_id}" if issue.asset_id else ""
             typer.echo(f"[{issue.kind}] {issue.file_path} -> {issue.suggestion}{asset_part}")
+            typer.echo(_verify_fix_hint(issue, data_dir))
         if issues:
             typer.echo(f"发现 {len(issues)} 处不一致。")
             exit_code = 1
