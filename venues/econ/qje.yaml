@@ -9,16 +9,16 @@ tier: T1                      # catalog/economics-journals.md Top 5
 identifiers:
   issn: ["0033-5533"]         # 期刊必填（D-015）；Crossref 按 ISSN 枚举全史
 metadata_source: crossref     # discover/enumerate 用（D-005 元数据主干）
-fulltext_source: elsevier_sd  # ⚠ Phase 4 占位——见 notes（真实平台 oup_silverchair 未注册）
+fulltext_source: oup_silverchair  # Phase 4 T4 收敛（检查单 #2）：真实平台已注册
 auth:
   level: institutional        # QJE 机构订阅刊（OUP）
+  provider_hint: oup_silverchair  # 认证 profile 路由（oup@campus / oup@shib）
 status: active                # active | dormant | dead
 notes: >
-  元数据经 Crossref 按 ISSN 枚举全史 DOI 清单（D-005）。真实全文平台为 Oxford
-  University Press（Silverchair 系，catalog/economics-journals.md 记为
-  `oup_silverchair`）；该平台 adapter 属 Phase 4，当前**尚未注册**，故 fulltext_source
-  暂取已注册的机构认证占位 `elsevier_sd`（沿 venues/finance/jfe.yaml 与
-  tests/online/test_crossref_smoke.py 的 QJE 占位先例，registry lint 通过），待 Phase 4
-  落地 `oup_silverchair` adapter 后改写为真实平台。QJE 论文 DOI 可回溯至 1886，早于
-  DOI 时代的过刊主要在 JSTOR（tier T3）——Crossref total-results 与逐年计数的口径解释
-  见 AC-3.5 验收记录。
+  元数据经 Crossref 按 ISSN 枚举全史 DOI 清单（D-005，metadata_source 分离）。全文平台为
+  Oxford University Press（Silverchair 系）：Phase 4 T4 落地 `oup_silverchair` adapter
+  并经 entry point 注册后，fulltext_source 已由 Phase 3 的 `elsevier_sd` 占位**收敛为
+  真实平台**（检查单 #2，oup-silverchair.md §6）。两条路职责分离：元数据枚举走 crossref
+  （AC-3.5，零爬取），全文取回走 oup_silverchair（需登录 session，AC-4.1）。QJE 论文 DOI
+  可回溯至 1886，早于 DOI 时代的过刊主要在 JSTOR（tier T3）——Crossref total-results 与
+  逐年计数的口径解释见 AC-3.5 验收记录。
