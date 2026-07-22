@@ -1,16 +1,23 @@
 """`DblpAdapter.healthcheck` 单测（design/adapters/aggregators.md §5.2/§7）。
 
 **数据来源诚实声明**（先例 `test_pmlr_canary.py`）：固定 canary 目标是真实卷
-`conf/icml/icml2023`（design §5.2/§7 明文选定），但其"已知答案"精确值（首条
-记录的真实 title、真实记录数）**未经本次实现的在线核验** [PENDING]——本次
-实现零真实网络（`PAPER_CRAWLER_CONTACT_EMAIL` 未设，按 D-014 约定全走合成
-路径）。因此 `healthcheck()` 本身**只做结构性判定**（可达 + 能解析 + 记录数
-不低于保守下限 + 首条记录字段存在——由 `parse.py` 的构造不变量保证，见
-`adapter.py::healthcheck` 注释），**不**把任何合成标题当作生产判据硬编码；
-本文件用可控的合成响应验证该结构性判定逻辑本身的正确性（健康/各类不健康
-分支），真实站点是否漂移是 T5 在线冒烟与 `crawler canary` 的职责，不在本文件
-范围。真实记录数/首条 title 的精确锚点待 T5 在线冒烟实测后按 UPDATE_GOLDEN
-纪律补充（同 aggregators.md §7 dblp 行 [PENDING] 标注）。
+`conf/icml/icml2023`（design §5.2/§7 明文选定）。**2026-07-23 审查真实交叉
+验证**：`GET https://dblp.org/db/conf/icml/icml2023.xml` 已被真实请求一次
+（HTTP 200，`content-type: application/xml`），证实该 URL 可达且响应可解析
+出 1828 条 `inproceedings`（根 schema 为 `<bht>`，见 `parse.py` 模块 docstring
+"双 schema"专节与本文件末尾使用未裁剪真实响应
+`11_volume_xml_bht_schema_full_real_icml2023.xml` 的测试）——记录数下限 50
+对 1828 显然自洽。**仍然 [PENDING] 的只剩**首条记录标题的逐字精确比对锚点
+（本文件/`healthcheck()` 均不做该比对，理由不变：单次审查抓取不构成"人工
+核准的 UPDATE_GOLDEN 锚点"，真正的锚点核准走 T5 在线冒烟常态化流程）。
+
+`healthcheck()` 本身**只做结构性判定**（可达 + 能解析 + 记录数不低于保守
+下限 + 首条记录字段存在——由 `parse.py` 的构造不变量保证，见
+`adapter.py::healthcheck` 注释），不把任何标题精确值当作生产判据硬编码。
+本文件前半用可控的合成响应验证该结构性判定逻辑本身的正确性（健康/各类不
+健康分支，合成响应现改用与生产一致的 `<bht>/<dblpcites>/<r>` 包装——
+2026-07-23 修复前误用了批量导出 `<dblp>` 平铺 schema，对生产实际请求路径
+不具代表性）；末尾追加对未裁剪真实响应的端到端验证。
 """
 
 from __future__ import annotations
@@ -30,13 +37,19 @@ def _adapter_with(handler: httpx.MockTransport) -> DblpAdapter:
 
 
 def _synthetic_volume_xml(record_count: int) -> bytes:
-    """构造 `record_count` 条合法 `inproceedings` 的合成卷 XML（供"记录数达标"分支）。"""
+    """构造 `record_count` 条合法 `inproceedings` 的合成卷 XML（供"记录数达标"分支）。
+
+    包装用生产实际 schema（`<bht><dblpcites><r>…</r></dblpcites></bht>`，
+    2026-07-23 修复：此前误用 `<dblp>{records}</dblp>` 批量导出平铺 schema，
+    `healthcheck()` 在生产环境永远不会收到那种响应体）。
+    """
     records = "".join(
-        f'<inproceedings key="conf/icml/Canary{i}23"><title>Canary Paper {i}.</title>'
-        f"<year>2023</year></inproceedings>"
+        f'<r style="ee"><inproceedings key="conf/icml/Canary{i}23">'
+        f"<title>Canary Paper {i}.</title>"
+        f"<year>2023</year></inproceedings></r>"
         for i in range(record_count)
     )
-    return f"<dblp>{records}</dblp>".encode()
+    return f"<bht><dblpcites>{records}</dblpcites></bht>".encode()
 
 
 def test_healthcheck_fetches_the_fixed_icml2023_canary_url() -> None:
@@ -61,13 +74,14 @@ def test_healthcheck_healthy_when_record_count_meets_conservative_floor() -> Non
 
 
 def test_healthcheck_unhealthy_when_below_conservative_floor() -> None:
-    """真实的 5 条记录合成 fixture（`04_volume_xml_normal.xml`）本身就低于保守下限
-    ——用它直接验证"记录数不足"分支（同时是"结构正常但量级不够"的诚实态：不是
-    404/解析失败，只是这份 fixture 本非用于满足 healthcheck 量级判据）。
+    """5 条记录的真实形态 fixture（`10_volume_xml_bht_schema_normal.xml`，
+    2 条真实 ICML + 3 条护栏专用合成）本身就低于保守下限——用它验证"记录数
+    不足"分支（"结构正常但量级不够"的诚实态：不是 404/解析失败，只是这份
+    fixture 本非用于满足 healthcheck 量级判据）。
     """
 
     def handler(request: httpx.Request) -> httpx.Response:
-        return httpx.Response(200, content=fixture_bytes("04_volume_xml_normal.xml"))
+        return httpx.Response(200, content=fixture_bytes("10_volume_xml_bht_schema_normal.xml"))
 
     report = _adapter_with(httpx.MockTransport(handler)).healthcheck()
     assert report.healthy is False
@@ -102,3 +116,24 @@ def test_healthcheck_unhealthy_when_unreachable() -> None:
     assert report.healthy is False
     assert "unreachable" in report.detail
     assert "transient" in report.detail
+
+
+# --- 未裁剪真实响应端到端验证（2026-07-23 审查阻断项修复的核心证据）------------------------
+
+
+def test_healthcheck_healthy_against_full_real_1828_record_capture() -> None:
+    """对未裁剪的真实 `icml2023.xml` 响应（1828 条，见 fixture 头注释的抓取
+    出处）跑 `healthcheck()`：这是"记录数下限 50 对 1828 成立"这一自洽性
+    要求的直接证据——不是靠推断，而是真把这份响应喂给 `healthcheck()` 本体
+    走一遍完整逻辑（fetch→parse→阈值判定），零 PARSE、零"记录数不足"。
+    """
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(
+            200, content=fixture_bytes("11_volume_xml_bht_schema_full_real_icml2023.xml")
+        )
+
+    report = _adapter_with(httpx.MockTransport(handler)).healthcheck()
+    assert report.healthy is True, report.detail
+    assert "1828 record(s)" in report.detail
+    assert "conf/icml/AamandACINS23" in report.detail

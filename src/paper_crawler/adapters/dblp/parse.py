@@ -18,7 +18,33 @@ arxiv/pmlr `parse.py` 的"纯函数、无 obslog"分工——跳过计数等观�
   `neurips2023` 而非 `nips2023`，前缀不等亦须被发现，见 aggregators.md §5.2）。
 - `parse_volume_xml`：卷 XML（`/db/conf/{acr}/{slug}.xml`）→ `DblpVolume`
   （`inproceedings` 记录 + 本文档内 `proceedings` 容器 DOI 集合，供
-  `to_paper_stub` 的护栏判定消费）。
+  `to_paper_stub` 的护栏判定消费）。**双 schema 支持**——见下方专节。
+
+**双 schema（2026-07-23 审查真实交叉验证修订，HIGH 阻断项修复）**：`enumerate_
+issue`/`healthcheck` 在生产环境实际请求的 `/db/conf/{acr}/{slug}.xml`
+**根元素不是 `<dblp>`**，而是 `<bht>`——`<bht key="db/conf/icml/icml2023.bht"
+title="…"><h1>…</h1><dblpcites><r><proceedings>…</proceedings></r><r
+style="ee"><inproceedings>…</inproceedings></r>…</dblpcites></bht>`：每条
+`proceedings`/`inproceedings` 记录被多包一层 `<r>`（+ `<dblpcites>` 容器 +
+一个人读 `<h1>` 标题，均非记录本身）。此形态由本次审查对
+`https://dblp.org/db/conf/icml/icml2023.xml` 的真实在线请求核实（HTTP 200,
+`content-type: application/xml`；捕获件见
+`tests/fixtures/dblp/raw/11_volume_xml_bht_schema_full_real_icml2023.xml`，
+1828 条 `inproceedings` + 1 条 `proceedings`，逐字节未改动）——**初版实现误把
+公开批量导出 `dblp.xml.gz`（root=`<dblp>`、`proceedings`/`inproceedings` 为
+根的直接子元素，无 `<r>`/`<dblpcites>` 包装）的 schema 当成了在线卷 XML 的
+schema，导致 `enumerate_issue`/`healthcheck` 对任何真实卷 100% 解析失败**
+（`root.tag != "dblp"` 早失败 + 直接子查询在 `<bht>` 下永远找不到记录）。
+修复：①根元素校验放宽为 `{"bht", "dblp"}` 两者皆合法；②记录/容器查找从
+`root.findall(...)`（仅直接子元素）改为 `root.iter(...)`（任意深度递归查找）
+——对 `<dblp>` 根语义不变（记录本就是直接子元素，`iter` 与 `findall` 结果
+一致），对 `<bht>` 根则正确穿透 `<dblpcites>/<r>` 两层包装。**两种 schema 都
+真实存在生产用途**——`<bht>` 是 `enumerate_issue`/`healthcheck` 实际请求的
+在线卷页 schema（本 adapter 当前唯一网络路径）；`<dblp>` 是 `dblp.xml.gz`
+批量导出的 schema，本 adapter 当前不发起该请求，但解析器保留兼容——设计
+文档（aggregators.md §5.2 "历史回填"一节）把 dump 列为未来 backfill 获取
+路径的既定候选，兼容它可避免将来实现 dump 消费时重复踩同一坑，且保留成本
+仅一行条件判断。
 
 **`ee`→DOI 同源护栏**（aggregators.md §5.2 "ee→DOI 同源护栏"，A-C3 评审必落项）：
 `to_paper_stub` 的 identifier 产出规则——
@@ -136,31 +162,39 @@ class DblpVolume:
     skipped_missing_title: int  # 结构合法但缺 <title> 而被跳过的 <inproceedings> 数（观测用）
 
 
-def parse_volume_xml(data: bytes) -> DblpVolume:
-    """卷 XML → `DblpVolume`。
+_VALID_ROOT_TAGS = frozenset({"bht", "dblp"})  # 见模块 docstring"双 schema"专节
 
-    XML 语法错误、或根元素非 `<dblp>`（结构漂移信号）→ `ErrorClass.PARSE`。
-    `<inproceedings>` 缺 `key` 属性（identifier 构造的硬依赖，"dblp 主锚点，
-    恒有"）同样 `PARSE`——这是真实解析失败，不应被静默吞掉。缺 `<title>`
-    则**跳过该条记录**（计入 `skipped_missing_title`，不中断整卷解析）而非
-    整卷失败：对齐 crossref 侧"空标题→跳过该记录+观测告警，宁缺勿污"的裁决
-    （`paper.title` 是 06 数据模型的 NOT NULL 字段，占位符会污染
-    `title_norm` 弱信号匹配面，见 aggregators.md §5.1 裁决原文），dblp 一条
-    记录的结构缺陷不应连累同卷其余上千条完好记录。
+
+def parse_volume_xml(data: bytes) -> DblpVolume:
+    """卷 XML → `DblpVolume`。**接受两种根 schema**（模块 docstring"双 schema"
+    专节）：`<bht>`（`/db/conf/{acr}/{slug}.xml` 在线卷页，记录嵌在
+    `dblpcites/r` 两层包装内）与 `<dblp>`（`dblp.xml.gz` 批量导出，记录是根的
+    直接子元素）——记录/容器查找统一用 `Element.iter(tag)`（任意深度递归），
+    对两种根形态自动适配，无需按根 tag 分支。
+
+    XML 语法错误、或根元素既非 `<bht>` 也非 `<dblp>`（结构漂移信号）→
+    `ErrorClass.PARSE`。`<inproceedings>` 缺 `key` 属性（identifier 构造的
+    硬依赖，"dblp 主锚点，恒有"）同样 `PARSE`——这是真实解析失败，不应被静默
+    吞掉。缺 `<title>` 则**跳过该条记录**（计入 `skipped_missing_title`，不
+    中断整卷解析）而非整卷失败：对齐 crossref 侧"空标题→跳过该记录+观测
+    告警，宁缺勿污"的裁决（`paper.title` 是 06 数据模型的 NOT NULL 字段，
+    占位符会污染 `title_norm` 弱信号匹配面，见 aggregators.md §5.1 裁决
+    原文），dblp 一条记录的结构缺陷不应连累同卷其余上千条完好记录。
     """
     text = data.decode("utf-8", errors="replace")
     try:
         root = ET.fromstring(text)
     except ET.ParseError as exc:
         raise CrawlerError(ErrorClass.PARSE, f"dblp volume xml is not well-formed: {exc}") from exc
-    if root.tag != "dblp":
+    if root.tag not in _VALID_ROOT_TAGS:
         raise CrawlerError(
             ErrorClass.PARSE,
-            f"dblp volume xml root element is {root.tag!r}, expected 'dblp' (structural drift)",
+            f"dblp volume xml root element is {root.tag!r}, expected one of "
+            f"{sorted(_VALID_ROOT_TAGS)!r} (structural drift)",
         )
 
     container_dois: set[str] = set()
-    for proceedings_el in root.findall("proceedings"):
+    for proceedings_el in root.iter("proceedings"):
         for ee_el in proceedings_el.findall("ee"):
             ee_text = (ee_el.text or "").strip()
             if ee_text and _is_doi_url(ee_text):
@@ -168,7 +202,7 @@ def parse_volume_xml(data: bytes) -> DblpVolume:
 
     records: list[DblpRecord] = []
     skipped_missing_title = 0
-    for inproceedings_el in root.findall("inproceedings"):
+    for inproceedings_el in root.iter("inproceedings"):
         key = inproceedings_el.get("key")
         if not key:
             raise CrawlerError(

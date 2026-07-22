@@ -1,17 +1,37 @@
 <?xml version="1.0" encoding="ISO-8859-1"?>
-<!-- SYNTHETIC fixture (Phase 3 T4, dblp adapter). Structure follows the public
-     dblp.xml schema (dblp.dtd) as described in
-     docs/design/adapters/aggregators.md §5.2 and
+<!-- SYNTHETIC fixture (Phase 3 T4, dblp adapter).
+
+     SCHEMA NOTE (2026-07-23 review fix): this fixture uses the dblp.xml.gz
+     BULK DUMP root shape (<dblp> with <proceedings>/<inproceedings> as
+     DIRECT children, dblp.dtd); it does NOT represent what
+     enumerate_issue()/healthcheck() actually fetch in production. Live
+     verification against https://dblp.org/db/conf/icml/icml2023.xml showed
+     the real per-conference volume page uses a DIFFERENT root, <bht>, with
+     records nested two levels deeper under <dblpcites>/<r>; see
+     10_volume_xml_bht_schema_normal.xml (trimmed real capture plus spliced
+     synthetic guardrail records) and
+     11_volume_xml_bht_schema_full_real_icml2023.xml (untrimmed real capture,
+     1828 records) for that schema, and parse.py's module docstring for why
+     parse_volume_xml() accepts both. This file is kept ONLY to cover the
+     dump-compat parsing path (parse.py's "双 schema" section; a future
+     dump-backfill consumer would hit this shape), not as a stand-in for the
+     online path.
+
+     Structure otherwise follows the public dblp.xml schema (dblp.dtd) as
+     described in docs/design/adapters/aggregators.md §5.2 and
      docs/research/site-survey/aggregators-unpaywall-dblp-core.md [LIVE]
-     2026-07-20/22; no live network recon was performed this session
-     (PAPER_CRAWLER_CONTACT_EMAIL unset; per D-014 that means fully-synthetic
-     fixtures). The key "conf/icml/AamandACINS23" and its PMLR-hosted `ee` form
-     are the concrete example cited verbatim in aggregators.md §5.2's field
-     mapping table ("inproceedings/@key（如 conf/icml/AamandACINS23）"); the
-     surrounding title/authors/pages content is a labeled placeholder, not a
-     transcription of the real paper. The "conf/xyz/*" records are entirely
-     fabricated and purpose-built to exercise the paper-level-ee-vs-container-DOI
-     guardrail (aggregators.md §5.2 "ee→DOI 同源护栏", A-C3). -->
+     2026-07-20/22; no live network recon was performed when this fixture was
+     first written (PAPER_CRAWLER_CONTACT_EMAIL unset; per D-014 that means
+     fully-synthetic fixtures). The key "conf/icml/AamandACINS23" and its
+     PMLR-hosted `ee` form are the concrete example cited verbatim in
+     aggregators.md §5.2's field mapping table
+     ("inproceedings/@key（如 conf/icml/AamandACINS23）"); the surrounding
+     title/authors/pages content here is a labeled placeholder that does NOT
+     match the real paper (compare against the real title captured in
+     10_volume_xml_bht_schema_normal.xml: "Data Structures for Density
+     Estimation."). The "conf/xyz/*" records are entirely fabricated and
+     purpose-built to exercise the paper-level-ee-vs-container-DOI guardrail
+     (aggregators.md §5.2 "ee→DOI 同源护栏", A-C3). -->
 <!DOCTYPE dblp SYSTEM "https://dblp.org/xml/dblp.dtd">
 <dblp>
 

@@ -202,7 +202,9 @@ _ISSUE_2023 = IssueRef(venue_id="icml", year=2023, label="icml2023")
 
 def _volume_handler(request: httpx.Request) -> httpx.Response:
     assert str(request.url) == _XML_URL_TMPL.format(slug="icml2023")
-    return httpx.Response(200, content=fixture_bytes("04_volume_xml_normal.xml"))
+    # 生产实际 schema（bht/dblpcites/r 包装，2026-07-23 审查真实交叉验证核实）
+    # ——不是批量导出 dblp.xml.gz 的平铺 schema。见 fixture 头注释的抓取出处。
+    return httpx.Response(200, content=fixture_bytes("10_volume_xml_bht_schema_normal.xml"))
 
 
 def test_enumerate_issue_normal_path_yields_expected_papers() -> None:
@@ -211,11 +213,35 @@ def test_enumerate_issue_normal_path_yields_expected_papers() -> None:
     assert len(stubs) == 5
     keys = [dict(stub.meta) | {"__id__": stub.identifiers} for stub in stubs]
     assert keys[0]["__id__"] == (("dblp", "conf/icml/AamandACINS23"),)
+    # 真实内容保真度：真实标题（非占位符）经完整 enumerate 链路正确透出。
+    assert stubs[0].title == "Data Structures for Density Estimation."
     doi_ids = [i for stub in stubs for i in stub.identifiers if i[0] == "doi"]
     assert ("doi", "10.1007/978-3-030-99999-9_1") in doi_ids
     assert ("doi", "10.1007/978-3-030-99999-9_2") in doi_ids
-    # 护栏：容器 DOI 绝不作为任何一篇论文的 identifier 出现。
+    # 护栏：容器 DOI 绝不作为任何一篇论文的 identifier 出现（"container_dois 恒
+    # 空集自证通过"复发防护——本行断言的失败模式恰恰就是那种回归）。
     assert ("doi", "10.1007/978-3-030-99999-9") not in doi_ids
+
+
+def test_enumerate_issue_against_full_real_1828_record_capture() -> None:
+    """未裁剪真实响应（1828 条）端到端跑通 `enumerate_issue`——2026-07-23 审查
+    阻断项的直接回归证据：修复前，`root.tag != "dblp"` 门禁会让*任何*真实卷
+    立即 `parse` 失败，本测试若通过即证明该阻断项对 `enumerate_issue`（不仅
+    healthcheck）确实已修复。"""
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(
+            200, content=fixture_bytes("11_volume_xml_bht_schema_full_real_icml2023.xml")
+        )
+
+    adapter = _mock(httpx.MockTransport(handler))
+    stubs = list(adapter.enumerate_issue(make_dblp_venue(), _ISSUE_2023))
+    assert len(stubs) == 1828
+    assert stubs[0].identifiers[0] == ("dblp", "conf/icml/AamandACINS23")
+    assert stubs[-1].identifiers[0] == ("dblp", "conf/icml/ZouCLG23")
+    # 真实 ICML/PMLR 数据全程无 DOI-form ee；容器同样无 DOI——1828 篇论文里
+    # 不应有任何一个 doi identifier（真实规模下的"零假阳性"证据）。
+    assert not [i for stub in stubs for i in stub.identifiers if i[0] == "doi"]
 
 
 def test_enumerate_issue_missing_label_raises_config() -> None:
@@ -313,7 +339,7 @@ def test_enumerate_issue_404_self_heals_via_index_rediscovery() -> None:
         if url == _INDEX_URL:
             return httpx.Response(200, content=fixture_bytes("01_conf_index_normal.html"))
         if url == _XML_URL_TMPL.format(slug="icml2023"):
-            return httpx.Response(200, content=fixture_bytes("04_volume_xml_normal.xml"))
+            return httpx.Response(200, content=fixture_bytes("10_volume_xml_bht_schema_normal.xml"))
         raise AssertionError(f"unexpected request: {url}")
 
     adapter = _mock(httpx.MockTransport(handler))
@@ -393,7 +419,7 @@ def test_enumerate_issue_404_recovery_tries_next_candidate_after_first_also_fail
         if url == _XML_URL_TMPL.format(slug="icml2022"):
             return httpx.Response(status_404, headers=headers_404, content=body_404)
         if url == _XML_URL_TMPL.format(slug="icml2022w"):
-            return httpx.Response(200, content=fixture_bytes("04_volume_xml_normal.xml"))
+            return httpx.Response(200, content=fixture_bytes("10_volume_xml_bht_schema_normal.xml"))
         return httpx.Response(status_404, headers=headers_404, content=body_404)
 
     adapter = _mock(httpx.MockTransport(handler))

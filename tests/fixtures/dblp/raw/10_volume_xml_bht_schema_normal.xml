@@ -1,0 +1,125 @@
+<!-- Trimmed REAL + spliced-SYNTHETIC fixture (Phase 3 T4 review fix, 2026-07-23).
+
+     PROVENANCE: the <bht>/<h1>/<dblpcites> wrapper, the real
+     <proceedings key="conf/icml/2023"> container, and the two
+     <inproceedings key="conf/icml/AamandACINS23"> / <inproceedings
+     key="conf/icml/AbbasS23"> records below are copied byte-for-byte from
+     the real https://dblp.org/db/conf/icml/icml2023.xml response captured
+     during review live-check (ledger REQ2, HTTP 200, content-type:
+     application/xml; see the untrimmed capture at
+     11_volume_xml_bht_schema_full_real_icml2023.xml for the complete
+     1828-record response this was cut from). DBLP bibliographic records are
+     CC0 public domain; author names/titles/keys are not sensitive.
+
+     SYNTHETIC APPENDIX (clearly marked below, after the closing </r> of the
+     real AbbasS23 record): real ICML/PMLR entries never carry a doi.org-form
+     <ee> at all (PMLR does not register DOIs), so the ee->DOI guardrail
+     (paper-level DOI production / container DOI never becoming an
+     identifier / adversarial matching-ee rejection) cannot be exercised by
+     real ICML data alone. A second, fabricated <proceedings
+     key="conf/xyz/2023"> container carrying a DOI-form <ee>, plus three
+     fabricated <inproceedings> records under it (two with their own
+     distinct chapter DOIs, one adversarial whose own ee accidentally
+     repeats the container DOI verbatim), are appended in the same real
+     <r>-wrapped shape to cover those three guardrail layers under the
+     schema actually served in production. This mirrors the record cast of
+     the old 04_volume_xml_dump_schema_normal.xml fixture (now relabeled: it
+     used the WRONG, dump-only, root shape for this purpose) so most of that
+     fixture's existing assertions carry over unchanged, just against the
+     correct wrapper. -->
+<bht key="db/conf/icml/icml2023.bht" title="ICML 2023">
+<h1>40th <ref href="db/conf/icml/index.html">ICML</ref> 2023:
+Honolulu, HI, USA</h1> <dblpcites><r><proceedings key="conf/icml/2023" mdate="2023-08-28">
+<editor pid="87/1831-1">Andreas Krause 0001</editor>
+<editor pid="27/1277">Emma Brunskill</editor>
+<editor pid="41/9736">Kyunghyun Cho</editor>
+<editor pid="53/328">Barbara Engelhardt</editor>
+<editor pid="57/4067">Sivan Sabato</editor>
+<editor pid="78/9667">Jonathan Scarlett</editor>
+<title>International Conference on Machine Learning, ICML 2023, 23-29 July 2023, Honolulu, Hawaii, USA.</title>
+<booktitle>ICML</booktitle>
+<publisher>PMLR</publisher>
+<year>2023</year>
+<series href="db/series/jmlr/index.html">Proceedings of Machine Learning Research</series>
+<volume>202</volume>
+<ee type="oa">http://proceedings.mlr.press/v202/</ee>
+<url>db/conf/icml/icml2023.html</url>
+</proceedings>
+</r>
+<r style="ee"><inproceedings key="conf/icml/AamandACINS23" mdate="2023-08-28">
+<author pid="205/2416">Anders Aamand</author>
+<author pid="66/6009">Alexandr Andoni</author>
+<author pid="254/0805">Justin Y. Chen</author>
+<author pid="i/PiotrIndyk">Piotr Indyk</author>
+<author pid="222/2805">Shyam Narayanan</author>
+<author pid="225/4637">Sandeep Silwal</author>
+<title>Data Structures for Density Estimation.</title>
+<pages>1-18</pages>
+<year>2023</year>
+<booktitle>ICML</booktitle>
+<ee type="oa">https://proceedings.mlr.press/v202/aamand23a.html</ee>
+<crossref>conf/icml/2023</crossref>
+<url>db/conf/icml/icml2023.html#AamandACINS23</url>
+</inproceedings>
+</r>
+<r style="ee"><inproceedings key="conf/icml/AbbasS23" mdate="2023-08-28">
+<author pid="28/8106">Ahmed Abbas</author>
+<author pid="17/3730">Paul Swoboda</author>
+<title>ClusterFuG: Clustering Fully connected Graphs by Multicut.</title>
+<pages>19-30</pages>
+<year>2023</year>
+<booktitle>ICML</booktitle>
+<ee type="oa">https://proceedings.mlr.press/v202/abbas23a.html</ee>
+<crossref>conf/icml/2023</crossref>
+<url>db/conf/icml/icml2023.html#AbbasS23</url>
+</inproceedings>
+</r>
+<!-- ===== SYNTHETIC APPENDIX BELOW THIS LINE (not part of the real capture) ===== -->
+<r><proceedings key="conf/xyz/2023" mdate="2023-05-10">
+<editor pid="9/9">Canary Springer Editor</editor>
+<title>Proceedings of the Synthetic XYZ Conference 2023</title>
+<booktitle>XYZ</booktitle>
+<publisher>Springer</publisher>
+<year>2023</year>
+<series href="db/series/lncs/index.html">Lecture Notes in Computer Science</series>
+<volume>9999</volume>
+<ee>https://doi.org/10.1007/978-3-030-99999-9</ee>
+<url>db/conf/xyz/xyz2023.html</url>
+</proceedings>
+</r>
+<r style="ee"><inproceedings key="conf/xyz/Smith23" mdate="2023-06-01">
+<author pid="444/4444">Jane Smith</author>
+<title>A Synthetic Paper With Its Own Chapter DOI.</title>
+<pages>1-15</pages>
+<year>2023</year>
+<booktitle>XYZ</booktitle>
+<ee>https://doi.org/10.1007/978-3-030-99999-9_1</ee>
+<crossref>conf/xyz/2023</crossref>
+<url>db/conf/xyz/xyz2023.html#Smith23</url>
+</inproceedings>
+</r>
+<r style="ee"><inproceedings key="conf/xyz/Jones23" mdate="2023-06-01">
+<author pid="555/5555">Robert Jones</author>
+<author pid="666/6666">Amara Okafor</author>
+<title>Another Synthetic Paper With a Distinct Chapter DOI.</title>
+<pages>16-30</pages>
+<year>2023</year>
+<booktitle>XYZ</booktitle>
+<ee>https://doi.org/10.1007/978-3-030-99999-9_2</ee>
+<crossref>conf/xyz/2023</crossref>
+<url>db/conf/xyz/xyz2023.html#Jones23</url>
+</inproceedings>
+</r>
+<r style="ee"><inproceedings key="conf/xyz/Adversary23" mdate="2023-06-01">
+<author pid="777/7777">Adversarial Author</author>
+<title>A Synthetic Paper Whose Own ee Accidentally Repeats the Container DOI.</title>
+<pages>31-40</pages>
+<year>2023</year>
+<booktitle>XYZ</booktitle>
+<ee>https://doi.org/10.1007/978-3-030-99999-9</ee>
+<crossref>conf/xyz/2023</crossref>
+<url>db/conf/xyz/xyz2023.html#Adversary23</url>
+</inproceedings>
+</r>
+</dblpcites>
+</bht>
