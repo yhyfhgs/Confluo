@@ -388,10 +388,10 @@ def test_v1_to_v2_upgrade_backfills_title_norm(
     database.close()
 
 
-def _insert_doi(database: Database, paper_id: str, value: str) -> None:
+def _insert_doi(database: Database, paper_id: str, value: str, *, is_primary: int = 0) -> None:
     database.execute(
         "INSERT INTO identifier (paper_id, scheme, value, is_primary) VALUES (?,?,?,?)",
-        (paper_id, "doi", value, 0),
+        (paper_id, "doi", value, is_primary),
     )
 
 
@@ -430,28 +430,67 @@ def test_v1_to_v2_doi_case_collision_cross_paper_builds_candidate(
     # 两 paper 行都在。
     papers = {r["id"] for r in database.query("SELECT id FROM paper")}
     assert {"p_lower", "p_upper"} <= papers
-    # candidate_duplicate(decided=NULL, evidence=doi-case-collision) 建成，端点按 id 升序。
+    # candidate_duplicate(decided=NULL, 中性 evidence 标签) 建成，端点按 id 升序。
     rel = database.query("SELECT * FROM paper_relation WHERE kind='candidate_duplicate'")
     assert len(rel) == 1
     assert rel[0]["decided"] is None
     assert {rel[0]["from_paper"], rel[0]["to_paper"]} == {"p_lower", "p_upper"}
-    assert "doi-case-collision" in rel[0]["evidence_json"]
+    assert "doi-normalization-collision" in rel[0]["evidence_json"]
+    database.close()
+
+
+def test_v1_to_v2_doi_prefix_collision_uses_neutral_label(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """前缀异形（非纯大小写）碰撞同样走中性标签 doi-normalization-collision（名副其实）。"""
+    database = _seed_v1(tmp_path, monkeypatch)
+    _insert_paper(database, "p_bare", "Work")
+    _insert_paper(database, "p_url", "Work Preprint")
+    _insert_doi(database, "p_bare", "10.1/abc")  # 已归一形
+    _insert_doi(database, "p_url", "https://doi.org/10.1/abc")  # 前缀异形，归一后碰撞
+
+    _add_0002(tmp_path)
+    assert database.migrate() == 2
+
+    ids = database.query("SELECT paper_id, value FROM identifier WHERE scheme='doi'")
+    assert [(r["paper_id"], r["value"]) for r in ids] == [("p_bare", "10.1/abc")]
+    rel = database.query("SELECT * FROM paper_relation WHERE kind='candidate_duplicate'")
+    assert len(rel) == 1
+    assert "doi-normalization-collision" in rel[0]["evidence_json"]
+    database.close()
+
+
+def test_v1_to_v2_doi_collision_restores_primary_when_deleted_row_was_primary(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """碰撞删除的异形行若为 primary → 保留的归一行提为 primary（补单一 primary 不变量）。"""
+    database = _seed_v1(tmp_path, monkeypatch)
+    _insert_paper(database, "p1", "Some Paper")
+    _insert_doi(database, "p1", "10.1/abc", is_primary=0)  # 归一形，非 primary
+    _insert_doi(database, "p1", "10.1/ABC", is_primary=1)  # 异形，恰为 primary → 将被删
+
+    _add_0002(tmp_path)
+    assert database.migrate() == 2
+
+    ids = database.query("SELECT value, is_primary FROM identifier WHERE scheme='doi'")
+    assert [(r["value"], r["is_primary"]) for r in ids] == [("10.1/abc", 1)]  # 保留行提为 primary
     database.close()
 
 
 def test_v1_to_v2_doi_case_collision_same_paper_drops_redundant(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """同一 paper 上大小写异形冗余 doi → 删冗余行、不建 candidate（非跨 paper）。"""
+    """同一 paper 上异形冗余 doi → 删冗余行、不建 candidate；归一行本就是 primary 则原样保留。"""
     database = _seed_v1(tmp_path, monkeypatch)
     _insert_paper(database, "p1", "Some Paper")
-    _insert_doi(database, "p1", "10.1/abc")
-    _insert_doi(database, "p1", "10.1/ABC")
+    _insert_doi(database, "p1", "10.1/abc", is_primary=1)  # 归一形本就是 primary
+    _insert_doi(database, "p1", "10.1/ABC", is_primary=0)  # 异形冗余，非 primary → 将被删
 
     _add_0002(tmp_path)
     assert database.migrate() == 2
 
-    ids = database.query("SELECT paper_id, value FROM identifier WHERE scheme='doi'")
-    assert [(r["paper_id"], r["value"]) for r in ids] == [("p1", "10.1/abc")]
+    ids = database.query("SELECT paper_id, value, is_primary FROM identifier WHERE scheme='doi'")
+    # 删非 primary 异形后 paper 仍有 primary → 不重复提升，归一行原样保留其 primary。
+    assert [(r["paper_id"], r["value"], r["is_primary"]) for r in ids] == [("p1", "10.1/abc", 1)]
     assert database.query("SELECT COUNT(*) AS n FROM paper_relation")[0]["n"] == 0
     database.close()

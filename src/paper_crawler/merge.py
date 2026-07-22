@@ -27,9 +27,13 @@
    边界）：**不自动合并两 paper**（等价弱信号升级场景）；stub 并入 identifier 数最多者
    （平局取 paper_id 字典序最小者——确定性），其余每个命中 paper 与胜者建
    `candidate_duplicate(evidence=identifier-conflict, decided=NULL)`。指向败者的 identifier
-   原地不动、不迁移。**注**：此裁决使「同批 stub 不同注入顺序」可能得不同终态（迟到的桥接
-   identifier 得 candidate 而非 merge），故其确定性由定向集成测试锁，不纳入随机顺序属性
-   测试（见 tests 说明）。
+   原地不动、不迁移。
+   **顺序敏感性（如实）**：本裁决使含"桥接 identifier"的输入类**顺序敏感**，同批 stub 不同
+   注入序会产生**真实数据差**（非等价数据态）——①桥接 stub **先到**时该 stub 直接携多 id
+   建成单 paper、**无任何候审痕迹**（保守侧、非不变量：宁可漏标不误并）；后到时才裂成两
+   paper + 候审边。②平局胜者随 paper 创建序（ULID）摆动。差异体现在 paper 行数 / 桥字段
+   落点 / 候审边有无。但这是既定语义的数学必然且**零丢失**：identifier 值集不变、绝不删行。
+   故该输入类不纳入随机顺序属性测试，其确定性由定向集成测试（`test_merge`）单独锁。
 4. **弱信号候审**：无 identifier 命中 → `title_norm` 精确匹配 + 首作者姓氏一致 → 新建 paper
    + 对每个匹配既有 paper 建 `candidate_duplicate(decided=NULL, confidence, evidence)`。
    **绝不自动合并**（06 §3）。「对每个匹配都建边」保证顺序无关（同簇终态=两两建边）。

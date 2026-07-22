@@ -21,7 +21,7 @@ from pathlib import Path
 # 迁移脚本目录（包内）。测试可 monkeypatch 本常量指向临时目录以覆盖多步迁移/备份路径。
 MIGRATIONS_DIR = Path(__file__).parent / "migrations"
 
-# doi 大小写碰撞 candidate_duplicate 的置信度（同 DOI 差大小写=强证据，但仍留人审不自动合并）。
+# doi 归一碰撞 candidate_duplicate 的置信度（归一后同 DOI=强证据，但仍留人审不自动合并）。
 _DOI_COLLISION_CONFIDENCE = 0.99
 
 
@@ -46,14 +46,20 @@ def _backfill_title_norm(conn: sqlite3.Connection) -> None:
 def _insert_doi_collision_candidate(
     conn: sqlite3.Connection, paper_a: str, paper_b: str, normalized: str, original: str
 ) -> None:
-    """两 paper 因 doi 大小写碰撞而实为同一著作 → 建 candidate_duplicate(decided=NULL) 留人审。
+    """两 paper 的 doi 归一后同形（实为同一著作）→ 建 candidate_duplicate(decided=NULL) 留人审。
 
-    端点按 paper id 升序定向（迁移一次性、单库内确定性即可）；`ON CONFLICT DO NOTHING`
-    幂等。绝不自动合并两 paper 行（06 §3：宁可两条待审）。
+    碰撞形态涵盖大小写异形**与前缀异形**（`https://doi.org/`、`doi:`）——故 evidence reason
+    用中性标签 `doi-normalization-collision`（非仅 case）。端点按 paper id 升序定向（迁移
+    一次性、单库内确定性即可）；`ON CONFLICT DO NOTHING` 幂等。绝不自动合并两 paper 行
+    （06 §3：宁可两条待审）。
     """
     from_paper, to_paper = sorted((paper_a, paper_b))
     evidence = json.dumps(
-        {"reason": "doi-case-collision", "doi_normalized": normalized, "doi_original": original},
+        {
+            "reason": "doi-normalization-collision",
+            "doi_normalized": normalized,
+            "doi_original": original,
+        },
         ensure_ascii=False,
         sort_keys=True,
     )
@@ -66,15 +72,41 @@ def _insert_doi_collision_candidate(
     )
 
 
+def _restore_primary_if_needed(conn: sqlite3.Connection, paper_id: str) -> None:
+    """paper 删 identifier 后若失去 primary 但仍有 identifier → 把最小 (scheme,value) 提为 primary。
+
+    0002 归一删除碰撞的 doi 异形行时，被删的可能正是该 paper 的 `is_primary` 行（如同一 paper
+    上大小写/前缀异形冗余、异形恰为 primary），留下"有 identifier 却无 primary"的破缺——补回
+    单一 primary 不变量。同 paper 冗余场景下留存的正是归一行（doi-only 时即最小行），故被提为
+    primary，与 controller 裁定一致。已有 primary 则空操作。
+    """
+    has_primary = conn.execute(
+        "SELECT 1 FROM identifier WHERE paper_id = ? AND is_primary = 1 LIMIT 1",
+        (paper_id,),
+    ).fetchone()
+    if has_primary is not None:
+        return
+    row = conn.execute(
+        "SELECT scheme, value FROM identifier WHERE paper_id = ? ORDER BY scheme, value LIMIT 1",
+        (paper_id,),
+    ).fetchone()
+    if row is not None:
+        conn.execute(
+            "UPDATE identifier SET is_primary = 1 WHERE paper_id = ? AND scheme = ? AND value = ?",
+            (paper_id, row["scheme"], row["value"]),
+        )
+
+
 def _normalize_doi_identifiers(conn: sqlite3.Connection) -> None:
     """schema v2（0002）Python 回填：把 identifier 表 doi 行归一到 `normalize_doi` 规范形。
 
     D-裁决 2026-07-22：`normalize_doi` 是 identifier 写入的唯一归一入口，存量 doi 行一并
-    收敛。逐行（`ORDER BY value` 确定性）处理归一前后不同的 doi：
+    收敛。逐行（`ORDER BY value` 确定性）处理归一前后不同的 doi（大小写/前缀异形）：
       - 归一形无既有行 → 就地 UPDATE 该行 value；
-      - 归一形已存在且指向**同一** paper（大小写异形冗余）→ 删归一前的冗余行；
-      - 归一形已存在且指向**不同** paper（doi 大小写碰撞=库内本存同一著作两行）→ 删本行、
+      - 归一形已存在且指向**同一** paper（异形冗余）→ 删归一前的冗余行；
+      - 归一形已存在且指向**不同** paper（归一碰撞=库内本存同一著作两行）→ 删本行、
         保留归一形所在行、两 paper 间建 `candidate_duplicate` 留人审——**不静默丢 paper 行**。
+    删行后经 `_restore_primary_if_needed` 补回被删 primary 异形留下的 primary 破缺。
     快照先 `fetchall` 再逐行处理（避免游标随写失效）；每次 target 查询为实时态（含前序迭代
     的写），故顺序敏感的碰撞判定确定。全程在 0002 迁移事务内。
     """
@@ -104,6 +136,7 @@ def _normalize_doi_identifiers(conn: sqlite3.Connection) -> None:
             "DELETE FROM identifier WHERE scheme = ? AND value = ?",
             (DOI_SCHEME, original),
         )
+        _restore_primary_if_needed(conn, this_paper)
         target_paper = str(target["paper_id"])
         if target_paper != this_paper:
             _insert_doi_collision_candidate(conn, this_paper, target_paper, normalized, original)
