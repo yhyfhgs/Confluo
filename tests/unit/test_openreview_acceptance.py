@@ -353,3 +353,18 @@ def test_adapter_enumerate_2019_direct_replies_end_to_end() -> None:
     stubs = list(_adapter(handler).enumerate_issue(make_openreview_venue(), issue))
     assert _forums(stubs) == ["m_accept"]
     assert seen_details == ["directReplies"]  # 提交帖查询携 details=directReplies
+
+
+def test_builtin_rules_keys_subset_of_venue_tables() -> None:
+    """规则表↔届表护栏（F2 审查 L2）：规则只能挂在届表已知年份上。
+
+    防拼写错年份的规则静默失联；反向（惯例外届漏配规则→默认 0）无法程序断言，
+    由 anchor 表与年度 canary 兜底（acceptance.py 表旁注释）。
+    """
+    from paper_crawler.adapters.openreview.acceptance import _BUILTIN_RULES
+    from paper_crawler.adapters.openreview.venues import _BUILTIN_TABLES
+
+    for venue, rules in _BUILTIN_RULES.items():
+        assert venue in _BUILTIN_TABLES, f"规则挂在未知 venue: {venue}"
+        unknown = set(rules) - set(_BUILTIN_TABLES[venue])
+        assert not unknown, f"{venue} 规则年份不在届表: {sorted(unknown)}"
