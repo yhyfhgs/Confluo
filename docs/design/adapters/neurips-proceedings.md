@@ -2,7 +2,7 @@
 title: Adapter 设计 · NeurIPS Proceedings
 status: implemented
 owner: fable5
-updated: 2026-07-22
+updated: 2026-07-23
 ---
 
 # Adapter · `neurips_proceedings`
@@ -174,7 +174,7 @@ scheme 固定 `'neurips'`（需在 design/06 `identifier.scheme` 清单预注册
 - **T4 集成（MockTransport 全链）**：discover→enumerate→resolve 全链，legacy＋modern 双 era × conference/D&B 双 track 的后缀构造断言；`paper_count_claimed` 计数断言；`pull neurips --year 2023 --limit 10` 式 10 plan/魔数/DB↔文件对账（复用 AC-2.2 测试模式，虽无 AC 绑定）。
 - **T5 在线冒烟（预算 `MAX_REAL_REQUESTS=6`）**：healthcheck 2（2021+2022 年页）＋ 单篇 legacy PDF fetch 1 ＋ 单篇 modern PDF fetch 1 ＋ 余量——一次覆盖两 era 的 enumerate 解析（在线）与 resolve+fetch（在线）。discover/resolve 零网络不计。
 - **canary 样本（抗 flake，3 跨边界，2021/2022 各含——任务定死）**：`{2021 legacy, 2022 conference, 2022 datasets_and_benchmarks}`，**规整化 title ＋ track** 双字段。样本 hash/title 取自 fixture ②③（2021/2022 年页 golden），T5 在线冒烟再核验；**实现期用实测值替换任何占位**（arxiv canary「⚠ 合成占位需真实替换」同款纪律，见 arxiv adapter `_CANARIES`）。
-- **D-019 锚点表** `tests/fixtures/neurips/dblp-nips-anchor.json`：逐年 `{year, paper_count_claimed, dblp_slug: "conf/nips", note}`。**生成程序（实现期）**：enumerate 取各届 `li` 计数 ＋ **人工对照 DBLP `conf/nips` TOC 页核准**（UPDATE_GOLDEN 纪律、records 留痕）。**勘察已捕获的种子值**（[LIVE]，供建表起点）：1987=90、1993=158、2019=1428、2020=1898、2021=2334、2022=2834（2671 conf＋163 D&B）、2023=3540（3218 conf＋322 D&B）。特例注记：1987/1988＝vol 0/1（DBLP 年份约定须核，[UNRESOLVED] 归入 note）。timeline 完整性判定＝`timeline neurips` 输出与锚点表全等——**测试须固定 `known_through_year`**（如锚点最大年 2025）使 `timeline` 确定性可复现（否则 `current−1` 默认随时钟漂移）。
+- **D-019 锚点表** `tests/fixtures/neurips_proceedings/dblp-nips-anchor.json`（**路径更正**：文件实际落在 `neurips_proceedings/` 目录，非本段旧文所写的 `neurips/`——两者不同，2026-07-23 复核时如实标注）：逐年 `{year, paper_count_claimed, dblp_slug: "conf/nips", note}`。**生成程序（实现期）**：enumerate 取各届 `li` 计数 ＋ **人工对照 DBLP `conf/nips` TOC 页核准**（UPDATE_GOLDEN 纪律、records 留痕）。**勘察已捕获的种子值**（[LIVE]，供建表起点）：1987=90、1993=158、2019=1428、2020=1898、2021=2334、2022=2834（2671 conf＋163 D&B）、2023=3540（3218 conf＋322 D&B）。特例注记：1987/1988＝vol 0/1（DBLP 年份约定须核，[UNRESOLVED] 归入 note）。timeline 完整性判定＝`timeline neurips` 输出与锚点表全等——**测试须固定 `known_through_year`**（如锚点最大年 2025）使 `timeline` 确定性可复现（否则 `current−1` 默认随时钟漂移）。**D-019 人工 DBLP 核准部分闭合 [LIVE 2026-07-23]**：2023 行实测——`dblp_slug` 由本段假设的 `conf/nips/nips2023`（活测 **404**）纠正为 **`conf/nips/neurips2023`**（DBLP 于某未确认年份起把年度 TOC 文件名前缀从 `nips` 换成 `neurips`，目录本身仍是 `/db/conf/nips/`；经该站索引页发现）；`GET .../neurips2023.html` 实测 3540 条 `inproceedings`，与种子值**精确匹配**、无 Frontmatter 偏移。**其余年份（含 1987/1988 的 vol 0/1 约定）仍未验证，`conf/nips/nips{year}` slug 猜测对哪些年份成立仍是 [UNRESOLVED]**——核准出处见 fixture 该行 `note`/`dblp_toc_count`/`dblp_cross_check` 与顶层 `generated_note` 追记。
 
 ## 7. 风险与维护
 

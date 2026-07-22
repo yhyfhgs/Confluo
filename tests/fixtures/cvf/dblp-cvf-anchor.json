@@ -73,8 +73,10 @@
       "year": 2022
     },
     {
+      "dblp_cross_check": "LIVE_2026-07-23_MATCH",
       "dblp_slug": "conf/cvpr/cvpr2023",
-      "note": "[LIVE] research/site-survey/cvf.md §2b 2026-07-21 实测 https://openaccess.thecvf.com/CVPR2023?day=all：三种独立计数方式（dt.ptitle 出现次数/papers/*.pdf 链接数/>pdf</a> 出现次数）均为 2353，三法一致。DBLP TOC 人工核准待办（dblp.org/db/conf/cvpr/cvpr2023.html）——若 DBLP 数因 front matter/口径差异 ≠2353，本 note 将更新说明。",
+      "dblp_toc_count": 2353,
+      "note": "[LIVE] research/site-survey/cvf.md §2b 2026-07-21 实测 https://openaccess.thecvf.com/CVPR2023?day=all：三种独立计数方式（dt.ptitle 出现次数/papers/*.pdf 链接数/>pdf</a> 出现次数）均为 2353，三法一致。[LIVE] 2026-07-23 M2a 在线债务清理 DBLP TOC 人工核准完成：GET https://dblp.org/db/conf/cvpr/cvpr2023.html（curl，UA PaperCrawler/0.1.0，dblp.org/robots.txt 同 session 复核 Allow:/db）——class=\"entry inproceedings\" 计数 = 2353，与站内三法计数 **精确匹配**（额外发现 3 条 class=\"entry withdrawn\" 撤稿记录，DBLP 单列不计入 inproceedings 主计数，不影响本锚点）。dblp_toc_count=2353。",
       "paper_count_claimed": 2353,
       "venue": "cvpr",
       "year": 2023

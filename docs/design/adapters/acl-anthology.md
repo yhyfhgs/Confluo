@@ -2,7 +2,7 @@
 title: Adapter 设计 · ACL Anthology
 status: implemented
 owner: fable5
-updated: 2026-07-22
+updated: 2026-07-23
 ---
 
 # Adapter · `acl_anthology`
@@ -140,7 +140,7 @@ updated: 2026-07-22
 - **T3 fixture（覆盖 §6 全部 error_class，test-plan §6 强制；难录形态合成并标注"合成 fixture"，arxiv 先例）**：①`2023.emnlp.xml` 节选（≥2 volume、含带 `<doi>`/`<attachment>`/`<abstract>` 各一的 paper）②`2023.findings.xml` 节选（含 `volume id="emnlp"` **及另一 venue volume**，验 join 过滤）③旧式 `D19.xml` 节选（旧式 id 端到端）④对①②③的 golden 解析输出 ⑤畸形 XML→`parse` ⑥raw 404（不存在的 `{year}.{venue}.xml`）→legal-empty**（证重分类，非 error）** ⑦PDF 404 响应→`gone` ⑧5xx（合成）→`transient` ⑨429（合成）→`rate_limited` ⑩（(A) 模式）`api.github.com` 403（合成）→`rate_limited` 域级重分类 ⑪400（合成）→`config`。
 - **T4 集成（MockTransport 全链路）**：`pull emnlp --year 2023` discover→enumerate→resolve 全链，**断言 enumerate 产 2241 stub、跨 5 volume、计数与 §7 anchor 全等**；两代路径各一；resolve 产 2241 个 PDF plan（URL=`aclanthology.org/{id}.pdf`）。
 - **AC-2.5 验收机制（D-019 锚点快照 + 日志证据双判据）**：
-  - **anchor golden 表** `tests/fixtures/acl_anthology/anchor-emnlp-2023.json`——逐 volume `{anthology_volume_id, source_file, paper_count}` + `total` + `cross_source={dblp:'conf/emnlp', note}`（本例见 §2 表，total 2241）。**生成程序（实现期）**：解析两个 bulk XML 计数 + **人工对照 DBLP `conf/emnlp`（Findings 另计）与 Anthology `/events/emnlp-2023/` 卷首篇数核准**，UPDATE_GOLDEN 纪律、人工过目留痕 `records/`。
+  - **anchor golden 表** `tests/fixtures/acl_anthology/anchor-emnlp-2023.json`——逐 volume `{anthology_volume_id, source_file, paper_count}` + `total` + `cross_source={dblp:'conf/emnlp', note}`（本例见 §2 表，total 2241）。**D-019 人工 DBLP 核准已闭合 [LIVE 2026-07-23]**：DBLP `conf/emnlp` 下 5 个子卷（`emnlp2023{,t,d,i,f}`，经 `/db/conf/emnlp/` 索引页发现，一一对应 main/tutorial/demo/industry/findings）逐一实测——main/tutorial/demo/industry 四卷剔除 DBLP 各卷唯一的 1 条 "Frontmatter." 封面条目后与本表 `paper_count` **精确匹配**；findings 剔除 Frontmatter 后仍余 **+1 未消解残差**（DBLP 1060 篇 vs 本表 1059，预算内未进一步查明，如实标注非强行凑合）。核准出处见 fixture `cross_source.dblp_toc_counts`/`note`。
   - **日志证据 grep 判据（"无逐页在线爬取"）**：跑 `pull emnlp --year 2023` 后对 obslog jsonl——
     - **正向**：含 `domain=raw.githubusercontent.com` 且 `url` 匹配 `data/xml/2023\.emnlp\.xml` 与 `data/xml/2023\.findings\.xml` 的事件（bulk 路径确被使用）；
     - **负向（核心）**：`grep 'aclanthology\.org' obslog.jsonl | grep -E '/(events|venues)/|/[^/]+/$'` **返回 0 行**（无任何 `/events/`、`/venues/`、或 `/{id}/` landing 逐页抓取）；aclanthology.org 事件**仅** `*.pdf`（fetch 阶段资产，非页面爬取）。

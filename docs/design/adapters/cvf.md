@@ -2,7 +2,7 @@
 title: Adapter 设计 · CVF Open Access
 status: implemented
 owner: fable5
-updated: 2026-07-22
+updated: 2026-07-23
 ---
 
 # Adapter · `cvf`
@@ -173,7 +173,7 @@ updated: 2026-07-22
 - **AC-2.4 验收机制（D-018 证据分层 + D-019 锚点）**：
   - **离线层（T4，CI 化，机制正确性）**：以 fixture 现代列表页跑 `pull cvpr --year 2023 --filter "diffusion"` 全链——断言 (a) 全集 enumerate 数 == fixture 条目数；(b) **过滤命中数 == 对全集本地 `filter_expr` 过滤数**（AC-2.4 自洽不变式）；(c) 下载子集 == 过滤子集、每个 `%PDF` 魔数过、DB↔文件对账一致。
   - **在线层（T5 限量冒烟，真实解析入库）**：预算 `MAX_REAL_REQUESTS ≤ 6`——healthcheck 1 + `CVPR2023?day=all` 实拉 1（一次得全集，验真实计数对锚点）+ `--filter` 后 `--limit 2` 下载 2 PDF。**在线只跑限量子集**（全量 diffusion 命中过多，靠 `--limit` 封顶）。
-  - **D-019 锚点快照**：`tests/fixtures/cvf/dblp-cvf-anchor.json`——逐 (venue, year) `{venue, year, paper_count_claimed, dblp_slug, note}`；**人工对照 DBLP TOC**（`dblp.org/db/conf/cvpr/cvpr2023.html`）核准（UPDATE_GOLDEN 纪律、records 留痕）。种子行：CVPR2023 = **2353**（[LIVE] 三法计数）；DBLP 数若因 front matter/口径差异 ≠2353，`note` 说明。**enumerate 完整性判定 = `?day=all` 全集数 == anchor 表**（"与 DBLP ±0"经人工核准的 anchor 传递，勘察 2353 为量级锚点）。
+  - **D-019 锚点快照**：`tests/fixtures/cvf/dblp-cvf-anchor.json`——逐 (venue, year) `{venue, year, paper_count_claimed, dblp_slug, note}`；**人工对照 DBLP TOC**（`dblp.org/db/conf/cvpr/cvpr2023.html`）核准（UPDATE_GOLDEN 纪律、records 留痕）。种子行：CVPR2023 = **2353**（[LIVE] 三法计数）。**D-019 人工 DBLP 核准已闭合 [LIVE 2026-07-23]**：实测 `class="entry inproceedings"` 计数 = 2353，与站内三法计数**精确匹配**（无 front matter/口径差异；另测得 3 条 `entry withdrawn` 撤稿记录，DBLP 单列不计入主计数）；核准出处见 fixture 该行 `note`/`dblp_toc_count`/`dblp_cross_check`。其余 27 届仍 `PENDING_DBLP_CROSSCHECK`（`count_status` 表级仍为 `PARTIAL_SEED`，未变）。**enumerate 完整性判定 = `?day=all` 全集数 == anchor 表**（"与 DBLP ±0"经人工核准的 anchor 传递，勘察 2353 为量级锚点）。
 - **canary 样本（抗 flake，arxiv/openreview 先例）**：**3 个跨年+跨 era 固定样本**——CVPR2023（现代 day_all）、某 ICCV 奇数年（如 ICCV2021，验双年制路由）、CVPR2013（**flat 早年**，验双形态解析器不退化）；每样本比对**空白规整化 title + 第二稳定字段**（首作者 `query_author` 或 identifier stem），**不做原串精确匹配**（避免折行/微调误报 DRIFT）；另附 1 条计数锚点（`CVPR2023?day=all` 条目数 == 2353，容 `note` 记录的口径差）。
 - **T6 runbook**：无（AC-2.4 为一次性验收，无 7 日类场景）。
 - **验收关联**：AC-2.4；测试类型定义见 [testing/test-plan.md](../../testing/test-plan.md)。
