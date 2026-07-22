@@ -30,6 +30,9 @@ aaai_ojs = "paper_crawler.adapters.aaai_ojs.adapter:AaaiOjsAdapter"
 neurips_proceedings = "paper_crawler.adapters.neurips_proceedings.adapter:NeuripsProceedingsAdapter"
 unpaywall = "paper_crawler.adapters.unpaywall.adapter:UnpaywallAdapter"
 dblp = "paper_crawler.adapters.dblp.adapter:DblpAdapter"
+# T6：enrich 通道（capabilities 空集，无 ENUMERATE/SEARCH/FETCH/RESOLVE，不参与 pull）。
+openalex = "paper_crawler.adapters.openalex.adapter:OpenAlexAdapter"
+s2 = "paper_crawler.adapters.s2.adapter:S2Adapter"
 
 [dependency-groups]
 dev = [

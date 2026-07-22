@@ -38,6 +38,16 @@ class Config:
     # 家目录 config（仓库外，不入 git）；空白串归一为 None。**不入日志/报告**（obslog redact
     # 覆盖 cookie/token 形态）——故本字段绝不经 log_event 落盘。
     openreview_token: str | None = None
+    # T6（design/adapters/aggregators.md §5.3/§5.4）：openalex/s2 的可选 API key，沿
+    # openreview_token 先例——家目录 config（仓库外）+ 环境变量覆盖，空白串归一为 None，
+    # 不入日志/报告（obslog redact 覆盖 api_key/token 形态）。openalex key **可选**
+    # （匿名请求现状 [LIVE] 200，有 key 只是提升每日 credit 额度）；s2 key **生产必需**
+    # （无 key `enrich_batch` 直接 CONFIG，不发请求，D2）。
+    openalex_api_key: str | None = None
+    s2_api_key: str | None = None
+    # OpenAlex 每日 credit 预算上限（美元；aggregators.md §4 伪代码）：保守默认 0.50
+    # （≈ 无 key 5000 credits 的一半量级）。非凭证，可入日志/报告。
+    openalex_daily_budget_usd: float = 0.50
 
     @classmethod
     def load(cls, home: Path | None = None) -> "Config":
@@ -61,6 +71,9 @@ class Config:
         retry_scale = 1.0
         identity_email: str | None = None
         openreview_token: str | None = None
+        openalex_api_key: str | None = None
+        s2_api_key: str | None = None
+        openalex_daily_budget_usd = 0.50
         venues_dirs_override: tuple[Path, ...] | None = None
 
         config_file = resolved_home / "config.toml"
@@ -84,12 +97,31 @@ class Config:
             raw_token = doc.get("auth", {}).get("openreview", {}).get("token")
             if isinstance(raw_token, str) and raw_token.strip():
                 openreview_token = raw_token.strip()
+            # [auth.openalex].api_key / [auth.s2].api_key（T6，aggregators.md §5.3/§5.4）：
+            # 空白串归一为 None，同 openreview token 口径。
+            auth_doc = doc.get("auth", {})
+            raw_openalex_key = auth_doc.get("openalex", {}).get("api_key")
+            if isinstance(raw_openalex_key, str) and raw_openalex_key.strip():
+                openalex_api_key = raw_openalex_key.strip()
+            raw_s2_key = auth_doc.get("s2", {}).get("api_key")
+            if isinstance(raw_s2_key, str) and raw_s2_key.strip():
+                s2_api_key = raw_s2_key.strip()
+            # [openalex].daily_budget_usd（T6，aggregators.md §4 伪代码）：非凭证数值。
+            openalex_daily_budget_usd = float(
+                doc.get("openalex", {}).get("daily_budget_usd", openalex_daily_budget_usd)
+            )
 
-        # 环境变量 PAPER_CRAWLER_OPENREVIEW_TOKEN 覆盖 config.toml（12-factor 惯例；
-        # CI/临时会话不落盘 token 的通道）。空白归一为 None。
+        # 环境变量覆盖 config.toml（12-factor 惯例；CI/临时会话不落盘凭证的通道）。
+        # 空白归一为 None——同 PAPER_CRAWLER_OPENREVIEW_TOKEN 既有先例。
         env_token = os.environ.get("PAPER_CRAWLER_OPENREVIEW_TOKEN", "").strip()
         if env_token:
             openreview_token = env_token
+        env_openalex_key = os.environ.get("PAPER_CRAWLER_OPENALEX_API_KEY", "").strip()
+        if env_openalex_key:
+            openalex_api_key = env_openalex_key
+        env_s2_key = os.environ.get("PAPER_CRAWLER_S2_API_KEY", "").strip()
+        if env_s2_key:
+            s2_api_key = env_s2_key
 
         if venues_dirs_override is not None:
             venues_dirs = venues_dirs_override
@@ -114,6 +146,9 @@ class Config:
             retry_scale=retry_scale,
             identity_email=identity_email,
             openreview_token=openreview_token,
+            openalex_api_key=openalex_api_key,
+            s2_api_key=s2_api_key,
+            openalex_daily_budget_usd=openalex_daily_budget_usd,
         )
 
     def ensure_dirs(self) -> None:

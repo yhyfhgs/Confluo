@@ -162,3 +162,56 @@ version`/`best_oa_location.url_for_pdf`/`oa_locations` 计数四项系 D-019 锚
 mock 回放素材；真实在线核对留待 `tests/online/test_unpaywall_smoke.py`（已写、
 按契约未执行，MAX_REAL_REQUESTS=1）。加载器 `tests/helpers/unpaywall_fixtures.py`
 （`fixture_bytes`/`http_fixture`，与 openreview 同构）。
+
+## OpenAlex fixture 八件套（Phase 3 T6；design/adapters/aggregators.md §5.3/§8）
+
+`tests/fixtures/openalex/`（无 `golden/` 层——断言在
+`tests/unit/test_openalex_parse.py` / `test_openalex_adapter.py`）：
+
+| 件 | 文件 | 覆盖（aggregators.md §5.3/§8） |
+|---|---|---|
+| ① | `01_works_normal.json` | 正常批查（两条记录：一含 `abstract_inverted_index`/多作者/OA 全字段，一空倒排索引+空作者+closed），`meta.cost_usd` |
+| ② | `02_works_empty.json` | 空结果（`count:0`），`meta.cost_usd` 仍读取 |
+| ③ | `03_works_402_budget_exhausted.http` | 402 credit 耗尽 → `rate_limited` 特化（预算熔断同语义） |
+| ④ | `04_works_malformed_inverted_index.json` | `abstract_inverted_index` 畸形（值非位置列表）→ `parse` |
+| ⑤ | `05_works_429.http` | 429 + Retry-After → `rate_limited` |
+| ⑥ | `06_works_400_bad_filter.http` | 400（filter 语法）→ `config` |
+| ⑦ | `07_works_500.http` | 5xx → `transient` |
+| ⑧ | `08_single_work_healthcheck.json` | 单条 `GET /works/W{id}`（healthcheck 用） |
+
+**⚠ 部分为 [LIVE] 存在性核验 + 合成外壳**：①第一条记录/⑧的 DOI/OpenAlex id/title
+取自真实存在的知名条目（Piwowar et al. 2018 "The state of OA"，`W2741809807`）——
+仅借其真实存在性避免"合成假设"（Phase 2 教训），`abstract_inverted_index`/
+`open_access` 等具体字段值仍为构造值，未经本次实现在线核验（[PENDING]，healthcheck
+`_HEALTHCHECK_TITLE` 留待在线冒烟 UPDATE_GOLDEN 捕获）。加载器
+`tests/helpers/openalex_fixtures.py`（`fixture_bytes`/`http_fixture`，与
+crossref/unpaywall 同构）。真实在线核对留待 `tests/online/test_openalex_smoke.py`
+（已写、按契约未执行，MAX_REAL_REQUESTS=1；用 D-019 **负锚点** DOI
+`10.1257/aer.20221079` 而非本节的正锚点，避免依赖任何论文措辞随出版社修订漂移）。
+
+## S2 (Semantic Scholar) fixture 七件套（Phase 3 T6；design/adapters/aggregators.md §5.4/§8）
+
+`tests/fixtures/s2/`（无 `golden/` 层——断言在
+`tests/unit/test_s2_parse.py` / `test_s2_adapter.py`）：
+
+| 件 | 文件 | 覆盖（aggregators.md §5.4/§8） |
+|---|---|---|
+| ① | `01_batch_normal.json` | 正常 `POST /paper/batch` 响应（数组：一命中含 `citationCount`/`tldr`/`fieldsOfStudy`/`openAccessPdf`，一 `null` 未命中，一命中但缺 title→跳过） |
+| ② | `02_single_not_found_404.http` | 404 not-found（单条端点；"有 key 真缺"场景，靠 key 存在性预判区分"无 key"同状态码症状） |
+| ③ | `03_batch_429.http` | 429 + Retry-After（有 key 超速）→ `rate_limited` |
+| ④ | `04_batch_400_bad_fields.http` | 400（`fields=` 语法）→ `config` |
+| ⑤ | `05_batch_500.http` | 5xx → `transient` |
+| ⑥ | `06_batch_malformed.json` | 顶层非数组（S2 batch 响应契约要求数组）→ `parse` |
+| ⑦ | `07_single_paper_healthcheck.json` | 单条 `GET /paper/DOI:{doi}?fields=title`（healthcheck 用） |
+
+"无 key"场景（§8 表第④项）**不落 fixture 文件**——`enrich_batch` 在函数入口直接
+判定 key 是否配置，未配置立即 `CrawlerError(CONFIG)`、不发任何请求（不靠状态码
+推断，D2），故没有可回放的响应体；`tests/unit/test_s2_adapter.py` 用
+`_never`（一发请求即 `AssertionError`）handler 直接验证这条"零网络"路径，②号
+fixture 的 404 body 在该测试的注释里作为"若发了请求会看到什么症状"的参照。
+**⚠ 部分为 [LIVE] 存在性核验 + 合成外壳**：①/⑦的 `paperId`/DOI/title 取自真实存在
+的知名论文（"Attention Is All You Need"，Vaswani et al. 2017）——S2 key 用户申请中
+未经本次实现在线核验，`citationCount` 等具体数值为构造值（真实值会随时间增长，
+不宜写死）。加载器 `tests/helpers/s2_fixtures.py`。真实在线核对留待
+`tests/online/test_s2_smoke.py`（已写、按契约未执行且 `pytest.mark.skipif` 无 key
+门控，MAX_REAL_REQUESTS=1）。
