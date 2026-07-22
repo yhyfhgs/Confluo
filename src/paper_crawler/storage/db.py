@@ -11,14 +11,150 @@
 
 from __future__ import annotations
 
+import json
 import shutil
 import sqlite3
-from collections.abc import Iterator, Sequence
+from collections.abc import Callable, Iterator, Sequence
 from contextlib import contextmanager
 from pathlib import Path
 
 # 迁移脚本目录（包内）。测试可 monkeypatch 本常量指向临时目录以覆盖多步迁移/备份路径。
 MIGRATIONS_DIR = Path(__file__).parent / "migrations"
+
+# doi 归一碰撞 candidate_duplicate 的置信度（归一后同 DOI=强证据，但仍留人审不自动合并）。
+_DOI_COLLISION_CONFIDENCE = 0.99
+
+
+def _backfill_title_norm(conn: sqlite3.Connection) -> None:
+    """schema v2（0002）Python 回填：为存量 paper 行计算 `title_norm`。
+
+    SQL 无法表达 `ids.normalize_title` 的 LaTeX 宏剥离/Unicode 折叠——故以 Python 步在
+    同一迁移事务内、`ADD COLUMN` 之后执行。`WHERE title_norm IS NULL` 使其幂等（重跑或
+    部分回填后再跑均安全）。局部 import 避免 storage 层顶层依赖上层模块（`ids` 是无内部
+    依赖的叶子模块，无环）。
+    """
+    from paper_crawler.ids import normalize_title
+
+    rows = conn.execute("SELECT id, title FROM paper WHERE title_norm IS NULL").fetchall()
+    for row in rows:
+        conn.execute(
+            "UPDATE paper SET title_norm = ? WHERE id = ?",
+            (normalize_title(row["title"]), row["id"]),
+        )
+
+
+def _insert_doi_collision_candidate(
+    conn: sqlite3.Connection, paper_a: str, paper_b: str, normalized: str, original: str
+) -> None:
+    """两 paper 的 doi 归一后同形（实为同一著作）→ 建 candidate_duplicate(decided=NULL) 留人审。
+
+    碰撞形态涵盖大小写异形**与前缀异形**（`https://doi.org/`、`doi:`）——故 evidence reason
+    用中性标签 `doi-normalization-collision`（非仅 case）。端点按 paper id 升序定向（迁移
+    一次性、单库内确定性即可）；`ON CONFLICT DO NOTHING` 幂等。绝不自动合并两 paper 行
+    （06 §3：宁可两条待审）。
+    """
+    from_paper, to_paper = sorted((paper_a, paper_b))
+    evidence = json.dumps(
+        {
+            "reason": "doi-normalization-collision",
+            "doi_normalized": normalized,
+            "doi_original": original,
+        },
+        ensure_ascii=False,
+        sort_keys=True,
+    )
+    conn.execute(
+        "INSERT INTO paper_relation "
+        "(from_paper, to_paper, kind, confidence, evidence_json, decided) "
+        "VALUES (?,?,?,?,?,?) "
+        "ON CONFLICT (from_paper, to_paper, kind) DO NOTHING",
+        (from_paper, to_paper, "candidate_duplicate", _DOI_COLLISION_CONFIDENCE, evidence, None),
+    )
+
+
+def _restore_primary_if_needed(conn: sqlite3.Connection, paper_id: str) -> None:
+    """paper 删 identifier 后若失去 primary 但仍有 identifier → 把最小 (scheme,value) 提为 primary。
+
+    0002 归一删除碰撞的 doi 异形行时，被删的可能正是该 paper 的 `is_primary` 行（如同一 paper
+    上大小写/前缀异形冗余、异形恰为 primary），留下"有 identifier 却无 primary"的破缺——补回
+    单一 primary 不变量。同 paper 冗余场景下留存的正是归一行（doi-only 时即最小行），故被提为
+    primary，与 controller 裁定一致。已有 primary 则空操作。
+    """
+    has_primary = conn.execute(
+        "SELECT 1 FROM identifier WHERE paper_id = ? AND is_primary = 1 LIMIT 1",
+        (paper_id,),
+    ).fetchone()
+    if has_primary is not None:
+        return
+    row = conn.execute(
+        "SELECT scheme, value FROM identifier WHERE paper_id = ? ORDER BY scheme, value LIMIT 1",
+        (paper_id,),
+    ).fetchone()
+    if row is not None:
+        conn.execute(
+            "UPDATE identifier SET is_primary = 1 WHERE paper_id = ? AND scheme = ? AND value = ?",
+            (paper_id, row["scheme"], row["value"]),
+        )
+
+
+def _normalize_doi_identifiers(conn: sqlite3.Connection) -> None:
+    """schema v2（0002）Python 回填：把 identifier 表 doi 行归一到 `normalize_doi` 规范形。
+
+    D-裁决 2026-07-22：`normalize_doi` 是 identifier 写入的唯一归一入口，存量 doi 行一并
+    收敛。逐行（`ORDER BY value` 确定性）处理归一前后不同的 doi（大小写/前缀异形）：
+      - 归一形无既有行 → 就地 UPDATE 该行 value；
+      - 归一形已存在且指向**同一** paper（异形冗余）→ 删归一前的冗余行；
+      - 归一形已存在且指向**不同** paper（归一碰撞=库内本存同一著作两行）→ 删本行、
+        保留归一形所在行、两 paper 间建 `candidate_duplicate` 留人审——**不静默丢 paper 行**。
+    删行后经 `_restore_primary_if_needed` 补回被删 primary 异形留下的 primary 破缺。
+    快照先 `fetchall` 再逐行处理（避免游标随写失效）；每次 target 查询为实时态（含前序迭代
+    的写），故顺序敏感的碰撞判定确定。全程在 0002 迁移事务内。
+    """
+    from paper_crawler.ids import DOI_SCHEME, normalize_doi
+
+    rows = conn.execute(
+        "SELECT paper_id, value FROM identifier WHERE scheme = ? ORDER BY value",
+        (DOI_SCHEME,),
+    ).fetchall()
+    for row in rows:
+        original = str(row["value"])
+        normalized = normalize_doi(original)
+        if normalized == original:
+            continue
+        this_paper = str(row["paper_id"])
+        target = conn.execute(
+            "SELECT paper_id FROM identifier WHERE scheme = ? AND value = ?",
+            (DOI_SCHEME, normalized),
+        ).fetchone()
+        if target is None:
+            conn.execute(
+                "UPDATE identifier SET value = ? WHERE scheme = ? AND value = ?",
+                (normalized, DOI_SCHEME, original),
+            )
+            continue
+        conn.execute(
+            "DELETE FROM identifier WHERE scheme = ? AND value = ?",
+            (DOI_SCHEME, original),
+        )
+        _restore_primary_if_needed(conn, this_paper)
+        target_paper = str(target["paper_id"])
+        if target_paper != this_paper:
+            _insert_doi_collision_candidate(conn, this_paper, target_paper, normalized, original)
+
+
+def _migrate_v2(conn: sqlite3.Connection) -> None:
+    """schema v2（0002_title_norm.sql）的 Python 后置步：title_norm 回填 + doi identifier 归一。"""
+    _backfill_title_norm(conn)
+    _normalize_doi_identifiers(conn)
+
+
+# 迁移的 Python 后置步：**按文件名绑定**（非仅版本号），故对测试里 monkeypatch 出的
+# 同版本号但不同内容的迁移（如 `0002_b.sql`）不误触发——只有 0001_init.sql 之后真正的
+# `0002_title_norm.sql` 会跑本步。每个 Python 步在其 SQL 语句之后、写 schema_version
+# 之前、同一事务内执行（见 `_apply`）。
+_PY_MIGRATIONS: dict[str, Callable[[sqlite3.Connection], None]] = {
+    "0002_title_norm.sql": _migrate_v2,
+}
 
 
 def _iter_statements(script: str) -> Iterator[str]:
@@ -150,6 +286,11 @@ class Database:
         try:
             for statement in _iter_statements(script):
                 conn.execute(statement)
+            # SQL 之后、写版本号之前：若本迁移文件注册了 Python 后置步（如 0002 的
+            # title_norm 回填），在同一事务内执行——SQL 失败或 Python 步失败都整步回滚。
+            py_step = _PY_MIGRATIONS.get(path.name)
+            if py_step is not None:
+                py_step(conn)
             # schema_version 由 0001 创建（0 行）或既存（1 行）；DELETE+INSERT 两种情形统一。
             conn.execute("DELETE FROM schema_version")
             conn.execute("INSERT INTO schema_version(version) VALUES (?)", (version,))
