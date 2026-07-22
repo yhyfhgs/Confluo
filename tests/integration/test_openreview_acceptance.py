@@ -62,10 +62,24 @@ def test_2013_2014_note_marks_arxiv_body() -> None:
         assert "arxiv" in str(_ANCHOR_BY_YEAR[year]["note"]).lower()
 
 
-def test_anchor_counts_pending_token() -> None:
-    # 正式 count 待 token（在线部分 BLOCKED）——离线层不判 count。
-    assert _ANCHOR["count_status"] == "PENDING_TOKEN"
-    assert all(e["accepted_count"] is None for e in _ANCHOR["years"])
+def test_anchor_accepted_counts_live_populated() -> None:
+    # accepted_count 已由 [LIVE] 2026-07-22 token 化查询填充（content.venueid=<group_id>
+    # count；见 live_verification）。2024 是唯一 DBLP 交叉核验的干净 accepted 值。
+    assert _ANCHOR["count_status"] == "LIVE_2026-07-22_HETEROGENEOUS"
+    e2024 = _ANCHOR_BY_YEAR[2024]
+    assert e2024["accepted_count"] == 2260  # [LIVE] api2 v2 content.venueid count
+    assert e2024["accepted_count"] == e2024["dblp_toc_count"]  # 2260 == 2260 两源互证
+    assert e2024["accepted_count_endpoint"] == "v2"
+    # 缺届（2015/2016）无 OpenReview 群 → accepted_count 恒 None。
+    for year in (2015, 2016):
+        assert _ANCHOR_BY_YEAR[year]["accepted_count"] is None
+    # 其余有 venueid 的届均已填充为 int（含异常届 2013/2014/2018/2019 记 0）。
+    for year, entry in _ANCHOR_BY_YEAR.items():
+        if entry["openreview_venueid"]:
+            assert isinstance(entry["accepted_count"], int), f"year {year} accepted_count 未填充"
+    # heterogeneity 口径（method + caveat）在 live_verification 明示（如实记录，非静默）。
+    lv = _ANCHOR["live_verification"]
+    assert "accepted_count_method" in lv and "accepted_count_caveat" in lv
 
 
 # --- timeline iclr（零网络）落库年集合 == anchor 非空年 -------------------------------------

@@ -1,30 +1,167 @@
 {
-  "_doc": "AC-2.1 anchor golden (design/adapters/openreview.md §7). Per-year {year, openreview_venueid|null, accepted_count, dblp_slug, dblp_toc_count, survey_approx_count, note}. STRUCTURE (year list + venueid case) is authoritative and asserted offline (tests/integration/test_openreview_acceptance.py). accepted_count (OpenReview venueid-filtered accepted count) is null = PENDING user token: [LIVE] 2026-07-22 the configured token was EXPIRED (401 TokenExpiredError — not a UA challenge, not a code defect; the cookie mechanism was server-validated correct), so the token-gated /notes sweep is BLOCKED pending a refreshed token. dblp_toc_count = [LIVE] 2026-07-22 count of `<li class=\"entry inproceedings\">` on dblp.org/db/conf/iclr/iclr<year>.html (main-conference papers; the single `entry editor` = proceedings volume, excluded); populated for a representative subset (2013,2014,2015,2016,2024) — the remaining modern years' DBLP counts are deferred to the same session that unblocks the OpenReview accepted_count column (so both columns are captured together for the real cross-check). CORRECTION (supersedes prior draft + site-survey §9): DBLP DOES index iclr2015/iclr2016 (electronic edition @ iclr.cc, not openreview.net) — the survey's 'both sides missing 2015/2016' was falsified [LIVE]; OpenReview simply never hosted those two main conferences (2015 no conference group; 2016 only ICLR.cc/2016/workshop). survey_approx_count carries the site-survey §9 magnitude seed for reference ONLY.",
+  "_doc": "AC-2.1 anchor golden (design/adapters/openreview.md §7). Per-year {year, openreview_venueid|null, accepted_count, dblp_slug, dblp_toc_count, survey_approx_count, note}. STRUCTURE (year list + venueid case) is authoritative and asserted offline (tests/integration/test_openreview_acceptance.py). accepted_count (OpenReview venueid-filtered accepted count) is null = PENDING user token: [LIVE] 2026-07-22 the configured token was EXPIRED (401 TokenExpiredError — not a UA challenge, not a code defect; the cookie mechanism was server-validated correct), so the token-gated /notes sweep is BLOCKED pending a refreshed token. dblp_toc_count = [LIVE] 2026-07-22 count of `<li class=\"entry inproceedings\">` on dblp.org/db/conf/iclr/iclr<year>.html (main-conference papers; the single `entry editor` = proceedings volume, excluded); populated for a representative subset (2013,2014,2015,2016,2024) — the remaining modern years' DBLP counts are deferred to the same session that unblocks the OpenReview accepted_count column (so both columns are captured together for the real cross-check). CORRECTION (supersedes prior draft + site-survey §9): DBLP DOES index iclr2015/iclr2016 (electronic edition @ iclr.cc, not openreview.net) — the survey's 'both sides missing 2015/2016' was falsified [LIVE]; OpenReview simply never hosted those two main conferences (2015 no conference group; 2016 only ICLR.cc/2016/workshop). survey_approx_count carries the site-survey §9 magnitude seed for reference ONLY. | [LIVE UPDATE 2026-07-22 AC-2.2 final] accepted_count populated from content.venueid=<group_id> note count (limit=1000; see live_verification). count_status LIVE_2026-07-22_HETEROGENEOUS: values are the adapter accepted-filter count on the serving endpoint, DBLP-cross-validated only at 2024 (2260). Anomalies (2018/2019=0 both APIs; 2022/2023 v1 inflated; 2013/2014=0 arXiv-era) recorded per-year.",
   "venue": "iclr",
   "series": "ICLR.cc",
-  "count_status": "PENDING_TOKEN",
+  "count_status": "LIVE_2026-07-22_HETEROGENEOUS",
   "live_verification": {
     "date": "2026-07-22",
-    "openreview_token_status": "EXPIRED (401 TokenExpiredError); accepted_count sweep BLOCKED pending user token refresh",
-    "timeline_vs_live_venues": "±0 EXACT — `timeline iclr` years {2013,2014,2017-2027} == live OpenReview `groups?id=venues` ICLR main-conference groups (case-exact: lowercase 'conference' 2013/2014/2017, uppercase 'Conference' 2018+); 2026/2027 Conference groups exist with domain (v2)",
-    "timeline_vs_dblp_index": "NOT ±0 — DBLP-only {2015,2016} (main conf @ iclr.cc, absent from OpenReview) + OpenReview-only {2026,2027} (DBLP proceedings not yet published). All differences are explained scope/口径 differences, not adapter defects.",
-    "dblp_count_method": "count of `<li class=\"entry inproceedings\">` on iclr<year>.html; 2024=2260 matches survey_approx_count 2260 (method cross-validated)."
+    "openreview_token_status": "VALID (refreshed; all requests 200, no 401/403)",
+    "accepted_count_method": "count from GET <endpoint>/notes?content.venueid=<group_id>&limit=1000 (the adapter's accepted-filter query). limit=1000 is REQUIRED: api2/v2 OMITS the `count` envelope field at limit=1 (empirically confirmed 2026-07-22) — it only returns `count` at limit=1000. Endpoint per served data: v2/api2 for 2024/2025/2026; v1/api.openreview.net for 2017/2020/2021/2022/2023; count==0 on BOTH APIs for 2013/2014/2018/2019.",
+    "accepted_count_caveat": "HETEROGENEOUS across editions — the content.venueid==group_id count is NOT uniformly 'accepted only'. VALIDATED == DBLP accepted ONLY at 2024 (2260==2260). v1-served 2022/2023 (2617/3792) exceed survey accepted (~1095/~1570) → include non-accepted submissions. 2018/2019 == 0 on BOTH APIs (accepted notes carry a non-group-id content.venueid; adapter accepted-filter would enumerate 0). 2013/2014 == 0 (arXiv-body era). This falsifies the 'one limit=1 request → clean accepted count per year' assumption; see acceptance report concerns.",
+    "timeline_vs_live_venues": "±0 EXACT — `timeline iclr` years {2013,2014,2017-2027} == live OpenReview `groups?id=venues` ICLR main-conference groups (case-exact). Re-confirmed [LIVE] 2026-07-22 by tests/online AC-2.1 (PASSED).",
+    "timeline_vs_dblp_index": "NOT ±0 — DBLP-only {2015,2016} + OpenReview-only {2026,2027}. Explained scope differences, not adapter defects.",
+    "dblp_count_method": "count of `<li class=\"entry inproceedings\">` on iclr<year>.html; 2024=2260 matches both survey_approx_count 2260 and the [LIVE] OpenReview accepted count 2260."
   },
   "years": [
-    {"year": 2013, "openreview_venueid": "ICLR.cc/2013/conference", "accepted_count": null, "dblp_toc_count": 23, "survey_approx_count": null, "dblp_slug": "iclr2013", "note": "body on arXiv (OpenReview holds reviews only); DBLP electronic edition @ openreview.net, 23 conference-track inproceedings (Oral+Poster); OpenReview accepted_count pending token"},
-    {"year": 2014, "openreview_venueid": "ICLR.cc/2014/conference", "accepted_count": null, "dblp_toc_count": 35, "survey_approx_count": null, "dblp_slug": "iclr2014", "note": "body on arXiv (OpenReview holds reviews only); DBLP electronic edition @ openreview.net, 35 conference-track inproceedings (Oral+Poster); OpenReview accepted_count pending token"},
-    {"year": 2015, "openreview_venueid": null, "accepted_count": null, "dblp_toc_count": 31, "survey_approx_count": null, "dblp_slug": "iclr2015", "note": "main conference held (DBLP iclr2015 = 31 inproceedings, electronic edition @ iclr.cc) but NOT on OpenReview (no ICLR.cc/2015 conference group) — DBLP-only vs timeline; [LIVE] correction: DBLP is NOT missing this year"},
-    {"year": 2016, "openreview_venueid": null, "accepted_count": null, "dblp_toc_count": 80, "survey_approx_count": null, "dblp_slug": "iclr2016", "note": "main conference held (DBLP iclr2016 = 80 inproceedings, electronic edition @ iclr.cc) but NOT a conference volume on OpenReview (only ICLR.cc/2016/workshop exists) — DBLP-only vs timeline; [LIVE] correction: DBLP is NOT missing this year"},
-    {"year": 2017, "openreview_venueid": "ICLR.cc/2017/conference", "accepted_count": null, "dblp_toc_count": null, "survey_approx_count": 200, "dblp_slug": "iclr2017", "note": "lowercase conference; OpenReview accepted_count pending token; DBLP toc_count deferred to the count-unblock session"},
-    {"year": 2018, "openreview_venueid": "ICLR.cc/2018/Conference", "accepted_count": null, "dblp_toc_count": null, "survey_approx_count": 330, "dblp_slug": "iclr2018", "note": "uppercase Conference from 2018; OpenReview accepted_count pending token; DBLP toc_count deferred"},
-    {"year": 2019, "openreview_venueid": "ICLR.cc/2019/Conference", "accepted_count": null, "dblp_toc_count": null, "survey_approx_count": 500, "dblp_slug": "iclr2019", "note": "OpenReview accepted_count pending token; DBLP toc_count deferred"},
-    {"year": 2020, "openreview_venueid": "ICLR.cc/2020/Conference", "accepted_count": null, "dblp_toc_count": null, "survey_approx_count": 690, "dblp_slug": "iclr2020", "note": "OpenReview accepted_count pending token; DBLP toc_count deferred"},
-    {"year": 2021, "openreview_venueid": "ICLR.cc/2021/Conference", "accepted_count": null, "dblp_toc_count": null, "survey_approx_count": 860, "dblp_slug": "iclr2021", "note": "OpenReview accepted_count pending token; DBLP toc_count deferred"},
-    {"year": 2022, "openreview_venueid": "ICLR.cc/2022/Conference", "accepted_count": null, "dblp_toc_count": null, "survey_approx_count": 1095, "dblp_slug": "iclr2022", "note": "OpenReview accepted_count pending token; DBLP toc_count deferred"},
-    {"year": 2023, "openreview_venueid": "ICLR.cc/2023/Conference", "accepted_count": null, "dblp_toc_count": null, "survey_approx_count": 1570, "dblp_slug": "iclr2023", "note": "OpenReview accepted_count pending token; DBLP toc_count deferred"},
-    {"year": 2024, "openreview_venueid": "ICLR.cc/2024/Conference", "accepted_count": null, "dblp_toc_count": 2260, "survey_approx_count": 2260, "dblp_slug": "iclr2024", "note": "DBLP iclr2024 = 2260 inproceedings (Accept oral/spotlight/poster), matches survey_approx 2260; OpenReview accepted_count pending token for the direct venueid-filtered cross-check"},
-    {"year": 2025, "openreview_venueid": "ICLR.cc/2025/Conference", "accepted_count": null, "dblp_toc_count": null, "survey_approx_count": 3600, "dblp_slug": "iclr2025", "note": "OpenReview accepted_count pending token; DBLP toc_count deferred; survey approx unverified"},
-    {"year": 2026, "openreview_venueid": "ICLR.cc/2026/Conference", "accepted_count": null, "dblp_toc_count": null, "survey_approx_count": null, "dblp_slug": null, "note": "[LIVE] OpenReview ICLR.cc/2026/Conference venue group EXISTS (v2, has domain); DBLP proceedings volume not yet published (OpenReview-only vs DBLP)"},
-    {"year": 2027, "openreview_venueid": "ICLR.cc/2027/Conference", "accepted_count": null, "dblp_toc_count": null, "survey_approx_count": null, "dblp_slug": null, "note": "[LIVE] OpenReview ICLR.cc/2027/Conference placeholder venue group EXISTS (v2, has domain); edition not yet held; DBLP proceedings not published (OpenReview-only vs DBLP)"}
+    {
+      "year": 2013,
+      "openreview_venueid": "ICLR.cc/2013/conference",
+      "accepted_count": 0,
+      "dblp_toc_count": 23,
+      "survey_approx_count": null,
+      "dblp_slug": "iclr2013",
+      "note": "body on arXiv (OpenReview holds reviews only); DBLP electronic edition @ openreview.net, 23 conference-track inproceedings (Oral+Poster); [LIVE] content.venueid=ICLR.cc/2013/conference count=0 on v1 (api.openreview.net) — pre-venueid-convention era, adapter accepted-filter yields 0 (papers are cross-source on arXiv, Phase 3)",
+      "accepted_count_endpoint": "v1_zero"
+    },
+    {
+      "year": 2014,
+      "openreview_venueid": "ICLR.cc/2014/conference",
+      "accepted_count": 0,
+      "dblp_toc_count": 35,
+      "survey_approx_count": null,
+      "dblp_slug": "iclr2014",
+      "note": "body on arXiv (OpenReview holds reviews only); DBLP electronic edition @ openreview.net, 35 conference-track inproceedings (Oral+Poster); [LIVE] content.venueid=ICLR.cc/2014/conference count=0 on v1 — pre-venueid-convention era, adapter accepted-filter yields 0 (arXiv cross-source)",
+      "accepted_count_endpoint": "v1_zero"
+    },
+    {
+      "year": 2015,
+      "openreview_venueid": null,
+      "accepted_count": null,
+      "dblp_toc_count": 31,
+      "survey_approx_count": null,
+      "dblp_slug": "iclr2015",
+      "note": "main conference held (DBLP iclr2015 = 31 inproceedings, electronic edition @ iclr.cc) but NOT on OpenReview (no ICLR.cc/2015 conference group) — DBLP-only vs timeline; [LIVE] correction: DBLP is NOT missing this year",
+      "accepted_count_endpoint": "no_openreview_group"
+    },
+    {
+      "year": 2016,
+      "openreview_venueid": null,
+      "accepted_count": null,
+      "dblp_toc_count": 80,
+      "survey_approx_count": null,
+      "dblp_slug": "iclr2016",
+      "note": "main conference held (DBLP iclr2016 = 80 inproceedings, electronic edition @ iclr.cc) but NOT a conference volume on OpenReview (only ICLR.cc/2016/workshop exists) — DBLP-only vs timeline; [LIVE] correction: DBLP is NOT missing this year",
+      "accepted_count_endpoint": "no_openreview_group"
+    },
+    {
+      "year": 2017,
+      "openreview_venueid": "ICLR.cc/2017/conference",
+      "accepted_count": 543,
+      "dblp_toc_count": null,
+      "survey_approx_count": 200,
+      "dblp_slug": "iclr2017",
+      "note": "lowercase conference; [LIVE] content.venueid=ICLR.cc/2017/conference count=543 on v1 (api.openreview.net); v2/api2 returns 0 (this edition served only by v1). 543 exceeds site-survey approx ~200 (survey_approx_count) — v1 venueid membership is broader than DBLP conference track; DBLP toc_count not captured (deferred), no cross-check",
+      "accepted_count_endpoint": "v1"
+    },
+    {
+      "year": 2018,
+      "openreview_venueid": "ICLR.cc/2018/Conference",
+      "accepted_count": 0,
+      "dblp_toc_count": null,
+      "survey_approx_count": 330,
+      "dblp_slug": "iclr2018",
+      "note": "uppercase Conference from 2018; [LIVE] ANOMALY content.venueid=ICLR.cc/2018/Conference count=0 on BOTH v2 and v1 — this edition's accepted notes carry a different content.venueid value than the group id, so the adapter accepted-filter (content.venueid==group_id) matches nothing. survey_approx ~330. Flagged: adapter would enumerate 0 for 2018 (see report concerns)",
+      "accepted_count_endpoint": "both_zero"
+    },
+    {
+      "year": 2019,
+      "openreview_venueid": "ICLR.cc/2019/Conference",
+      "accepted_count": 0,
+      "dblp_toc_count": null,
+      "survey_approx_count": 500,
+      "dblp_slug": "iclr2019",
+      "note": "[LIVE] ANOMALY content.venueid=ICLR.cc/2019/Conference count=0 on BOTH v2 and v1 — same as 2018: accepted notes carry a non-group-id venueid; adapter accepted-filter matches nothing. survey_approx ~500. Flagged (see report concerns)",
+      "accepted_count_endpoint": "both_zero"
+    },
+    {
+      "year": 2020,
+      "openreview_venueid": "ICLR.cc/2020/Conference",
+      "accepted_count": 825,
+      "dblp_toc_count": null,
+      "survey_approx_count": 690,
+      "dblp_slug": "iclr2020",
+      "note": "[LIVE] content.venueid=ICLR.cc/2020/Conference count=825 on v1 (api.openreview.net); v2/api2 returns 0. 825 ~ survey_approx 690 (plausibly accepted-track). DBLP toc_count deferred",
+      "accepted_count_endpoint": "v1"
+    },
+    {
+      "year": 2021,
+      "openreview_venueid": "ICLR.cc/2021/Conference",
+      "accepted_count": 860,
+      "dblp_toc_count": null,
+      "survey_approx_count": 860,
+      "dblp_slug": "iclr2021",
+      "note": "[LIVE] content.venueid=ICLR.cc/2021/Conference count=860 on v1; v2/api2 returns 0. 860 == survey_approx 860 (exact match, plausibly accepted). DBLP toc_count deferred",
+      "accepted_count_endpoint": "v1"
+    },
+    {
+      "year": 2022,
+      "openreview_venueid": "ICLR.cc/2022/Conference",
+      "accepted_count": 2617,
+      "dblp_toc_count": null,
+      "survey_approx_count": 1095,
+      "dblp_slug": "iclr2022",
+      "note": "[LIVE] content.venueid=ICLR.cc/2022/Conference count=2617 on v1; v2/api2 returns 0. 2617 >> survey_approx accepted ~1095 → v1 count includes non-accepted submissions for this edition (NOT accepted-only). DBLP toc_count deferred",
+      "accepted_count_endpoint": "v1"
+    },
+    {
+      "year": 2023,
+      "openreview_venueid": "ICLR.cc/2023/Conference",
+      "accepted_count": 3792,
+      "dblp_toc_count": null,
+      "survey_approx_count": 1570,
+      "dblp_slug": "iclr2023",
+      "note": "[LIVE] content.venueid=ICLR.cc/2023/Conference count=3792 on v1; v2/api2 returns 0. 3792 >> survey_approx accepted ~1570 → v1 count includes non-accepted submissions (NOT accepted-only). DBLP toc_count deferred",
+      "accepted_count_endpoint": "v1"
+    },
+    {
+      "year": 2024,
+      "openreview_venueid": "ICLR.cc/2024/Conference",
+      "accepted_count": 2260,
+      "dblp_toc_count": 2260,
+      "survey_approx_count": 2260,
+      "dblp_slug": "iclr2024",
+      "note": "[LIVE] content.venueid=ICLR.cc/2024/Conference count=2260 on v2 (api2.openreview.net) — EXACT match to dblp_toc_count 2260 (accepted oral/spotlight/poster). This is the validated clean accepted count and the AC-2.2 pull target. limit=1000 required (api2 omits `count` at limit=1)",
+      "accepted_count_endpoint": "v2"
+    },
+    {
+      "year": 2025,
+      "openreview_venueid": "ICLR.cc/2025/Conference",
+      "accepted_count": 3703,
+      "dblp_toc_count": null,
+      "survey_approx_count": 3600,
+      "dblp_slug": "iclr2025",
+      "note": "[LIVE] content.venueid=ICLR.cc/2025/Conference count=3703 on v2 (api2); ~ survey_approx 3600 (plausibly accepted). DBLP toc_count deferred / iclr2025 volume; not cross-checked",
+      "accepted_count_endpoint": "v2"
+    },
+    {
+      "year": 2026,
+      "openreview_venueid": "ICLR.cc/2026/Conference",
+      "accepted_count": 5351,
+      "dblp_toc_count": null,
+      "survey_approx_count": null,
+      "dblp_slug": null,
+      "note": "[LIVE] content.venueid=ICLR.cc/2026/Conference count=5351 on v2 (api2); venue group has domain (v2). Edition recency: accepted-vs-submission semantics for this year unverified; DBLP proceedings not yet published (OpenReview-only vs DBLP)",
+      "accepted_count_endpoint": "v2"
+    },
+    {
+      "year": 2027,
+      "openreview_venueid": "ICLR.cc/2027/Conference",
+      "accepted_count": 0,
+      "dblp_toc_count": null,
+      "survey_approx_count": null,
+      "dblp_slug": null,
+      "note": "[LIVE] ICLR.cc/2027/Conference placeholder venue group EXISTS (v2, has domain) but edition not yet held — accepted_count recorded 0 by note (not queried); DBLP proceedings not published (OpenReview-only vs DBLP)",
+      "accepted_count_endpoint": "not_held"
+    }
   ]
 }
