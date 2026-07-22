@@ -5,13 +5,11 @@ neurips-proceedings.md SS6). This is NOT a full real 2022 year page (the real pa
 a small synthetic subset, entries deliberately interleaved (not grouped by track) to
 exercise the real site's mixed-listing behaviour (site-survey SS3/SS4):
 
-  - hash deadbeefdeadbeefdeadbeefdeadbeef / facefeedfacefeedfacefeedfacefeed are FULLY SYNTHETIC placeholders
-    (recognizable deadbeef/facefeed hex patterns) -- the site survey's request budget ran
-    out before a complete 2022 sample (hash+title) was captured (only a 6-hex-char
-    truncated hash from the request audit log survives, not enough to reconstruct a real
-    32-hex value). These mirror adapter.py's _CANARIES[1]/_CANARIES[2] verbatim -- a T5
-    online smoke test should replace both this file and those two canaries together with
-    a real captured 2022 sample.
+  - hash 2d52879ef2ba487445ca2e143b104c3b (conference, "Non-deep Networks") and
+    8c3c666820ea055a77726d66fc7d447f (datasets_and_benchmarks, "Long Range Graph Benchmark")
+    are REAL captured values ([LIVE] 2026-07-22, parsed verbatim from the live 2022 year
+    page). These mirror adapter.py's _CANARIES[1]/_CANARIES[2]; the fixture and those two
+    canaries must be edited together (test_neurips_proceedings_fixtures cross-checks).
   - the other two hashes (beef.../cafe...) are openly-synthetic filler.
 -->
 <!-- SYNTHETIC year page (Phase 2, neurips_proceedings adapter). Structure/selectors
@@ -22,9 +20,9 @@ exercise the real site's mixed-listing behaviour (site-survey SS3/SS4):
      for which hash is real vs synthetic. -->
 <html><body>
 <ul class="paper-list">
-    <li class="conference" data-track="conference"><div class="paper-content"><a title="paper title" href="/paper_files/paper/2022/hash/deadbeefdeadbeefdeadbeefdeadbeef-Abstract-Conference.html">SYNTHETIC placeholder canary title pending T5 real-value replacement (2022 conference)</a><span class="paper-authors">Canary Author</span></div><span class="paper-track-badge">Main Conference Track</span></li>
+    <li class="conference" data-track="conference"><div class="paper-content"><a title="paper title" href="/paper_files/paper/2022/hash/2d52879ef2ba487445ca2e143b104c3b-Abstract-Conference.html">Non-deep Networks</a><span class="paper-authors">Canary Author</span></div><span class="paper-track-badge">Main Conference Track</span></li>
     <li class="datasets_and_benchmarks" data-track="datasets_and_benchmarks"><div class="paper-content"><a title="paper title" href="/paper_files/paper/2022/hash/beefbeefbeefbeefbeefbeefbeefbeef-Abstract-Datasets_and_Benchmarks.html">Filler Paper for the 2022 Datasets and Benchmarks Track Fixture</a><span class="paper-authors">Filler Author D</span></div><span class="paper-track-badge">Datasets and Benchmarks Track</span></li>
     <li class="conference" data-track="conference"><div class="paper-content"><a title="paper title" href="/paper_files/paper/2022/hash/cafecafecafecafecafecafecafecafe-Abstract-Conference.html">Filler Paper for the 2022 Conference Track Fixture</a><span class="paper-authors">Filler Author C</span></div><span class="paper-track-badge">Main Conference Track</span></li>
-    <li class="datasets_and_benchmarks" data-track="datasets_and_benchmarks"><div class="paper-content"><a title="paper title" href="/paper_files/paper/2022/hash/facefeedfacefeedfacefeedfacefeed-Abstract-Datasets_and_Benchmarks.html">SYNTHETIC placeholder canary title pending T5 real-value replacement (2022 datasets_and_benchmarks)</a><span class="paper-authors">Canary Author</span></div><span class="paper-track-badge">Datasets and Benchmarks Track</span></li>
+    <li class="datasets_and_benchmarks" data-track="datasets_and_benchmarks"><div class="paper-content"><a title="paper title" href="/paper_files/paper/2022/hash/8c3c666820ea055a77726d66fc7d447f-Abstract-Datasets_and_Benchmarks.html">Long Range Graph Benchmark</a><span class="paper-authors">Canary Author</span></div><span class="paper-track-badge">Datasets and Benchmarks Track</span></li>
 </ul>
 </body></html>
