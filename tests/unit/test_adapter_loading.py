@@ -37,6 +37,7 @@ EXPECTED_ADAPTER_IDS = {
     "dblp",
     "openalex",  # T6
     "s2",  # T6
+    "oup_silverchair",  # Phase 4 T4（auth_gated，RESOLVE|FETCH）
 }
 VALID_FAMILIES = {"open_access", "auth_gated", "aggregator"}
 

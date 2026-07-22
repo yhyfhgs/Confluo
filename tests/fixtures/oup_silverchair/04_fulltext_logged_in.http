@@ -1,0 +1,44 @@
+# fixture ④/四件套 · 已登录全文页（ClassifyResult.OK）
+# 出处等级：⚠[SYNTHETIC] —— 合成占位。**runbook 首登后采真实脱敏样本替换**（无 OUP
+#   凭证的诚实现实；oup-silverchair.md §7）。结构依详设 §2/§3.1：storage_state 登录态
+#   全文页含 `<meta name="citation_pdf_url">`（完整 article-pdf URL，file_id 不可构造只可
+#   解析）+ 页内 `article-pdf` 下载锚点 + 账号标识（Sign out / My Account）+ 1 个
+#   Supplementary data 附件锚点。脱敏：无 cookie/token/storage_state/个人信息。
+# 判定依据：无挑战/登录/无权特征 + 账号标识 + 全文节点（article-pdf/citation_pdf_url）
+#   → OK → 解析器抽 citation_pdf_url 首选 → AssetPlan(PDF)。file_id=61701561 为**合成占位**，
+#   刻意非可构造值以印证「必须解析、不可拼接」。
+HTTP-STATUS: 200
+X-FINAL-URL: https://academic.oup.com/qje/article/141/3/2205/8662148
+content-type: text/html; charset=UTF-8
+
+<!DOCTYPE html>
+<html lang="en"><head>
+<title>A Synthetic Placeholder Article | The Quarterly Journal of Economics | Oxford Academic</title>
+<meta name="citation_title" content="A Synthetic Placeholder Article"/>
+<meta name="citation_doi" content="10.1093/qje/qjae044"/>
+<meta name="citation_pdf_url" content="https://academic.oup.com/qje/article-pdf/141/3/2205/61701561/qjae044.pdf"/>
+</head>
+<body>
+<header class="site-header">
+<nav class="user-account-menu">
+<button class="js-account-toggle">My Account</button>
+<ul class="account-dropdown">
+<li><a href="/my-account">My Account</a></li>
+<li><a href="/qje/subscribe">Purchase history</a></li>
+<li><a class="js-signout" href="/user/logout">Sign out</a></li>
+</ul>
+</nav>
+</header>
+<main>
+<h1 class="article-title-main">A Synthetic Placeholder Article</h1>
+<div class="article-toolbar">
+<a class="al-link pdf article-pdfLink" href="/qje/article-pdf/141/3/2205/61701561/qjae044.pdf">
+PDF</a>
+</div>
+<section class="abstract"><h2>Abstract</h2><p>Synthetic full-text access is present.</p></section>
+<section class="supplementary-data"><h2>Supplementary data</h2>
+<a href="/qje/article-pdf/141/3/2205/61701561/qjae044_supplementary_appendix.pdf">
+Supplementary Appendix - pdf file</a>
+</section>
+</main>
+</body></html>

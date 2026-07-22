@@ -38,6 +38,8 @@ aaai_ojs = "paper_crawler.adapters.aaai_ojs.adapter:AaaiOjsAdapter"
 neurips_proceedings = "paper_crawler.adapters.neurips_proceedings.adapter:NeuripsProceedingsAdapter"
 unpaywall = "paper_crawler.adapters.unpaywall.adapter:UnpaywallAdapter"
 dblp = "paper_crawler.adapters.dblp.adapter:DblpAdapter"
+# Phase 4 T4：OUP Silverchair 平台（auth_gated，RESOLVE|FETCH；QJE 等经济金融顶刊全文取回）。
+oup_silverchair = "paper_crawler.adapters.oup_silverchair.adapter:OupSilverchairAdapter"
 # T6：enrich 通道（capabilities 空集，无 ENUMERATE/SEARCH/FETCH/RESOLVE，不参与 pull）。
 openalex = "paper_crawler.adapters.openalex.adapter:OpenAlexAdapter"
 s2 = "paper_crawler.adapters.s2.adapter:S2Adapter"
