@@ -139,6 +139,10 @@ def test_canary_without_filter_checks_all_registered_adapters(
     result = runner.invoke(app, ["canary", "--home", str(_home(tmp_path))])
 
     assert result.exit_code == 0, result.output
+    # 断言列表须与 test_adapter_loading.py::EXPECTED_ADAPTER_IDS（全部已注册 adapter，
+    # 现 14 个）保持同步——Phase 4 M2b 检查单 #15d 发现本列表此前遗漏了 aaai_ojs/dblp
+    # 两个 Phase 2/3 落地的真实 adapter（上方猴补丁列表本就正确覆盖了它们的
+    # healthcheck，只是断言列表没跟上，属"打了补丁却没验证"的静默漏测）。
     for adapter_id in (
         "mock_platform",
         "arxiv",
@@ -148,7 +152,9 @@ def test_canary_without_filter_checks_all_registered_adapters(
         "elsevier_sd",
         "acl_anthology",
         "cvf",
+        "aaai_ojs",
         "neurips_proceedings",
+        "dblp",
         "unpaywall",
         "openalex",  # T6（SKIP 行——无 key）
         "s2",  # T6（SKIP 行——无 key）
