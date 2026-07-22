@@ -5,7 +5,7 @@ from pathlib import Path
 
 import pytest
 
-from paper_crawler.config import Config, describe_config
+from paper_crawler.config import Config, _find_project_config, describe_config
 from paper_crawler.errors import CrawlerError, ErrorClass
 
 # 分层加载引入的全部 PAPER_CRAWLER_* env——每个用例前清空，防宿主环境/跨例泄漏干扰断言。
@@ -504,3 +504,30 @@ def test_scale_non_number_raises_typeerror(
     _write(home / "config.toml", f"[rate]\nscale = {bad_scale}\n")
     with pytest.raises(TypeError):
         Config.load(home=home)
+
+
+# -- 项目级发现上界（NIT-1）：以 .git 仓库根为最后一层，不越界命中祖先 stray 文件 ------------
+
+
+def test_find_project_config_stops_at_git_root(tmp_path: Path) -> None:
+    """仓库根之上的祖先目录有 paper-crawler.toml → **不被命中**（.git 根即上界）。"""
+    ancestor = tmp_path / "ancestor"
+    repo = ancestor / "repo"
+    sub = repo / "pkg" / "deep"
+    sub.mkdir(parents=True)
+    # 祖先目录（仓库根之上）的 stray 同名文件——修复前会被任意子目录调用命中。
+    (ancestor / "paper-crawler.toml").write_text("[rate]\nscale = 0.1\n", encoding="utf-8")
+    (repo / ".git").mkdir()  # 仓库根标记（目录形态）
+    assert _find_project_config(sub) is None
+
+
+def test_find_project_config_found_at_git_root_level_worktree(tmp_path: Path) -> None:
+    """仓库根本层（`.git` 为**文件**，worktree 形态）的 paper-crawler.toml 仍被找到。"""
+    repo = tmp_path / "repo"
+    sub = repo / "pkg"
+    sub.mkdir(parents=True)
+    # worktree 形态：`.git` 是指针文件而非目录。
+    (repo / ".git").write_text("gitdir: /elsewhere/worktrees/x\n", encoding="utf-8")
+    proj = repo / "paper-crawler.toml"
+    proj.write_text("[rate]\nscale = 0.2\n", encoding="utf-8")
+    assert _find_project_config(sub) == proj

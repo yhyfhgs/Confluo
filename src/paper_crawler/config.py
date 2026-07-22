@@ -69,12 +69,20 @@ def _resolve_home(home: Path | None) -> tuple[Path, str]:
 
 
 def _find_project_config(start: Path) -> Path | None:
-    """自 `start` 起向上查 `paper-crawler.toml`；首个命中即返回，无则 None（可选层）。"""
+    """自 `start` 起向上查 `paper-crawler.toml`；首个命中即返回，无则 None（可选层）。
+
+    **上界（NIT-1）**：查到含 `.git`（目录**或**文件——兼容 git worktree 的 `.git` 指针文件）
+    的目录（= 仓库根）后即停止本轮向上——不越过仓库根去命中家目录等高层的 stray 同名文件；
+    到文件系统根同样停止（`current.parents` 天然终止于根）。本层先查配置文件再判仓库根，故
+    仓库根目录**自身**的 `paper-crawler.toml` 仍会被命中。
+    """
     current = start.resolve()
     for directory in (current, *current.parents):
         candidate = directory / _PROJECT_CONFIG_NAME
         if candidate.is_file():
             return candidate
+        if (directory / ".git").exists():
+            break  # 仓库根：本层已查毕，不再向上（防越界命中祖先 stray 文件）
     return None
 
 
