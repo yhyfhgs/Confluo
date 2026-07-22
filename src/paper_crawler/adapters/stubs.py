@@ -1,15 +1,18 @@
-"""占位 adapters（Phase 3/4 实现）——让 jfe 等 VenueSpec 可通过 lint。
+"""占位 adapters（Phase 4 实现）——让 jfe 等 VenueSpec 可通过 lint。
 
-两者由 `load_adapters()` 内置注册（不走 entry point，包内占位）。已声明能力的方法
-抛 `NotImplementedError("stub until Phase N")`（声明但未实现）；未声明能力的方法
-沿用 `AdapterBase` 的 `CapabilityNotSupported`。限速默认值均为占位（`⚠`），真实值在
-对应 Phase 按站点勘察核定。
+由 `load_adapters()` 内置注册（不走 entry point，包内占位）。已声明能力的方法抛
+`NotImplementedError("stub until Phase N")`（声明但未实现）；未声明能力的方法沿用
+`AdapterBase` 的 `CapabilityNotSupported`。限速默认值为占位（`⚠`），真实值在对应
+Phase 按站点勘察核定。
 
 （openreview 已在 Phase 2 落地为真实 adapter，经 entry point 注册——见
-adapters/openreview/；此前的 OpenReviewStub 已退役。）
+adapters/openreview/；此前的 OpenReviewStub 已退役。crossref 同理已在 Phase 3
+落地为真实 adapter，经 entry point 注册——见 adapters/crossref/；此前的
+CrossrefStub 已退役，Phase 4 M2b 债务清理一并移除本文件里的残留类与过时注释，见
+docs/reports/2026-07-23-phase3-report.md §6 检查单 #15d。本文件现只剩
+`elsevier_sd` 一个真占位——它没有 entry point 注册，`load_adapters()` 返回的
+就是这里定义的 stub 本身，不是"内置注册但被覆盖"的死代码。）
 """
-
-from collections.abc import Iterable
 
 from paper_crawler.adapter import AdapterBase, AdapterFamily
 from paper_crawler.types import (
@@ -19,37 +22,11 @@ from paper_crawler.types import (
     FetchIO,
     FetchResult,
     HealthReport,
-    IssueRef,
     PaperStub,
     RatePolicy,
     SessionHandle,
     VenueSpec,
 )
-
-
-class CrossrefStub(AdapterBase):
-    """Crossref 元数据主干（Phase 3）。仅 discover/enumerate。"""
-
-    adapter_id = "crossref"
-    family: AdapterFamily = "aggregator"
-    capabilities = Capability.DISCOVER | Capability.ENUMERATE
-    default_rate = RatePolicy(
-        50, source_note="⚠ 占位；Phase 3 按 research/site-survey/metadata-apis.md 定值"
-    )
-    auth_requirement = AuthLevel.NONE
-    domains: tuple[str, ...] = ("api.crossref.org",)
-
-    def discover_timeline(self, venue: VenueSpec, since: str | None = None) -> Iterable[IssueRef]:
-        raise NotImplementedError("stub until Phase 3")
-
-    def enumerate_issue(self, venue: VenueSpec, issue: IssueRef) -> Iterable[PaperStub]:
-        raise NotImplementedError("stub until Phase 3")
-
-    def healthcheck(self, session: SessionHandle | None = None) -> HealthReport:
-        # canary SKIP 语义修正（T3 backlog）：stub 未实现健康探测——抛
-        # NotImplementedError 让 canary 归为 SKIP，而非继承 AdapterBase 默认恒
-        # healthy 假报"健康"（stub 无真实站点可探）。真实 healthcheck 随 Phase 3。
-        raise NotImplementedError("stub until Phase 3")
 
 
 class ElsevierScienceDirectStub(AdapterBase):
@@ -73,5 +50,7 @@ class ElsevierScienceDirectStub(AdapterBase):
         raise NotImplementedError("stub until Phase 4")
 
     def healthcheck(self, session: SessionHandle | None = None) -> HealthReport:
-        # canary SKIP 语义修正（T3 backlog）：见 CrossrefStub.healthcheck 说明。
+        # canary SKIP 语义修正（T3 backlog）：stub 未实现健康探测——抛
+        # NotImplementedError 让 canary 归为 SKIP，而非继承 AdapterBase 默认恒
+        # healthy 假报"健康"（stub 无真实站点可探）。真实 healthcheck 随 Phase 4。
         raise NotImplementedError("stub until Phase 4")

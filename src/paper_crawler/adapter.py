@@ -187,14 +187,14 @@ def load_adapters() -> dict[str, SourceAdapter]:
     # 延迟导入：adapters.* 在模块顶层 `from paper_crawler.adapter import AdapterBase`，
     # 若在此模块顶层导入它们会成环。
     from paper_crawler.adapters.mock_platform import MockPlatformAdapter
-    from paper_crawler.adapters.stubs import (
-        CrossrefStub,
-        ElsevierScienceDirectStub,
-    )
+    from paper_crawler.adapters.stubs import ElsevierScienceDirectStub
 
+    # crossref 曾有内置 CrossrefStub 占位（Phase 3 前）；Phase 3 落地为真实 entry
+    # point adapter 后 CrossrefStub 已退役移除（stubs.py 模块 docstring、Phase 4
+    # M2b 检查单 #15d）——不再需要在此预注册一个必然被下方 entry point 扫描覆盖的
+    # 死实例。
     adapters: dict[str, SourceAdapter] = {}
     for builtin in (
-        CrossrefStub(),
         ElsevierScienceDirectStub(),
         MockPlatformAdapter(),
     ):
