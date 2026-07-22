@@ -16,6 +16,14 @@ dependencies = [
 [project.scripts]
 crawler = "paper_crawler.cli:main"
 
+# Phase 4 认证域可选依赖（auth-framework §10，D-023）：核心 dependencies 不含加密/浏览器件；
+# 本 T1a 仅声明——auth/store.py（T1b）/auth/browser.py（T1b）惰性 import，默认安装与默认
+# `make check` 零触碰。CI 标准环境装 `[auth]`（uv sync --extra auth，B-m7）；`[auth-browser]`
+# 重（含浏览器二进制），靠 PC_BROWSER_TESTS 手动门，不进默认 CI。
+[project.optional-dependencies]
+auth = ["cryptography>=42", "keyring>=24"]          # 凭证库：AES-GCM + 主密钥存储（§3.2/3.3）
+auth-browser = ["playwright>=1.40"]                 # 首登 headed / 浏览器上下文下载（§9）
+
 # 内置 adapter 通过 entry point 组注册（design/02 §4）。第三方 pip 包声明同名组即可被发现。
 # stubs（crossref/elsevier_sd）由 load_adapters() 内置注册，不走 entry point（包内占位）。
 [project.entry-points."paper_crawler.adapters"]

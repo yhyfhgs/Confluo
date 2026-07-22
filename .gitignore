@@ -7,6 +7,12 @@ auth_profiles/
 .env
 .env.*
 
+# ---- 认证框架（Phase 4；绝不入库）----
+auth/state/
+*.enc
+.filekey
+profiles.toml
+
 # ---- 下载产物（体积大且有版权，绝不入库）----
 data/
 downloads/
