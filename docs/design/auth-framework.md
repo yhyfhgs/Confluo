@@ -190,10 +190,12 @@ class Challenged(CrawlerError):
 ├── profiles.toml              # provider 定义（无密钥明文；只引用 keyring 条目名 / state 文件名）
 ├── state/                     # 加密的 storage_state / cookie jar
 │   ├── <ref>.enc              # AES-GCM 密文（0600）
+│   ├── <ref>.meta.json        # ★A-m2：state 元数据 sidecar（**非密**：backend/established_at/last_health/est_ttl）——供 `auth status` 只读渲染，不含任何 cookie/token
 │   └── .filekey               # 降级路径的文件主密钥（0600；keyring 可用时不存在）
 ```
 
-- 目录随 `Config.ensure_dirs()` 扩展创建（`auth/`、`auth/state/`）；**目录权限 0700、文件 0600 强制**（§3.4）。
+- 目录随 `Config.ensure_dirs()` 扩展创建（`auth/`、`auth/state/`）；**目录权限 0700、`<ref>.enc`/`.filekey` 0600 强制**（§3.4）；
+  `<ref>.meta.json` 非密（仅 provider 元数据、无凭证），可 0644——但仍不入 git（§3.5 gitignore `auth/state/`）。
 
 ### 3.2 加密方案（`cryptography` 依赖 vs 标准库——评估与结论）
 
@@ -213,8 +215,10 @@ class Challenged(CrawlerError):
 无 storage_state 加密需求）**不触 `cryptography`**——AC-4.1 离线 DoD 不被该依赖阻塞。
 保持 07 §4"AES-GCM"字面不漂移。
 
-**加密参数（实现期冻结）**：AES-256-GCM；每文件随机 12-byte nonce（前置于密文）；主密钥 32 byte；
+**加密参数（实现期冻结）**：AES-256-GCM；**每次加密调用新随机 12-byte nonce**（A-m1；每次 `write_state` 重新
+`os.urandom(12)`，绝不复用——GCM nonce 复用即灾难性失密）前置于密文；主密钥 32 byte；
 `AESGCM(key).encrypt(nonce, plaintext, associated_data=ref.encode())`（AAD 绑定条目名，防跨条目重放）。
+**加密方案 = D-023 定裁**（cryptography optional extra + 两级凭证模型；07"加密配置"张力见 §3.4 转正注记）。
 
 ### 3.3 主密钥解析与降级链（keyring 首选 → 文件密钥 + 显式警告）
 
@@ -246,13 +250,15 @@ platform = "elsevier_sd"                  # 绑定的 adapter_id（VenueSpec.aut
 key_ref = "elsevier_apikey"               # keyring 条目名（值不在此文件）
 insttoken_ref = "elsevier_insttoken"      # 可选：机构 token 条目名
 quota_probe = "https://api.elsevier.com/content/article/doi/10.1016/j.jfineco.2011.03.021"
-                                          # ensure_session 连通性/entitlement 探测端点（已知有权 DOI）
+                                          # ensure_session 连通性/entitlement 探测端点。★controller 亲读①：
+                                          # 此 DOI 为**样例值**；实际有权 DOI 待 key 到位后 runbook 确认，可经 profiles 覆盖
 
 [providers."oup@campus"]                  # @ 后缀 = 具名 profile（多机构/多账号，07 §6）
 kind = "cookie_session"
 platform = "oup_silverchair"
 login_url = "https://academic.oup.com/qje"          # 首登打开页
-probe_url = "https://academic.oup.com/my-account"   # 已登录探针（判定=不 302→signin 且含账号标识）
+probe_url = "https://academic.oup.com/my-account"   # ⚠ 设计假设（controller 亲读②：R0 无凭证未实测该路径）；
+                                                    # runbook 首登时核验真实账号页 URL，允许 profiles 覆盖。判定=不 302→signin 且含账号标识
 state_ref = "oup_campus_state"            # state/<ref>.enc（加密 storage_state）
 est_ttl_hours = 24                        # 经验 TTL（主动提前 health_check）
 
@@ -296,9 +302,13 @@ token = ""          # Wiley TDM Client Token（UUID；env PAPER_CRAWLER_WILEY_TD
   ②**有状态凭证**（cookie jar / storage_state，CookieSession/SSO）走 §3.2/§3.3 的 **AES-GCM `CredentialStore`**
   （profiles.toml `state_ref` + keyring 主密钥）。`ApiKeyProvider` 经 `store.read_key(ref)` 统一取①类值
   （内部委派 Config 字段，keyring 可选加固）——AC-4.1（elsevier）因此落在**不触 `cryptography`** 的轻路径。
-- `config.py` 纯附加字段（T1）：`elsevier_api_key`/`elsevier_insttoken`/`wiley_tdm_token: str | None = None`
-  （+ env `PAPER_CRAWLER_ELSEVIER_API_KEY`/`_ELSEVIER_INSTTOKEN`/`_WILEY_TDM_TOKEN`），沿 line 100–124 既有
-  三源 key 解析样板；均**不入日志/报告**（obslog redact `api_key`/`token`/`insttoken` 形态，§5）。
+- `config.py` 纯附加字段（**T2 独占**——config.py 全部改动 + `[auth.elsevier]`/`[auth.wiley]` 槽解析随 D-025
+  加载链改造一并落 T2；T1a/T1b 零触 config.py，消除撞面）：`elsevier_api_key`/`elsevier_insttoken`/
+  `wiley_tdm_token: str | None = None`（+ env `PAPER_CRAWLER_ELSEVIER_API_KEY`/`_ELSEVIER_INSTTOKEN`/
+  `_WILEY_TDM_TOKEN`），沿 line 100–124 既有三源 key 解析样板；均**不入日志/报告**（obslog redact `api_key`/`token`/`insttoken` 形态，§5）。
+- **A-M3 转正注记（07"加密配置"张力）**：明文 Config-slot（①类简单串）与 07 §4"加密配置"的张力 = 对**既有惯例的诚实收敛**
+  （s2/openreview 先例、家目录 0600 仓库外、obslog 脱敏、env 覆盖），**keyring 为可选加固层**（配置了即 read_key 优先取 keyring）——
+  由 **D-023 显式裁决转正**；07 文末加修订注记指向 D-023（不改 07 正文语义段）。config 分层与敏感边界的完整规范见 [design/10-config-layout.md](10-config-layout.md)（D-025）。
 
 - `ProviderProfile` dataclass（store 解析产物）字段 = 上表全键，`extra` 严格拒绝（未知键 → `CrawlerError(CONFIG)`，
   仿 `VenueSpec` 的 `extra="forbid"`）；`kind` 与必填字段的组合校验在 `load_profiles`（如 `api_key` 必有 `key_ref`）。
@@ -356,10 +366,15 @@ token = ""          # Wiley TDM Client Token（UUID；env PAPER_CRAWLER_WILEY_TD
 ### 4.3 `crawler auth logout <provider> [--home H]`（AC-4.5 取证式无残留）
 
 - 调 `provider.invalidate(session)` → `store.delete_state(ref)`（**先覆写随机字节再 unlink**，防删除后
-  磁盘残留可恢复）+ keyring 条目删除（api_key 类）+ 清除 state 元数据缓存。退出码 0；provider 未知 → 2。
-- **AC-4.5 取证清单**（runbook + 自动断言双证）：logout 后 ①`state/<ref>.enc` 不存在
-  ②keyring 无对应条目 ③进程内 session 缓存清空 ④obslog/report 无该 session 的明文残留（redact 断言）
-  ⑤`git status` 无新增被跟踪凭证文件。
+  磁盘残留可恢复）+ `<ref>.meta.json` 删除 + keyring 条目删除（**仅 storage_state 类；api_key 类见下 B-m6**）+
+  清除 state 元数据缓存。退出码 0；provider 未知 → 2。
+- **AC-4.5 取证清单（B-m6：按 provider kind 分列适用项）**（runbook + 自动断言双证）：logout 后——
+  - **cookie_session / sso_flow / ezproxy**（有状态凭证）：①`state/<ref>.enc` + `<ref>.meta.json` 不存在
+    ②进程内 session 缓存清空 ③obslog/report 无该 session 明文残留（redact 断言）④`git status` 无新增被跟踪凭证文件
+    ⑤keyring 主密钥条目按需清理（storage_state 已删则主密钥失去保护对象）**⑥无残留一次性 user-data-dir**（A-M7：mkdtemp 目录已 rmtree）。
+  - **api_key**（elsevier/wiley TDM，简单串走 Config-slot）：logout 清 keyring 中的 `key_ref`/`insttoken_ref`（若曾存 keyring）
+    + 进程缓存——**但不删用户 `config.toml` 的 `[auth.<platform>]` 明文槽**（那是用户手管的配置文件，非本命令职责；
+    logout 只撤销本工具管理的凭证副本，⑥/①不适用 api_key 类——无 storage_state/无 user-data-dir）。
 
 > **AC 对应**：§4 = AC-4.1（login 载体）、AC-4.5（logout 无残留）；退出码契约沿 design/05 Task 8 既有口径（用法/配置错=2、失败=1、成功/只读=0）。
 
@@ -442,23 +457,30 @@ client 供调用方 close），canary 在 `run_canary` 前调用它，对每 ada
 _bind_healthcheck_credentials(env, adapters):
   dedicated: list[HttpClient] = []
   bind_http_client(adapters, env.http)                    # 共享 UA+limiter（arxiv 等），同 _build_env
+  _register_rate_domains(env, adapters)                   # ★A-M1：补限速域注册（见下）
   orc = _bind_openreview_token_client(adapters, env.ctx.config, env.ctx.limiter)  # 复用既有
   if orc: dedicated.append(orc)
-  # enrich 源：openalex（key 走 URL 参数，复用共享 client）+ s2（key 走头，需专属 client）
-  for sid in ("openalex", "s2"):
+  for sid in ("openalex", "s2"):                          # enrich 源：openalex key→URL 参数复用共享 client；s2 key→头需专属 client
       a = adapters.get(sid)
       if isinstance(a, EnrichmentSource): _apply_enrich_key(env, a, sid, dedicated)  # 抽自 _prepare_enrich_source
-  # Phase 4 auth_gated：为已注册 provider 的 adapter 解析 session 注入（AuthManager）
-  for aid, a in adapters.items():
+  for aid, a in adapters.items():                         # Phase 4 auth_gated：解析 session 注入（AuthManager）
       if getattr(a, "family", None) == "auth_gated":
           _try_inject_session(env, a, aid)                # 无 provider/无 session → 不注入（healthcheck 走 SKIP）
   return dedicated
+
+_register_rate_domains(env, adapters):                    # ★A-M1：仿 cli.py:998 _prepare_enrich_source 的 register+alias
+  for a in adapters.values():                             # canary 逐 adapter 探测前须先登记限速域，否则 HttpClient
+      doms = getattr(a, "domains", ())                    # 逐请求 acquire 撞未注册 domain → CONFIG fail-fast（伪不健康）
+      if doms:
+          env.ctx.limiter.register(doms[0], a.default_rate)     # 主域登记（幂等，取最保守值）
+          for sec in doms[1:]: env.ctx.limiter.alias(sec, doms[0])  # 副域别名到主域（arxiv 三域先例）
 ```
 
-- **canary 语义保持**（canary.py 分类规则不变）：auth_gated adapter 无配置 session → `healthcheck()` 抛
-  `NotImplementedError`（或 `AuthRequired` 归一）→ **SKIP**（非 unhealthy，不误报退出码 1）；有 session →
-  真实探针 → healthy/unhealthy。**精确复用** s2/openalex 的"无 key→NotImplementedError→SKIP"先例
-  （零 canary.py 改动）。
+- **canary 语义保持（B-M4 钉死）**（canary.py 分类规则不变）：auth_gated adapter 无配置 session →
+  `healthcheck()` **一律 `raise NotImplementedError`** → **SKIP**（非 unhealthy，不误报退出码 1）——
+  **provider/adapter 侧不得抛 `AuthRequired`**（AuthRequired 归 pipeline fetch 路径的 BLOCKED 语义，
+  canary healthcheck 路径专用 NotImplementedError→SKIP，二义分离）；有 session → 真实探针 → healthy/unhealthy。
+  **精确复用** s2/openalex 的"无 key→NotImplementedError→SKIP"先例（零 canary.py 改动）。
 - **收敛点**：`_build_env` 与 `canary` 共用同一装配语义（`_bind_healthcheck_credentials` 抽公共部分；
   `_build_env` 保留其 openreview 分支的现状调用，或一并改调该 helper——实现期择一，接口等价）。
   canary 的 `finally` 关闭 `dedicated` 全部 client（同 `_env` 对 `openreview_http` 的关闭）。
@@ -476,36 +498,75 @@ _bind_healthcheck_credentials(env, adapters):
 **现状缺口**（phase3-report §6 #12）：T5 只落 unpaywall adapter 能力（`lookup` 直调正确），
 pipeline 侧 `no_entitlement → unpaywall 兜底`**未接线**。
 
-**接线点 = `runner._route_error` 的 NO_ENTITLEMENT 分支**（runner.py line 371–372 现只 `mark_asset(no_entitlement)`）。
-新增 OA-fallback 编排（受 `StageContext.oa_fallback: bool` 门控，默认 False；auth_gated venue 或 VenueSpec
-声明 OA-fallback 时置 True）：
+**方案裁决（A-B1，两选一）= 主方向：OA-fallback 自动取回全链**。取回执行路径悬空的三个现实约束
+（unpaywall 仅 RESOLVE 无 FETCH；`_stage_fetch` 恒经 `route.fulltext_adapter` 派发，auth 平台无 session 即 AuthRequired；
+OA 第三方 host 未注册限速桶即 CONFIG fail-fast）由**通用 direct 取回分支**闭合。**引入面自评（决策标准核对）**：
+① `stages.py` **单分支**（`_stage_fetch` 顶部 OA-asset 识别 → `_fetch_oa_direct`）+ ② **一函数** `_fetch_oa_direct`
+（内含 OA 域保守桶注册 + 通用 direct stream，**复用** `PartFileIO`/`validate_pdf_magic`/`finalize_fetch(FetchLog)` 三件不绕过）
++ ③ `StageContext.http: HttpClient | None` **一个纯附加槽**（复用 `_build_env` 已装配的共享 client，与已计划的
+`unpaywall_adapter` 槽同构）。**未超"单分支+一函数"量级**（三件强制原语全复用、无新子系统）；**不改 SourceAdapter 协议、
+不改六阶段 handler 签名**（`_stage_oa_fallback` 是第七 handler，非六阶段之一）。故取主方向，不降级。
 
+**接线点 A = `runner._route_error` 的 NO_ENTITLEMENT 分支**（runner.py line 371–372 现只 `mark_asset(no_entitlement)`）。
+新增编排（受 `StageContext.oa_fallback: bool` 门控，默认 False；auth_gated venue 或 VenueSpec 声明 OA-fallback 时置 True）：
 ```
 NO_ENTITLEMENT（fetch 失败 或 resolve entitlement 预检否）:
-  1. mark_asset(asset_id, state="no_entitlement")            # 现有，保留
+  1. mark_asset(asset_id, state="no_entitlement")            # 现有保留；no_entitlement 终态不计 failures（A-m5/§8.5）
   2. if ctx.oa_fallback and 该 paper 有 doi identifier:
        enqueue 子任务 "oa_fallback"（params={"paper": <id>, "doi": <doi>}, parent_id=pull_id）
-     （不重试原 asset、不计失败率——04 §4"不重试、不计失败率"）
+     （不重试原 asset、不计失败率——04 §4）
 ```
 
-新增 **`_stage_oa_fallback`**（stages.py，第七个 handler，仅本通道用）：
+**接线点 B = `_stage_oa_fallback`**（stages.py 第七 handler；**record→AssetPlan 规格化，闭合 A-M4**）：
 ```
 _stage_oa_fallback(ctx, task):
   doi = params["doi"]; paper_id = params["paper"]
-  ua = ctx.unpaywall_adapter                          # AuthManager/StageContext 注入的 unpaywall 实例
+  ua = ctx.unpaywall_adapter                          # StageContext 注入的 unpaywall 实例
   if ua is None: return "skipped"                     # 未装配 OA-fallback → 静默跳过
-  ctx.limiter.acquire(ua.domains[0]) → sleeper        # unpaywall 独立域/独立 5 req/s（非 auth 平台配额）
-  plan = ua.lookup(doi)                               # RESOLVE：best_oa_location.url_for_pdf（aggregators §5.5）
-  if plan is None: return "done"                      # 无 OA 副本（AC-4.3"若存在"——不存在即如实无副本）
-  new_asset = ctx.repo.plan_asset(paper_id, plan, source_adapter="unpaywall")  # kind=pdf, version="oa"
-  enqueue "fetch"（asset=new_asset）                   # 走通用 fetcher（auth_needed=none, direct）
+  ctx.limiter.acquire(ua.domains[0]) → sleeper        # unpaywall API 域（api.unpaywall.org）独立 5 req/s
+  rec = ua.lookup(doi)                                # 返回 UnpaywallRecord（**非 AssetPlan**）
+  # ── record→AssetPlan 规格化（A-M4：绝不直传 lookup() 的 UnpaywallRecord）──
+  pdf_url, ver = _oa_pdf_url_and_version(rec)         # best_oa_location.url_for_pdf → 回退 oa_locations[]（aggregators §5.5）
+  if pdf_url is None: return "done"                   # 无 PDF 直链（AC-4.3"若存在"——landing-only 不产 asset）
+  plan = AssetPlan(kind=PDF, url=pdf_url, url_strategy=DIRECT, auth_needed=NONE,
+                   expected_type="application/pdf",
+                   version=ver)                        # ver = **精确串** publishedVersion/acceptedVersion/submittedVersion
+  new_asset = ctx.repo.plan_asset(paper_id, plan, source_adapter="unpaywall")  # 身份 (paper, pdf, <ver>)
+  enqueue "fetch"（asset=new_asset）                   # → 接线点 C 的 direct 分支
 ```
 
-- **与 open_access 模块共享该 fallback**（04 §4）：同一 `_stage_oa_fallback` 亦服务开放模块的 no_entitlement
-  兜底（非 auth 专属）。OA 副本 asset 独立身份 `(paper, pdf, "oa")`——与原平台 asset `(paper, pdf, None)`
-  并存，不覆盖（asset 唯一键 `(paper_id, kind, version)`，design/06 §2）。
-- **限速隔离**：unpaywall fetch 走 unpaywall 域桶（5 req/s），**不占 auth 平台的日配额**（§8.3）——
-  OA 兜底不应被闭源平台的保守限速拖慢。
+**接线点 C = `_stage_fetch` 顶部 OA-asset 识别 + `_fetch_oa_direct`**（**通用 direct 取回，不经 route.fulltext_adapter**）：
+```
+_stage_fetch(ctx, task):
+  asset = repo.get_asset(...)
+  if str(asset["source_adapter"]) == "unpaywall":     # OA-fallback asset → 通用 direct 分支
+      return _fetch_oa_direct(ctx, task, asset)        # 不 re-resolve、不派发 auth 平台 adapter
+  … 既有 auth/平台 fetch 路径（re-resolve → route.fulltext_adapter.fetch_asset）不变 …
+
+_fetch_oa_direct(ctx, task, asset):
+  if ctx.http is None: return "skipped"               # 未注入共享 client（离线路径）→ 跳过
+  host = urlsplit(asset["url"]).host
+  ctx.limiter.register(host, RatePolicy(               # ★OA 域保守桶自动注册点（显式保守值，可配）
+      ctx.config.oa_fallback_rate_rpm, burst=1,        # 默认 30 rpm=1req/2s（OA 公共库，非闭源；Config 可配）
+      source_note="OA-fallback direct fetch 保守默认 [Config.oa_fallback_rate_rpm]"))
+  wait = acquire_and_wait(ctx, host)
+  io = PartFileIO(ctx.config.data_dir/"tmp", asset_id) # ★复用：原子写
+  try:
+      bytes_, sha = io.write_stream(ctx.http.stream(asset["url"]))   # 通用 direct GET（无凭证，OA 公共）
+      if bytes_<=0 or not validate_pdf_magic(io.part_path):          # ★复用：%PDF 魔数/大小校验
+          raise CrawlerError(INTEGRITY, "OA copy failed %PDF")
+      final = data/pdf/<venue>/<year>/<ulid>.pdf; io.commit(final)
+      ctx.repo.finalize_fetch(asset_id, …, fetch_log_row=FetchLogRow(domain=host, …))  # ★复用：FetchLog 记账
+  except: io.abort(); add_fetch_log(error_class=…); raise
+```
+
+- **与 open_access 模块共享**（04 §4）：`_stage_oa_fallback`+`_fetch_oa_direct` 亦服务开放模块的 no_entitlement
+  兜底（非 auth 专属）。OA 副本 asset 独立身份 `(paper, pdf, <oa version串>)`——与原平台 asset `(paper, pdf, None)`
+  并存不覆盖（asset 唯一键 `(paper_id, kind, version)`，design/06 §2）。
+- **限速隔离**：unpaywall **API 查询**走 `api.unpaywall.org` 桶（5 req/s）；OA **PDF 直取**走**第三方 OA host 桶**
+  （§8.3 auth 平台日配额只数 auth 平台域，OA host 是另一域，天然不占）——OA 兜底不被闭源平台保守限速拖慢。
+- **AC-4.3 判据（主方向）**：无订阅 DOI → 原 asset 标 no_entitlement（不计 failures）→ OA-fallback 产 `(paper,pdf,oa版)`
+  asset 并**实际取回落盘**（`%PDF` 校验合格）→ 报告呈现 OA 副本已获取；无 PDF 直链则如实无副本（landing-only 不下载）。
 
 ### 8.2 session 健康门（每 N=20 篇 / 15 min healthcheck；AC-4.2）
 
@@ -532,23 +593,35 @@ fetch 执行前（auth_gated venue，有 session）:
   `_auth_blocked_venues.add(venue)`（runner 现有机制），使**同 venue 剩余 fetch 连带 BLOCKED**——
   日志无连续 401/403（AC-4.2"≤2 次即停"）。N=20/15min 阈值经 `Config.auth_health_interval`（默认 20 篇）
   /`auth_health_max_age_s`（默认 900s）可配。
+- **假时钟缝（B-M1，可测性硬要求）**：上文 `now` **不得**取 `datetime.now()`——`PipelineRunner.__init__` 新增
+  `clock: Callable[[], datetime]` 形参（默认 `lambda: datetime.now(UTC)`；先例 `TaskQueue.__init__(db, clock=None)`
+  tasks.py），健康门 15min 老化经该注入时钟判定；provider `__init__(*, clock=...)`（先例 `AclAnthologyAdapter`
+  acl_anthology/adapter.py，`clock=time.monotonic`）承接 `est_ttl` 老化。**过期语义由 mock 状态驱动**（mock IdP
+  handler 的 cookie-TTL 标志 + 拨动假时钟），**不依赖 httpx cookiejar 真实 TTL**——测试零 sleep、精确断言门触发点（§9）。
 - **文件验证器联动**（04 §4）：fetch 后 magic-bytes 非 `%PDF` 或 <10KB → 现有 `INTEGRITY` 路径
   （stages.py `validate_pdf_magic`）**额外触发一次 health_check**（疑似 auth_leak——拦截页伪装 PDF）；
   实现为 `INTEGRITY` 路由时若 venue 为 auth_gated 则强制门 `last_check_at = 0`（下个 fetch 必探）。
 
 ### 8.3 日配额（FetchLog 对账；AC-4.4）
 
-**接线点 = fetch 执行前（auth_gated venue）**，`repo` 新增只读查询 `count_fetch_today(domain) -> int`：
+**配额口径统一（A-M5/B-m5 附题）= "fetch 尝试篇次"**：FetchLog 中 fetch 阶段行**按 domain 当日计数**，
+**成败均计**（每次 fetch 尝试落一行 fetch_log——design/05 §7"每次资产取回一行"，含失败行 error_class 非空）；
+**resolve 页请求不计**（resolve 不写 fetch_log）。此口径三处一字不差：本节 §8.3 / oup-silverchair.md §4 / AC-4.4。
+
+**接线点 = fetch 执行前（auth_gated venue）**，`repo` 新增只读查询 `count_fetch_today(domain) -> int`
+（**列名 `ts`——fetch_log 实名列，`idx_fetch_log_domain_ts` 支撑；成败均计不加 `error_class` 过滤**）：
 ```
 SELECT COUNT(*) FROM fetch_log
-WHERE domain = ? AND error_class IS NULL AND DATE(created_at) = DATE('now')   # 成功取回计数
+WHERE domain = ? AND DATE(ts) = DATE('now')   # fetch 尝试篇次（成败均计；ts=fetch_log 实名列，B-m5）
 ```
 ```
 fetch 前:  if count_fetch_today(domain) >= cap:      # cap = VenueSpec.rate_limit 或 Config.auth_daily_cap（默认 200）
              raise CrawlerError(CONFIG, "daily quota reached", detail=f"cap={cap}")  # → BLOCKED(config)
 ```
-- **对账证据源 = FetchLog**（design/05 §7 明示"AC-4.4 数据源"）——每资产取回一行；日配额判定读同表。
+- **对账证据源 = FetchLog**（design/05 §7 明示"AC-4.4 数据源"）——每次 fetch 尝试一行；日配额判定读同表。
   `cap` 来源优先级：VenueSpec `rate_limit`（若声明日上限）> `Config.auth_daily_cap`（默认 200，04 §4）。
+- **OA-fallback direct fetch（`_stage_oa_fallback` 产的 OA host）不占 auth 平台配额**：OA host 是**第三方 OA 域**
+  （非 auth 平台 domain），本查询按 auth 平台 domain 计数，OA host 天然不落入——§8.1 限速隔离的对账侧印证。
 - **"宁慢勿封"**（04 §4）：配额达上限即 BLOCKED 该 venue 剩余 fetch（非 FAILED），次日或 `--force` 恢复。
 
 ### 8.4 BLOCKED(auth) / BLOCKED(challenge) → Phase 1 状态机映射
@@ -566,7 +639,24 @@ fetch 前:  if count_fetch_today(domain) >= cap:      # cap = VenueSpec.rate_lim
   与 `_auth_batch`（健康门），均在 `_new_report` 重置（每次运行独立）。冷却 24h 跨运行持久化在
   config-home JSON（进程重启不丢），运行态缓存加速。
 
-> **AC 对应**：§8.1=AC-4.3、§8.2=AC-4.2、§8.3=AC-4.4、§8.4=AC-4.2/4.6 + design/05 §2 BLOCKED-resume。
+### 8.5 no_entitlement 终态口径（A-m5：不计 failures）
+
+- no_entitlement 是**预期内终态、非失败**（04 §4"不计失败率"）：`_route_error` NO_ENTITLEMENT 分支
+  `mark_asset(state="no_entitlement")` + 任务 `complete`（**不入 `report.failed` 计数、不进 `report.failures[]`**）；
+  RunReport **单列一行** `no_entitlement=<n>`（与 `failed`/`blocked`/`skipped` 并列的独立计数）。判据（AC-4.3）=
+  无订阅 DOI 标 no_entitlement 且不计失败率，OA-fallback 另行呈现（§8.1）。**与现状 diff**：runner.py 现把
+  NO_ENTITLEMENT 走 RETRY_TABLE 缺省 `RetrySpec(1)`→FAILED（计 failed）——本 Phase 改为独立终态分支（不计 failed）。
+
+### 8.6 工作时段窗（A-M2；04 §5 默认 8:00–23:00 本地时间）
+
+- **T5 最小实现**：auth_gated **批入口**（runner fetch 首个 auth_gated 任务前）**检查一次本地时间**——窗外则该批
+  auth_gated fetch 任务**延迟不失败**（`queue.block(reason="work_hours_window")` 或延迟入队，语义=可 resume 非 FAILED）
+  + obslog INFO 提示"当前 {t} 在工作时段窗 {window} 外，auth_gated 批延迟；调整 `[auth].work_hours` 或 resume"。
+- **可配可关**：`Config.auth_work_hours: str = "8-23"`（本地时间时段；`""`/`"0-24"` = 关闭窗，全天放行）。
+  **仅 auth_gated venue 生效**，open_access/aggregator 不受窗约束（04 §5 明示只约束 auth_gated 平台）。**入口检查一次**
+  （非逐篇）——批已启动则跑完，不半途掐断（避免半批中断的一致性问题）。
+
+> **AC 对应**：§8.1=AC-4.3、§8.2=AC-4.2、§8.3=AC-4.4、§8.4=AC-4.2/4.6 + design/05 §2 BLOCKED-resume；§8.5=AC-4.3（不计失败率）、§8.6=04 §5 工作时段纪律。
 
 ## 9. mock IdP 测试设计（AC-4.2/4.5/4.6 离线载体；纯 httpx vs 浏览器结论）
 
@@ -594,9 +684,12 @@ Playwright 仅留给"真实首登"（headed）与"JS 生成 PDF 链接"两条**�
   /InstitutionalLogin → IdP session 存: 302 链 + Set-Cookie(新)；否则: 302 → /idp/login（refresh→None）
   /article-pdf/…  → 有权: 200 %PDF…；无权: 302 → /article-abstract（no_entitlement）；风控: 403 + 挑战特征
   ```
-- httpx.Client 在**单个 flow 内自维护 cookie jar**（跨请求携带），天然复现"种 cookie→后续请求带 cookie→
-  TTL 到期→探针 302"。时钟经**可注入的 `now()`**（provider 依赖注入，测试推进假时钟触发 est_ttl/过期），
-  不 sleep。storage_state 复用跨"进程重启"= 新 provider 实例 `read_state` → 载入新 `HttpClient(MockTransport)`。
+- httpx.Client 在**单个 flow 内自维护 cookie jar**（跨请求携带），复现"种 cookie→后续请求带 cookie→探针"。
+  **过期语义由 mock 状态驱动（B-M1，不依赖 httpx cookiejar 真实 TTL）**：mock handler 内部维护"cookie→是否过期"
+  标志，测试直接翻转该标志（或拨动注入时钟越过 mock 记录的签发时刻）令 `/my-account` 从 200 转 302→login；
+  **时钟经依赖注入**——`PipelineRunner.__init__(clock=...)`（先例 `TaskQueue`）+ provider `__init__(*, clock=...)`
+  （先例 `AclAnthologyAdapter`），健康门老化/`est_ttl` 判定读注入时钟，测试零 sleep。storage_state 复用跨
+  "进程重启" = 新 provider 实例 `read_state` → 载入新 `HttpClient(MockTransport)`。
 - **零真实网络**（socket 禁网护栏内，同聚合层）；**无 ASGI/WSGI 本地服务器**（MockTransport 足够，更快更稳）。
 
 **Playwright 的 CI 门控策略（若确需浏览器测试）**：
@@ -622,10 +715,14 @@ auth-browser = ["playwright>=1.40"]                 # 首登 headed / 浏览器�
   受影响仅 CookieSession/SSO/EZProxy 的**首登**与**浏览器上下文 fetch**；APIKey 全链（elsevier AC-4.1）、
   所有 httpx-直取 fetch、健康门、mock IdP 测试**完全不触** playwright。
 - **绝不成为核心路径硬依赖**：核心 `dependencies` 不含 playwright/cryptography/keyring；`make check`
-  默认不 import 它们（惰性 + skip 门控）。CI 装 `[auth]`（轻）跑凭证库测试，**不装** `[auth-browser]`
-  （重，含浏览器二进制）——浏览器测试靠 `PC_BROWSER_TESTS` 手动门。
+  默认不 import 它们（惰性 + skip 门控）。**CI 标准环境统一装 `[auth]`**（`uv sync --extra auth`，凭证库测试进 CI；
+  B-m7 覆盖率口径），**不装** `[auth-browser]`（重，含浏览器二进制）——浏览器测试靠 `PC_BROWSER_TESTS` 手动门。
+- **首登 user-data-dir 凭证残留防护（A-M7）**：`auth/browser.py` 首登**规格化一次性 profile 目录**——
+  `tempfile.mkdtemp(prefix="pc-auth-")` 建临时 user-data-dir 启动 persistent context → 用户完成登录 →
+  **storage_state 导出加密落盘后立即 `shutil.rmtree` 整目录删除**（`try/finally` 保证异常路径亦清理）；
+  绝不用固定 user-data-dir（浏览器 profile 内含明文 cookie/缓存，残留等价 session 泄漏）。AC-4.5 取证清单加第⑥项。
 
-> **AC 对应**：§10 = AGENTS §6 依赖最小化姿态（D-017 精神）+ AC-4.1 不被浏览器依赖阻塞。
+> **AC 对应**：§10 = AGENTS §6 依赖最小化姿态（D-017 精神）+ AC-4.1 不被浏览器依赖阻塞 + AC-4.5（A-M7 无残留 user-data-dir）。
 
 ## 11. 风控行为规范落地（挑战页判定器 + 四类 fixture）
 
@@ -654,10 +751,13 @@ class ChallengeDetector:
 
 - **判定器接口对齐 status_code**（§6）：`classify` 收结构化 `status`（非文本嗅探）；provider fetch/probe
   后调 `classify` → 映射为 `HealthStatus`/抛 `AuthRequired`/`Challenged`/标 no_entitlement。
-- **四类 fixture 清单**（离线判定器回归，04 §8；每平台一套，本 Phase = oup + elsevier）：
-  ① 已登录全文页（脱敏 storage_state 态）② 未登录跳转页（302→signin）③ 无权限页（article-abstract/Get access）
-  ④ 风控页（Cloudflare "Just a moment..." / 挑战特征）。真实响应录制**脱敏**（无 cookie/token/个人信息）后入库
-  （fixture 纪律）；magic-bytes 伪装 PDF（HTML 存 .pdf）另入文件验证器单测（04 §8）。
+- **fixture 清单按平台形态分设（B-M3；`ChallengeDetector` HTML 四类判定器**仅适用页面型平台 OUP**）**：
+  - **OUP（HTML 四类，`ChallengeDetector` 回归）**：① 已登录全文页（脱敏 storage_state 态）② 未登录跳转页（302→signin）
+    ③ 无权限页（article-abstract/Get access）④ 风控页（R0 [LIVE] 真实 `cf-mitigated: challenge` "Just a moment…" 脱敏）。
+  - **Elsevier（JSON 封套集，非 HTML——API 返结构化 error 非挑战页，R0 印证）**：① keyless-429 `RATE_LIMIT_EXCEEDED`
+    （R0 [LIVE] 真实封套脱敏）② quota-429 `QUOTA_EXCEEDED`（**⚠[DOCS]-合成，keyless 层不可活验**，B-M2）
+    ③ entitlement true/false ④ 全文响应截断（脱敏 key）。**Elsevier 不设 HTML 四类**（无页面路线，§2）。
+  - 真实响应录制**脱敏**（无 cookie/token/个人信息）后入库；magic-bytes 伪装 PDF（HTML 存 .pdf）另入文件验证器单测（04 §8）。
 - **不对抗**（AC-0.2/AC-4.6）：CHALLENGE 一律 `Challenged`→BLOCKED+冷却，**无任何破解/绕过/重试尝试**；
   UA 不伪装浏览器裸抓闭源 PDF（04 §5——要么真浏览器上下文要么官方 API）。
 
@@ -668,7 +768,7 @@ class ChallengeDetector:
 | 层 | 覆盖 | AC |
 |---|---|---|
 | 单元（离线） | URL 重写表（含边界域名，07 §8）；脱敏器新键正则（`insttoken` 明文注入→jsonl 无残留，§5）；AES-GCM 加解密 round-trip + AAD 绑定（§3.2）；keyring→文件密钥降级判定与警告（§3.3）；`CrawlerError.status_code` 默认 None + 带值（§6）；ChallengeDetector 四态（§11）；profiles.toml schema 校验（未知键拒绝，§3.4） | AC-0.4/0.5 |
-| 集成（mock IdP，纯 httpx，进 CI） | login→state 加密保存→复用→过期检测→refresh 全周期（§9）；健康门 ≤20 篇内检出 EXPIRED→BLOCKED 无 401 轰炸；日配额达上限→BLOCKED（FetchLog 对账）；no_entitlement→unpaywall OA-fallback 产 OA asset；挑战页→BLOCKED(challenge)+冷却；logout 后 store 取证式无残留 | AC-4.2/4.3/4.4/4.5/4.6 |
+| 集成（mock IdP，纯 httpx，进 CI） | login→state 加密保存→复用→过期检测→refresh 全周期（§9）；健康门 ≤20 篇内检出 EXPIRED→BLOCKED 无 401 轰炸（**AC-4.2 断言双源，B-m8：MockTransport handler 请求计数为主 + obslog 401 事件扫描为辅**）；日配额达上限→BLOCKED（`DATE(ts)` 对账）；no_entitlement→不计 failures + OA-fallback direct 取回落盘 OA asset（§8.1/§8.5）；挑战页→BLOCKED(challenge)+冷却；工作时段窗外→延迟不失败（§8.6）；logout 后 store 取证式无残留 | AC-4.2/4.3/4.4/4.5/4.6 |
 | canary（离线） | 凭证注入后 openreview/auth_gated 行状态正确（§7）；无 session→SKIP 非 unhealthy | 检查单 #3 |
 | 真实凭证 runbook（`tests/manual/`，records 留痕，不进 CI） | 每 provider：首登→healthcheck→取 1 篇→过期重登→logout 清理；**AC-4.1**：`auth login elsevier`（APIKey）→ JFE DOI 经 Article Retrieval API 得合法 PDF（魔数校验） | AC-4.1 |
 | AC-0 系统性扫描 | git 全历史无 `*.enc`/`.filekey`/`profiles.toml`/cookie 形态（AC-0.3）；日志正则无未脱敏凭证（AC-0.4）；限速 ≤ 站点声明、robots 禁区不访问（AC-0.5） | AC-0.1~0.5 |
@@ -676,6 +776,9 @@ class ChallengeDetector:
 - **分层验收（D-018 先例）**：AC-4.2/4.5/4.6 **离线 mock 层即可判定 PASS**（不依赖真实凭证/浏览器）；
   AC-4.1 = 真实凭证"用户参与层"（runbook），离线 DoD 不阻塞于它。
 - **覆盖率门禁**：auth 包解析/判定模块 ≥90%（对齐 adapter 解析器纪律）；`make check` 全绿方可合并。
+- **覆盖率环境口径（B-m7，写死）**：**开发/CI 标准环境统一装 `[auth]` extra**（`uv sync --extra auth`）——
+  auth 包（store/providers/challenge/manager）测试进 CI 覆盖率统计；惰性 import 只保护**最终用户运行时**
+  （未装 extra 的用户不因 import 崩溃），**不是**"auth 模块不测"的借口。`[auth-browser]`（Playwright）仍靠 `PC_BROWSER_TESTS` 手动门、不进默认 CI（§10）。
 
 ## 13. 与既有冻结件的兼容性核对（实现期防漂移清单）
 
@@ -686,9 +789,10 @@ class ChallengeDetector:
 | `CrawlerError`（errors.py） | 加 `status_code=None` keyword-only（§6）+ `AuthRequired`/`Challenged` 子类（§2.4） | ✅ 纯附加，既有构造点零改动 |
 | `HttpClient`（http.py 冻结签名） | `_error_for_status`/`_rate_limited` 内部带 `status_code`（§6）；`extra_headers` 复用（§3 携密 client） | ✅ 公开签名不变（沿 T6 post_json 纯附加先例） |
 | `obslog._SENSITIVE_KEYS`（§5） | 追加键，复用既有正则分支 | ✅ 纯附加（沿 T5 email 先例） |
-| pipeline `StageContext`/`runner`（stages.py/runner.py） | 新增默认关闭的字段 + `_stage_oa_fallback` + 健康门/配额/冷却运行态（§8） | ✅ 默认 False→Phase 1-3 venue 零行为变化 |
-| `Config`（config.py） | 新增 `auth_daily_cap`/`auth_health_interval`/`auth_health_max_age_s`/`[auth].active_profile`（§4/§8） | ✅ 纯附加，均有保守默认 |
-| canary.py 分类规则 | 零改动（§7 复用 NotImplementedError→SKIP） | ✅ |
+| pipeline `StageContext`/`runner`（stages.py/runner.py） | 新增默认关闭字段（`oa_fallback`/`unpaywall_adapter`/`http`）+ `_stage_oa_fallback`/`_fetch_oa_direct`（§8.1）+ 健康门/配额/冷却/工作时段运行态 + `PipelineRunner.__init__(clock=)`（§8.2/B-M1）+ NO_ENTITLEMENT 改独立终态不计 failed（§8.5） | ✅ 默认 False + clock 有默认→Phase 1-3 venue 零行为变化（NO_ENTITLEMENT 计数迁移经回归锁定） |
+| `Config`（config.py，**T2 独占**） | 新增 `auth_daily_cap`/`auth_health_interval`/`auth_health_max_age_s`/`auth_work_hours`/`oa_fallback_rate_rpm`/`[auth].active_profile`/`[auth.elsevier\|wiley]` 槽（§3.4/§4/§8，随 D-025 加载链改造） | ✅ 纯附加，均有保守默认 |
+| canary.py 分类规则 | 零改动（§7 复用 NotImplementedError→SKIP；auth_gated 无 session 一律 NotImplementedError，B-M4） | ✅ |
+| `Repo`（storage/repo.py） | 新增只读 `count_fetch_today(domain)`（`DATE(ts)`，§8.3/B-m5）+ `plan_asset` 支持 `source_adapter="unpaywall"`/`version=<oa串>` | ✅ 纯附加只读查询 + 既有写面参数化 |
 
 ## 14. 修订记录
 
@@ -696,6 +800,7 @@ class ChallengeDetector:
 |---|---|---|---|
 | 1 | 2026-07-23 | 初稿（P0a）：07 §2 伪代码 → 实现级冻结签名（SessionHandle/AuthProvider/CredentialStore/异常）；04 §4/§5/§7 运行时协议 → pipeline 接线点（OA-fallback #12 / 健康门 / 日配额 / BLOCKED 冷却）；闭合检查单 #2/#3/#4/#12；`cryptography` vs 标准库评估（结论：cryptography 作 `[auth]` extra）；mock IdP 纯 httpx vs Playwright 结论 | W0 P0a 扩写（controller 预裁决 §0） |
 | 2 | 2026-07-23 | P0b R0 落地：§2.4 异常子类 + §6 status_code 权威版**归 T2**（D-024 波次，plan §5）；§3.4 补 `[auth.elsevier]`/`[auth.wiley]` Config-slot + **两级凭证模型**（简单串走 Config-slot 不触 cryptography / 有状态走 AES-GCM store）；P0a 开放题①②由 **D-023** 定裁（cryptography optional extra + SessionHandle 具体化附注）、③健康门/配额/冷却默认值确认沿 04 原文 | [R0 勘察](../research/site-survey/publisher-platforms-p4-recheck.md) [LIVE 2026-07-23] + controller 裁决 D-023/D-024 |
+| 3 | 2026-07-23 | **W0 双评审修订轮**（评审 A Reject 3B+7M+5m / 评审 B Approve-with-fixes 4M+5m 逐条闭合）：**A-B1 OA-fallback 取回全链**（主方向：record→AssetPlan 规格化 + `_stage_fetch` OA 分支 + `_fetch_oa_direct` 通用 direct + OA 域保守桶自动注册，§8.1）；A-B2/B-m5 `DATE(ts)` 实名列 + A-M5 配额口径"fetch 尝试篇次"三处统一（§8.3）；A-M2 工作时段窗（§8.6）；A-M7 一次性 user-data-dir mkdtemp+rmtree（§10 + AC-4.5 ⑥）；B-M1 假时钟注入（PipelineRunner/provider clock，§8.2/§9）；B-M3 fixture 分平台形态（OUP HTML 四类 / elsevier JSON 封套，§11）；B-M4 canary SKIP 钉死删 AuthRequired 归一（§7）；A-M1 canary 补限速域注册（§7）；A-m1 nonce/A-m2 sidecar/A-m5 no_entitlement 不计 failed（§3/§8.5）/B-m6 取证清单按 kind 分列/B-m7 CI 装 [auth]/B-m8 AC-4.2 双源；config.py 归 **T2 独占**（撞面消除）；controller 亲读 quota_probe 样例值 + probe_url ⚠ 未实测（§3.4） | 评审 A/B 裁决 + controller 增量令（T1→T1a/T1b、config→T2、10-config-layout D-025） |
 
 > **[已裁决]**（P0b，2026-07-23）：①`cryptography` optional extra → **D-023**（含 `types.SessionHandle` 具体化系 types.py:128 预留的计划内变更之附注）；②健康门 N=20/15min、日配额 200、challenge 冷却 24h **确认沿 04 §4/§5 原文**；③异常子类 + status_code **归 T2 权威版**（plan §5）；④wiley **纳入本 Phase + token 门控** → **D-024**（acm_dl 维持出列、全文改道 unpaywall 一并入 D-024）。
 > **[待双评审]**：elsevier entitlement 语义、`X-RateLimit-*` 真值、全文/attachment 字段名——R0 keyless 429 拦在 auth 层前无法活验，留 T3 实现期真实 key 核验（BLOCKER-1，见 elsevier-sd.md §2/§5）。

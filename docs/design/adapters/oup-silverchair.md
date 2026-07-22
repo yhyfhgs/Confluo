@@ -69,15 +69,19 @@ updated: 2026-07-23
 
 ### 3.3 `healthcheck(session)`
 - **无 session** → `raise NotImplementedError("oup session 未配置")` → canary SKIP（复用先例，auth-framework §7）。
-- **有 session** → 探针账号页（`/my-account` 类，⚠ 精确 URL T4 定稿）→ `ChallengeDetector.classify`：OK（含账号标识）→ healthy；
+- **有 session** → 探针账号页（`/my-account` 类，**⚠ 设计假设，controller 亲读②：R0 无凭证未实测该路径**——
+  真实 URL 待 runbook 首登时核验，允许 profiles `probe_url` 覆盖）→ `ChallengeDetector.classify`：OK（含账号标识）→ healthy；
   302→signin → EXPIRED；challenge 特征 → CHALLENGED。
 
 ## 4. 限速与礼貌
 
-- **串行 1 req/6s + 日配额 200 + 工作时段窗**（design/04 §4 全局纪律）；`default_rate = RatePolicy(10, burst=1,
+- **串行 1 req/6s + 日配额 200 + 工作时段窗**（design/04 §4/§5 全局纪律）；`default_rate = RatePolicy(10, burst=1,
   source_note="OUP 无明文 TDM 速率→全局保守 1req/6s [LIVE 2026-07-20]")`。
-- resolve（页面解析）与 fetch（PDF 下载）计入同一 `academic.oup.com` 域桶——每篇实际 2 请求，配额按请求数记账
-  （FetchLog 对账，auth-framework §8.3）。OUP TDM 无明文速率数字 → 维持全局保守；实现期可选礼貌动作：向 Data.Mining@oup.com 报备用途。
+- **限速 vs 日配额两层，口径分离（A-M5，与 auth-framework §8.3 一字不差）**：resolve（页面解析）与 fetch（PDF 下载）
+  **均过同一 `academic.oup.com` 域桶的逐请求限速**（每篇实际 2 请求，1 req/6s throttle 对两者都生效）；但**日配额
+  按"fetch 尝试篇次"计**——只数 fetch 阶段 fetch_log 行（成败均计），**resolve 页请求不计**（resolve 不写 fetch_log）。
+  即：限速器管每请求节奏（含 resolve），日配额 200 管 PDF 下载次数（不含 resolve 页请求）。OUP TDM 无明文速率数字 →
+  维持全局保守；实现期可选礼貌动作：向 Data.Mining@oup.com 报备用途。
 
 ## 5. 失败模式映射（对齐 HttpClient 冻结错误类 + `ChallengeDetector`）
 
@@ -128,3 +132,4 @@ updated: 2026-07-23
 |---|---|---|---|
 | 1 | 2026-07-21 | 初稿（survey 级，status review） | publisher-platforms-econfin.md [LIVE] |
 | 2 | 2026-07-23 | **扩写至实现级**（status draft）：CookieSession/SSO 全链 + **PDF file_id 解析器规格**（不可构造、从落地页/citation_pdf_url meta 抽取）+ **四类判定器 fixture 清单**（含 R0 真实 challenge 页脱敏）+ **QJE fulltext_source 收敛方案**（#2）+ 真实 SSO runbook 归用户参与层 + `ChallengeDetector` 接线 + R0 复核（robots 一致、QJE 403 challenge 持续、目标刊 robots 放行） | [R0 复核](../../research/site-survey/publisher-platforms-p4-recheck.md) [LIVE 2026-07-23] + auth-framework.md |
+| 3 | 2026-07-23 | **双评审修订轮**：A-M5 §4 日配额口径改**"fetch 尝试篇次"**（resolve 页请求不计，与 auth-framework §8.3 一字不差）；controller 亲读② probe_url `/my-account` 标 ⚠ 设计假设（R0 未实测、runbook 核验、profiles 可覆盖）；no_entitlement 不计 failures（§8.5） | 评审 A A-M5 + controller 亲读 |

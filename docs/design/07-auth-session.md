@@ -2,7 +2,7 @@
 title: 认证与会话管理
 status: approved
 owner: fable5
-updated: 2026-07-20
+updated: 2026-07-23
 ---
 
 # 07 · 认证与会话管理
@@ -100,3 +100,7 @@ class SessionHandle:
 - **集成（mock IdP）**：用本地假登录页模拟 login→state 保存→复用→过期→refresh 全生命周期（无真实凭证依赖，可 CI）。
 - **手动 runbook**（真实凭证，testing/records 留痕）：每 provider 一份——首登、复用、拔线重连、过期重登、logout 清理。
 - **验收**（AC-4.x 关联）：AC-4.1/4.2（见 design/04）；另 AC-4.5：`auth logout` 后磁盘无任何可恢复 session 残留（取证式检查清单）。
+
+## 9. 修订注记（不改正文语义段）
+
+- **2026-07-23（A-M3 / D-023）**：§4 "APIKeyProvider 密钥来自 OS keyring（首选）或加密配置" 的实现级落地采**两级凭证模型**（见 [D-023](../plan/decision-log.md) 附注 2 + [auth-framework.md §3.4](auth-framework.md)）：①**简单字符串密钥**（Elsevier `api_key`/`insttoken`、Wiley TDM `token`）走 `[auth.<platform>]` 明文 Config-slot（家目录 config、仓库外、0600、obslog 脱敏、env 覆盖），keyring 为**可选加固层**——这是对 Phase 2/3 既有惯例（`[auth.s2].api_key`/`[auth.openreview].token`）的诚实收敛，非本节语义推翻；②**有状态凭证**（storage_state/cookie jar）方走本节 §4 的 AES-GCM 加密存储。config 分层与敏感边界完整规范见 [design/10-config-layout.md](10-config-layout.md)（D-025）。本注记不改动上文任何设计段落。

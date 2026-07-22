@@ -77,6 +77,8 @@ updated: 2026-07-23
 `acquire` 取 `max(wait)`。当前主导窗单一（60/10min），单桶 + 保守参数已合规——**不扩展 `ratelimit.py` 冻结件**（接缝结论）。
 
 - 页面兜底路径：`onlinelibrary.wiley.com` 域独立桶，**串行 1 req/6s + 日配额 200**（全局纪律）。
+- **日配额口径 = "fetch 尝试篇次"**（A-M5，与 auth-framework §8.3 / oup §4 一字不差）：只数 fetch 阶段 fetch_log 行
+  （成败均计，`DATE(ts)`）；TDM API 取回与页面兜底下载均属 fetch，resolve 页请求不计。
 
 ## 5. 失败模式映射（对齐 HttpClient 冻结错误类 + `status_code`）
 
@@ -111,3 +113,4 @@ updated: 2026-07-23
 |---|---|---|---|
 | 1 | 2026-07-21 | 初稿（survey 级，status review） | publisher-platforms-econfin.md [LIVE] |
 | 2 | 2026-07-23 | **扩写至实现级 + 纳入本 Phase（D-024）**（status draft）：TDM 客户端规格（httpx + `Wiley-TDM-Client-Token`）+ **双窗口限速表达方案**（结论：单桶 rpm=6/burst=3 可表达，起步 rpm=5/burst=3 保守，无需扩展 ratelimit.py 冻结件；未来多窗口选项记录）+ `[auth.wiley].token` Config-slot + token 门控 skip 策略 + R0 升级活验（端点/头/速率 GitHub 二手确证、token 自助+订阅约束） | [R0 复核 §3](../../research/site-survey/publisher-platforms-p4-recheck.md) [LIVE 2026-07-23] + auth-framework.md + ratelimit.py |
+| 3 | 2026-07-23 | **双评审修订轮**：§4 补日配额口径 **"fetch 尝试篇次"**（A-M5，与 auth-framework §8.3 统一）；no_entitlement 不计 failures（§8.5） | 评审 A A-M5 |

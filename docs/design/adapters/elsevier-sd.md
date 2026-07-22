@@ -41,11 +41,13 @@ updated: 2026-07-23
     错误封套 `{"error-response":{"error-code":"RATE_LIMIT_EXCEEDED","error-message":"Rate of requests exceeds specified limits…"}}`。
   - **判读**：keyless 层被**即时限流**（叠加云 egress IP 被 CF 判高风险）——**未触达 401/entitlement 层**。
     **正面结论**：API 返**结构化 JSON error（非挑战页 HTML）**，印证"API 是合规正道、非 challenge 墙"设计前提成立。
-  - **两个 429 须区分（T3 实测核验）**：keyless 429（无 `X-ELS-Status`，本轮实测）≠ 认证态配额耗尽 429
-    （带 `X-ELS-Status: QUOTA_EXCEEDED`，07-20 文档口径）——`status_code=429` + detail 是否含 `X-ELS-Status`/body
-    error-code 作分流依据（§5）。
+  - **429 保守化处置（B-M2，不依赖 X-ELS-Status 真值分流）**：keyless 429（无 `X-ELS-Status`，R0 [LIVE] 实测）与
+    认证态配额耗尽 429（07-20 文档口径称带 `X-ELS-Status: QUOTA_EXCEEDED`，**keyless 层不可活验其真值**）
+    **一律按认证态 429 保守处置**——读 `Retry-After` + **当日熔断**（rate_limited 特化），**不靠 `X-ELS-Status` 真值区分行为**
+    （真值未活验，作行为分流不可靠）。`X-ELS-Status`/body error-code 仅入 detail 作观测，不改处置（§5）。
 - **⚠ 待核验（BLOCKER-1，key 到位后 T3 实测）**：entitlement 端点/字段（AC-4.3）、`X-RateLimit-*` 真值、
   全文响应 PDF vs XML 可得性（按刊差异）、SI/attachment（objects）清单字段名——R0 keyless 429 拦在 auth 层前全部无法活验。
+  **认证态 429 的 `X-ELS-Status` 真值同属不可活验项**（B-M2：故不作行为依据）。
 
 ## 3. 各阶段实现方案（字段级）
 
@@ -88,15 +90,15 @@ updated: 2026-07-23
 
 | 现象 | status_code | error_class | 说明 |
 |---|---|---|---|
-| **keyless 429 `RATE_LIMIT_EXCEEDED`**（无 X-ELS-Status） | 429 | `rate_limited` | R0 [LIVE]：无 key 即被限流（非 401）；退避重试；报告提示配 key |
-| 认证态 429 `QUOTA_EXCEEDED`（X-ELS-Status/body error-code 含 QUOTA） | 429 | `rate_limited` **特化** | 读 `X-RateLimit-Reset` → 当日熔断（沿 openalex 预算熔断口径）；靠 `status_code==429` + detail 分流 |
+| **任意 429**（keyless `RATE_LIMIT_EXCEEDED` / 认证态 `QUOTA_EXCEEDED`，**统一保守**，B-M2） | 429 | `rate_limited` **特化** | 读 `Retry-After` + **当日熔断**（沿 openalex 预算熔断口径）；**不靠 `X-ELS-Status` 真值分流行为**（真值不可活验）；报告提示（keyless 时提示配 key） |
 | API 401/403（key 失效 / insttoken 错） | 401/403 | `auth_expired` | → BLOCKED，提示重配 key（`crawler auth login elsevier`） |
-| entitlement=false（有权探测否） | 200/403 | `no_entitlement` | 不重试；转 unpaywall OA-fallback（§8.1）⚠ 判定字段待 T3 |
+| entitlement=false（有权探测否） | 200/403 | `no_entitlement` | 不计 failures（auth-framework §8.5）；转 unpaywall OA-fallback（§8.1）⚠ 判定字段待 T3 |
 | API 404（DOI 未收录/太新） | 404 | `gone` | 新文收录延迟属常态 → 延迟重试队列 24h 一次 |
 | XML/PDF 空壳 | — | `integrity`(auth_leak) | 魔数/大小校验失败 → 触发 healthcheck |
 
 - **`status_code` 精确分流**（auth-framework §6，检查单 #4）：401 vs 403 vs 429 的分类不再靠异常消息文本嗅探——
-  `exc.status_code` 直读；429 的 keyless-vs-quota 二义靠 `status_code==429` + `detail`（是否含 `X-ELS-Status`/body error-code）。
+  `exc.status_code` 直读。**429 一律保守当日熔断**（B-M2）；`X-ELS-Status`/body error-code 仅入 detail 作**观测**
+  （keyless-vs-quota 区分是诊断信息、**非行为分流依据**——认证态真值不可活验）。
 
 ## 6. AC-4.1 载体细化（`auth login elsevier` + `grab JFE DOI` 全链）
 
@@ -111,14 +113,17 @@ updated: 2026-07-23
 
 ## 7. Fixtures 与测试
 
-- **T1 单元**：DOI/PII 规范化；entitlement 响应判定（⚠ 真值待 T3，先合成占位 + 结构断言）；429 keyless-vs-quota 分流
-  （`status_code`+detail）；无 key → AuthRequired 分支。
-- **T3 fixture**（四类，脱敏）：① Article API 全文响应截断样本（脱敏 key）② entitlement true/false 两样本
-  ③ **keyless 429 `RATE_LIMIT_EXCEEDED`**（R0 [LIVE] 真实封套脱敏）④ 认证态 429 `QUOTA_EXCEEDED`（合成，X-ELS-Status 头）。
-- **T3 在线冒烟**（`tests/online/test_elsevier_smoke.py`，`-m online`，`MAX_REAL_REQUESTS≤5`）：**key 门控**——
+- **T1 单元**：DOI/PII 规范化；entitlement 响应判定（⚠ 真值待 T3，先合成占位 + 结构断言）；**任意 429→保守当日熔断**
+  （B-M2，不靠 X-ELS-Status 分流）；无 key → AuthRequired 分支。
+- **T3 fixture（JSON 封套集，非 HTML——B-M3：elsevier API 返结构化 error 非挑战页）**（脱敏）：
+  ① Article API 全文响应截断样本（脱敏 key）② entitlement true/false 两样本
+  ③ **keyless 429 `RATE_LIMIT_EXCEEDED`**（R0 [LIVE] 真实封套脱敏）
+  ④ 认证态 429 `QUOTA_EXCEEDED`（**⚠[DOCS]-合成，keyless 层不可活验**，B-M2；标注合成来源）。**不设 HTML 四类**（无页面路线）。
+- **T3 在线冒烟**（`tests/online/test_elsevier_smoke.py`，`-m online`，**committed 层 `MAX_REAL_REQUESTS≤5`**）：**key 门控**——
   无 key → pytest `skipif`（不发请求；canary 层 NotImplementedError→SKIP）；有 key → entitlement 预检 1 + JFE 单篇 1（≤2）。
-  **BLOCKER-1 标注**：本层在 key 到位后执行（plan §3 在线预算行"key 到位后执行"）。
-- **T6 runbook**（`tests/manual/elsevier_runbook.md`，records 留痕）：真实 key：entitlement 预检 → 取 1 篇 JFE →
+- **预算层次分列（B-m9）**：committed 在线冒烟 ≤5 req（本行，进 CI 的 `-m online`，BLOCKER-1 key 到位后 committed）
+  **≠** T7b runbook 真实 key 窗 ≤40 req（plan §3 分项，不进 CI 的 `tests/manual/`）——两层预算独立标注，勿混。
+- **T7b runbook**（`tests/manual/elsevier_runbook.md`，records 留痕，用户参与层）：真实 key：entitlement 预检 → 取 1 篇 JFE →
   配额头审计 → key 失效演练。**验收关联**：AC-4.1（JFE 单篇，本 adapter 核心场景）、AC-4.3（no_entitlement 降级）、AC-4.4（日配额）。
 
 ## 8. 风险与维护
@@ -134,4 +139,5 @@ updated: 2026-07-23
 | # | 日期 | 修订 | 依据 |
 |---|---|---|---|
 | 1 | 2026-07-20 | 初稿（survey 级，status review） | publisher-platforms-econfin.md [LIVE] |
-| 2 | 2026-07-23 | **扩写至实现级**（status draft）：resolve/fetch/healthcheck 字段级 + R0 增量（keyless 429 语义、两 429 分流、结构化 error 非挑战墙）+ AC-4.1 载体全链 + BLOCKER-1 key 缺失期行为（AuthRequired 离线不阻塞）+ `[auth.elsevier]` Config-slot + status_code 精确分流（#4）+ SI/attachment ⚠ 留 T3；域 www.sciencedirect.com→api.elsevier.com | [R0 复核](../../research/site-survey/publisher-platforms-p4-recheck.md) [LIVE 2026-07-23] + auth-framework.md |
+| 2 | 2026-07-23 | **扩写至实现级**（status draft）：resolve/fetch/healthcheck 字段级 + R0 增量（keyless 429 语义、结构化 error 非挑战墙）+ AC-4.1 载体全链 + BLOCKER-1 key 缺失期行为（AuthRequired 离线不阻塞）+ `[auth.elsevier]` Config-slot + status_code 精确分流（#4）+ SI/attachment ⚠ 留 T3；域 www.sciencedirect.com→api.elsevier.com | [R0 复核](../../research/site-survey/publisher-platforms-p4-recheck.md) [LIVE 2026-07-23] + auth-framework.md |
+| 3 | 2026-07-23 | **双评审修订轮**：B-M2 **任意 429 统一保守当日熔断**（废止"两 429 X-ELS-Status 真值分流"——认证态真值不可活验，只作观测）；B-M3 fixture 改 **JSON 封套集**（非 HTML 四类；quota-429 标 ⚠[DOCS]-合成）；B-m9 预算层次分列（committed 冒烟 ≤5 vs T7b runbook ≤40）；no_entitlement 不计 failures（auth-framework §8.5）；runbook 归 T7b 用户参与层 | 评审 B 裁决 |
