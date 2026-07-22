@@ -1,0 +1,10 @@
+# T6 synthetic S2 404 not-found (single-paper endpoint, GET /paper/DOI:{doi}).
+# §5.4 "有 key 真缺" scenario — distinct from the "无 key" symptom (also 404, but
+# judged by key-presence, never by this status code; see adapter.py enrich_batch
+# docstring "不靠状态码推断"). Reused by the healthcheck-unreachable test and
+# referenced (not fed through a transport) by the no-key CONFIG test as the
+# real-world shape that guard exists to avoid interpreting.
+HTTP-STATUS: 404
+Content-Type: application/json
+
+{"error": "Paper not found"}

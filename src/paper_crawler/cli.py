@@ -71,12 +71,16 @@ from typing import Annotated, NoReturn
 import typer
 
 from paper_crawler.adapter import (
+    ApiKeyConsumer,
     EmailConsumer,
+    EnrichSource,
     HttpClientConsumer,
     SourceAdapter,
     bind_http_client,
     load_adapters,
 )
+from paper_crawler.adapters.openalex import budget as openalex_budget
+from paper_crawler.adapters.openalex.adapter import OpenAlexAdapter
 from paper_crawler.adapters.unpaywall import report as oa_report
 from paper_crawler.adapters.unpaywall.adapter import UnpaywallAdapter
 from paper_crawler.canary import (
@@ -89,6 +93,7 @@ from paper_crawler.canary import (
 from paper_crawler.config import Config
 from paper_crawler.errors import CrawlerError, ErrorClass, IllegalTransition
 from paper_crawler.http import HttpClient
+from paper_crawler.merge import MergeEngine
 from paper_crawler.obslog import log_event, setup_logging
 from paper_crawler.pipeline import PipelineRunner, RunReport, Selector, StageContext
 from paper_crawler.ratelimit import RateLimiter
@@ -898,6 +903,209 @@ def oa_report_cmd(
         adapter = _prepare_unpaywall_adapter(env)
         rep = oa_report.build_oa_report(dois, adapter.lookup)
         typer.echo(oa_report.render_oa_report_markdown(rep))
+    raise typer.Exit(code=0)
+
+
+# -- enrich ---------------------------------------------------------------------
+#
+# T6（design/adapters/aggregators.md §5.3/§5.4；plan §2-5 冻结契约）：openalex/s2
+# 补充层 enrich 通道的驱动命令。二者 capabilities 空集、不进 `SourceAdapter` 冻结
+# 协议的枚举/取回语义，只经 duck-typed `EnrichSource.enrich_batch` 参与——**不进
+# pull 六阶段、不产 RunReport、无任何 AC 依赖它**（同 `oa-report` 的定位/退出码
+# 口径：薄包装接线，纯逻辑在各 adapter 自身，本节只做装配 + 循环编排 + 摘要渲染）。
+
+_ENRICH_SOURCES = ("openalex", "s2")
+# 每次 `enrich_batch` 调用处理的 DOI 数上限——CLI 层的"外层分页"，与各 adapter 内部
+# 自己的批量机制（openalex URL 长度自算、s2 官方 ≤500/批）是两层独立的粒度：外层页
+# 控制进度可见度/预算熔断响应粒度（一页可能触发数个真实请求），内层页是单次真实
+# 请求的负载上限。200 是介于"太碎（调用开销）"与"太粗（一次性吞掉几千 DOI 才反馈
+# 一次进度、一旦中途熔断损失的已完成工作也更多）"之间的折中值，非站点强制上限。
+_ENRICH_PAGE_SIZE = 200
+
+
+@dataclass(frozen=True)
+class _EnrichSourceSummary:
+    """单个 source 一次 `crawler enrich` 运行的摘要行数据。"""
+
+    source: str
+    processed: int
+    created: int
+    merged: int
+    candidate: int
+    stopped_reason: str | None
+
+
+def _chunked(items: list[str], size: int) -> Iterator[list[str]]:
+    for i in range(0, len(items), size):
+        yield items[i : i + size]
+
+
+def _prepare_enrich_source(env: CliEnv, source_id: str) -> tuple[EnrichSource, HttpClient | None]:
+    """装配一个可用的 enrich source adapter（`enrich` 命令对单个 `--source` 取值的专用
+    装配，接线风格仿 `_prepare_unpaywall_adapter`：fresh `load_adapters()` + 手工注入
+    + 手工限速登记，不复用 `env.ctx.registry`——openalex/s2 不是任何 venue 的
+    metadata_source/fulltext_source，不会天然出现在 registry 路由里）。
+
+    返回 `(adapter, dedicated_client)`：`dedicated_client` 非 `None` 时调用方负责
+    `close()`——s2 有 key 时构造携 `x-api-key` 头的**专属** `HttpClient`，绝不复用
+    跨 adapter 共享的 `env.http`（否则该头会随 crossref/dblp/... 等其它域的请求外泄，
+    凭证红线；沿 openreview token 专属 client 先例，`_bind_openreview_token_client`）。
+    openalex 的 key 走每请求 URL 查询参数（非 client 级头），可安全复用共享 client。
+
+    `source_id` 给出未注册、或已注册但未实现 duck-typed `enrich_batch` 的 id → 用法错
+    退出 2（同 `oa-report`/`canary --adapter` 既有口径）。
+    """
+    adapters = load_adapters()
+    candidate = adapters.get(source_id)
+    if candidate is None or not isinstance(candidate, EnrichSource):
+        _usage_error(
+            f"{source_id!r} 不是已注册且支持 enrich 的 source"
+            "（未注册，或未实现 duck-typed enrich_batch）"
+        )
+
+    dedicated: HttpClient | None = None
+    if source_id == "s2":
+        key = env.ctx.config.s2_api_key
+        if key and isinstance(candidate, HttpClientConsumer):
+            dedicated = HttpClient(
+                user_agent=build_user_agent(env.ctx.config.identity_email),
+                rate_limiter=env.ctx.limiter,
+                extra_headers={"x-api-key": key},
+            )
+            candidate.set_http_client(dedicated)
+        elif isinstance(candidate, HttpClientConsumer):
+            # 无 key：enrich_batch 会在函数入口直接 CONFIG、不发请求（s2 adapter
+            # docstring）；仍注入共享 client 只为保持"已装配"的一致状态，不会被用到。
+            candidate.set_http_client(env.http)
+        if isinstance(candidate, ApiKeyConsumer):
+            candidate.set_api_key(key)
+    elif source_id == "openalex":
+        if isinstance(candidate, HttpClientConsumer):
+            candidate.set_http_client(env.http)
+        if isinstance(candidate, ApiKeyConsumer):
+            candidate.set_api_key(env.ctx.config.openalex_api_key)
+        if isinstance(candidate, OpenAlexAdapter):
+            candidate.configure_budget(
+                daily_budget_usd=env.ctx.config.openalex_daily_budget_usd,
+                state_path=env.ctx.config.home / "state" / "openalex-budget.json",
+            )
+
+    env.ctx.limiter.register(candidate.domains[0], candidate.default_rate)
+    return candidate, dedicated
+
+
+def _run_enrich_source(
+    adapter: EnrichSource, engine: MergeEngine, source_id: str, dois: list[str]
+) -> _EnrichSourceSummary:
+    """驱动一个 source 对整批 `dois` 的 enrich 循环：外层分页调 `enrich_batch` → 逐
+    `PaperStub` 经 `MergeEngine.ingest(stub, source=source_id)` 回注（字段级来源优先级
+    收敛天然补缺不覆盖，merge.py `SOURCE_PRIORITY`）。
+
+    任一页触发的 `CrawlerError`（s2 缺 key/openalex 预算熔断/瞬时故障等）终止该
+    source**剩余**页的处理、记入 `stopped_reason`——不重试、不向上抛出崩溃整个命令：
+    `enrich` 不进 pull 六阶段，没有 pipeline 的重试/BLOCKED 语义（模块顶层注释）。
+    已经处理完的页在终止前已正确回注入库，不回滚（"尽力而为，报告在哪停下"）。
+    """
+    processed = created = merged = candidate_flagged = 0
+    stopped_reason: str | None = None
+    for page in _chunked(dois, _ENRICH_PAGE_SIZE):
+        try:
+            stubs = adapter.enrich_batch(page)
+        except CrawlerError as exc:
+            stopped_reason = f"{exc.error_class.value}: {exc}"
+            break
+        for stub in stubs:
+            result = engine.ingest(stub, source=source_id)
+            processed += 1
+            if result.action == "created":
+                created += 1
+            elif result.action == "merged":
+                merged += 1
+            else:
+                candidate_flagged += 1
+    return _EnrichSourceSummary(
+        source=source_id,
+        processed=processed,
+        created=created,
+        merged=merged,
+        candidate=candidate_flagged,
+        stopped_reason=stopped_reason,
+    )
+
+
+def _render_enrich_summary(summary: _EnrichSourceSummary, *, extra_note: str | None = None) -> str:
+    line = (
+        f"[{summary.source}] 处理 {summary.processed} 篇"
+        f"（created={summary.created} merged={summary.merged} candidate={summary.candidate}）"
+    )
+    if extra_note:
+        line += f" | {extra_note}"
+    if summary.stopped_reason:
+        line += f" | 提前终止: {summary.stopped_reason}"
+    return line
+
+
+def _openalex_budget_note(env: CliEnv) -> str:
+    """openalex 摘要行的预算消耗附注（读状态文件现值，不改动其内容）。"""
+    state_path = env.ctx.config.home / "state" / "openalex-budget.json"
+    state = openalex_budget.load_state(state_path)
+    return (
+        f"预算消耗 {state.spent_usd:.4f}/{env.ctx.config.openalex_daily_budget_usd:.2f} "
+        "USD（今日 UTC）"
+    )
+
+
+@app.command()
+def enrich(
+    venue: Annotated[str | None, typer.Option("--venue", help="仅富化该 venue 的 paper")] = None,
+    source: Annotated[
+        str | None, typer.Option("--source", help="仅跑该 enrich source（openalex|s2）")
+    ] = None,
+    limit: Annotated[
+        int | None, typer.Option("--limit", help="限制扫描的 DOI 数量（默认不限）")
+    ] = None,
+    home: HomeOpt = None,
+    verbose: VerboseOpt = False,
+) -> None:
+    """补充层 enrich 通道：openalex/s2 duck-typed `enrich_batch`（plan §2-5/§4 T6）。
+
+    扫库内带 `doi` identifier 的 paper（`--venue` 可选收窄，同 `oa-report` 的
+    `_doi_universe` 复用）→ 按 `--source` 指定的（或省略时全部两个）source 分批调用
+    `enrich_batch` → 每条 `PaperStub` 经 `MergeEngine.ingest(stub, source=…)` 回注。
+
+    **不参与 pull 六阶段、不产 `RunReport`、无任何 AC 依赖它**（AC-3.5 五刊全史由
+    crossref 独立完成，同模块顶层"-- enrich --"分节注释）——退出码恒为 0，除非早期
+    用法/配置错误（未知 venue、未知 `--source` 取值 → 2，同既有 CLI 用法错口径）。
+    单个 source 运行中途遇到的错误（s2 未配置 key、openalex 预算当日熔断、瞬时网络
+    故障等）只记入该 source 摘要行的"提前终止"备注，不影响其它 source 继续跑、不
+    改变命令整体退出码——这类情形是预期内的正常运维态（预算耗尽明日恢复、key 待
+    申请），不是需要非零退出码提醒运维介入的错误。
+    """
+    if source is not None and source not in _ENRICH_SOURCES:
+        _usage_error(f"未知 --source: {source!r}；可选 {', '.join(_ENRICH_SOURCES)}")
+
+    with _env(home, verbose) as env:
+        if venue is not None:
+            _require_known_venue(env, venue)
+        dois = _doi_universe(env.ctx.db, venue_id=venue)
+        if limit is not None:
+            dois = dois[:limit]
+
+        if not dois:
+            typer.echo("库内无 doi identifier（可选按 --venue 过滤后同样为空），无可富化目标。")
+            raise typer.Exit(code=0)
+
+        engine = MergeEngine(env.ctx.repo)
+        sources = [source] if source is not None else list(_ENRICH_SOURCES)
+        for source_id in sources:
+            adapter, dedicated = _prepare_enrich_source(env, source_id)
+            try:
+                summary = _run_enrich_source(adapter, engine, source_id, dois)
+            finally:
+                if dedicated is not None:
+                    dedicated.close()
+            extra_note = _openalex_budget_note(env) if source_id == "openalex" else None
+            typer.echo(_render_enrich_summary(summary, extra_note=extra_note))
     raise typer.Exit(code=0)
 
 

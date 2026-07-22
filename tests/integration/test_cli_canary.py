@@ -102,6 +102,11 @@ def test_canary_without_filter_checks_all_registered_adapters(
     本测试只验证遍历编排；真 healthcheck 属在线域（真实 adapter 的实现会发真实
     请求——合并期修复 2026-07-22：此前直调导致离线门禁打真网），故一律
     猴补丁为恒 healthy。真实健康探测由 `crawler canary` 在在线冒烟/运维场景执行。
+
+    openalex/s2（T6）**不需要猴补丁**：本用例的 `_home(tmp_path)` 是全新空目录，
+    无 `config.toml`，故二者 `healthcheck()` 在 key 未配置分支天然 `raise
+    NotImplementedError` → SKIP（不发任何真实请求，不受本测试的"合并期修复"约束——
+    该修复只针对**无条件**发真实请求的 healthcheck 实现）。
     """
     from paper_crawler.adapters.aaai_ojs.adapter import AaaiOjsAdapter
     from paper_crawler.adapters.acl_anthology.adapter import AclAnthologyAdapter
@@ -145,6 +150,8 @@ def test_canary_without_filter_checks_all_registered_adapters(
         "cvf",
         "neurips_proceedings",
         "unpaywall",
+        "openalex",  # T6（SKIP 行——无 key）
+        "s2",  # T6（SKIP 行——无 key）
     ):
         assert adapter_id in result.output
 

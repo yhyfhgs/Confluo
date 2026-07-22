@@ -1,0 +1,13 @@
+{
+  "_synthetic": true,
+  "_note": "T6 synthetic malformed abstract_inverted_index (value is not a position list) — must raise CrawlerError(PARSE), aggregators.md §5.3 error mapping table.",
+  "meta": {"count": 1, "cost_usd": 0.0001},
+  "results": [
+    {
+      "id": "https://openalex.org/W1111111111",
+      "doi": "https://doi.org/10.9999/synthetic.malformed-abstract",
+      "title": "A Work With Malformed Abstract Inverted Index",
+      "abstract_inverted_index": {"oops": "not-a-position-list"}
+    }
+  ]
+}

@@ -1,0 +1,7 @@
+{
+  "_synthetic": true,
+  "_note": "T6 synthetic single-work response (GET /works/W{id}) for healthcheck; title is real-world grounded (same work as 01_works_normal.json's first record) but the response is hand-constructed, not a verbatim API capture.",
+  "id": "https://openalex.org/W2741809807",
+  "doi": "https://doi.org/10.7717/peerj.4375",
+  "title": "The State of OA: A Large-Scale Analysis of the Prevalence and Impact of Open Access Articles"
+}

@@ -1,0 +1,23 @@
+[
+  {
+    "paperId": "204e3073870fae3d05bcbc2f6a8e263d9b72e776",
+    "externalIds": {"DOI": "10.48550/arXiv.1706.03762", "ArXiv": "1706.03762"},
+    "title": "Attention Is All You Need",
+    "citationCount": 100000,
+    "tldr": {
+      "text": "The Transformer, a model architecture eschewing recurrence in favor of attention, is proposed."
+    },
+    "fieldsOfStudy": ["Computer Science"],
+    "openAccessPdf": {
+      "url": "https://arxiv.org/pdf/1706.03762",
+      "status": "GREEN",
+      "license": null
+    }
+  },
+  null,
+  {
+    "paperId": "abc123notitle00000000000000000000000000",
+    "externalIds": {"DOI": "10.9999/synthetic.no-title"},
+    "citationCount": 3
+  }
+]

@@ -1,0 +1,5 @@
+{
+  "_synthetic": true,
+  "_note": "T6: S2 batch responses must be a top-level JSON array; this file is deliberately a JSON object to exercise the PARSE error path in parse_batch_response.",
+  "not": "a list"
+}

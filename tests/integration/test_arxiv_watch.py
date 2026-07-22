@@ -99,9 +99,10 @@ def _make_env(tmp_path: Path, handler: Handler, *, inception: str = "2024-01") -
     client = HttpClient(user_agent=_UA, transport=httpx.MockTransport(handler))
     # 真实 http adapter 均为 HttpClientConsumer（watch 只跑 preprint venue，其余被注入但
     # 不参与——conference/journal 不入 watch）。
-    # ★共享花名册（5 线并行 union 点）：crossref（T3）已加入注入集；T4/T5/T6 亦将扩集——
-    # controller 合并取并集（另见 tests/unit/test_adapter_loading.py 同名断言）。
-    # unpaywall（T5）亦为 HttpClientConsumer（RESOLVE-only，注入不参与 watch）。
+    # ★共享花名册（5 线并行 union 点，T6 关闭——五源全部加入，另见
+    # tests/unit/test_adapter_loading.py 同名断言）。
+    # unpaywall（T5）/openalex/s2（T6）均为 HttpClientConsumer（enrich-only/RESOLVE-only，
+    # 注入不参与 watch）。
     assert set(bind_http_client(adapters, client)) == {
         "arxiv",
         "openreview",
@@ -113,6 +114,8 @@ def _make_env(tmp_path: Path, handler: Handler, *, inception: str = "2024-01") -
         "crossref",
         "unpaywall",
         "dblp",
+        "openalex",  # T6
+        "s2",  # T6
     }
     registry = VenueRegistry(adapters)
     assert registry.load_dirs([venues_dir]) == []

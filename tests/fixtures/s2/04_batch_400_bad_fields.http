@@ -1,0 +1,5 @@
+# T6 synthetic S2 400 malformed `fields=` query syntax response.
+HTTP-STATUS: 400
+Content-Type: application/json
+
+{"error": "Unrecognized or empty fields parameter"}

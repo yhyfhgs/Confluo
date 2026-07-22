@@ -35,6 +35,8 @@ EXPECTED_ADAPTER_IDS = {
     "neurips_proceedings",
     "unpaywall",
     "dblp",
+    "openalex",  # T6
+    "s2",  # T6
 }
 VALID_FAMILIES = {"open_access", "auth_gated", "aggregator"}
 
@@ -259,8 +261,8 @@ def test_mock_platform_methods_are_implemented_after_t6(
 def test_arxiv_is_http_client_consumer(adapters: dict[str, SourceAdapter]) -> None:
     """真实 http adapter 实现 `HttpClientConsumer`（可注入共享 client）；stub/mock 不实现。
 
-    ★共享花名册（5 线并行 union 点）：crossref（T3）已加入 consumer 集；T4/T5/T6 的
-    dblp/unpaywall/openalex/s2 亦将加入——controller 合并时统一取各分支并集。
+    ★共享花名册（5 线并行 union 点，T6 关闭——五源全部加入）：crossref/dblp/unpaywall/
+    openalex/s2 均已加入 consumer 集。
     """
     for adapter_id in (
         "arxiv",
@@ -271,6 +273,8 @@ def test_arxiv_is_http_client_consumer(adapters: dict[str, SourceAdapter]) -> No
         "aaai_ojs",
         "neurips_proceedings",
         "crossref",  # T3：aggregator 亦经注入携 config mailto 的 client（polite pool 硬要求）
+        "openalex",  # T6
+        "s2",  # T6
     ):
         assert isinstance(adapters[adapter_id], HttpClientConsumer)
 
@@ -280,8 +284,7 @@ def test_arxiv_is_http_client_consumer(adapters: dict[str, SourceAdapter]) -> No
 def test_bind_http_client_injects_only_consumers(adapters: dict[str, SourceAdapter]) -> None:
     """`bind_http_client` 只注入实现协议的 adapter，返回被注入的 id 列表。
 
-    ★共享花名册（5 线并行 union 点）：crossref（T3）已加入注入集；T4/T5/T6 亦将扩集——
-    controller 合并取并集。
+    ★共享花名册（5 线并行 union 点，T6 关闭——五源全部加入）。
     """
     client = HttpClient(user_agent="PaperCrawler/test (personal research)")
     injected = bind_http_client(adapters, client)
@@ -297,6 +300,8 @@ def test_bind_http_client_injects_only_consumers(adapters: dict[str, SourceAdapt
         "crossref",
         "unpaywall",
         "dblp",
+        "openalex",  # T6
+        "s2",  # T6
     }
     # 注入生效：各 adapter 的 _client() 返回被注入的实例，不再惰性自建。
 

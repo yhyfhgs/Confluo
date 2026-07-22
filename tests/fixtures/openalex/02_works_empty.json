@@ -1,0 +1,6 @@
+{
+  "_synthetic": true,
+  "_note": "T6 synthetic empty-result page (a DOI batch with zero matches at OpenAlex).",
+  "meta": {"count": 0, "cost_usd": 0.0001, "db_response_time_ms": 8},
+  "results": []
+}

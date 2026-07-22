@@ -1,0 +1,6 @@
+# T6 synthetic OpenAlex 429 rate-limited response (100 req/s hard ceiling, §4).
+HTTP-STATUS: 429
+Retry-After: 3
+Content-Type: application/json
+
+{"error": "rate_limit_exceeded"}

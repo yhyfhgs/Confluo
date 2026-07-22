@@ -1,0 +1,7 @@
+# T6 synthetic OpenAlex 402 credit-exhausted response (aggregators.md §5.3/§4).
+# Server-side signal of daily credit exhaustion; adapter re-classifies this as
+# RATE_LIMITED (same circuit-break semantics as the local budget.py pre-check).
+HTTP-STATUS: 402
+Content-Type: application/json
+
+{"error": "credit_limit_exceeded", "message": "You have exceeded your daily API credit limit."}
