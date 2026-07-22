@@ -279,3 +279,51 @@ def canonical_dump(db_path: Path) -> dict[str, list[tuple[object, ...]]]:
         }
     finally:
         db.close()
+
+
+def dump_paper_relations(db_path: Path) -> list[tuple[object, ...]]:
+    """`paper_relation` 的 canonical dump（Phase 3 T1 合并引擎新增写入路径）。
+
+    `canonical_dump` 刻意不含此表（Phase 1 无写入路径）；合并引擎的弱信号候审 / 跨 paper
+    冲突 / 迁移 doi 碰撞会写 candidate_duplicate，AC-3.4 顺序无关属性测试须逐行比对它。
+
+    `from_paper`/`to_paper`（ULID，跨库不可比）翻译为 paper 复合业务键
+    `(title, primary_identifier)`（同 `canonical_dump` 规则 2）；两端点按 repr 排序使
+    **方向无关**（写侧已按最小 identifier 定向，dump 侧再排序作双重保险，跨库/跨注入顺序
+    的两库对同一对 paper 得同一行）。行按整行 repr 排序，不受插入顺序影响。返回
+    `[(endpoints, kind, confidence, evidence_json, decided), ...]`，`endpoints` 为已排序
+    的两 paper_key 元组。只读。
+    """
+    from_scheme = _PRIMARY_IDENTIFIER_SCHEME_SQL.format(fk="r.from_paper")
+    from_value = _PRIMARY_IDENTIFIER_VALUE_SQL.format(fk="r.from_paper")
+    to_scheme = _PRIMARY_IDENTIFIER_SCHEME_SQL.format(fk="r.to_paper")
+    to_value = _PRIMARY_IDENTIFIER_VALUE_SQL.format(fk="r.to_paper")
+    db = Database(db_path)
+    try:
+        rows = db.query(
+            "SELECT pf.title AS from_title, "
+            f"       {from_scheme} AS from_scheme, {from_value} AS from_value, "
+            "       pt.title AS to_title, "
+            f"       {to_scheme} AS to_scheme, {to_value} AS to_value, "
+            "       r.kind, r.confidence, r.evidence_json, r.decided "
+            "FROM paper_relation r "
+            "JOIN paper pf ON pf.id = r.from_paper "
+            "JOIN paper pt ON pt.id = r.to_paper"
+        )
+        result: list[tuple[object, ...]] = []
+        for row in rows:
+            key_from = _paper_key(row["from_title"], row["from_scheme"], row["from_value"])
+            key_to = _paper_key(row["to_title"], row["to_scheme"], row["to_value"])
+            endpoints = tuple(sorted((key_from, key_to), key=repr))
+            result.append(
+                (
+                    endpoints,
+                    row["kind"],
+                    row["confidence"],
+                    row["evidence_json"],
+                    row["decided"],
+                )
+            )
+        return sorted(result, key=repr)
+    finally:
+        db.close()
