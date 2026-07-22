@@ -3,7 +3,9 @@
 全体 adapter 都要过的元数据完备性检查，以及——对声明了 contract case 的 adapter
 （`mock_platform` 本地确定性；`arxiv`/`openreview` 经 `httpx.MockTransport` 注入合成
 fixture，零真实网络）——DISCOVER→ENUMERATE→RESOLVE→FETCH 全链路产出合法性检查。剩余
-真实站点 stub（crossref/elsevier_sd）在 Phase 3/4 前 `pytest.skip`（各 4 条，共 8 skip）。
+无 contract-case factory 的 adapter 经 `pytest.skip` 占位（各 4 条能力链）：Phase 3 落地的
+五源（crossref/dblp/unpaywall/openalex/s2）factory 补齐移交 Phase 4 测试补强批次；
+elsevier_sd 仍为 stub——共 24 skip。
 
 契约的 enumerate 计数口径按能力分层：声明了权威计数（`IssueRef.paper_count_claimed`）
 的 adapter（mock）严格等值；未声明的（arxiv 月度桶——预印本无权威"期"计数）只要求

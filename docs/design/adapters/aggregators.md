@@ -122,7 +122,7 @@ state:  <config-home>/state/openalex-budget.json = {"date": "YYYY-MM-DD(UTC)", "
 | PaperStub 字段 | JSON 路径 | 缺失时行为 |
 |---|---|---|
 | title | `items[].title[0]`（数组取 [0]） | 空数组 → **跳过该记录 + `parse` 观测告警**（★裁决 2026-07-22：title 是 06 `paper.title NOT NULL`；占位符标题会污染 `title_norm` 弱信号匹配面，对合并引擎是毒数据——宁缺勿污，不占位） |
-| identifier(doi) | `items[].DOI` → `normalize_doi()` | 无 DOI 则该 stub 无强合并锚点（罕见于期刊） |
+| identifier(doi) | `items[].DOI` → `normalize_doi()` | 无 DOI → **跳过该记录**并计 `skipped_doiless` 观测（PaperStub 需 ≥1 identifier，无锚点无身份；罕见于期刊——实现口径 2026-07-23 终检对齐） |
 | pub_date | `published-print`→`published-online`→`issued` 的 `date-parts`（首个非空族） | 全缺 → null |
 | volume/issue | `items[].volume` / `items[].issue`（文本，容 'S1' 特刊） | null（不阻塞） |
 | abstract | `items[].abstract`（JATS，常缺 ~70% 无） | null（06 §5 约定不阻塞入库） |

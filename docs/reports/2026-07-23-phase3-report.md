@@ -132,7 +132,7 @@ s2/unpaywall + openreview 补充）、4 个新 venue YAML；整体 **169 files c
   `parse.parse_single_work_title()` 的纯解析单测：**同一 fixture 被两个测试文件消费，只
   同步了其中一个**。`make check` 的 `test` 目标目前非全绿（lint/type 两项 PASS，仅此 1 测试
   FAIL，覆盖率门禁本身仍达标 99.18%）。**本次为纯文档任务，未修改测试/源代码**（任务边界），
-  需 owner 在 `test_crossref_parse.py:226` 补一处断言更新。详见 §6 增补小节。
+  需 owner 在 `test_crossref_parse.py:226` 补一处断言更新。详见 §6 增补小节。**【终态更新 2026-07-23】已于 `f114a09` 跟修，本次终检实测通过、`make check` 全绿（本条保留为过程记录）。**
 - **S2 API key 未到**：D-021 决策 2 记录"生产必须申请 key"；enrich（`crawler enrich --source
   s2`）与 canary 在线层均门控为 SKIP/CONFIG，不阻塞离线 DoD，但 D-019 s2 锚点、s2 在线冒烟均
   为 `[PENDING]`。
@@ -162,8 +162,9 @@ s2/unpaywall + openreview 补充）、4 个新 venue YAML；整体 **169 files c
   Phase 3 新模块——如实标注供 controller 决定是否需专项补全；本次"进度刷新"任务范围限定在
   "当前快照"叙事段，未触碰该表。
 - **`docs/plan/decision-log.md` 的 INDEX 摘要仍写"D-001…D-019"**（Phase 2 报告 §5 已首次
-  记录此滞后，本次复核确认仍未更正，现应为 D-001…D-022）——跨 2 个 Phase 未清零的文档滞后，
-  供 controller 决定是否一并处理。
+  记录此滞后，本次复核确认仍未更正，现应为 D-001…D-022）——跨 2 个 Phase 未清零的文档滞后。
+  **【终态更新 2026-07-23】INDEX 两处摘要已于签署提交更正为 D-001…D-022（本条保留为过程记录）；
+  progress.md 模块状态表滞后仍移交下次盘点（§6 #11）。**
 - **本 Phase 无 `docs/logs/` session 日志**：AGENTS.md §4 义务"当日工作在
   `docs/logs/YYYY-MM-DD-session-NNN.md` 留痕"，现有日志止于 `2026-07-22-session-006.md`
   （Phase 2），Phase 3 全程（W0 至今）未见 `session-007` 或后续日志——本次任务范围为 4 份
@@ -209,3 +210,20 @@ s2/unpaywall + openreview 补充）、4 个新 venue YAML；整体 **169 files c
   前修复，否则 tag 对应的 commit 不是"全绿"状态。修复方式明确：把该测试第 226 行的期望字符串
   由 `"Synthetic Canary Title for Works Healthcheck"` 改为 `"Deep learning"`；是否需要为该
   fixture 拆出独立的合成版本、让 healthcheck 语义测试与纯解析测试解耦，留 owner 判断。
+
+
+### Phase 4 检查单增补（Phase 3 终检发现，2026-07-23）
+
+12. **【置顶】pipeline OA-fallback 接线缺口**：T5 任务卡"触发条件（no_entitlement 兜底 / VenueSpec
+    OA-fallback 声明）"仅落地 adapter 能力（`resolve_assets`/`lookup` 直调正确），pipeline 侧
+    `no_entitlement → unpaywall 兜底`未接线（adapter docstring 自陈留待评估）——Phase 4 认证站点
+    产生真实 no_entitlement 场景时**必须**完成接线（stages 兜底通道 + 集成测试）。
+13. D-019 四站锚点核准残项：pmlr/cvf/acl_anthology/neurips_proceedings 仍为 Phase 2 末 partial
+    状态（Phase 2 检查单 #3 延续，Phase 3 未排入）——随 Phase 4 在线预算一并核准。
+14. aaai/neurips 六项 `[UNRESOLVED]` 专项核实（Phase 2 检查单 #7 延续，本 Phase 未处理）：
+    aaai 2019 前覆盖 / IAAI-EAAI 拆分 / BibTeX URL bug / neurips 2021 覆盖率 / Metadata.json
+    窗口等——docs 内仍显式标注，Phase 4 实现期或独立小任务清账。
+15. 测试补强批次（打包）：cursor 中断→窗口重建→DOI 去重端到端 fixture（T3 面窄于卡面）；
+    oa-report 循环端到端限速锁（组合证明→直接证明）；契约 factory 补齐（24 skip 收窄）；
+    F2-L1/L3/L4/L5 + F1-LOWa/b 美容项；stubs.py 过时注释与 canary 输出断言列表（终审美容项）。
+16. Elsevier/Kaggle key 状态 Phase 4 开工时复核（Phase 2 检查单 #2 残项：Phase 3 无复核记录）。

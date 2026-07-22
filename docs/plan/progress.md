@@ -12,7 +12,7 @@ updated: 2026-07-23
 
 ## 当前快照（2026-07-23）
 
-- **当前 Phase**：3（聚合元数据层）**收尾中**——W0 详设双评审 approved 门禁通过后，T1~T7 全部任务卡已合并：合并引擎（T1，AC-3.1/3.2/3.4 载体）、verify 三类检出扩展（T2，AC-3.3 载体）、crossref/dblp/unpaywall 三源 adapter（T3-T5）、openalex+s2 enrich 通道（T6，`crawler enrich` CLI）、五刊 VenueSpec + AC-3.5 端到端在线实跑（T7）。`aggregators.md` 六源详设本次转 `implemented`。AC-3.5（五刊零爬取枚举全史）在线实跑给出 **PASS 建议**（[验收记录](../testing/records/2026-07-23-ac35-acceptance.md)，draft，待 controller 终签）。T8 收尾（AC-3.1~3.5 汇总验收记录、AC-0 系统性扫描、tag `phase-3`）**进行中，尚未打 tag**。main HEAD `47bb72a`：**2153 passed / 1 failed / 24 skipped**（覆盖率 99.18%；五源 adapter 解析/映射模块 98~100%）——**新发现 1 处回归**：`tests/unit/test_crossref_parse.py::test_parse_single_work_title` 断言仍比对旧合成占位标题，与 T7 golden 转正提交（`47bb72a`）同步改写的 fixture 真值（`"Deep learning"`）脱节；本次为纯文档任务，未改动代码，需 owner 补一处断言后方可称"全绿"。→ 下一 Phase：4（认证框架+出版社）
+- **当前 Phase**：3（聚合元数据层）**已完成**（2026-07-23，tag `phase-3` @ `35c79a6`）——合并引擎（AC-3.1/3.2/3.4）、verify 三类检出（AC-3.3）、五源 adapter（crossref/dblp/unpaywall + openalex/s2 enrich 通道）、`crawler enrich`/`oa-report` CLI、五刊 VenueSpec + AC-3.5 在线实跑双层 PASS（抽样年对账全部 diff=0）。验收：[Phase 3 汇总记录](../testing/records/2026-07-23-phase3-acceptance.md)（最终签署：**达成**）；报告：[phase3-report](../reports/2026-07-23-phase3-report.md)。终态门禁 **2154 passed / 24 skipped / 99.18%**（草稿期发现的 1 回归已于 `f114a09` 跟修）。→ 下一 Phase：4（认证框架+出版社），检查单见报告 §6（含终检增补）
 - **Phase 2 遗留 C-C/C-D 已修复**：C-C（大 venue pull 可用性——零网络 resolve 豁免限速闸 + `--limit` 前置圈选，D-022，`eeef820`/`7d3424d`）、C-D（openreview venueid 异构缺陷——2018/2019 逐年 accepted 规则，`8cc2a75`/`3b9e332`/`45c8250`）均已合并；openreview AC-2.1/2.2 在线层随之转 PASS（用户 token 已配置并建立自动刷新脚本）。Phase 2 报告检查单 #1（用户 token）与终检增补置顶 C-C/C-D 两项均已清零。
 - **待补验（不阻塞进行中状态，如实记录）**：S2 API key 未到（enrich/canary 在线层 SKIP 门控，D-021）；aaai_ojs 全库 OAI 补跑（Phase 2 检查单 #3 残项，本 Phase 未排期，仍缺）；AC-3.1/3.2/3.3/3.4 尚无独立汇总验收记录文档（现由 `tests/integration/test_merge_acceptance.py`/`test_merge_property.py`/`tests/unit/test_verify.py` 承载判据，T8 待收口成文）；D-019 锚点表 openalex 正锚点、s2 锚点仍 `[PENDING]`（需 key/credit）。
 - **总体进度**：Phase 0/1/2 = 100%；Phase 3 T1-T7 完成 / T8 进行中（未打 tag）。新 ADR：D-021/D-022。
@@ -26,7 +26,7 @@ updated: 2026-07-23
 | 0 设计与文本系统 | done | 100% | 报告：reports/2026-07-20-phase0-report.md |
 | 1 核心框架 | **done** | 100% | 报告：reports/2026-07-21-phase1-report.md；tag phase-1 + schema-v1 |
 | 2 Open-Access MVP | **done** | 100% | 报告：reports/2026-07-22-phase2-report.md；tag phase-2；openreview 在线层已于 Phase 3 期间补验 PASS（用户 token 到位，见下） |
-| 3 聚合元数据层 | **收尾中** | ~88%（T1-T7/8 完成） | T1-T7 已合并（合并引擎+verify 扩展+五源 adapter+AC-3.5 端到端）；T8（汇总验收/AC-0 扫描/tag）进行中；验收记录：testing/records/2026-07-23-ac35-acceptance.md（draft） |
+| 3 聚合元数据层 | **done** | 100%（tag phase-3） | 全部任务卡合并+汇总验收最终签署（AC-3 全 PASS/AC-0 全 PASS/预算零超支）；验收：testing/records/2026-07-23-phase3-acceptance.md |
 | 4 认证框架+出版社 | planned | 0% | |
 | 5 SSRN 与特殊源 | planned | 0% | |
 | 6 订阅与搜索 | planned | 0% | |

@@ -16,7 +16,7 @@ updated: 2026-07-21
 |---|---|---|---|---|
 | 0 | 设计与文本系统 | 全套设计文档、SVG、清单、流程规范 | — | done |
 | 1 | 核心框架 | plugin registry、数据模型与 DB、pipeline 骨架、CLI 骨架、日志 | 0 | done |
-| 2 | Open-Access MVP | arXiv + OpenReview + PMLR + CVF + ACL Anthology + NeurIPS + AAAI + ACM adapters | 1 | **in_progress** |
+| 2 | Open-Access MVP | arXiv + OpenReview + PMLR + CVF + ACL Anthology + NeurIPS + AAAI + ACM adapters | 1 | done |
 | 3 | 聚合元数据层 | Crossref/OpenAlex/DBLP/S2/Unpaywall 客户端与 metadata spine | 1 | **done** |
 | 4 | 认证框架 + 出版社 adapters | AuthProvider 四实现；Elsevier/Wiley/OUP/UChicago/INFORMS/IEEE/ACM/AAAI | 1,3 | planned |
 | 5 | SSRN 与特殊源 | SSRN、NBER、AEA、Econometric Society、RePEc adapters | 2,4 | planned |
