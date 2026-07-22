@@ -2,7 +2,7 @@
 title: 架构决策记录（ADR）
 status: approved
 owner: fable5
-updated: 2026-07-22
+updated: 2026-07-23
 ---
 
 # 架构决策记录（Decision Log / ADR）
@@ -195,3 +195,35 @@ updated: 2026-07-22
 - **背景**：Phase 2 终检置顶缺陷 C-C——`url_strategy=direct` 的 resolve 是零网络纯 URL 构造却逐篇过 per-domain 限速闸，且 `--limit` 在全量 resolve 后才截断：ICLR 2024（2260 篇）量级 pull 的 resolve 阶段数十分钟纯空转。
 - **决策**：① adapter 以 `AdapterBase.resolve_offline = True`（类属性，非冻结协议成员，pipeline `getattr` 兜底，默认 `False` 安全侧）声明零网络 resolve，声明者 resolve 阶段免限速 token；本仓 8 个 adapter 逐个核实零网络后显式置 `True`（独立审查复核无错标）。② `--limit N` 前置：按 `list_papers` 稳定序（`ORDER BY (title, id)`，审查发现并修复并列标题 tiebreaker 缺口）圈选前 N 篇建 resolve 任务。③ 语义边界显式化：前 N 篇含零资产 paper 时落盘可 < N，不往后凑满（凑满与前置目标根本矛盾）；AC-2.2 类场景（camera-ready 恒有 PDF）不受影响。④ AC-1.4 限速压力测试测量窗收窄至稳态尾段（resolve 免闸后 burst 移至 fetch 起点），判据 ≤ 配置×1.05 不变。
 - **影响**：design/05 §6 修订注记；2260 篇量级 resolve 壁钟从数十分钟降至秒级（回归测试锁定 <5s）；真实网络 resolve 策略的限速闸保留（反向 guard 测试锁定）。
+
+## D-023 认证凭证库加密方案：cryptography>=42 AES-GCM 作 [auth] optional extra
+
+- 状态：accepted · 日期：2026-07-23
+- **背景**：Phase 4 认证框架（[design/07 §4](../design/07-auth-session.md) approved）要求 storage_state/cookie jar **AES-GCM 加密落盘**。评估（[auth-framework.md §3.2](../design/auth-framework.md)）：Python 标准库**无任何对称分组密码**（`hashlib`/`hmac` 仅摘要+MAC）→ AES-GCM 纯标准库不可行；`pynacl`（XSalsa20-Poly1305）与 07 §4"AES-GCM"字面不符。项目 D-017 依赖最小化姿态与"需加密但无 stdlib 原语"客观事实冲突。
+- **决策**：取 **`cryptography>=42`，用 `AESGCM`**（AES-256-GCM，每文件随机 12B nonce，AAD 绑定条目名），**作为可选依赖** `[project.optional-dependencies].auth`（+ `keyring>=24` 主密钥存储）——**不进核心 `dependencies`**（Phase 1-3 聚合层零加密需求）。`auth/store.py` **惰性 import**：未装 `[auth]` 时需加密路径响亮 `CrawlerError(CONFIG, "pip install paper-crawler[auth]")`；**纯 APIKey 路径（elsevier AC-4.1 / wiley TDM）不触该依赖**（简单字符串密钥走 `[auth.<platform>]` Config-slot，两级凭证模型①，auth-framework §3.4）。主密钥 keyring 首选 → 无后端降级文件密钥（`state/.filekey` 0600）+ 显式一次性警告。
+- **附注 1（P0a 开放题②合并裁决）**：`types.SessionHandle = Any` → 具体 frozen dataclass 系 `types.py:128` 注释显式预留的**计划内受控具体化**（`Any\|None`→`SessionHandle\|None` 精化，既有 adapter 零改动），非协议漂移，无需独立 ADR，随本条记录。
+- **附注 2（A-M3 显式裁决转正：明文 Config-slot 与 07"加密配置"张力）**：①类**简单字符串密钥**（elsevier `api_key`/`insttoken`、wiley TDM `token`）走 `[auth.<platform>]` 明文 Config-slot（家目录 config、仓库外、0600、obslog 脱敏、env 覆盖）与 07 §4"加密配置"措辞的张力，**裁决为对既有惯例的诚实收敛**——沿 Phase 2/3 `[auth.s2].api_key`/`[auth.openreview].token` 已生效先例，**keyring 为可选加固层**（配置了即 `read_key` 优先取 keyring）；②类**有状态凭证**（storage_state/cookie jar）方走 AES-GCM `CredentialStore`。07 §4 文末加**修订注记指向本条**（不改 07 正文语义段）。完整 config 分层/敏感边界规范见 D-025 / [design/10-config-layout.md](../design/10-config-layout.md)。
+- **影响**：pyproject 新增 `[project.optional-dependencies]`（auth / auth-browser）；`make check` 默认不 import 二进制依赖（惰性 + skip 门控）；**CI 标准环境统一装 `[auth]`**（`uv sync --extra auth`，凭证库测试进 CI，B-m7），`[auth-browser]`（重，Playwright）靠 `PC_BROWSER_TESTS` 手动门（auth-framework §10）——**cryptography/keyring/playwright 均不成核心路径硬依赖**。
+
+## D-024 Phase 4 R0 平台勘察裁决：wiley 纳入（token 门控）+ acm_dl 维持出列（全文改道 unpaywall）
+
+- 状态：accepted · 日期：2026-07-23 · 依据：[publisher-platforms-p4-recheck.md](../research/site-survey/publisher-platforms-p4-recheck.md) [LIVE 2026-07-23]
+- **背景**：Phase 4 W0 R0 对四平台（Elsevier/OUP/Wiley/ACM）距 2026-07-20/07-22 原勘察做 3 天增量复核（实耗 5/25 在线预算，遇挑战/429 即停）。核心假设全部成立，无颠覆漂移；wiley/acm 两项需 controller 裁决。
+- **决策**：
+  1. **wiley 纳入本 Phase + token 门控**：TDM 端点 `api.wiley.com/onlinelibrary/tdm/v1/articles/{DOI}`、头 `Wiley-TDM-Client-Token`、速率 3 req/s + 60/10min **升级为活验**（GitHub `WileyLabs/tdm-client` v1.2.0 + 搜索索引二手确证）；token 可自助（WOL click-through TDM license，无邮件审批）但 entitlement 受订阅域约束。实现模式 = **完整 adapter + TDM 客户端 + token 存在性门控**（缺失→在线层 skip 不阻塞验收，s2 先例）；token 落 `[auth.wiley].token` Config-slot。**不整体顺延**（勘察稳定、实现风险低，顺延浪费已验证窗口）。双窗口限速经现有单 token bucket 表达（`RatePolicy(rpm=5-6, burst=3)`，[wiley.md §4](../design/adapters/wiley.md) 接缝结论：无需扩展 ratelimit.py 冻结件）。
+  2. **acm_dl 维持 D-020 出列**（supersedes 无——延续 D-020 而非推翻）：出列两依据 R0 [LIVE] 复核**均未变**——(a) 全文挑战墙持续（OA 拆付费墙未拆机器人墙）；(b) ToS 明文禁 scripts/spiders 自动下载 + metadata harvest（[DOC] 原文未松）。**全文改道 unpaywall OA-fallback**（pipeline no_entitlement 兜底，auth-framework §8.1），**元数据维持 crossref+dblp**（畅通、不碰 dl.acm.org）；browser-fetcher 有限实现留待其落地后再评。
+  3. **异常子类 + status_code 权威版归 T2**（P0a 开放题③）：`errors.py`/`http.py` 的 `AuthRequired`/`Challenged`/`status_code` 由 **T2 单一权威版**交付（T1/T2 同波，合并取 T2，沿 Phase 3 `ids.py` 约定）；健康门 N=20/15min、日配额 200、challenge 冷却 24h **确认沿 04 §4/§5 原文**（P0a 开放题）。
+- **影响**：phase4-implementation-plan 新增 T-wiley 卡（W2 平台波第三件，opus/opus）+ 在线预算加 wiley 冒烟 ≤10（条件项）；elsevier-sd.md/oup-silverchair.md/wiley.md 扩写至实现级（status draft，待双评审）；acm-dl.md 维持出列口径不变；BLOCKER-1（elsevier key）/wiley token 缺失均计划内前置外部依赖，离线 DoD 不阻塞（D-018 分层）。
+
+## D-025 config 归集：仓库内 config/ 规范文件夹 + 分层加载链 + 敏感边界护栏
+
+- 状态：accepted · 日期：2026-07-23 · 依据：用户架构令（2026-07-23）
+- **背景**：Phase 4 引入 elsevier/wiley 等多个 `[auth.*]` 凭证槽后，配置项分散、优先级隐晦、敏感边界无护栏（易误把 api_key 提交进仓库）。用户令：把配置规范归集、加显式分层与防误提交护栏，并为未来第三方凭证槽（Kaggle 等）立统一规范。
+- **决策**（详设 [design/10-config-layout.md](../design/10-config-layout.md)）：
+  1. **仓库内 `config/` 规范文件夹**：`README.md`（配置规范总纲：全部配置项分层/优先级/敏感边界）+ `config.example.toml`（全键注释样例，含 `[auth.*]` 全部槽）+ `profiles.example.toml`——**真实值绝不入**（仅样例/占位）。
+  2. **加载链改造**：`env > 项目级 ./paper-crawler.toml（仅非敏感键）> config-home config.toml > 内置默认`；**项目级文件出现敏感键形态**（`api_key`/`token`/`insttoken`/`password`）→ `CrawlerError(CONFIG)` **拒启动**并指引挪至家目录/env（**防误提交护栏**）。
+  3. **`crawler config show` 命令**：打印全部生效配置 + 来源层，**敏感值脱敏显示**（obslog redact 口径）。
+  4. **第三方凭证槽归集规范**：未来 Kaggle 等一律 `[auth.<name>]` 槽、单一 config-home，不依赖各工具家目录约定（如 `~/.kaggle/kaggle.json`）。
+  5. **敏感凭证物理隔离于仓库（AC-0.3）为不变式**，写入规范总纲。
+- **归属**：**T2 扩容**——T2 更名"平台地基件：config 分层加载 + HttpClient status_code + canary 凭证注入"，实现档 **sonnet→opus**；`config/` 三文件 + `config.py` 加载链改造 + `crawler config show` 归 T2 Files。config.py 全部改动 T2 独占（T1a/T1b 零触）。
+- **影响**：新建 `docs/design/10-config-layout.md`（status draft，纳入 W0 复审范围）；plan §4 T2 卡扩容、§6 模型表 T2 sonnet→opus；INDEX 登记新文档（合并时 controller）。既有 config.py 加载优先级（显式 home > `$PAPER_CRAWLER_HOME` > `~/.paper-crawler`）保持，项目级 `./paper-crawler.toml` 为**新增非敏感层**，纯附加不破坏既有家目录 config。
