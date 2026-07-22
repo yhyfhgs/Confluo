@@ -191,15 +191,35 @@ class VenueRegistry:
     def _lint_adapter_refs(self, file: str, venue_id: str, spec: VenueSpec) -> list[LintIssue]:
         issues: list[LintIssue] = []
 
-        if spec.metadata_source not in self._adapters:
-            issues.append(
-                LintIssue(
-                    file=file,
-                    venue_id=venue_id,
-                    field="metadata_source",
-                    message=f"未注册的 adapter: {spec.metadata_source!r}",
+        # metadata_source 分离语义（D-005，plan §2-2）：None = 沿用 adapter 自身（不校验）。
+        # 声明了值时须已注册；且当它与 fulltext_source 不同（真"元数据主干"分离，如
+        # jfe: crossref≠elsevier_sd）时，其 family 须为 aggregator——旧式同源写法
+        # （metadata_source==fulltext_source，既有全部 venue 皆此形态）不触发 aggregator 约束。
+        meta_src = spec.metadata_source
+        if meta_src is not None:
+            meta_adapter = self._adapters.get(meta_src)
+            if meta_adapter is None:
+                issues.append(
+                    LintIssue(
+                        file=file,
+                        venue_id=venue_id,
+                        field="metadata_source",
+                        message=f"未注册的 adapter: {meta_src!r}",
+                    )
                 )
-            )
+            elif meta_src != spec.fulltext_source and meta_adapter.family != "aggregator":
+                issues.append(
+                    LintIssue(
+                        file=file,
+                        venue_id=venue_id,
+                        field="metadata_source",
+                        message=(
+                            f"metadata_source '{meta_src}'（family={meta_adapter.family!r}）"
+                            f"与 fulltext_source '{spec.fulltext_source}' 分离时须为 aggregator"
+                            "（D-005 元数据主干分离语义）"
+                        ),
+                    )
+                )
 
         fulltext_adapter = self._adapters.get(spec.fulltext_source)
         if fulltext_adapter is None:
@@ -281,12 +301,17 @@ class VenueRegistry:
         """把 venue_id 解析为绑定结果（design/02 §4）；未知引用抛 `CrawlerError(CONFIG)`。"""
         spec = self.get(venue_id)
 
+        # metadata_source=None（D-005 默认）→ 沿用 adapter 自身：元数据由 fulltext_source 的
+        # 平台 adapter 兼任（既有同源写法与此等价）。声明了值时按声明解析。
+        metadata_source = (
+            spec.metadata_source if spec.metadata_source is not None else spec.fulltext_source
+        )
         try:
-            metadata_adapter = self._adapters[spec.metadata_source]
+            metadata_adapter = self._adapters[metadata_source]
         except KeyError:
             raise CrawlerError(
                 ErrorClass.CONFIG,
-                f"venue {venue_id!r} 的 metadata_source 未注册: {spec.metadata_source!r}",
+                f"venue {venue_id!r} 的 metadata_source 未注册: {metadata_source!r}",
             ) from None
 
         try:

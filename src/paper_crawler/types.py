@@ -174,7 +174,13 @@ class VenueSpec(BaseModel):
     tier: Literal["T1", "T2", "T3"] | None = None
     # issn: list[str] / dblp_key / openreview_id / openalex_source
     identifiers: dict[str, object] = {}
-    metadata_source: str
+    # D-005 分离语义（plan §2-2，crossref 是第一消费者，纯附加变更）：现放宽为可选。
+    # None（默认）= 沿用 adapter 自身——即元数据由 fulltext_source 的平台 adapter 兼任
+    # （既有全部 venue 显式声明 metadata_source==fulltext_source 的旧式同源写法不受影响，
+    # 零改动零回归）。声明为聚合源 id（crossref/dblp）即"元数据主干"分离到该 aggregator。
+    # registry 校验：声明值须已注册；且当 metadata_source != fulltext_source（真分离）时其
+    # family 须为 aggregator（见 registry._lint_adapter_refs）。
+    metadata_source: str | None = None
     fulltext_source: str
     auth: VenueAuth = VenueAuth()
     rate_limit: VenueRateLimit = VenueRateLimit()
