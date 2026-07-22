@@ -12,7 +12,7 @@
 | 设计/实现一个新 adapter | [design/02 框架](design/02-plugin-framework.md) → [adapters/README 模板](design/adapters/README.md) → 同族样例（Atypon 看 [informs](design/adapters/informs.md)，Silverchair 看 [oup](design/adapters/oup-silverchair.md)，OA 看 [pmlr](design/adapters/pmlr.md)）→ [test-plan fixture 规范](testing/test-plan.md) |
 | 理解认证与合规边界 | [design/04](design/04-auth-gated-module.md) → [design/07](design/07-auth-session.md) → [decision-log](plan/decision-log.md) D-006/D-014 → [AC-0 红线](testing/acceptance-criteria.md) |
 | 开始 Phase 1 开发 | [development-plan §Phase 1](plan/development-plan.md) → design/01/02/05/06 → [status-workflow 开工门禁](process/status-workflow.md) |
-| 查"为什么这样设计" | [plan/decision-log.md](plan/decision-log.md)（D-001…D-016） |
+| 查"为什么这样设计" | [plan/decision-log.md](plan/decision-log.md)（D-001…D-022） |
 | 了解某站点的实测事实 | research/site-survey/ 对应勘察（各 adapter 文档 §2 已内联引用） |
 
 ## 根文档
@@ -30,8 +30,9 @@
 | [plan/development-plan.md](plan/development-plan.md) | 开发计划（Phase 0–7） | approved | 2026-07-20 |
 | [plan/phase1-implementation-plan.md](plan/phase1-implementation-plan.md) | Phase 1 实施计划（任务切分+接口冻结） | approved | 2026-07-21 |
 | [plan/phase2-implementation-plan.md](plan/phase2-implementation-plan.md) | Phase 2 实施计划（Stage A 地基+arxiv；Stage B adapter 滚动） | approved | 2026-07-21 |
+| [plan/phase3-implementation-plan.md](plan/phase3-implementation-plan.md) | Phase 3 实施计划（聚合元数据层：五源 adapter + 合并引擎任务切分） | approved | 2026-07-22 |
 | [plan/progress.md](plan/progress.md) | 项目进度跟踪 | approved | 2026-07-20 |
-| [plan/decision-log.md](plan/decision-log.md) | 架构决策记录（D-001…D-019） | approved | 2026-07-22 |
+| [plan/decision-log.md](plan/decision-log.md) | 架构决策记录（D-001…D-022） | approved | 2026-07-22 |
 
 ## design/ — 核心设计（00–09）
 
@@ -63,7 +64,7 @@
 | [design/adapters/aaai-ojs.md](design/adapters/aaai-ojs.md) | AAAI OJS | implemented | 2026-07-22 |
 | [design/adapters/acm-dl.md](design/adapters/acm-dl.md) | ACM Digital Library（D-020：Phase 2 出列，Phase 4 重评） | review | 2026-07-22 |
 | [design/adapters/ieee-xplore.md](design/adapters/ieee-xplore.md) | IEEE Xplore | review | 2026-07-20 |
-| [design/adapters/aggregators.md](design/adapters/aggregators.md) | 聚合元数据源（6 合册） | review | 2026-07-20 |
+| [design/adapters/aggregators.md](design/adapters/aggregators.md) | 聚合元数据源（6 合册） | implemented | 2026-07-23 |
 | [design/adapters/elsevier-sd.md](design/adapters/elsevier-sd.md) | Elsevier ScienceDirect | review | 2026-07-20 |
 | [design/adapters/wiley.md](design/adapters/wiley.md) | Wiley Online Library | review | 2026-07-20 |
 | [design/adapters/oup-silverchair.md](design/adapters/oup-silverchair.md) | OUP（Silverchair） | review | 2026-07-20 |
@@ -93,6 +94,7 @@
 | [testing/records/2026-07-21-phase1-acceptance.md](testing/records/2026-07-21-phase1-acceptance.md) | Phase 1 验收记录（AC-1 全过） | — | 2026-07-21 |
 | [testing/records/2026-07-22-arxiv-acceptance.md](testing/records/2026-07-22-arxiv-acceptance.md) | arXiv 验收记录（AC-2.3 双层 PASS） | — | 2026-07-22 |
 | [testing/records/2026-07-22-phase2-acceptance.md](testing/records/2026-07-22-phase2-acceptance.md) | Phase 2 验收汇总（AC-2 达成；openreview 在线层待 token） | — | 2026-07-22 |
+| [testing/records/2026-07-23-ac35-acceptance.md](testing/records/2026-07-23-ac35-acceptance.md) | AC-3.5 验收记录（五刊零爬取枚举，在线实跑 PASS 建议·待 controller 终签） | — | 2026-07-23 |
 | [testing/records/canary/README.md](testing/records/canary/README.md) | Canary 健康矩阵记录目录（`crawler canary --record` 落盘，按日覆盖） | approved | 2026-07-22 |
 
 ## process/ — 流程规范
@@ -145,3 +147,4 @@
 | [reports/2026-07-21-audit-round2.md](reports/2026-07-21-audit-round2.md) | 深度审计第 2 轮（语义级 + 可读性增强，D-016） |
 | [reports/2026-07-21-phase1-report.md](reports/2026-07-21-phase1-report.md) | Phase 1 阶段报告（DoD 判定 + 终审 + Phase 2 检查单） |
 | [reports/2026-07-22-phase2-report.md](reports/2026-07-22-phase2-report.md) | Phase 2 阶段报告（DoD 判定 + 终审 + Phase 3 检查单） |
+| [reports/2026-07-23-phase3-report.md](reports/2026-07-23-phase3-report.md) | Phase 3 阶段报告（DoD 判定 + 收尾中草稿，判定列待 controller 终验签署 + Phase 4 检查单） |

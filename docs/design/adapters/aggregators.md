@@ -1,6 +1,6 @@
 ---
 title: Adapter 设计 · 聚合元数据源（Crossref/DBLP/OpenAlex/S2/Unpaywall/CORE）
-status: approved
+status: implemented
 owner: fable5
 updated: 2026-07-23
 ---
@@ -114,6 +114,8 @@ state:  <config-home>/state/openalex-budget.json = {"date": "YYYY-MM-DD(UTC)", "
 - **分页机制（cursor，断点续拉）**：首请求 `cursor=*` → 读 `message.next-cursor`（elasticsearch scroll token）→ 下一请求以该值为 `cursor` → 直至 `items` 为空。`offset` 路径仅用于 `≤10000` 浅翻，深翻一律 cursor。**token 契约**：cursor 值不持久化、不跨任务复用；中断续拉时按 `(issn, from, until)` 窗口**重建** `cursor=*` 从头（幂等，identifier 去重天然保证无重复入库）。
 
 **请求头**：UA `PaperCrawler/<ver> (personal research; mailto:<email>)`（mailto 硬要求→polite pool 10/1s）。
+
+**限速与 timeline 粒度实现落地（T3，补记）**：动态读取 `X-Rate-Limit-*` 响应头在冻结 `HttpClient.get_bytes`（只回 body、不暴露响应头）下不可达，`default_rate` 落地为**静态 5 req/s 保守上限 + 429→`rate_limited` 退避**（Retry-After 读入 detail；★裁决 2026-07-22，T3）；`discover_timeline` **粒度=出版年**——Crossref `filter` 无卷期维度，volume/issue 不作枚举键，经 works 记录字段读入 meta（★裁决）。
 
 **响应字段 → PaperStub 映射**
 
@@ -234,7 +236,7 @@ openalex/s2 **不承担枚举**（capabilities 已收回 ENUMERATE，§1；两�
 
 - **匿名仍 200 并计费计量**（未硬拦）；预算熔断靠 `meta.cost_usd` 累计而非状态码。
 
-**healthcheck**：openalex **匿名即可探测**（1 credit，[LIVE]），有 key/匿名均走固定查询 `GET /works/W{固定id}` → 比对**空白规整化 title**。**canary SKIP 约定**（与 s2 §5.4 统一）：openalex source 未配置/停用时 `raise NotImplementedError("openalex 未配置")` → `crawler canary` 现有语义显示 SKIP（精确复用 `canary.py` 的 `NotImplementedError`→skip 分支，零 canary 改动）。**[PENDING]** 固定 W-id 及真值实现期捕获。
+**healthcheck（★裁决 2026-07-23，T6 落地——收紧于本节原"匿名即可探测"表述，该表述已作废）**：与 s2（§5.4）**统一 key/配置门控**——未配置 key → `raise NotImplementedError("openalex key 未配置")` → `crawler canary` 现有语义显示 SKIP（精确复用 `canary.py` 的 `NotImplementedError`→skip 分支，零 canary 改动）；**有 key** → 固定查询 `GET /works/W{固定id}` → 比对**空白规整化 title**。**门控仅限 healthcheck 路径**，不影响 `enrich_batch`（enrich 通道仍可匿名运行、1 credit/查，§4「匿名仍 200 并计费计量」不变）。**理由**：`crawler canary` 可能被 cron/CI 高频调用，若健康检查也放行匿名真实请求，会在用户未申请/未打算使用该可选补充源时悄悄计入 openalex 每日 credit 消耗——故改为与 s2 一致的"未配置则 SKIP、不消费预算"（T6 卡片口径）。**[PENDING]** 固定 W-id 及真值（需 key）实现期捕获。
 
 **fixture 清单**：①正常 works 页（含 `abstract_inverted_index`、`meta.cost_usd`）②空结果（`count:0`，如不存在 DOI）③402 credit 耗尽响应 ④倒排索引畸形 → `parse`。
 
@@ -274,7 +276,7 @@ openalex/s2 **不承担枚举**（capabilities 已收回 ENUMERATE，§1；两�
 | 4xx（fields 语法） | `config` | — |
 | 5xx | `transient` | — |
 
-**healthcheck**：**无 key → `raise NotImplementedError("s2 key 未配置")`** → `crawler canary` 现有语义显示 SKIP（精确复用 `canary.py` 的 `NotImplementedError`→skip 分支，零 canary 改动；**纠正原「无 key→config」**——config 会被 canary 判为 unhealthy、每周误触 test-plan §4「连续 2 周 DRIFT→降级」误报，评审 B-C3）。**有 key** → `GET /paper/DOI:{固定DOI}?fields=title` 比对规整化 title，不靠 429/404 判活。**[PENDING]** 固定 DOI 真值实现期捕获（需 key）。
+**healthcheck**：**无 key → `raise NotImplementedError("s2 key 未配置")`** → `crawler canary` 现有语义显示 SKIP（精确复用 `canary.py` 的 `NotImplementedError`→skip 分支，零 canary 改动；**纠正原「无 key→config」**——config 会被 canary 判为 unhealthy、每周误触 test-plan §4「连续 2 周 DRIFT→降级」误报，评审 B-C3）。**有 key** → `GET /paper/DOI:{固定DOI}?fields=title` 比对规整化 title，不靠 429/404 判活。**[PENDING]** 固定 DOI 真值实现期捕获（需 key）。**（★裁决 2026-07-23）**本门控现与 openalex（§5.3）统一表述——openalex healthcheck 同期收紧为同构 key 门控，取代其原"匿名即可探测"表述；统一理由=`crawler canary` 默认不因源未配置而消耗真实请求/预算，详见 §5.3。
 
 **fixture 清单**：①正常 batch 响应（`citationCount`/`tldr`/`fieldsOfStudy`）②未命中（404 "not found"）③有 key 429 → `rate_limited` ④无 key 场景（合成，验证「不靠状态码判 key 缺失」路径）。
 
@@ -432,6 +434,9 @@ openalex/s2 **不承担枚举**（capabilities 已收回 ENUMERATE，§1；两�
 | 8 | 2026-07-22 | 全文从 80 行合册草案扩写为实现级详设（逐源端点/映射/错误/healthcheck/fixture + 合并交互面 + D-019 锚点 + 测试验收） | 本次 W0 扩写任务 |
 | 9 | 2026-07-22 | **双评审 REJECT → 修订清单落地**：§6/§10 引 D-021 清除假 [UNRESOLVED] 优先级、改用冻结表 `official>crossref>dblp>openalex>s2>heuristic`（A-B1/B-B2）；openalex/s2 **收回 ENUMERATE** + 补 duck-typed `enrich_batch` 可选接口与 `crawler enrich` 驱动通道（A-B2）；unpaywall **删 `POST /v2/dois`**、OA 报告改**单 DOI GET 循环**（B-B3）；§3 补 unpaywall email 日志脱敏 **T5 先决条款**（B-B4）；补 `meta` str→str 约定（A-C1）/dblp `ee` **paper 级护栏**（A-C3）/**同源著作**判界（A-C4）/`auth_needed` 勘误（A-C5）/删无源 ~519KB（A-C6）；§8 补 **AC-3.4** 行（B-C1）+ **逐 error_class fixture 表**（B-C4）+ 总预算 ≤100 同步；§5.3/5.4 healthcheck **`NotImplementedError`→canary SKIP**（B-C3）；§7 crossref 锚点补 schema（B-C5） | 双评审 REJECT + controller 裁决 |
 | 10 | 2026-07-23 | **§7 D-019 锚点 T7 实跑回填**：crossref QJE `total_all=6655`(=下限) / `total_2024=46` 实跑确认、`sample_doi=10.1038/nature14539` title 真值 **"Deep learning"** 捕获（UPDATE_GOLDEN 候选）；dblp `icml2023.record_count=1828` [LIVE] 落定（首 key `conf/icml/AamandACINS23`）；unpaywall 金锚点五字段复核一致。§10 [UNRESOLVED] 相应销项。证据：[records/2026-07-23-ac35-acceptance.md](../../testing/records/2026-07-23-ac35-acceptance.md) | T7 AC-3.5 在线实跑（授权真实网络，33/50 请求台账） |
+| 11 | 2026-07-23 | **§5.1 补记 T3 限速/timeline 粒度实现落地**：X-Rate-Limit 动态读头在冻结 `HttpClient.get_bytes`（不暴露响应头）下不可达，落地为静态 5 req/s 保守上限 + 429 退避（★裁决 2026-07-22，T3）；timeline 粒度=出版年（Crossref filter 无卷期维度），volume/issue 经 works 记录读入 meta（★裁决） | T3 实现（`adapters/crossref/adapter.py` 模块 docstring） |
+| 12 | 2026-07-23 | **§5.3/§5.4 healthcheck 措辞对齐 T6 实现**：openalex healthcheck 门控收紧为与 s2 统一"无 key → `NotImplementedError`→canary SKIP"，废止原"匿名即可探测"表述（★裁决 2026-07-23；理由=防 `crawler canary` 周期性高频调用时静默消耗 openalex 每日 credit 配额） | T6 实现（`adapters/openalex/adapter.py` 模块 docstring 自述"收紧于设计稿 §5.3"） |
+| 13 | 2026-07-23 | **文档转正**：front matter `status: approved`→`implemented`（T1~T7 五源 adapter + 合并引擎全部合并落地；AC-3.5 在线实跑 PASS 建议，待 controller 终签） | Phase 3 收尾（[records/2026-07-23-ac35-acceptance.md](../../testing/records/2026-07-23-ac35-acceptance.md)） |
 
 ## 10. 风险与维护
 

@@ -223,7 +223,7 @@ def test_parse_facet_years_skips_non_integer_buckets() -> None:
 
 def test_parse_single_work_title() -> None:
     title = parse.parse_single_work_title(fixture_bytes("06_works_healthcheck.json"))
-    assert title == "Synthetic Canary Title for Works Healthcheck"
+    assert title == "Deep learning"  # fixture 已随 golden 转正（[LIVE] 2026-07-23）
 
 
 def test_parse_single_work_title_missing_raises_parse() -> None:

@@ -2,7 +2,7 @@
 title: 项目进度跟踪
 status: approved
 owner: fable5
-updated: 2026-07-21
+updated: 2026-07-23
 ---
 
 # 项目进度
@@ -10,12 +10,13 @@ updated: 2026-07-21
 > 本文件是"当前状态"的单一事实来源。每次工作 session 结束时更新。
 > 历史细节见 `docs/logs/`；阶段总结见 `docs/reports/`。
 
-## 当前快照（2026-07-21）
+## 当前快照（2026-07-23）
 
-- **当前 Phase**：2 **已完成**（2026-07-22，[验收汇总](../testing/records/2026-07-22-phase2-acceptance.md)、[阶段报告](../reports/2026-07-22-phase2-report.md)，tag `phase-2`）。7 个真实 adapter（arxiv/openreview/pmlr/acl_anthology/cvf/aaai_ojs/neurips_proceedings）+ 全部详设 implemented；1629 测试 / 覆盖率 99.32%；在线冒烟 6 站实跑合规（arxiv 7 请求 + 五站批量 18 请求，四个 D-019 锚点精确命中）。→ 下一 Phase：3（聚合元数据层）
-- **待补验（不阻塞 tag，如实记录）**：openreview 在线层（AC-2.1/2.2 ②层）待用户 OpenReview token；D-019 锚点 DBLP 人工核准正式 sign-off；neurips canary 三条真值替换（2021 真值已捕获）。acm_dl 依 D-020 出列、Phase 4 重评。
-- **总体进度**：Phase 0/1/2 = 100%。新 ADR：D-018/D-019/D-020。
-- **待用户执行**：①OpenReview 免费账号 token（config.toml [auth.openreview]，openreview 在线补验前提）；②外部 API 申请（Elsevier/S2/Kaggle，Phase 3/4 前 1-2 周提交）。
+- **当前 Phase**：3（聚合元数据层）**收尾中**——W0 详设双评审 approved 门禁通过后，T1~T7 全部任务卡已合并：合并引擎（T1，AC-3.1/3.2/3.4 载体）、verify 三类检出扩展（T2，AC-3.3 载体）、crossref/dblp/unpaywall 三源 adapter（T3-T5）、openalex+s2 enrich 通道（T6，`crawler enrich` CLI）、五刊 VenueSpec + AC-3.5 端到端在线实跑（T7）。`aggregators.md` 六源详设本次转 `implemented`。AC-3.5（五刊零爬取枚举全史）在线实跑给出 **PASS 建议**（[验收记录](../testing/records/2026-07-23-ac35-acceptance.md)，draft，待 controller 终签）。T8 收尾（AC-3.1~3.5 汇总验收记录、AC-0 系统性扫描、tag `phase-3`）**进行中，尚未打 tag**。main HEAD `47bb72a`：**2153 passed / 1 failed / 24 skipped**（覆盖率 99.18%；五源 adapter 解析/映射模块 98~100%）——**新发现 1 处回归**：`tests/unit/test_crossref_parse.py::test_parse_single_work_title` 断言仍比对旧合成占位标题，与 T7 golden 转正提交（`47bb72a`）同步改写的 fixture 真值（`"Deep learning"`）脱节；本次为纯文档任务，未改动代码，需 owner 补一处断言后方可称"全绿"。→ 下一 Phase：4（认证框架+出版社）
+- **Phase 2 遗留 C-C/C-D 已修复**：C-C（大 venue pull 可用性——零网络 resolve 豁免限速闸 + `--limit` 前置圈选，D-022，`eeef820`/`7d3424d`）、C-D（openreview venueid 异构缺陷——2018/2019 逐年 accepted 规则，`8cc2a75`/`3b9e332`/`45c8250`）均已合并；openreview AC-2.1/2.2 在线层随之转 PASS（用户 token 已配置并建立自动刷新脚本）。Phase 2 报告检查单 #1（用户 token）与终检增补置顶 C-C/C-D 两项均已清零。
+- **待补验（不阻塞进行中状态，如实记录）**：S2 API key 未到（enrich/canary 在线层 SKIP 门控，D-021）；aaai_ojs 全库 OAI 补跑（Phase 2 检查单 #3 残项，本 Phase 未排期，仍缺）；AC-3.1/3.2/3.3/3.4 尚无独立汇总验收记录文档（现由 `tests/integration/test_merge_acceptance.py`/`test_merge_property.py`/`tests/unit/test_verify.py` 承载判据，T8 待收口成文）；D-019 锚点表 openalex 正锚点、s2 锚点仍 `[PENDING]`（需 key/credit）。
+- **总体进度**：Phase 0/1/2 = 100%；Phase 3 T1-T7 完成 / T8 进行中（未打 tag）。新 ADR：D-021/D-022。
+- **待用户执行**：①S2 API key 申请（`config.toml [auth.s2] api_key`，enrich/canary 在线层补验前提）；②`config.toml [identity].email` 补配（AC-3.5 验收记录 C5：默认 home 缺 email 会掉出 Crossref polite pool，本次经隔离 home 规避、非长期方案）；③外部 API 申请提醒沿用（Elsevier/Kaggle，Phase 4/5 前置）。
 - **阻塞**：无
 
 ## Phase 进度板
@@ -24,8 +25,8 @@ updated: 2026-07-21
 |---|---|---|---|
 | 0 设计与文本系统 | done | 100% | 报告：reports/2026-07-20-phase0-report.md |
 | 1 核心框架 | **done** | 100% | 报告：reports/2026-07-21-phase1-report.md；tag phase-1 + schema-v1 |
-| 2 Open-Access MVP | **done** | 100% | 报告：reports/2026-07-22-phase2-report.md；tag phase-2；openreview 在线层待 token 补验 |
-| 3 聚合元数据层 | planned | 0% | 开工检查单见 Phase 2 报告 |
+| 2 Open-Access MVP | **done** | 100% | 报告：reports/2026-07-22-phase2-report.md；tag phase-2；openreview 在线层已于 Phase 3 期间补验 PASS（用户 token 到位，见下） |
+| 3 聚合元数据层 | **收尾中** | ~88%（T1-T7/8 完成） | T1-T7 已合并（合并引擎+verify 扩展+五源 adapter+AC-3.5 端到端）；T8（汇总验收/AC-0 扫描/tag）进行中；验收记录：testing/records/2026-07-23-ac35-acceptance.md（draft） |
 | 4 认证框架+出版社 | planned | 0% | |
 | 5 SSRN 与特殊源 | planned | 0% | |
 | 6 订阅与搜索 | planned | 0% | |
