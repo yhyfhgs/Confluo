@@ -1,6 +1,6 @@
 ---
 title: 期刊聚合层验收执行记录（AC-3.5 · 五刊零爬取枚举全史）
-status: draft
+status: approved
 owner: fable5
 updated: 2026-07-23
 ---

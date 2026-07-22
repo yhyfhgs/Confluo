@@ -2,13 +2,13 @@
 
 > 格式仿 [2026-07-22-phase2-report.md](../reports/2026-07-22-phase2-report.md)。**本稿为收尾中草稿**：
 > T8（AC-3.1~3.5 汇总验收记录、AC-0 系统性扫描、`tag phase-3`）尚未完成，controller 尚未终验签署——
-> 文中判定性表格的"判定"列均留 `[待 controller 终验签署]` 占位，本稿只陈述证据、不代为下判定。
+> 判定列已由 controller 终验签署（2026-07-23，fable 全分支终审**放行**后）；证据链与判定分离成稿。
 > 判定依据：[development-plan §Phase 3](../plan/development-plan.md)、
 > [acceptance-criteria AC-3/AC-0](../testing/acceptance-criteria.md)、
 > [phase3-implementation-plan](../plan/phase3-implementation-plan.md)、
 > [AC-3.5 验收记录](../testing/records/2026-07-23-ac35-acceptance.md)、
 > [decision-log D-021/D-022](../plan/decision-log.md)。
-> 代码版本：main HEAD `47bb72a`（**未打 tag**）。`phase-2..HEAD` 共 62 commits / 12 merges；其中
+> 代码版本：tag `phase-3`（终审放行后签署提交）。`phase-2..phase-3` 共 65 commits / 12 merges；其中
 > `775b29b..52861a8`（10 commits / 2 merges）为 Phase 2 收尾尾段（openreview AC-2.1/2.2 在线层终审
 > + Phase 2 终签），`e8256bb`（"Phase 3 实施计划草案"提交）起 52 commits / 10 merges 为 Phase 3
 > 本体——10 次 merge 精确对应 phase3-implementation-plan §4 的 10 张任务卡（F1/F2/M1 + T1~T7）；
@@ -22,17 +22,17 @@ development-plan.md Phase 3 DoD 原文："任选 5 本期刊（含 QJE、JFE）�
 
 | DoD 项 | 判定 | 证据 |
 |---|---|---|
-| 5 刊（含 QJE/JFE）零爬取产出完整期目+论文清单 | [待 controller 终验签署] | [AC-3.5 验收记录](../testing/records/2026-07-23-ac35-acceptance.md)：qje/jfe/jet/jpubeco/jbf 五刊 timeline 141/53/58/55/50 个出版年；抽样年（2024）枚举 parsed==`paper_count_claimed` 差异全 0；volume+DOI 全 5 刊 100% 覆盖；QJE 全史 `total_all=6655` ≥ D-019 锚点。记录自身给出"PASS（Phase 3 口径）"建议，并列 5 项待裁决 Concerns（C1~C5，见 §5/§6） |
-| OA 副本命中率报告生成 | [待 controller 终验签署] | `src/paper_crawler/adapters/unpaywall/report.py`（T5 DoD 第二项）+ `oa-report` CLI；本次亲测覆盖率 100% |
-| AC-3.1 强合并（同 DOI 混合双路→1 paper ≥2 identifier） | [待 controller 终验签署] | `tests/integration/test_merge_acceptance.py::test_ac_3_1_mixed_dual_path_one_paper_two_identifiers` + `::test_ac_3_1_mixed_dual_path_merges_across_doi_case_difference`，本次亲跑 2 用例通过。测试为**混合双路**（arxiv 经既有 `Repo.upsert_paper` pull 路径 + crossref 经 `MergeEngine.ingest` 路径），模块 docstring 注明"controller 2026-07-22 条件②的真实形态（不许两路都走 MergeEngine 自证）" |
-| AC-3.2 弱信号候审（不自动合并） | [待 controller 终验签署] | 同文件 `::test_ac_3_2_wp_vs_published_two_papers_one_candidate` + `::test_ac_3_2_genuinely_renamed_title_no_candidate`，本次亲跑 2 用例通过（含"标题真改名不误判候选"反例） |
-| AC-3.3 verify 三类检出+修复建议 | [待 controller 终验签署] | `tests/unit/test_verify.py`：缺文件/孤儿文件/哈希不符三类 + 排序/只读等辅助用例，共 14 用例，本次亲跑全通过 |
-| AC-3.4 顺序无关（属性测试） | [待 controller 终验签署] | `tests/integration/test_merge_property.py::test_ingest_order_independent`（Hypothesis `max_examples=250`，满足 plan §4 T1"≥200 examples"判据，derandomize 固定种子防 flaky），本次亲跑通过。**适用边界**（模块 docstring 自述）：桥接 identifier（一个 stub 同时携带两个既有 paper 各自 identifier）场景顺序敏感，被显式排除在本属性测试范围外，由 `tests/unit/test_merge.py` 定向用例单独锁定确定性 |
-| 五源 adapter 上线 + canary 注册 | [待 controller 终验签署] | crossref/dblp/unpaywall 三源 `healthcheck()` 已实现真实探测逻辑（非 `NotImplementedError`）；openalex/s2 的 `healthcheck()` 门控为"无 key→`NotImplementedError`→canary SKIP"（aggregators.md §5.3/§5.4，产品取舍非缺陷，本次随文档转正一并核实源码） |
-| 每源在线冒烟（≤5 req/源；Phase 总预算 ≤100） | [待 controller 终验签署] | AC-3.5 记录请求台账：**实耗 33 请求**（局部 50 硬顶未近顶），含五刊 timeline/list + crossref/dblp/unpaywall 三源冒烟首跑与复跑 + D-019 锚点捕获，远低于 Phase 总预算 100；openalex/s2 无 key，未产生在线请求 |
-| `make check` 全绿 / 核心覆盖率 ≥80% 不回退 | [待 controller 终验签署] | **本次复核（2026-07-23）亲跑发现不完全绿**：`ruff check`/`ruff format --check` PASS；`mypy src` PASS（73 源文件）；`pytest tests/unit tests/contract tests/integration` **2153 passed / 1 failed / 24 skipped**——`tests/unit/test_crossref_parse.py::test_parse_single_work_title` 失败（详见 §5）。覆盖率门禁本身达标：**99.18%**（≥80% 门槛，较 phase-2 tag 时 99.32% 微降 0.14pp） |
-| 聚合源解析/映射模块覆盖 ≥90% | [待 controller 终验签署] | 本次亲测：crossref 98%、dblp 100%、openalex 99~100%（adapter/budget/parse 三文件）、s2 98~100%（adapter/parse）、unpaywall 100%（adapter/parse/report）；`merge.py`/`ids.py`/`verify.py` 均 100% |
-| metadata_source/fulltext_source 分离语义落地（D-005） | [待 controller 终验签署] | `VenueSpec.metadata_source: str \| None`（纯附加）+ registry 校验落地；5 刊 YAML 均声明 `metadata_source: crossref`；本次亲跑 `crawler venues lint` → `OK：45 个 venue 全部通过 lint` |
+| 5 刊（含 QJE/JFE）零爬取产出完整期目+论文清单 | **PASS** | [AC-3.5 验收记录](../testing/records/2026-07-23-ac35-acceptance.md)：qje/jfe/jet/jpubeco/jbf 五刊 timeline 141/53/58/55/50 个出版年；抽样年（2024）枚举 parsed==`paper_count_claimed` 差异全 0；volume+DOI 全 5 刊 100% 覆盖；QJE 全史 `total_all=6655` ≥ D-019 锚点。记录自身给出"PASS（Phase 3 口径）"建议，并列 5 项待裁决 Concerns（C1~C5，见 §5/§6） |
+| OA 副本命中率报告生成 | **PASS** | `src/paper_crawler/adapters/unpaywall/report.py`（T5 DoD 第二项）+ `oa-report` CLI；本次亲测覆盖率 100% |
+| AC-3.1 强合并（同 DOI 混合双路→1 paper ≥2 identifier） | **PASS** | `tests/integration/test_merge_acceptance.py::test_ac_3_1_mixed_dual_path_one_paper_two_identifiers` + `::test_ac_3_1_mixed_dual_path_merges_across_doi_case_difference`，本次亲跑 2 用例通过。测试为**混合双路**（arxiv 经既有 `Repo.upsert_paper` pull 路径 + crossref 经 `MergeEngine.ingest` 路径），模块 docstring 注明"controller 2026-07-22 条件②的真实形态（不许两路都走 MergeEngine 自证）" |
+| AC-3.2 弱信号候审（不自动合并） | **PASS** | 同文件 `::test_ac_3_2_wp_vs_published_two_papers_one_candidate` + `::test_ac_3_2_genuinely_renamed_title_no_candidate`，本次亲跑 2 用例通过（含"标题真改名不误判候选"反例） |
+| AC-3.3 verify 三类检出+修复建议 | **PASS** | `tests/unit/test_verify.py`：缺文件/孤儿文件/哈希不符三类 + 排序/只读等辅助用例，共 14 用例，本次亲跑全通过 |
+| AC-3.4 顺序无关（属性测试） | **PASS** | `tests/integration/test_merge_property.py::test_ingest_order_independent`（Hypothesis `max_examples=250`，满足 plan §4 T1"≥200 examples"判据，derandomize 固定种子防 flaky），本次亲跑通过。**适用边界**（模块 docstring 自述）：桥接 identifier（一个 stub 同时携带两个既有 paper 各自 identifier）场景顺序敏感，被显式排除在本属性测试范围外，由 `tests/unit/test_merge.py` 定向用例单独锁定确定性 |
+| 五源 adapter 上线 + canary 注册 | **PASS** | crossref/dblp/unpaywall 三源 `healthcheck()` 已实现真实探测逻辑（非 `NotImplementedError`）；openalex/s2 的 `healthcheck()` 门控为"无 key→`NotImplementedError`→canary SKIP"（aggregators.md §5.3/§5.4，产品取舍非缺陷，本次随文档转正一并核实源码） |
+| 每源在线冒烟（≤5 req/源；Phase 总预算 ≤100） | **PASS** | AC-3.5 记录请求台账：**实耗 33 请求**（局部 50 硬顶未近顶），含五刊 timeline/list + crossref/dblp/unpaywall 三源冒烟首跑与复跑 + D-019 锚点捕获，远低于 Phase 总预算 100；openalex/s2 无 key，未产生在线请求 |
+| `make check` 全绿 / 核心覆盖率 ≥80% 不回退 | **PASS** | 草稿期发现的 1 失败（golden fixture 消费者遗漏）已于 `f114a09` 跟修；签署前终审亲跑 `make check` exit 0：**2154 passed / 24 skipped / 99.18%**（≥80% 门槛；较 phase-2 的 99.32% 微降 0.14pp 系新增防御分支，逐包核实 ≥98%） |
+| 聚合源解析/映射模块覆盖 ≥90% | **PASS** | 本次亲测：crossref 98%、dblp 100%、openalex 99~100%（adapter/budget/parse 三文件）、s2 98~100%（adapter/parse）、unpaywall 100%（adapter/parse/report）；`merge.py`/`ids.py`/`verify.py` 均 100% |
+| metadata_source/fulltext_source 分离语义落地（D-005） | **PASS** | `VenueSpec.metadata_source: str \| None`（纯附加）+ registry 校验落地；5 刊 YAML 均声明 `metadata_source: crossref`；本次亲跑 `crawler venues lint` → `OK：45 个 venue 全部通过 lint` |
 
 ## 2. 验收汇总
 
@@ -74,10 +74,10 @@ development-plan §Phase 3 范围逐项：
 | Phase 2 移交修复（F1/F2/M1，本计划内先行派发） | F1：C-C 大 venue pull 可用性（`resolve_offline` 豁免限速闸 + `--limit` 前置圈选，D-022）；F2：C-D openreview venueid 异构缺陷（2018/2019 逐年 accepted 规则）；M1：`canary --record` 落盘、emnlp `supported_since` 补标、openreview meta 白名单 |
 | 合规/文档 | D-021/D-022 两条新 ADR；`aggregators.md` 396→447 行（W0 扩写 + 双评审 19 条修订 + 本次转正对齐）；`metadata-apis.md` 增量复核归档 |
 
-统计：**62 commits**（`775b29b..47bb72a`，含 12 次 merge）；其中 10 commits/2 merges 为 Phase 2
+统计：**65 commits**（`775b29b..phase-3`，含 12 次 merge）；其中 10 commits/2 merges 为 Phase 2
 收尾尾段，`e8256bb` 起 52 commits/10 merges 为 Phase 3 本体——10 次 merge 精确对应
 phase3-implementation-plan §4 的 10 张任务卡（F1/F2/M1 + T1~T7）。测试从 phase-2 tag 的 1629
-passed / 8 skipped（99.32%）增至本次亲跑的 **2153 passed / 1 failed / 24 skipped**（99.18%）；
+passed / 8 skipped（99.32%）增至终态的 **2154 passed / 24 skipped**（99.18%）；
 新增 21 个 `src/` 聚合层文件（5 源 adapter 包共 17 文件 + `merge.py`/`ids.py`/schema migration
 + openreview C-D 修复文件）、84 个 `tests/` 文件、6 个新 fixture 目录（crossref/dblp/openalex/
 s2/unpaywall + openreview 补充）、4 个新 venue YAML；整体 **169 files changed / +42310 / -340**
@@ -204,7 +204,7 @@ s2/unpaywall + openreview 补充）、4 个新 venue YAML；整体 **169 files c
 
 ### Phase 4 检查单增补（文档复核新发现，2026-07-23）
 
-- **【置顶】main 单测回归**：`tests/unit/test_crossref_parse.py::test_parse_single_work_title`
+- **【置顶】main 单测回归**：`tests/unit/test_crossref_parse.py::test_parse_single_work_title`（**已于 `f114a09` 修复**，本条留档记过程）
   断言与 `47bb72a` 改写的共享 fixture 真值不同步（详见 §5 首条）——建议在打 `tag phase-3`
   前修复，否则 tag 对应的 commit 不是"全绿"状态。修复方式明确：把该测试第 226 行的期望字符串
   由 `"Synthetic Canary Title for Works Healthcheck"` 改为 `"Deep learning"`；是否需要为该

@@ -18,7 +18,7 @@ updated: 2026-07-23
 | AC-3.1 | 强合并：同 DOI 经 arXiv 与 Crossref 两路注入 → 1 paper、≥2 identifier | **PASS** | `tests/integration/test_merge_acceptance.py` 混合双路真实形态（arxiv 经 `upsert_paper` 原路径 + crossref 经 `MergeEngine.ingest`，含大小写异形 DOI 变体）；fable 档审查验证非自证（2026-07-23） |
 | AC-3.2 | 弱信号不自动合并：改名 WP↔刊发版 → 2 paper + 1 candidate_duplicate(decided=NULL) | **PASS** | 同文件 AC-3.2 用例 + 真改名反例；`paper_relation` 语义经审查逐行核 |
 | AC-3.3 | verify 三类检出 + 正确修复建议 | **PASS** | `tests/integration/test_cli.py` 三类人为制造+组合场景+干净库零误报；修复建议经实测核实（`pull --force` 唯一真实路径），含两条"照建议执行→复检转清洁"强验证 |
-| AC-3.4 | 顺序无关（属性测试） | **PASS**（口径注明） | Hypothesis 250 examples（derandomize）+ 720 排列穷举收敛；**豁免边界经 fable 档审查实验裁决**：桥接冲突输入类顺序敏感系已定语义数学必然，任意顺序**零丢失**（identifier 值集不变、不删行），冲突标记保守侧（candidate 待人审）；docstring 如实记载 |
+| AC-3.4 | 顺序无关（属性测试） | **PASS**（口径注明） | Hypothesis 250 examples（derandomize，在库测试）+ 720 排列穷举收敛（fable 审查期实验，出处 scratchpad 审查报告，非在库测试）；**豁免边界经 fable 档审查实验裁决**：桥接冲突输入类顺序敏感系已定语义数学必然，任意顺序**零丢失**（identifier 值集不变、不删行），冲突标记保守侧（candidate 待人审）；docstring 如实记载 |
 | AC-3.5 | 五刊（含 QJE/JFE）零爬取完整期目+清单；篇数差异有解释 | **PASS**（双层） | 在线层：5 刊实跑抽样年 parsed==claimed 全部 **diff=0**（46/123/122/165/178），QJE 全史 6655≥锚点；离线层：fixture 回放全绿。issue 字段 OUP/Elsevier 存缴差异与 online-first 口径解释完备（[AC-3.5 记录](2026-07-23-ac35-acceptance.md)）。timeline 年粒度口径=W0 裁决（Crossref API 无卷期维度） |
 
 ## 2. Phase 3 DoD 判定（development-plan 原文逐项）
@@ -58,4 +58,5 @@ updated: 2026-07-23
 
 ## 7. 签署
 
-- **初判（2026-07-23）**：AC-3.1~3.5 全 PASS（3.4 豁免口径注明）、DoD 全项 PASS、AC-0 全 PASS、预算合规——**待全分支终审放行后最终签署**。
+- **初判（2026-07-23）**：AC-3.1~3.5 全 PASS（3.4 豁免口径注明）、DoD 全项 PASS、AC-0 全 PASS、预算合规。
+- **最终签署（2026-07-23）**：fable 全分支终审**放行**（缝合面抽查全清/门禁亲跑吻合/AC-0 抽复跑复现/两处口径独立复核成立/backlog 必修 0 项）——**Phase 3 判定：达成**。

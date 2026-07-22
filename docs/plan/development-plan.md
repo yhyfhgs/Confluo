@@ -17,7 +17,7 @@ updated: 2026-07-21
 | 0 | 设计与文本系统 | 全套设计文档、SVG、清单、流程规范 | — | done |
 | 1 | 核心框架 | plugin registry、数据模型与 DB、pipeline 骨架、CLI 骨架、日志 | 0 | done |
 | 2 | Open-Access MVP | arXiv + OpenReview + PMLR + CVF + ACL Anthology + NeurIPS + AAAI + ACM adapters | 1 | **in_progress** |
-| 3 | 聚合元数据层 | Crossref/OpenAlex/DBLP/S2/Unpaywall 客户端与 metadata spine | 1 | planned |
+| 3 | 聚合元数据层 | Crossref/OpenAlex/DBLP/S2/Unpaywall 客户端与 metadata spine | 1 | **done** |
 | 4 | 认证框架 + 出版社 adapters | AuthProvider 四实现；Elsevier/Wiley/OUP/UChicago/INFORMS/IEEE/ACM/AAAI | 1,3 | planned |
 | 5 | SSRN 与特殊源 | SSRN、NBER、AEA、Econometric Society、RePEc adapters | 2,4 | planned |
 | 6 | 订阅与搜索 | topic/tag 订阅 DSL、增量 watch、dry-run、日报 | 2,3 | planned |
@@ -65,7 +65,7 @@ updated: 2026-07-21
 
 ## Phase 3 — 聚合元数据层
 
-**范围**：Crossref（按 ISSN 枚举 DOI）、OpenAlex（venue/works 过滤）、DBLP（conf 卷目录）、Semantic Scholar（补充摘要/引用）、Unpaywall（OA 副本发现）。实现 `metadata_source` 与 `fulltext_source` 分离的 VenueSpec 语义（D-005）。
+**范围**：Crossref（按 ISSN 枚举 DOI）、OpenAlex（venue/works 过滤——2026-07-22 W0 双评审判定收窄为 enrich 补充通道，见 aggregators.md §5.3/plan §2-5，非枚举源）、DBLP（conf 卷目录）、Semantic Scholar（补充摘要/引用）、Unpaywall（OA 副本发现）。实现 `metadata_source` 与 `fulltext_source` 分离的 VenueSpec 语义（D-005）。
 
 **DoD**：任选 5 本期刊（含 QJE、JFE）不写任何出版社爬虫即可产出完整期目与论文清单；OA 副本命中率报告生成。
 
