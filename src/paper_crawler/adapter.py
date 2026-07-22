@@ -112,6 +112,21 @@ class HttpClientConsumer(Protocol):
     def set_http_client(self, client: HttpClient) -> None: ...
 
 
+@runtime_checkable
+class EmailConsumer(Protocol):
+    """真实 adapter 声明"可注入裸联系邮箱字符串"的可选协议（duck-typed，沿
+    `HttpClientConsumer` 先例）。
+
+    与 `HttpClientConsumer` 不同：本协议注入的是**裸邮箱字符串**，而非已装配好的
+    `HttpClient`。存在原因——unpaywall 的 `?email=<addr>` 是 URL 查询参数（而非
+    HTTP 头），无法从已装配的 `HttpClient`（只暴露 header/UA）反推出邮箱原文；
+    CLI 装配期另行注入（值来源 `Config.identity_email`，T5 aggregators.md §3）。
+    不实现该协议的 adapter 不参与此注入（如无需邮箱的 adapter）。
+    """
+
+    def set_email(self, email: str | None) -> None: ...
+
+
 def bind_http_client(adapters: Mapping[str, SourceAdapter], client: HttpClient) -> list[str]:
     """把共享 `client` 注入所有实现 `HttpClientConsumer` 的 adapter；返回被注入的 id 列表。
 
