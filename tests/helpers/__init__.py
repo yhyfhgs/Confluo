@@ -253,6 +253,29 @@ def make_crossref_venue(**quirks_overrides: object) -> VenueSpec:
     )
 
 
+def make_wiley_venue(**quirks_overrides: object) -> VenueSpec:
+    """构造 wiley 契约/单测用的 `journal` venue（不依赖 `venues/` 目录文件）。
+
+    id='jf'（Journal of Finance，Wiley 平台金融第一刊，wiley.md §1）；`metadata_source=
+    'crossref'`（enumerate 走 crossref）、`fulltext_source='wiley'`；auth=institutional
+    （TDM token + 订阅域，匹配 adapter `auth_requirement`）。wiley `resolve_assets` 不读
+    `venue` 参数（TDM 按 DOI 取回，跨 venue——同 unpaywall 先例），故字段只需形态合法。
+    `quirks_overrides` 目前无消费方，保留形参与其余 `make_*_venue` 签名一致。
+    """
+    quirks: dict[str, object] = dict(quirks_overrides)
+    return VenueSpec(
+        id="jf",
+        kind="journal",
+        names={"full": "The Journal of Finance", "aliases": ["JF"]},
+        field=["finance"],
+        identifiers={"issn": ["0022-1082"]},
+        metadata_source="crossref",
+        fulltext_source="wiley",
+        auth={"level": "institutional", "provider_hint": "wiley"},
+        quirks=quirks,
+    )
+
+
 def make_neurips_venue(**quirks_overrides: object) -> VenueSpec:
     """构造 neurips_proceedings 契约/集成测试用的 `conference` venue（不依赖 `venues/` 目录）。
 
@@ -311,6 +334,7 @@ __all__ = [
     "make_mock_venue",
     "make_openreview_venue",
     "make_pmlr_venue",
+    "make_wiley_venue",
     "DEFAULT_NEURIPS_QUIRKS",
     "make_neurips_venue",
 ]

@@ -1,0 +1,9 @@
+# [synthetic][DOCS] Wiley TDM 403（持 token 但无该刊订阅权限）封套。
+# 出处等级：⚠ [DOCS] 依官方 TDM 文档形态合成——无 token 未取过真实 403 体。
+# 语义：R0 [LIVE 2026-07-23] 记载 entitlement 受订阅域约束，持 token 对非订阅内容仍 403。
+# 核验计划：token 到位后按 tests/manual/wiley_runbook.md 用一个已知无权 DOI 重录真实响应。
+# 断言面：HttpClient 冻结映射 403 → ErrorClass.NO_ENTITLEMENT（wiley.md §5）。
+HTTP-STATUS: 403
+Content-Type: application/json
+
+{"error": "Forbidden", "message": "No entitlement for the requested article DOI"}

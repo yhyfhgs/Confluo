@@ -50,6 +50,7 @@ from helpers import (
     make_neurips_venue,
     make_openreview_venue,
     make_pmlr_venue,
+    make_wiley_venue,
 )
 from helpers.aaai_fixtures import fixture_bytes as aaai_fixture_bytes
 from helpers.arxiv_fixtures import fixture_bytes
@@ -68,6 +69,7 @@ from paper_crawler.adapters.neurips_proceedings.adapter import NeuripsProceeding
 from paper_crawler.adapters.openreview.adapter import OpenReviewAdapter
 from paper_crawler.adapters.pmlr.adapter import PmlrAdapter
 from paper_crawler.adapters.unpaywall.adapter import UnpaywallAdapter
+from paper_crawler.adapters.wiley.adapter import TDM_TOKEN_HEADER, WileyAdapter
 from paper_crawler.errors import CapabilityNotSupported
 from paper_crawler.http import HttpClient
 from paper_crawler.types import (
@@ -331,13 +333,37 @@ def _unpaywall_case() -> tuple[SourceAdapter, VenueSpec]:
     return UnpaywallAdapter(http=client), make_mock_venue()
 
 
-# RESOLVE-only、无 DISCOVER/ENUMERATE 的 adapter（目前仅 unpaywall）：resolve/fetch
-# 契约测试不能像其余全链路 adapter 那样从 discover→enumerate 派生样本 paper（那两个
-# 能力它压根没有），改直接登记一个现成样本——见 `_sample_paper_for`。
+def _wiley_contract_handler(request: httpx.Request) -> httpx.Response:
+    """wiley 契约链的 MockTransport：TDM 端点 → %PDF（`Wiley-TDM-Client-Token` 头随专属
+    client 发出，凭证隔离——同 s2 契约不校验头值，只需链路走通 + 形态合法）。"""
+    return httpx.Response(200, content=_CONTRACT_PDF)
+
+
+def _wiley_case() -> tuple[SourceAdapter, VenueSpec]:
+    # wiley 是 token 门控 adapter（无 token → resolve/fetch AuthRequired）——契约链需注入
+    # 携 `Wiley-TDM-Client-Token` 头的**专属** client + set_token，模拟 CLI 装配期的凭证
+    # 隔离结果（同 s2 `test_enrich_batch_x_api_key_header_present_on_request` 先例）。
+    transport = httpx.MockTransport(_wiley_contract_handler)
+    client = HttpClient(
+        user_agent=_CONTRACT_UA,
+        transport=transport,
+        extra_headers={TDM_TOKEN_HEADER: "contract-token"},
+    )
+    return WileyAdapter(http=client, token="contract-token"), make_wiley_venue()
+
+
+# 无 DISCOVER/ENUMERATE 的 adapter（unpaywall RESOLVE-only；wiley RESOLVE|FETCH，enumerate
+# 走 crossref）：resolve/fetch 契约测试不能像其余全链路 adapter 那样从 discover→enumerate
+# 派生样本 paper（那两个能力它们没有），改直接登记一个现成样本——见 `_sample_paper_for`。
 _RESOLVE_ONLY_SAMPLE_PAPERS: dict[str, PaperStub] = {
     "unpaywall": PaperStub(
         title="Contract Test Paper (Resolve-Only Adapter)",
         identifiers=(("doi", "10.9999/contract.unpaywall"),),
+    ),
+    # wiley DOI 前缀（10.1111，Journal of Finance 形态）——TDM URL 由 resolve 从此 DOI 构造。
+    "wiley": PaperStub(
+        title="Contract Test Paper (Wiley TDM Adapter)",
+        identifiers=(("doi", "10.1111/contract.wiley"),),
     ),
 }
 
@@ -369,6 +395,7 @@ _CONTRACT_CASES: dict[str, Callable[[], tuple[SourceAdapter, VenueSpec]]] = {
     "crossref": _crossref_case,
     "dblp": _dblp_case,
     "unpaywall": _unpaywall_case,
+    "wiley": _wiley_case,
 }
 
 ADAPTER_IDS = sorted(load_adapters())
