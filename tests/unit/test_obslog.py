@@ -288,6 +288,55 @@ def test_redact_leaves_normal_text_untouched() -> None:
     assert redact(text) == text
 
 
+# ---------------------------------------------------------------------------
+# Phase 4 认证头脱敏（auth-framework §5）：insttoken 是唯一真实缺口，其余显式增强
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.parametrize(
+    ("raw", "expected"),
+    [
+        # insttoken：`\btoken` 对 "Insttoken" 内嵌无词边界漏匹配——必须显式补（唯一真实缺口）。
+        ("X-ELS-Insttoken: SEKRET123456", "X-ELS-Insttoken: ***"),
+        ("insttoken: SEKRET123456", "insttoken: ***"),
+        ("inst-token: SEKRET123456", "inst-token: ***"),
+        ("inst_token: SEKRET123456", "inst_token: ***"),
+        # elsevier api key 头（显式增强）。
+        ("X-ELS-APIKey: SEKRET123456", "X-ELS-APIKey: ***"),
+        # wiley TDM 头（显式增强）。
+        ("Wiley-TDM-Client-Token: SEKRET123456", "Wiley-TDM-Client-Token: ***"),
+        ("TDM-Token: SEKRET123456", "TDM-Token: ***"),
+        ("tdm_token: SEKRET123456", "tdm_token: ***"),
+    ],
+)
+def test_redact_phase4_auth_headers(raw: str, expected: str) -> None:
+    """Phase 4 认证头脱敏（auth-framework §5）——落敏感头 provider 前先补脱敏（T2→T3 约束）。"""
+    result = redact(raw)
+    assert result == expected
+    assert "SEKRET123456" not in result
+
+
+def test_insttoken_query_param_redacted() -> None:
+    """URL 查询参数形态的 insttoken 亦脱敏（复用 `_QUERY_STYLE` 分支）。"""
+    assert redact("?insttoken=SEKRET123456&x=1") == "?insttoken=***&x=1"
+
+
+def test_sensitive_keys_single_source_with_config_guard() -> None:
+    """obslog 脱敏键 = `sensitive.REDACT_KEY_PATTERN`（单一权威源，与 config 护栏同源，防漂移）。"""
+    from paper_crawler.obslog import _SENSITIVE_KEYS
+    from paper_crawler.sensitive import CONFIG_GUARD_KEY_PATTERN, REDACT_KEY_PATTERN
+
+    assert _SENSITIVE_KEYS == REDACT_KEY_PATTERN
+    # 两个消费方共享核心凭证键（authorization/token/api_key/…），仅受控差异不同（email/…）。
+    core = ("cookie", "authorization", "token", "api[_-]?key", "password", "secret", "insttoken")
+    for term in core:
+        assert term in REDACT_KEY_PATTERN
+        assert term in CONFIG_GUARD_KEY_PATTERN
+    # 受控差异：obslog 含 email（unpaywall），config 护栏不含（identity.email 合法）。
+    assert "email" in REDACT_KEY_PATTERN
+    assert "email" not in CONFIG_GUARD_KEY_PATTERN
+
+
 def test_redact_empty_string_returns_empty() -> None:
     assert redact("") == ""
 

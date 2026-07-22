@@ -13,6 +13,9 @@ auth/state/
 .filekey
 profiles.toml
 
+# ---- 项目级配置（D-025；仅非敏感键，敏感键有启动护栏，此为双保险防误提交）----
+paper-crawler.toml
+
 # ---- 下载产物（体积大且有版权，绝不入库）----
 data/
 downloads/

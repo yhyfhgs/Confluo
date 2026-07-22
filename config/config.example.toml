@@ -1,0 +1,64 @@
+# paper-crawler 配置样例（config-home config.toml 全键注释模板）。
+#
+# 用法：复制到 config-home 后填真实值——
+#   $PAPER_CRAWLER_HOME/config.toml   或   ~/.paper-crawler/config.toml（仓库外）。
+#
+# **本文件所有值为占位/空样例，绝不含真实凭证**（AC-0.3 不变式；CI 断言 config/** 无凭证形态）。
+#
+# 分层加载优先级（高→低，逐键覆盖；见 docs/design/10-config-layout.md §3）：
+#   1. env（PAPER_CRAWLER_*）                          ← 最高（CI/临时会话不落盘凭证）
+#   2. 项目级 ./paper-crawler.toml（**仅非敏感键**）   ← 本机工作区层（路径/限速/venue 目录）
+#   3. 本文件（config-home config.toml）               ← 家目录，仓库外，可含敏感槽
+#   4. 内置默认                                        ← 兜底
+#
+# 敏感边界（AC-0.3）：凭证只存 config-home（仓库外）或 env，**绝不入仓库工作树**。项目级
+# ./paper-crawler.toml 出现敏感键形态（api_key/token/insttoken/password/secret/…）→ 启动护栏
+# CrawlerError(CONFIG) 拒启动（挪至家目录/env）。自查生效值 + 来源层：`crawler config show`。
+
+# == 身份（D-014 UA 的 mailto: 段来源；非凭证，可入项目级）=====================================
+[identity]
+email = "you@example.edu"          # UA `mailto:`；缺省则 UA 省略该段（config show 部分脱敏）
+
+# == 路径（非凭证，可入项目级 ./paper-crawler.toml）==========================================
+[paths]
+# data_dir = "/abs/path/to/data"   # 缺省 = <config-home>/data；相对路径挂在 config-home 下
+# venues_dirs = ["venues"]         # 缺省 = 检测 ./venues 与 <config-home>/venues（保序，后覆前）
+
+# == 限速 / 重试缩放（非凭证，可入项目级）====================================================
+[rate]
+scale = 1.0                        # <1 更慢更保守；与站点声明取 min（只会更严，不放宽）
+
+[retry]
+scale = 1.0                        # RETRY_TABLE 退避秒数缩放
+
+# == OpenAlex 补充源预算（非凭证，可入项目级）================================================
+[openalex]
+daily_budget_usd = 0.50            # 每日 credit 预算上限（美元）；命中即熔断当日 enrich
+
+# ============================================================================================
+# 认证凭证槽 [auth.*]（**只放 config-home，仓库外**；env PAPER_CRAWLER_* 覆盖）
+# 简单字符串密钥（D-023 ①类，auth-framework §3.4）——不触 AES-GCM/keyring。
+# 空白/缺省 = 未配置（空白串归一为 None）；**不入日志/报告**（obslog redact 覆盖）。
+# 有状态凭证（cookie/storage_state，CookieSession/SSO）走 auth/profiles.toml（见 profiles.example.toml）。
+# ============================================================================================
+
+[auth.openreview]
+token = ""        # OpenReview access token（Cookie 通道）；env PAPER_CRAWLER_OPENREVIEW_TOKEN
+
+[auth.openalex]
+api_key = ""      # OpenAlex API key（可选，提升每日 credit 额度）；env PAPER_CRAWLER_OPENALEX_API_KEY
+
+[auth.s2]
+api_key = ""      # Semantic Scholar API key（enrich 生产必需）；env PAPER_CRAWLER_S2_API_KEY
+
+[auth.elsevier]
+api_key = ""      # Elsevier X-ELS-APIKey；env PAPER_CRAWLER_ELSEVIER_API_KEY
+insttoken = ""    # 可选 机构 X-ELS-Insttoken；env PAPER_CRAWLER_ELSEVIER_INSTTOKEN
+
+[auth.wiley]
+token = ""        # Wiley-TDM-Client-Token（UUID 形态）；env PAPER_CRAWLER_WILEY_TDM_TOKEN
+
+# == AuthProvider 运行时选择（有状态 provider 见 profiles.example.toml）=======================
+[auth]
+# active_profile = { oup_silverchair = "oup@campus", elsevier_sd = "elsevier" }
+# CLI `--profile` 可临时覆盖（在校用直连 / 离校切 elsevier@ezproxy，无需改 VenueSpec）。
