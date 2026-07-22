@@ -33,7 +33,8 @@ plan §2-3；SEARCH 冻结协议无 `search()`，订阅命中经 enumerate + 本
 **错误映射（§5.1 表）**：429/X-Rate-Limit 触顶→`rate_limited`（读 Retry-After，HttpClient）；
 4xx（filter 语法/ISSN 非法）→`config`（HttpClient）；5xx→`transient`（HttpClient）；
 `total-results>0` 但首页 items 空解析 0 条→`parse`（canary 标红，本层判）。cursor 过期/
-scroll 失效→`transient`（HttpClient 状态映射治理；窗口重建从头是本层续拉契约）。
+scroll 失效→Crossref 返 400→`config`（HttpClient 状态映射治理，响亮停机后人工重跑；
+窗口重建从头是本层续拉契约——★裁决④ 2026-07-22，无 cursor 专属重映射）。
 """
 
 from __future__ import annotations
