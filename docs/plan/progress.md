@@ -45,8 +45,9 @@ updated: 2026-07-23
 > 用语，§1，不是代码模块状态机用语，二者刻意分离，见 §3 联动规则）。"覆盖"列为
 > `make check`（`pytest --cov=paper_crawler --cov-report=term-missing`）本次亲跑的
 > 实测行覆盖率（多文件聚合为一行时取 min–max 区间）；`storage/migrations/*.sql`
-> 非 Python，不计入覆盖率统计。全量结果：**2186 collected / 2167 passed / 19
-> skipped，TOTAL 99%（精确 99.18%，6418 stmts/26 miss）**，`make check` exit 0。
+> 非 Python，不计入覆盖率统计。全量结果（含检查单 #10 budget.py flock 并发测试）：
+> **2172 passed / 19 skipped，TOTAL 99%（精确 99.18%，6438 stmts/26 miss）**，
+> `make check` exit 0。
 
 ### 核心模块
 
@@ -79,7 +80,7 @@ updated: 2026-07-23
 | crossref（aggregator，Phase 3 T3） | stable | 98–100% | facet 逐年 + cursor 深翻断点续拉（检查单 #15a 补端到端窗口重建去重用例）；healthcheck golden 已转正 |
 | dblp（aggregator，Phase 3 T4） | stable | 100% | conf 索引发现 + 单请求整卷；线上 `<bht>` 真实 schema 已修（`c144573`） |
 | unpaywall（aggregator，Phase 3 T5） | stable | 100% | RESOLVE only；`oa-report` CLI 限速链路已补直接证明（检查单 #15b） |
-| openalex（aggregator/enrich，Phase 3 T6） | stable | 98–100% | duck-typed `enrich_batch`；日预算熔断（`budget.py` 100%，跨进程 flock 加固见检查单 #10） |
+| openalex（aggregator/enrich，Phase 3 T6） | stable | 98–100% | duck-typed `enrich_batch`；日预算熔断（`budget.py` 100%，`add_spend` 跨进程 `fcntl.flock` 加固已落地，检查单 #10；Windows 无 fcntl 降级为加固前现状） |
 | s2（aggregator/enrich，Phase 3 T6） | stable | 98–100% | key 门控批查；无 key → SKIP（D-021 产品取舍，非缺陷） |
 | elsevier_sd（auth_gated，stub） | planned（stub 占位） | 100%（`NotImplementedError` 分支） | 设计文档仍 `review`（未 `approved`）；QJE `fulltext_source` 借用 `elsevier_sd` 键名的占位状态见 Phase 4 检查单 #2 |
 
