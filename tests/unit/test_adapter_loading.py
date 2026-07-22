@@ -80,13 +80,18 @@ def test_mock_platform_attributes(adapters: dict[str, SourceAdapter]) -> None:
     assert mock.domains == ("mock.local",)
 
 
-def test_crossref_stub_attributes(adapters: dict[str, SourceAdapter]) -> None:
+def test_crossref_attributes(adapters: dict[str, SourceAdapter]) -> None:
+    # Phase 3 T3：crossref 落地为真实 aggregator adapter（entry point 注册），非 stub。
     crossref = adapters["crossref"]
     assert crossref.family == "aggregator"
+    # aggregators.md §1：DISCOVER|ENUMERATE，无 SEARCH/RESOLVE/FETCH（五源均无 FETCH）。
     assert crossref.capabilities == Capability.DISCOVER | Capability.ENUMERATE
-    assert crossref.default_rate.requests_per_minute == 50
+    assert Capability.SEARCH not in crossref.capabilities
+    assert Capability.FETCH not in crossref.capabilities
+    assert crossref.default_rate.requests_per_minute == 300.0  # 5 req/s 保守上限（§4）
+    assert "X-Rate-Limit" in crossref.default_rate.source_note  # 出处（非占位 ⚠）
+    assert crossref.auth_requirement is AuthLevel.NONE
     assert crossref.domains == ("api.crossref.org",)
-    assert "⚠" in crossref.default_rate.source_note
 
 
 def test_openreview_attributes(adapters: dict[str, SourceAdapter]) -> None:
@@ -187,7 +192,7 @@ def test_healthcheck_defaults_healthy(adapters: dict[str, SourceAdapter]) -> Non
     assert report.healthy is True
 
 
-@pytest.mark.parametrize("adapter_id", ["crossref", "elsevier_sd"])
+@pytest.mark.parametrize("adapter_id", ["elsevier_sd"])
 def test_stub_healthcheck_raises_not_implemented_for_canary_skip(
     adapters: dict[str, SourceAdapter], adapter_id: str
 ) -> None:
@@ -195,7 +200,8 @@ def test_stub_healthcheck_raises_not_implemented_for_canary_skip(
 
     此前继承 AdapterBase 默认恒 healthy，会让未实现的 stub 在 canary 假报"健康"；
     改为抛 NotImplementedError 后 `run_canary` 归为 SKIP（不影响退出码，见 canary.py）。
-    （openreview 已 Phase 2 落地真实 healthcheck——匿名双端 groups 探测，不再 stub。）
+    （crossref 已 Phase 3 T3、openreview 已 Phase 2 落地真实 healthcheck，不再 stub；
+    此处只剩 elsevier_sd stub 待 Phase 4。）
     """
     with pytest.raises(NotImplementedError):
         adapters[adapter_id].healthcheck()
@@ -223,12 +229,15 @@ def test_undeclared_capability_raises_capability_not_supported(
 def test_declared_stub_methods_are_not_implemented(
     adapters: dict[str, SourceAdapter], venue: VenueSpec
 ) -> None:
-    # 声明了能力但 T1 未实现 —— 区别于 CapabilityNotSupported。
-    # （openreview 已 Phase 2 落地为真实 adapter；此处只剩 crossref stub。）
+    # 声明了能力但未实现（stub until Phase 4）—— 区别于 CapabilityNotSupported。
+    # （crossref 已 Phase 3 T3、openreview 已 Phase 2 落地为真实 adapter；此处只剩
+    # elsevier_sd stub 声明的 RESOLVE|FETCH 未实现。）
+    paper = PaperStub(title="T", identifiers=(("doi", "10.9999/x"),))
+    plan = AssetPlan(kind=AssetKind.PDF, url="https://x/y")
     with pytest.raises(NotImplementedError):
-        adapters["crossref"].discover_timeline(venue)
+        adapters["elsevier_sd"].resolve_assets(venue, paper)
     with pytest.raises(NotImplementedError):
-        adapters["crossref"].enumerate_issue(venue, IssueRef(venue_id=venue.id))
+        adapters["elsevier_sd"].fetch_asset(plan, io=_null_io())
 
 
 def test_mock_platform_methods_are_implemented_after_t6(
@@ -246,7 +255,11 @@ def test_mock_platform_methods_are_implemented_after_t6(
 
 
 def test_arxiv_is_http_client_consumer(adapters: dict[str, SourceAdapter]) -> None:
-    """七个真实 adapter 实现 `HttpClientConsumer`（可注入共享 client）；stub/mock 不实现。"""
+    """真实 http adapter 实现 `HttpClientConsumer`（可注入共享 client）；stub/mock 不实现。
+
+    ★共享花名册（5 线并行 union 点）：crossref（T3）已加入 consumer 集；T4/T5/T6 的
+    dblp/unpaywall/openalex/s2 亦将加入——controller 合并时统一取各分支并集。
+    """
     for adapter_id in (
         "arxiv",
         "openreview",
@@ -255,18 +268,22 @@ def test_arxiv_is_http_client_consumer(adapters: dict[str, SourceAdapter]) -> No
         "cvf",
         "aaai_ojs",
         "neurips_proceedings",
+        "crossref",  # T3：aggregator 亦经注入携 config mailto 的 client（polite pool 硬要求）
     ):
         assert isinstance(adapters[adapter_id], HttpClientConsumer)
 
     assert not isinstance(adapters["mock_platform"], HttpClientConsumer)
-    assert not isinstance(adapters["crossref"], HttpClientConsumer)
 
 
 def test_bind_http_client_injects_only_consumers(adapters: dict[str, SourceAdapter]) -> None:
-    """`bind_http_client` 只注入实现协议的 adapter，返回被注入的 id 列表。"""
+    """`bind_http_client` 只注入实现协议的 adapter，返回被注入的 id 列表。
+
+    ★共享花名册（5 线并行 union 点）：crossref（T3）已加入注入集；T4/T5/T6 亦将扩集——
+    controller 合并取并集。
+    """
     client = HttpClient(user_agent="PaperCrawler/test (personal research)")
     injected = bind_http_client(adapters, client)
-    # 七个真实 http adapter；注入生效——_client() 返回被注入实例，不再惰性自建。
+    # 真实 http adapter；注入生效——_client() 返回被注入实例，不再惰性自建。
     assert set(injected) == {
         "arxiv",
         "openreview",
@@ -275,6 +292,7 @@ def test_bind_http_client_injects_only_consumers(adapters: dict[str, SourceAdapt
         "cvf",
         "aaai_ojs",
         "neurips_proceedings",
+        "crossref",
     }
     # 注入生效：各 adapter 的 _client() 返回被注入的实例，不再惰性自建。
 

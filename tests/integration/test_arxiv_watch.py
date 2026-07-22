@@ -97,12 +97,10 @@ def _make_env(tmp_path: Path, handler: Handler, *, inception: str = "2024-01") -
 
     adapters = load_adapters()
     client = HttpClient(user_agent=_UA, transport=httpx.MockTransport(handler))
-    # arxiv/openreview/pmlr/acl_anthology/cvf 均为 HttpClientConsumer（watch 只跑 preprint venue，
-    # 其余被注入但不参与——conference 不入 watch）。
-    # arxiv + openreview + acl_anthology 均为 HttpClientConsumer（watch 只跑 preprint
-    # venue，openreview/acl_anthology 被注入但不参与——conference 不入 watch）。
-    # arxiv/openreview/pmlr/neurips_proceedings 均为 HttpClientConsumer（watch 只跑
-    # preprint venue，其余被注入但不参与——conference 不入 watch）。
+    # 真实 http adapter 均为 HttpClientConsumer（watch 只跑 preprint venue，其余被注入但
+    # 不参与——conference/journal 不入 watch）。
+    # ★共享花名册（5 线并行 union 点）：crossref（T3）已加入注入集；T4/T5/T6 亦将扩集——
+    # controller 合并取并集（另见 tests/unit/test_adapter_loading.py 同名断言）。
     assert set(bind_http_client(adapters, client)) == {
         "arxiv",
         "openreview",
@@ -111,6 +109,7 @@ def _make_env(tmp_path: Path, handler: Handler, *, inception: str = "2024-01") -
         "cvf",
         "aaai_ojs",
         "neurips_proceedings",
+        "crossref",
     }
     registry = VenueRegistry(adapters)
     assert registry.load_dirs([venues_dir]) == []

@@ -1,0 +1,11 @@
+{
+  "_synthetic": "SYNTHETIC (Phase 3 T3). Cursor deep-paging page 2 (last): items empty = termination signal. next-cursor still present (Crossref returns it even on the empty tail page — termination is items==[], not cursor==null). Per aggregators.md §5.1 fixture ④.",
+  "status": "ok",
+  "message-type": "work-list",
+  "message": {
+    "total-results": 3,
+    "next-cursor": "AoJ4sample4cursor4page3",
+    "items-per-page": 2,
+    "items": []
+  }
+}
