@@ -180,7 +180,7 @@ server: nginx ; via: 1.1 google    # OpenReview 托管在 GCP
 | 2026 | DBLP 尚无 proceedings（未来届）；OpenReview 有 `2026/Conference` | — | — | — |
 
 **DBLP slug 规律**：TOC 页为 `dblp.org/db/conf/iclr/iclr<year>.html`（注意 `2024.html` 会 404，须用 `iclr2024.html`）；workshop/tiny 卷有独立 slug（`2018w`、`2023tiny`、`2024tiny`）。
-**设计要点**：(1) 2013/2014 论文正文在 **arxiv**（OpenReview 只存评审）——golden 比对要注意跨源；(2) **2015/2016 主会不在 OpenReview/DBLP-index**，golden 表须显式标"缺"；(3) 每届篇数**必须用鉴权后 OpenReview `count`（venueid 过滤）重新生成**，本表约值仅供量级参考。
+**设计要点**：(1) 2013/2014 论文正文在 **arxiv**（OpenReview 只存评审）——golden 比对要注意跨源；(2) **2015/2016 主会不在 OpenReview**（勘误 2026-07-22：DBLP index **有**这两卷、电子版在 iclr.cc——原"两侧同缺"表述被在线补验证伪），golden 表按平台 era 口径标注；(3) 每届篇数**必须用鉴权后 OpenReview `count`（venueid 过滤）重新生成**，本表约值仅供量级参考。
 
 ---
 

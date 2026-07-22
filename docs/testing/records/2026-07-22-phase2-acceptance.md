@@ -147,3 +147,11 @@ Phase 2 DoD 原文："每个 adapter 有离线 fixture 测试 + 1 个限量在�
 - 合并后主仓库亲跑 `uv run make check`：**1629 passed / 8 skipped / 覆盖率 99.32%** 全绿。
 - 待补验项（如实）：①openreview 在线层（AC-2.1/2.2 ②层）BLOCKED 待用户 OpenReview token；②D-019 各锚点表的 DBLP 人工核准（正式 sign-off）随 openreview 在线层同批；③neurips canary 三条真值替换（2021 真值已捕获）。
 - **判定：Phase 2 = 达成**（AC-2.1~2.5 各按 D-018/D-019 口径 PASS【2.1/2.2 离线层 PASS+在线层待 token 后补验】；AC-2.6 deferred(D-020)；AC-0 红线全程 PASS）。
+
+
+## 补验更新（主 agent 终验签署，2026-07-22 · 用户 token 到位后）
+
+- **AC-2.1 在线层 = PASS**（裁决口径）：`timeline iclr` 届列表与**活体 OpenReview venues 全等（±0）**——`{2013, 2014, 2017–2027}` 逐届一致含大小写规约；与 **DBLP conf/iclr** 的差异**逐项归因记录**：DBLP-only `{2015, 2016}`（该两届主会电子版托管于 iclr.cc、不在 OpenReview 平台——D-012 era 语义，非 adapter 缺陷；勘察原"两侧同缺"表述系误，已勘误）+ OpenReview-only `{2026, 2027}`（DBLP 卷尚未发布）。判定依据 D-019"特例显式标注"模式，差异全解释、无静默弱化。台账：session scratchpad openreview-online-run.txt（27 请求 ≤50，各站限速合规，token 零泄漏 grep 核验）。
+- **neurips healthcheck 转 healthy**：三条 canary 占位全部替换为 [LIVE] 真值，在线实跑 `healthy=True`。
+- **AC-2.2 在线层 = 待新 token**：用户 token 实测已过期（401 TokenExpiredError，四变体诊断证明 cookie 机制正确、非挑战门）；在线测试 `test_openreview_smoke.py` 的 AC-2.2 用例已就位（token 缺失/过期自动 skip），token 刷新后一条命令即可补齐（含 anchor accepted_count 列同批生成）。离线层判定维持 PASS。
+- **backlog +1**：内置届表含 2027 未举办届（OpenReview 群已建非捏造）——考虑仿 neurips 加 `known_through_year` 上限（轻微，冒烟已钉死 drift 触发复核）。
