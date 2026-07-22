@@ -138,8 +138,9 @@
 
 | 路径 | 内容 |
 |---|---|
-| logs/ | 每 session 工作日志（YYYY-MM-DD-session-NNN.md，现有 001–005） |
+| logs/ | 每 session 工作日志（YYYY-MM-DD-session-NNN.md，现有 001–006） |
 | [reports/2026-07-20-phase0-report.md](reports/2026-07-20-phase0-report.md) | Phase 0 阶段报告（DoD 判定） |
 | [reports/2026-07-20-consistency-review.md](reports/2026-07-20-consistency-review.md) | 一致性审查第 1 轮（需求矩阵 + 13 项修复，D-015） |
 | [reports/2026-07-21-audit-round2.md](reports/2026-07-21-audit-round2.md) | 深度审计第 2 轮（语义级 + 可读性增强，D-016） |
 | [reports/2026-07-21-phase1-report.md](reports/2026-07-21-phase1-report.md) | Phase 1 阶段报告（DoD 判定 + 终审 + Phase 2 检查单） |
+| [reports/2026-07-22-phase2-report.md](reports/2026-07-22-phase2-report.md) | Phase 2 阶段报告（DoD 判定 + 终审 + Phase 3 检查单） |

@@ -1,11 +1,11 @@
 # Phase 2 阶段报告 — Open-Access MVP（2026-07-22）
 
-> **草稿**，格式仿 [2026-07-21-phase1-report.md](../reports/2026-07-21-phase1-report.md)，待主
+> 格式仿 [2026-07-21-phase1-report.md](../reports/2026-07-21-phase1-report.md)，主
 > agent 终验后落盘 `docs/reports/`。
 > 判定依据：[development-plan §Phase 2](../plan/development-plan.md)、
 > [acceptance-criteria AC-2/AC-0](../testing/acceptance-criteria.md)、
-> [验收汇总记录（草稿）](phase2-acceptance-draft.md)。
-> 代码版本：main `c157123`（Stage B 6/6 全部合并）；tag `phase-2` 待终验后打。
+> [验收汇总记录](../testing/records/2026-07-22-phase2-acceptance.md)。
+> 代码版本：tag `phase-2` @ `b93edb6`（终验后追加：在线冒烟批量、AC-2.1 在线层、token 刷新工具等提交见 git log）。
 
 ## 1. DoD 判定
 
@@ -17,14 +17,14 @@ development-plan.md Phase 2 DoD 原文："验收场景 AC-2.x 全过……；每
 | open_access adapter 上线 | **PASS**（7/7，8→7 因 D-020 acm_dl 出列） | `pyproject.toml` entry-points 7 条；main 1629 passed |
 | AC-2.x 全过 | **PARTIAL** | AC-2.3 PASS（转正）；AC-2.1/2.2 离线 PASS+在线待 token；AC-2.4/2.5 离线 PASS+在线留待；AC-2.6 deferred（D-020，明确不计入判定）——详见验收汇总 |
 | 每 adapter 离线 fixture 测试 | **PASS**（7/7） | 各 adapter fixture 回放全绿，覆盖率 96~100%（本次亲跑复核） |
-| 每 adapter 1 个限量在线冒烟 | **PARTIAL**（1/7 committed） | 仅 arxiv 有 `tests/online/test_arxiv_smoke.py`；openreview BLOCKED（token）；pmlr/cvf/acl_anthology/neurips_proceedings 以审查期限量真实交叉验证替代（未 committed）；aaai_ojs 情况 ledger 未逐条明记——**口径待终验裁决**（见 §6） |
+| 每 adapter 1 个限量在线冒烟 | **PASS**（7/7 committed；终态更新 2026-07-22） | 全部 7 个 adapter 均有 `tests/online/test_<id>_smoke.py`：arxiv 首跑 6 passed（7 请求）；pmlr/cvf/acl/neurips/aaai 批量补全 17/17 首跑即过（18 请求，四个 D-019 锚点精确命中）；openreview AC-2.1 在线层 PASS、AC-2.2 用例就位（用户 token 刷新机制已建，见 scripts/refresh_openreview_token.py） |
 | canary 监控注册 | **PASS**（7/7） | 7 个 adapter healthcheck 均已实现（非 `NotImplementedError` 占位），可经 `crawler canary` 探活 |
 | 核心覆盖率 ≥80% 不回退 | **PASS** | 99.32%（门禁 80%），`make check` 本次终验前亲跑复核全绿 |
 | adapter 解析器覆盖 ≥90% | **PASS** | 7 个 adapter 包实测 96~100%（openreview 96%，未覆盖行为惰性 client 构造等防御性分支，非在线路径缺口；其余均 ≥99%） |
 
 ## 2. 验收汇总
 
-详见 [phase2-acceptance-draft.md](phase2-acceptance-draft.md)（草稿，待转正）。摘要：
+详见[验收汇总记录](../testing/records/2026-07-22-phase2-acceptance.md)（已转正含终验签署与补验更新）。摘要：
 
 - **AC-2.3（arxiv）：PASS，已转正**——D-018 双层证据齐备，首次真实网络任务（7 请求，全程合规）。
 - **AC-2.1/2.2（openreview）：离线层 PASS，在线层 BLOCKED 待用户 OpenReview 免费账号 token。**
@@ -125,7 +125,7 @@ development-plan §Phase 2 范围逐项：
   aaai-ojs）均已合并且 DoD 达成，但 front matter 仍为 `approved`，未转 `implemented`（仅
   arxiv.md 已转正）；`docs/plan/progress.md` 快照仍停留在"W0 完成/T1-T2 开发中"叙事，未反映
   Stage B 6/6 合并现状；`docs/INDEX.md` 摘要仍写"decision-log D-001…D-019"未含 D-020——以上
-  均为本报告草稿阶段的已知状态，非本报告职责范围内的落盘对象（本报告与验收记录不写
+  均为本报告成稿阶段的已知状态，非本报告职责范围内的落盘对象（本报告与验收记录不写
   `docs/`，由主 agent 终验时一并处理）。
 - **Phase 1 report §5 移交项已消除**：fetch 收尾三步同事务化（T1 `finalize_fetch`）、mock 裸
   `ValueError` 转 `CrawlerError`——均已完成，不再是限制。
