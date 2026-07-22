@@ -258,6 +258,28 @@ def is_accepted(note: Note, venueid: str) -> bool:
 META_PDF_PATH = "openreview_pdf"
 META_SI_PATH = "openreview_si"
 
+# `PaperStub.meta` 白名单（Phase 2 审查 concern，Phase 3 检查单 #6 收口）：`to_paper_stub`
+# 目前实际写入 meta 的业务键只有下面 4 个（逐一对应关系见其下方 if 分支）——本常量把这个
+# "现状"显式固化为结构性防线，而非仅靠 if 分支自然限定。OpenReview note.content 可能携带
+# 任意站点字段（含潜在评审内部字段），本 adapter **绝不**做 `for k, v in content.items()`
+# 式的整体透传；即便未来维护者不慎在 `to_paper_stub` 内加一行未经评审的新键，
+# `_whitelist_meta` 也会在写入 `PaperStub` 前把它结构性丢弃，不会悄悄流入 meta_json：
+#
+# - ``doi`` / ``arxiv``：跨源关联线索（§4 ⑥ 裁决——只入 meta，绝不产出为 identifier，
+#   防跨源早合并，Phase 3 ingest 建边前提）；
+# - ``META_PDF_PATH`` / ``META_SI_PATH``：adapter 私有资产定位符（见上方常量注释），
+#   `resolve_assets` 纯构造 URL 用，Phase 3 ingest 应忽略。
+_META_KEY_WHITELIST: frozenset[str] = frozenset({"doi", "arxiv", META_PDF_PATH, META_SI_PATH})
+
+
+def _whitelist_meta(pairs: list[tuple[str, str]]) -> tuple[tuple[str, str], ...]:
+    """丢弃 `_META_KEY_WHITELIST` 之外的键（结构性防御，不依赖调用方自律）。
+
+    保留原有相对顺序；白名单外键整条 (key, value) 一并丢弃，不做值脱敏——脱敏解的是
+    "敏感值不落日志"，这里解的是"未评审的键不落库"，两者是不同红线（AC-0 对应 redact()）。
+    """
+    return tuple(pair for pair in pairs if pair[0] in _META_KEY_WHITELIST)
+
 
 def to_paper_stub(note: Note, *, year: int | None) -> PaperStub:
     """`Note` → `PaperStub`（§4 ⑥ 字段映射裁决逐字执行）。
@@ -265,7 +287,8 @@ def to_paper_stub(note: Note, *, year: int | None) -> PaperStub:
     ``identifiers`` 恒为单一 ``(('openreview', forum),)``（原样，无大小写归一）；
     doi/arxiv 线索入 `meta`（键 'doi'/'arxiv'），绝不产出为 identifier（防跨源早合并）。
     pdf/SI 相对路径亦入 `meta`（adapter 私有键，见常量注释）供 resolve 纯构造 URL。
-    title 缺失（None）→ `PARSE`（论文帖必有标题；缺失即结构异常）。
+    title 缺失（None）→ `PARSE`（论文帖必有标题；缺失即结构异常）。最终 `meta` 经
+    `_whitelist_meta` 收口（见该函数与 `_META_KEY_WHITELIST` docstring）。
     """
     if note.title is None:
         raise CrawlerError(ErrorClass.PARSE, f"openreview note {note.forum!r} has no title")
@@ -284,7 +307,7 @@ def to_paper_stub(note: Note, *, year: int | None) -> PaperStub:
         year=year,
         abstract=note.abstract,
         authors=note.authors,
-        meta=tuple(meta),
+        meta=_whitelist_meta(meta),
     )
 
 

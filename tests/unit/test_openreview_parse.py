@@ -210,6 +210,33 @@ def test_to_paper_stub_si_carried_in_meta() -> None:
     assert dict(stub.meta)[parse.META_SI_PATH] == "/attachment/" + "d" * 40 + ".zip"
 
 
+# --- meta 白名单（Phase 2 审查 concern，Phase 3 检查单 #6 收口）---------------------------
+
+
+def test_meta_whitelist_drops_keys_outside_allowlist() -> None:
+    # 假想 note.content 携带了未经评审的站点/评审内部字段——白名单外键必须被结构性丢弃。
+    pairs = [
+        ("doi", "10.1000/x"),
+        ("internal_reviewer_note", "leaked"),
+        ("_signatures", "AnonReviewer1"),
+    ]
+    assert parse._whitelist_meta(pairs) == (("doi", "10.1000/x"),)
+
+
+def test_meta_whitelist_retains_all_known_keys_in_order() -> None:
+    pairs = [
+        ("doi", "10.1000/x"),
+        ("arxiv", "1312.6173"),
+        (parse.META_PDF_PATH, "/pdf/" + "a" * 40 + ".pdf"),
+        (parse.META_SI_PATH, "/attachment/" + "b" * 40 + ".zip"),
+    ]
+    assert parse._whitelist_meta(pairs) == tuple(pairs)
+
+
+def test_meta_whitelist_empty_input_returns_empty() -> None:
+    assert parse._whitelist_meta([]) == ()
+
+
 def test_to_paper_stub_missing_title_raises_parse() -> None:
     note = _note(title=None)
     with pytest.raises(CrawlerError) as exc:
