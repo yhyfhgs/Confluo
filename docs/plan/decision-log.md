@@ -177,3 +177,14 @@ updated: 2026-07-22
 - **决策**：AC-0.2（不对抗挑战门）与 AC-0.5/AGENTS §6.3（ToS 合规）优先于 AC-2.6——**Phase 2 不实现 acm_dl 自动全文抓取**（无合规路径：httpx 必被拦；浏览器自动化仍属 ToS 禁止的 automated download 风险面）。AC-2.6 标注 deferred(D-020)，**Phase 4 重评**：届时人工核验 ToS 原文、官方 API/TDM 通道态势、挑战门策略；若仍无合规通道，acm 系会议降级为"元数据经 Crossref/DBLP（Phase 3 聚合层，member 320 实测畅通）+ landing 链接呈现 + 人工取回"。
 - **附带事实**：KDD 2026 尚未出版（8 月会议，proceedings 仅 3 篇预注册）——AC-2.6 字面场景本期亦无内容；WWW 2026（10.1145/3774904，719+222 篇）为已出版代理候选，重评时可换载体。
 - **影响**：Phase 2 范围 8→7 adapter（development-plan 注记）；acceptance-criteria AC-2.6 修订；acm-dl.md 维持 review 不重写（Phase 4 按届时事实重写）；Phase 2 收尾验收以 AC-2.1~2.5 + 各 adapter DoD 为准。
+
+## D-021 Phase 3 开工勘察增量复核：DBLP robots 合规修正与聚合层口径定稿
+
+- 状态：accepted · 日期：2026-07-22
+- **背景**：Phase 3 详设扩写前对五源（crossref/dblp/openalex/s2/unpaywall）做 LIVE 增量复核（19 请求合规，报告归档 [metadata-apis.md §增量复核](../research/site-survey/metadata-apis.md)）。主勘察（2026-07-20）5 项断言漂移。
+- **决策**：
+  1. **DBLP 限速与能力面修正（合规级）**：robots.txt 实测 `Crawl-delay: 4` 且 `/search`、`/rec/xml` 等 Disallow → dblp adapter 限速 **≥4s/req**（原设计 1 req/2s 作废）；**capabilities 不含 SEARCH**，枚举只走 robots 允许区 `/db/**` 结构化 XML 与官方 dump。AC-0.5 从"FAQ 建议"升级为"robots 强约束"依据。
+  2. **S2 无 key 检测口径**：症状已从 429 变为 404 not-found（被受理非限流）→ 错误检测与 healthcheck 不得依赖 429 判 key 缺失；"生产必须申请 key"结论不变。
+  3. **合并优先级表补 dblp 位次**（phase3-implementation-plan §2-1 冻结件扩展）：`official > crossref > dblp > openalex > s2 > heuristic`。理由：Crossref 为 DOI 注册源头（出版社存缴）元数据居先；DBLP 人工策展（CC0）质量高于 OpenAlex/S2 机器聚合。
+  4. **OpenAlex 预算核销精确化**：响应 `meta.cost_usd` 字段（[LIVE] 新发现）作为 credit 熔断的实时核销信号，取代估算制。
+- **影响**：aggregators.md 扩写版（396 行）承载全部修正；勘察复核前置（Phase 2 REJECT 教训的制度化延续）再次在写代码前拦下合规缺陷。

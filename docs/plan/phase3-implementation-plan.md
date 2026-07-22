@@ -44,7 +44,7 @@ updated: 2026-07-22
        matched_identifiers: tuple[str, ...]   # 命中的 (scheme:value) 列表
    ```
    - **强合并**：stub 携带的任一 identifier `(scheme,value)` 已存在 → 并入既有 paper；事务内完成（查→并→补 identifier 单事务，防并发裂脑）。
-   - **字段级来源优先级收敛（AC-3.4 基石）**：字段写入记录来源级别（`paper.meta_json` 内 `_field_src` 映射）；新值仅当 ①现值为空 或 ②新来源优先级严格高于现值来源 时写入；同级不覆盖（先到先得仅在同级内，跨级由优先级决定终态→任意到达顺序收敛到同一终态）。优先级表冻结：`official`（官方 proceedings/出版社）> `crossref` > `openalex` > `s2` > `heuristic`。
+   - **字段级来源优先级收敛（AC-3.4 基石）**：字段写入记录来源级别（`paper.meta_json` 内 `_field_src` 映射）；新值仅当 ①现值为空 或 ②新来源优先级严格高于现值来源 时写入；同级不覆盖（先到先得仅在同级内，跨级由优先级决定终态→任意到达顺序收敛到同一终态）。优先级表冻结：`official`（官方 proceedings/出版社）> `crossref` > `dblp` > `openalex` > `s2` > `heuristic`（★W0 仲裁 2026-07-22：dblp 位次新增——Crossref 系 DOI 注册源头存缴元数据居先；DBLP 人工策展质量高于机器聚合层；详见 D-021）。
    - **弱信号候审**：无共同 identifier 时，`title_norm`（去标点/大小写/LaTeX 宏/空白折叠）精确匹配 + 首作者姓氏一致 → 建 `paper_relation(kind=candidate_duplicate, decided=NULL, confidence, evidence_json)`，**绝不自动合并**；无匹配 → 新建 paper。
    - **schema v2 迁移**（0002）：`paper` 增列 `title_norm TEXT` + 索引 `idx_paper_title_norm`；迁移器回填存量行。纯附加，v1 库自动升级。
    - **DOI 规范化**：`ids.normalize_doi()`（小写化/剥 `https://doi.org/`、`doi:` 前缀）——identifier 写入的唯一入口经过它（crossref/unpaywall/dblp ee 回填共用）。
@@ -52,14 +52,14 @@ updated: 2026-07-22
 3. **aggregator 无 FETCH 契约**：家族 capabilities 不含 FETCH；unpaywall RESOLVE 产 `AssetPlan(url_strategy="direct", auth="none")` 交通用 fetcher；pipeline 对 metadata-only venue 的 fetch 阶段行为=空集跳过（现有语义已支持，回归测试锁定）。
 4. **在线预算**（T5 契约沿用）：每源在线冒烟 `MAX_REAL_REQUESTS ≤ 5`；本 Phase 在线总预算 ≤60 请求（冒烟批量+AC-3.5 实跑+锚点核准），超支须如 Phase 2 C-A 入档。
 
-## §3 限速与预算表（勘察复核后定稿；数字待 [W0-刷新]）
+## §3 限速与预算表（2026-07-22 勘察复核定稿，[LIVE]）
 
-| 源 | 默认策略（draft，以复核 [LIVE] 为准） | 出处 |
+| 源 | 默认策略 | 出处 |
 |---|---|---|
-| crossref | 动态读 X-Rate-Limit 头，上限 5 req/s 起步 | polite pool 官方 |
-| dblp | 1 req/2s | 官方 FAQ |
-| openalex | 每日 credit 预算配置（默认保守）+ 无 key 行为按复核现状 | 2026-02 计费制 |
-| s2 | 1 req/s（有 key）；无 key → `config` 错误不重试 | 官方 |
+| crossref | 动态读 X-Rate-Limit 头（实测 10/1s），上限 5 req/s 起步 | polite pool 官方 [LIVE] |
+| dblp | **≥4s/req**（robots `Crawl-delay: 4`）；`/search`、`/rec/xml` robots 禁区→capabilities 无 SEARCH，只走 `/db/**` 卷目录与 dump | robots.txt [LIVE]（D-021） |
+| openalex | 每日 credit 预算 + 响应 `meta.cost_usd` **实时精确核销**熔断 | 计费制官方 + [LIVE] 复核 |
+| s2 | 1 req/s（有 key）；无 key 症状=**404 not-found**（非 429）→ `config` 不重试、healthcheck 检测口径按此设计 | 官方 + [LIVE] 复核 |
 | unpaywall | 5 req/s 且日总量 <100k | 官方 |
 
 ## §4 任务卡
@@ -84,7 +84,7 @@ updated: 2026-07-22
 - conf 索引页卷 key 发现 → 卷 XML 解析（inproceedings/ee/author-pid）→ `ee` DOI 经 `normalize_doi` 回填 identifier；404→gone 回索引重发现一次再 parse；1 req/2s；healthcheck icml 已知卷。
 
 ### T5 unpaywall adapter（sonnet，`adapter/unpaywall`）
-- 按 DOI RESOLVE：`best_oa_location.url_for_pdf` → AssetPlan(direct)；version 映射 submitted/accepted/published → Asset.version 并标注非正式版；触发条件（no_entitlement 兜底 / VenueSpec OA-fallback 声明）；**OA 命中率报告**：批量 DOI 输入 → 命中率统计 markdown（DoD 第二项）。
+- 按 DOI RESOLVE：`best_oa_location.url_for_pdf` → AssetPlan(direct)；version 映射（[LIVE] 全拼串 `submittedVersion`/`acceptedVersion`/`publishedVersion`）→ Asset.version 并标注非正式版；`url_for_pdf` 为 null 时不产 AssetPlan（landing 仅记 meta）；触发条件（no_entitlement 兜底 / VenueSpec OA-fallback 声明）；**OA 命中率报告**：批量 DOI 输入 → 命中率统计 markdown（DoD 第二项）。
 
 ### T6 openalex + s2 补充层（sonnet，`adapter/openalex-s2`）
 - openalex：DOI 批查摘要倒排重建；每日 credit 预算熔断（402→rate_limited 特化+报告提示）；s2：`/paper/batch`（≤500）引用计数/TLDR；无 key→`config` 不重试。在线冒烟按 key 存在性 skip（S2 key 用户申请中，诚实标注）。
