@@ -102,7 +102,8 @@ def _make_env(tmp_path: Path, handler: Handler, *, inception: str = "2024-01") -
     # ★共享花名册（5 线并行 union 点，T6 关闭——五源全部加入，另见
     # tests/unit/test_adapter_loading.py 同名断言）。
     # unpaywall（T5）/openalex/s2（T6）均为 HttpClientConsumer（enrich-only/RESOLVE-only，
-    # 注入不参与 watch）。
+    # 注入不参与 watch）。elsevier_sd（Phase 4 T3，auth_gated）同为 consumer，注入不参与 watch
+    # （journal，不入 preprint watch）。
     assert set(bind_http_client(adapters, client)) == {
         "arxiv",
         "openreview",
@@ -117,6 +118,7 @@ def _make_env(tmp_path: Path, handler: Handler, *, inception: str = "2024-01") -
         "wiley",  # Phase 4 T-wiley（auth_gated；注入不参与 arxiv watch——preprint venue only）
         "openalex",  # T6
         "s2",  # T6
+        "elsevier_sd",  # Phase 4 T3
     }
     registry = VenueRegistry(adapters)
     assert registry.load_dirs([venues_dir]) == []

@@ -66,9 +66,9 @@ def test_canary_not_implemented_renders_skip_and_exits_0(
 ) -> None:
     """SKIP 行不影响退出码（DoD："NotImplementedError 捕获为未实现行，不算不健康"）。
 
-    真实 stub adapter（crossref/openreview/elsevier_sd）现状是 healthcheck 尚未
-    覆写、继承 AdapterBase 默认恒 healthy——不天然抛 NotImplementedError（改动
-    stubs.py 不在本任务文件范围内）。用 mock_platform 注入等价场景验证
+    历史注：Phase 3 前部分 adapter healthcheck 曾未覆写、继承默认恒 healthy；现全部真实
+    实现（无凭证平台抛 NotImplementedError→SKIP）。本测试不依赖该现状（改动
+    相关注释随 P4-T3 stub 退役同步）。用 mock_platform 注入等价场景验证
     canary.run_canary 的分类规则对任何 adapter 一视同仁。
     """
 
@@ -97,7 +97,7 @@ def test_canary_unknown_adapter_exits_2(tmp_path: Path) -> None:
 def test_canary_without_filter_checks_all_registered_adapters(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
-    """无 --adapter 时遍历全部注册 adapter（全部真实 adapter + mock + stubs）。
+    """无 --adapter 时遍历全部注册 adapter（全部真实 adapter + mock；stubs 已于 P4 清零）。
 
     本测试只验证遍历编排；真 healthcheck 属在线域（真实 adapter 的实现会发真实
     请求——合并期修复 2026-07-22：此前直调导致离线门禁打真网），故一律

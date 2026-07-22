@@ -1,0 +1,11 @@
+# 出处等级：⚠[DOCS]-合成（不可活验）—— entitlement 端点"无权"响应。
+# 依据：同 01_entitlement_true —— document-entitlement.entitled=false（无订阅/无权场景）。
+# **⚠ 字段名/类型待核验**：BLOCKER-1，`entitled` 假设同 01_...（若假设失效，parse 抛 PARSE
+#   而非静默判 no_entitlement——见 parse.parse_entitlement）。
+# 用途：AC-4.3 —— entitled=false → adapter 判 no_entitlement（不产平台 AssetPlan，转 unpaywall
+#   OA-fallback，auth-framework §8.1；不计 failures §8.5）。
+# 核验计划：T7b 对无订阅 DOI 取回时捕获真实 false 封套，比对结构，UPDATE_GOLDEN 转正。
+HTTP-STATUS: 200
+Content-Type: application/json;charset=UTF-8
+
+{"entitlement-response":{"document-entitlement":{"@status":"found","eid":"1-s2.0-REDACTED2","doi":"10.1016/j.example.notsubscribed","entitled":false,"audit":{"@type":"entitlement"}}}}

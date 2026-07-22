@@ -40,6 +40,8 @@ unpaywall = "paper_crawler.adapters.unpaywall.adapter:UnpaywallAdapter"
 dblp = "paper_crawler.adapters.dblp.adapter:DblpAdapter"
 # Phase 4 T-wiley（auth_gated；RESOLVE|FETCH，TDM API + token 门控 skip，D-024）。
 wiley = "paper_crawler.adapters.wiley.adapter:WileyAdapter"
+# Phase 4 T3：elsevier_sd（auth_gated/官方 API 档；RESOLVE|FETCH，enumerate 走 crossref，D-005）。
+elsevier_sd = "paper_crawler.adapters.elsevier_sd.adapter:ElsevierScienceDirectAdapter"
 # T6：enrich 通道（capabilities 空集，无 ENUMERATE/SEARCH/FETCH/RESOLVE，不参与 pull）。
 openalex = "paper_crawler.adapters.openalex.adapter:OpenAlexAdapter"
 s2 = "paper_crawler.adapters.s2.adapter:S2Adapter"

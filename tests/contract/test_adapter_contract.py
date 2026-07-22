@@ -1,15 +1,17 @@
 """T2 契约测试（test-plan §1）：参数化遍历 `load_adapters()`，校验协议一致性。
 
 全体 adapter 都要过的元数据完备性检查，以及——对声明了 contract case 的 adapter
-（`mock_platform` 本地确定性；`arxiv`/`openreview`/`crossref`/`dblp`/`unpaywall` 经
-`httpx.MockTransport` 注入合成 fixture，零真实网络）——DISCOVER→ENUMERATE→RESOLVE→FETCH
-全链路产出合法性检查。**Phase 4 M2b 检查单 #15c 补强**：crossref/dblp（均
-DISCOVER|ENUMERATE，无 RESOLVE/FETCH）与 unpaywall（RESOLVE only，无 DISCOVER/
-ENUMERATE/FETCH）三源已补 factory；openalex/s2（`capabilities=Capability(0)` 空集——
-T6 裁决的 duck-typed enrich-only 通道，不参与本协议，非"未补"而是"无契可契"）与
-elsevier_sd（仍为 `NotImplementedError` stub）维持 `pytest.skip` 占位——共 19 skip
-（较 Phase 3 末的 24 skip 收窄 5：crossref/dblp 各贡献 discover+enumerate 2 个、
-unpaywall 贡献 resolve 1 个，全部转为真实通过）。
+（`mock_platform` 本地确定性；`arxiv`/`openreview`/`crossref`/`dblp`/`unpaywall`/
+`elsevier_sd` 经 `httpx.MockTransport` 注入合成 fixture，零真实网络）——
+DISCOVER→ENUMERATE→RESOLVE→FETCH 全链路产出合法性检查。**Phase 4 T3 补强**：
+elsevier_sd 落地为真实 auth_gated adapter（RESOLVE|FETCH，enumerate 走 crossref D-005）
+补 factory——其 resolve（entitlement 预检 entitled:true → PDF AssetPlan）+ fetch（%PDF）
+转为真实通过，仅 discover/enumerate 因无能力 `pytest.skip`（收窄 2）。当前 **17 skip**
+（Phase 4 T3 前 19 skip；elsevier_sd 由 4 skip→2 skip：resolve+fetch 转真实通过）。
+仍 skip 的：openalex/s2（`capabilities=Capability(0)` 空集——T6 裁决的 duck-typed
+enrich-only 通道，不参与本协议，非"未补"而是"无契可契"，每源 4 个能力测试 skip=8）+
+crossref/dblp（无 RESOLVE/FETCH，各 2）+ unpaywall（无 DISCOVER/ENUMERATE/FETCH，3）+
+elsevier_sd（无 DISCOVER/ENUMERATE，2）= 17。
 
 契约的 enumerate 计数口径按能力分层：声明了权威计数（`IssueRef.paper_count_claimed`）
 的 adapter（mock）严格等值；未声明的（arxiv 月度桶、dblp 会议届——预印本/会议无权威
@@ -46,6 +48,7 @@ from helpers import (
     make_arxiv_venue,
     make_crossref_venue,
     make_cvf_venue,
+    make_elsevier_venue,
     make_mock_venue,
     make_neurips_venue,
     make_openreview_venue,
@@ -65,6 +68,7 @@ from paper_crawler.adapters.arxiv.adapter import ArxivAdapter
 from paper_crawler.adapters.crossref.adapter import CrossrefAdapter
 from paper_crawler.adapters.cvf.adapter import CVFAdapter
 from paper_crawler.adapters.dblp.adapter import DblpAdapter
+from paper_crawler.adapters.elsevier_sd.adapter import ElsevierScienceDirectAdapter
 from paper_crawler.adapters.neurips_proceedings.adapter import NeuripsProceedingsAdapter
 from paper_crawler.adapters.openreview.adapter import OpenReviewAdapter
 from paper_crawler.adapters.pmlr.adapter import PmlrAdapter
@@ -314,6 +318,32 @@ def _dblp_case() -> tuple[SourceAdapter, VenueSpec]:
     return DblpAdapter(http=client), make_dblp_venue()
 
 
+def _elsevier_contract_handler(request: httpx.Request) -> httpx.Response:
+    """elsevier_sd 契约链的 MockTransport：entitlement 端点 → entitled:true；article → %PDF。
+
+    合成响应（零网络）：entitlement 预检返有权 → resolve 产 1 个 PDF AssetPlan（url_strategy=
+    api_call）；article 取回（httpAccept=application/pdf）→ %PDF，使 resolve→fetch 链有产出。
+    elsevier_sd 无 DISCOVER/ENUMERATE（走 crossref，D-005）——样本 paper 经
+    `_RESOLVE_ONLY_SAMPLE_PAPERS` 直接登记（同 unpaywall 先例）。
+    """
+    if "/entitlement/" in request.url.path:
+        body = (
+            b'{"entitlement-response":{"document-entitlement":{"@status":"found","entitled":true}}}'
+        )
+        return httpx.Response(200, content=body)
+    return httpx.Response(200, content=_CONTRACT_PDF)
+
+
+def _elsevier_case() -> tuple[SourceAdapter, VenueSpec]:
+    transport = httpx.MockTransport(_elsevier_contract_handler)
+    client = HttpClient(user_agent=_CONTRACT_UA, transport=transport)
+    adapter = ElsevierScienceDirectAdapter(http=client)
+    adapter.set_api_key(
+        "contract-key"
+    )  # 装配期专属 client + key 门控（凭证隔离，见 adapter docstring）
+    return adapter, make_elsevier_venue()
+
+
 def _unpaywall_contract_handler(request: httpx.Request) -> httpx.Response:
     """unpaywall 契约链的 MockTransport：唯一端点 `GET /v2/{doi}` → 复用 adapter 自身
     单测的既有 fixture（`02_direct_pdf_hit_hybrid.json`：`is_oa=true` 且
@@ -352,9 +382,10 @@ def _wiley_case() -> tuple[SourceAdapter, VenueSpec]:
     return WileyAdapter(http=client, token="contract-token"), make_wiley_venue()
 
 
-# 无 DISCOVER/ENUMERATE 的 adapter（unpaywall RESOLVE-only；wiley RESOLVE|FETCH，enumerate
-# 走 crossref）：resolve/fetch 契约测试不能像其余全链路 adapter 那样从 discover→enumerate
-# 派生样本 paper（那两个能力它们没有），改直接登记一个现成样本——见 `_sample_paper_for`。
+# 无 DISCOVER/ENUMERATE 的 adapter（unpaywall=RESOLVE-only；wiley/elsevier_sd=RESOLVE|FETCH，
+# enumerate 走 crossref D-005）：resolve/fetch 契约测试不能像全链路 adapter 那样从
+# discover→enumerate 派生样本 paper（那两个能力它们没有），改直接登记现成样本——见
+# `_sample_paper_for`。elsevier_sd 样本用真实 JFE DOI（其 resolve 只读 paper.doi）。
 _RESOLVE_ONLY_SAMPLE_PAPERS: dict[str, PaperStub] = {
     "unpaywall": PaperStub(
         title="Contract Test Paper (Resolve-Only Adapter)",
@@ -364,6 +395,10 @@ _RESOLVE_ONLY_SAMPLE_PAPERS: dict[str, PaperStub] = {
     "wiley": PaperStub(
         title="Contract Test Paper (Wiley TDM Adapter)",
         identifiers=(("doi", "10.1111/contract.wiley"),),
+    ),
+    "elsevier_sd": PaperStub(
+        title="Contract Test Paper (Elsevier)",
+        identifiers=(("doi", "10.1016/j.jfineco.2011.03.021"),),
     ),
 }
 
@@ -396,6 +431,7 @@ _CONTRACT_CASES: dict[str, Callable[[], tuple[SourceAdapter, VenueSpec]]] = {
     "dblp": _dblp_case,
     "unpaywall": _unpaywall_case,
     "wiley": _wiley_case,
+    "elsevier_sd": _elsevier_case,
 }
 
 ADAPTER_IDS = sorted(load_adapters())
@@ -418,7 +454,7 @@ def _contract_case(adapter_id: str) -> tuple[SourceAdapter, VenueSpec]:
             reason=(
                 "no contract case: openalex/s2 are duck-typed enrich-only "
                 "(capabilities=Capability(0), do not participate in this protocol by "
-                "design, T6); elsevier_sd is still an unimplemented stub (Phase 4)"
+                "design, T6) — the only adapters without a full-capability contract case"
             )
         )
     return factory()

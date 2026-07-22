@@ -196,7 +196,8 @@ def test_route_jfe_binds_crossref_and_elsevier_with_rate_override(
     assert route.metadata_adapter is adapters["crossref"]
     assert route.fulltext_adapter is adapters["elsevier_sd"]
     assert route.auth_profile == "elsevier"
-    assert route.rate_overrides == {"www.sciencedirect.com": 10.0}
+    # elsevier_sd 主域自 www.sciencedirect.com → api.elsevier.com（Phase 4 T3 落地，API 唯一正道）。
+    assert route.rate_overrides == {"api.elsevier.com": 10.0}
 
 
 def test_route_iclr_binds_openreview_both_sides(
