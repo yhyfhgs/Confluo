@@ -1,6 +1,6 @@
 ---
 title: Adapter 设计 · Wiley Online Library（实现级）
-status: draft
+status: approved
 owner: fable5
 updated: 2026-07-23
 ---

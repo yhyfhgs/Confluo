@@ -1,6 +1,6 @@
 ---
 title: 认证框架实现级详设（AuthProvider 四实现 + 凭证库 + CLI + pipeline 接缝）
-status: draft
+status: approved
 owner: fable5
 updated: 2026-07-23
 ---
@@ -55,6 +55,8 @@ updated: 2026-07-23
 | `auth/manager.py` | `AuthManager`：provider 注册表 + `active_profile` 解析 + session 缓存 + 健康门/配额编排入口 | 上列全部 |
 | `auth/cli.py` | `crawler auth login/status/logout` 子命令实现（薄接线，纯逻辑在 manager/store） | `manager`、`store`；由 `cli.py` 挂载子 app |
 
+> **任务归属（plan §4 重构后，复审 n6 注）**：`protocol.py`/`challenge.py` = **T1a**（冻结件先行包）；`store.py`/`providers/`/`browser.py`/`manager.py`/`cli.py` = **T1b**。上表 challenge.py 依赖列的 obslog/errors 系 import 既有模块，非任务依赖——T1a 仍属"无依赖先行件"。
+
 - **接线原则（纯附加，零回归）**：沿 Phase 2/3 `HttpClientConsumer`/`EnrichmentSource` duck-typed 先例——
   auth_gated adapter 经既有 `resolve_assets(…, session)`/`fetch_asset(…, session)` 的 `session` 形参接收
   `SessionHandle`（该形参自 Phase 1 起即在冻结协议内，Phase 1-3 恒传 None）；pipeline 装配期由
@@ -63,7 +65,7 @@ updated: 2026-07-23
   CookieSession/SSO 的**首登**抛 `AuthRequired(detail="pip install paper-crawler[auth-browser]")`，
   APIKey 路径（elsevier AC-4.1）与所有 httpx-直取 fetch/健康门/mock IdP 测试完全不触 Playwright（§9/§10）。
 
-## 2. 接口冻结件候选（签名逐字精确；T1 落盘后冻结，改动须仲裁）
+## 2. 接口冻结件候选（签名逐字精确；T1a/T2 落盘后冻结，改动须仲裁）
 
 > 以下签名对齐 07 §2 伪代码，落为真实 Python（含类型、默认值、异常）。冻结后实现期不得改。
 

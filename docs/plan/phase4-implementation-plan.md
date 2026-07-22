@@ -1,6 +1,6 @@
 ---
 title: Phase 4 实施计划 — 认证框架 + 出版社 adapters
-status: draft
+status: approved
 owner: fable5
 updated: 2026-07-23
 ---
@@ -200,7 +200,8 @@ adapter 单测用 mock session/fixture，不待 T1b）。
 `src/paper_crawler/storage/repo.py`（`count_fetch_today`（`DATE(ts)`，B-m5）+ `plan_asset` 支持 `source_adapter="unpaywall"`/`version=<oa串>`）、
 **新增 `crawler grab --doi X [--venue Y]` 命令**（A-B3：DOI→venue 判定=显式 `--venue` 优先，缺省按 DOI 前缀/已入库 paper 反查 →
 单篇 resolve+fetch 复用既有全链）、`src/paper_crawler/cli.py`（pull/grab 装配 AuthManager + unpaywall OA-fallback 注入 + `StageContext.http`）、
-`tests/integration/test_auth_pipeline.py`、`tests/unit/test_cli_grab.py`。**config.py 不在本卡**（凭证槽/加载链归 T2 独占，A-m3/D-025）。
+`src/paper_crawler/pipeline/report.py`（RunReport `no_entitlement=<n>` 字段+渲染，复审 n1）、`tests/integration/test_auth_pipeline.py`、`tests/unit/test_cli_grab.py`。**config.py 不在本卡**（凭证槽/加载链归 T2 独占，A-m3/D-025）。
+**grab 补规格（复审 n2，controller 裁决 2026-07-23）**：退出码沿 design/05 Task 口径（0=成功 / 1=业务失败 / 2=用法·配置错）；DOI 未入库时先经 crossref 单篇 lookup → `MergeEngine.ingest(source="crossref")` 建最小 paper 行，再走 resolve+fetch（复用 Phase 3 全链零新协议；AC-4.1 runbook 的 JFE DOI 即此场景）。
 **Interfaces**：auth-framework §8 全节（§8.1 OA-fallback direct 三接线点 / §8.2 健康门 N=20/15min（注入 clock）/ §8.3 日配额
 `DATE(ts)` "fetch 尝试篇次" / §8.4 BLOCKED+冷却 24h / §8.5 no_entitlement 不计 failed / §8.6 工作时段窗）；`grab` = DOI→venue→单篇全链。
 **纯附加/默认关闭**：`oa_fallback=False`+`clock` 有默认 → Phase 1-3 venue 零行为变化（回归锁定 = 现有全部 pipeline 集成测试；
@@ -251,7 +252,7 @@ AC-0 系统性扫描（git 全历史无 `*.enc`/`.filekey`/`paper-crawler.toml` 
 **Files**：D-019 四站锚点核准（pmlr/cvf/acl_anthology/neurips_proceedings，检查单 #13，≤25 req 入 fixture）；aaai_ojs 全库 OAI
 **量级评估** ≤3 req（**只评估，批预算后另行执行**，检查单 #8）；六项 `[UNRESOLVED]` 盘点（文档级，检查单 #14）。
 **DoD**：D-019 四站锚点人工核准入 fixture（UPDATE_GOLDEN + records 留痕）；aaai OAI 量级评估结论入报告；UNRESOLVED 盘点清单成文。
-**规格源 = Phase 3 报告检查单**（不待本 plan approved，已派）；在线预算 M2a **28 req 计入 §3 D-019 分项**。
+**规格源 = Phase 3 报告检查单**（不待本 plan approved，已派）；在线预算 M2a：锚点 ≤25 计 §3 D-019 分项、aaai 评估 ≤3 计缓冲行（复审 n5）。
 
 ### M2b 离线债务（`chore/phase4-debt-offline`，sonnet/轻审，**已先行开工 2026-07-23**·游离）
 **Files**：测试补强批（检查单 #15：cursor 中断→窗口重建→DOI 去重端到端 fixture / oa-report 循环端到端限速锁 / 契约 factory

@@ -1,6 +1,6 @@
 ---
 title: 配置分层与敏感边界规范
-status: draft
+status: approved
 owner: fable5
 updated: 2026-07-23
 ---
@@ -38,7 +38,7 @@ config/                        # 仓库内，只放规范与样例——真实�
 **优先级（高→低，逐键覆盖）**：
 ```
 1. env（PAPER_CRAWLER_* / 各 [auth.*] env 覆盖）        ← 最高（CI/临时会话不落盘凭证）
-2. 项目级 ./paper-crawler.toml（**仅非敏感键**）         ← 新增层（团队共享的路径/限速/venue 目录等）
+2. 项目级 ./paper-crawler.toml（**仅非敏感键**）         ← 新增层（本机工作区层：路径/限速/venue 目录等；gitignored 不随仓库分发——可分发的默认配置模板走 config/config.example.toml。复审 n4 取舍明示）
 3. config-home config.toml（$PAPER_CRAWLER_HOME 或 ~/.paper-crawler）  ← 家目录，仓库外，可含敏感槽
 4. 内置默认（Config dataclass 字段默认值）              ← 兜底
 ```
@@ -51,7 +51,9 @@ config/                        # 仓库内，只放规范与样例——真实�
 
 **项目级 `./paper-crawler.toml`（可能被 git 跟踪/提交）出现敏感键形态 → `CrawlerError(CONFIG)` 拒启动**：
 ```
-_SENSITIVE_CONFIG_KEYS = {api_key, token, insttoken, password, secret}   # 键名匹配（大小写不敏感，含 [auth.*] 子表内）
+_SENSITIVE_CONFIG_KEY_RE = r"api[-_]?key|apikey|token|insttoken|passwd|password|secret|credential(s)?|cookie|session[-_]?id|authorization|private[-_]?key"
+# 规范化子串/正则匹配（大小写不敏感，含 [auth.*] 子表内）；与 obslog 脱敏键单一同源（T2 落地，防两套清单漂移）。
+# 不含裸 `key`（误伤 key_ref 类引用名）与 `email`（identity.email 属合法非凭证键）——复审 §4 建议采纳（2026-07-23）。
 项目级 toml 解析后遍历（含嵌套表）：任一叶子键名命中 → raise CrawlerError(
     CONFIG, "项目级 ./paper-crawler.toml 含敏感键 <key>；凭证禁入项目文件（易误提交）——"
             "挪至家目录 config.toml（$PAPER_CRAWLER_HOME，仓库外）或环境变量 PAPER_CRAWLER_*")

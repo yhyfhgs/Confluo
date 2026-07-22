@@ -12,7 +12,7 @@
 | 设计/实现一个新 adapter | [design/02 框架](design/02-plugin-framework.md) → [adapters/README 模板](design/adapters/README.md) → 同族样例（Atypon 看 [informs](design/adapters/informs.md)，Silverchair 看 [oup](design/adapters/oup-silverchair.md)，OA 看 [pmlr](design/adapters/pmlr.md)）→ [test-plan fixture 规范](testing/test-plan.md) |
 | 理解认证与合规边界 | [design/04](design/04-auth-gated-module.md) → [design/07](design/07-auth-session.md) → [decision-log](plan/decision-log.md) D-006/D-014 → [AC-0 红线](testing/acceptance-criteria.md) |
 | 开始 Phase 1 开发 | [development-plan §Phase 1](plan/development-plan.md) → design/01/02/05/06 → [status-workflow 开工门禁](process/status-workflow.md) |
-| 查"为什么这样设计" | [plan/decision-log.md](plan/decision-log.md)（D-001…D-022） |
+| 查"为什么这样设计" | [plan/decision-log.md](plan/decision-log.md)（D-001…D-025） |
 | 了解某站点的实测事实 | research/site-survey/ 对应勘察（各 adapter 文档 §2 已内联引用） |
 
 ## 根文档
@@ -31,8 +31,9 @@
 | [plan/phase1-implementation-plan.md](plan/phase1-implementation-plan.md) | Phase 1 实施计划（任务切分+接口冻结） | approved | 2026-07-21 |
 | [plan/phase2-implementation-plan.md](plan/phase2-implementation-plan.md) | Phase 2 实施计划（Stage A 地基+arxiv；Stage B adapter 滚动） | approved | 2026-07-21 |
 | [plan/phase3-implementation-plan.md](plan/phase3-implementation-plan.md) | Phase 3 实施计划（聚合元数据层：五源 adapter + 合并引擎任务切分） | approved | 2026-07-22 |
+| [plan/phase4-implementation-plan.md](plan/phase4-implementation-plan.md) | Phase 4 实施计划（认证框架 + 出版社 adapters 任务切分） | approved | 2026-07-23 |
 | [plan/progress.md](plan/progress.md) | 项目进度跟踪 | approved | 2026-07-20 |
-| [plan/decision-log.md](plan/decision-log.md) | 架构决策记录（D-001…D-022） | approved | 2026-07-22 |
+| [plan/decision-log.md](plan/decision-log.md) | 架构决策记录（D-001…D-025） | approved | 2026-07-23 |
 
 ## design/ — 核心设计（00–09）
 
@@ -45,9 +46,11 @@
 | [design/04-auth-gated-module.md](design/04-auth-gated-module.md) | Auth-Gated 获取模块 | approved | 2026-07-20 |
 | [design/05-pipeline.md](design/05-pipeline.md) | 六阶段 Pipeline 与任务系统 | implemented | 2026-07-21 |
 | [design/06-data-model.md](design/06-data-model.md) | 数据模型与入库设计 | implemented | 2026-07-21 |
-| [design/07-auth-session.md](design/07-auth-session.md) | 认证与会话管理 | approved | 2026-07-20 |
+| [design/07-auth-session.md](design/07-auth-session.md) | 认证与会话管理 | approved | 2026-07-23 |
 | [design/08-venue-tracking.md](design/08-venue-tracking.md) | Venue 时间轴与年度追踪 | approved | 2026-07-20 |
 | [design/09-search-filter.md](design/09-search-filter.md) | 主题订阅与精确搜索 | approved | 2026-07-20 |
+| [design/auth-framework.md](design/auth-framework.md) | 认证框架实现级详设（07/04 的实现级扩展：四 Provider + 凭证库 + CLI + pipeline 接缝） | approved | 2026-07-23 |
+| [design/10-config-layout.md](design/10-config-layout.md) | 配置归集与分层规范（D-025：config/ 文件夹 + 加载链 + 敏感键护栏） | approved | 2026-07-23 |
 
 ## design/adapters/ — 平台 adapter 详设
 
@@ -65,9 +68,9 @@
 | [design/adapters/acm-dl.md](design/adapters/acm-dl.md) | ACM Digital Library（D-020：Phase 2 出列，Phase 4 重评） | review | 2026-07-22 |
 | [design/adapters/ieee-xplore.md](design/adapters/ieee-xplore.md) | IEEE Xplore | review | 2026-07-20 |
 | [design/adapters/aggregators.md](design/adapters/aggregators.md) | 聚合元数据源（6 合册） | implemented | 2026-07-23 |
-| [design/adapters/elsevier-sd.md](design/adapters/elsevier-sd.md) | Elsevier ScienceDirect | review | 2026-07-20 |
-| [design/adapters/wiley.md](design/adapters/wiley.md) | Wiley Online Library | review | 2026-07-20 |
-| [design/adapters/oup-silverchair.md](design/adapters/oup-silverchair.md) | OUP（Silverchair） | review | 2026-07-20 |
+| [design/adapters/elsevier-sd.md](design/adapters/elsevier-sd.md) | Elsevier ScienceDirect（实现级，P4-W0） | approved | 2026-07-23 |
+| [design/adapters/wiley.md](design/adapters/wiley.md) | Wiley Online Library（实现级，P4-W0，D-024 纳入） | approved | 2026-07-23 |
+| [design/adapters/oup-silverchair.md](design/adapters/oup-silverchair.md) | OUP（Silverchair）（实现级，P4-W0） | approved | 2026-07-23 |
 | [design/adapters/uchicago.md](design/adapters/uchicago.md) | UChicago Press | review | 2026-07-20 |
 | [design/adapters/informs.md](design/adapters/informs.md) | INFORMS PubsOnline | review | 2026-07-20 |
 

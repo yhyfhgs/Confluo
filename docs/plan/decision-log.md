@@ -221,7 +221,7 @@ updated: 2026-07-23
 - **背景**：Phase 4 引入 elsevier/wiley 等多个 `[auth.*]` 凭证槽后，配置项分散、优先级隐晦、敏感边界无护栏（易误把 api_key 提交进仓库）。用户令：把配置规范归集、加显式分层与防误提交护栏，并为未来第三方凭证槽（Kaggle 等）立统一规范。
 - **决策**（详设 [design/10-config-layout.md](../design/10-config-layout.md)）：
   1. **仓库内 `config/` 规范文件夹**：`README.md`（配置规范总纲：全部配置项分层/优先级/敏感边界）+ `config.example.toml`（全键注释样例，含 `[auth.*]` 全部槽）+ `profiles.example.toml`——**真实值绝不入**（仅样例/占位）。
-  2. **加载链改造**：`env > 项目级 ./paper-crawler.toml（仅非敏感键）> config-home config.toml > 内置默认`；**项目级文件出现敏感键形态**（`api_key`/`token`/`insttoken`/`password`）→ `CrawlerError(CONFIG)` **拒启动**并指引挪至家目录/env（**防误提交护栏**）。
+  2. **加载链改造**：`env > 项目级 ./paper-crawler.toml（仅非敏感键）> config-home config.toml > 内置默认`；**项目级文件出现敏感键形态**（`api_key`/`token`/`insttoken`/`password`/`secret`/`credential`/`cookie` 等——正则匹配集与 obslog 脱敏键单一同源，详见 10-config-layout §3.1）→ `CrawlerError(CONFIG)` **拒启动**并指引挪至家目录/env（**防误提交护栏**）。
   3. **`crawler config show` 命令**：打印全部生效配置 + 来源层，**敏感值脱敏显示**（obslog redact 口径）。
   4. **第三方凭证槽归集规范**：未来 Kaggle 等一律 `[auth.<name>]` 槽、单一 config-home，不依赖各工具家目录约定（如 `~/.kaggle/kaggle.json`）。
   5. **敏感凭证物理隔离于仓库（AC-0.3）为不变式**，写入规范总纲。

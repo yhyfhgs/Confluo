@@ -1,6 +1,6 @@
 ---
 title: Adapter 设计 · Elsevier ScienceDirect（实现级）
-status: draft
+status: approved
 owner: fable5
 updated: 2026-07-23
 ---
