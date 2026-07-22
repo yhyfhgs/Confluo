@@ -1,0 +1,20 @@
+# venues/econ/jpubeco.yaml —— Journal of Public Economics（Phase 3 T7；AC-3.5）
+id: jpubeco
+kind: journal
+names:
+  full: Journal of Public Economics
+  aliases: [JPubE, JPubEco]
+field: [econ]
+tier: T1                      # catalog/economics-journals.md Field Top（公共经济学）
+identifiers:
+  issn: ["0047-2727"]         # 期刊必填（D-015）
+metadata_source: crossref     # D-005 元数据主干（DOI 前缀 10.1016）
+fulltext_source: elsevier_sd  # 真实平台：Elsevier ScienceDirect（Phase 4 实现）
+auth:
+  level: institutional
+  provider_hint: elsevier
+status: active
+notes: >
+  元数据经 Crossref 按 ISSN 枚举（D-005）。全文平台 Elsevier ScienceDirect
+  （`elsevier_sd`，resolve/fetch 留 Phase 4）。公共经济学 field-top（applied 子域），
+  与 jet（理论）、jfe（金融）互补覆盖不同经济学子领域。
