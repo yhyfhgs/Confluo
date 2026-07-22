@@ -1,13 +1,25 @@
 """canary.py 单测（T3）：`run_canary` 的三态分类（healthy/unhealthy/skip）、
-`canary_exit_code` 判据、`render_canary_markdown` 的渲染细节（含 redact/转义）。
+`canary_exit_code` 判据、`render_canary_markdown` 的渲染细节（含 redact/转义）、
+`--record` 落盘的纯函数层（`canary_record_path`/`render_canary_record`）。
 
-CLI 接线层（`crawler canary` 对 mock 的健康/SKIP 两态、`--adapter` 过滤/未知 id）
-见 `tests/integration/test_cli_canary.py`；这里只测纯函数层，不经 typer。
+CLI 接线层（`crawler canary` 对 mock 的健康/SKIP 两态、`--adapter` 过滤/未知 id、
+`--record` 实际写文件）见 `tests/integration/test_cli_canary.py`；这里只测纯函数层，
+不经 typer、不碰文件系统。
 """
 
 from __future__ import annotations
 
-from paper_crawler.canary import CanaryRow, canary_exit_code, render_canary_markdown, run_canary
+from datetime import date
+from pathlib import Path
+
+from paper_crawler.canary import (
+    CanaryRow,
+    canary_exit_code,
+    canary_record_path,
+    render_canary_markdown,
+    render_canary_record,
+    run_canary,
+)
 from paper_crawler.types import HealthReport
 
 
@@ -149,3 +161,52 @@ def test_render_canary_markdown_empty_detail_renders_dash() -> None:
 
 def test_render_canary_markdown_no_rows_still_has_header() -> None:
     assert render_canary_markdown([]) == "| adapter | healthy | detail |\n| --- | --- | --- |"
+
+
+# --- canary_record_path --------------------------------------------------------
+
+
+def test_canary_record_path_uses_given_day() -> None:
+    path = canary_record_path(date(2026, 7, 22))
+    assert path == Path("docs/testing/records/canary/2026-07-22-canary.md")
+
+
+def test_canary_record_path_defaults_to_today() -> None:
+    path = canary_record_path()
+    assert path.name == f"{date.today().isoformat()}-canary.md"
+
+
+def test_canary_record_path_is_relative_not_absolute() -> None:
+    # 相对当前工作目录解析（预期仓库根目录下调用）；不做仓库根探测/绝对化。
+    assert not canary_record_path(date(2026, 7, 22)).is_absolute()
+
+
+# --- render_canary_record -------------------------------------------------------
+
+
+def test_render_canary_record_has_dated_title() -> None:
+    content = render_canary_record([], day=date(2026, 7, 22))
+    assert content.startswith("# Canary 健康矩阵 — 2026-07-22")
+
+
+def test_render_canary_record_defaults_day_to_today() -> None:
+    content = render_canary_record([])
+    assert date.today().isoformat() in content
+
+
+def test_render_canary_record_embeds_same_table_as_terminal_output() -> None:
+    """落盘内容与终端输出同源：`render_canary_markdown` 的完整产出原样出现在记录里。"""
+    rows = [CanaryRow("mock_platform", "healthy", "ok"), CanaryRow("crossref", "skip", "stub")]
+    content = render_canary_record(rows, day=date(2026, 7, 22))
+    assert render_canary_markdown(rows) in content
+
+
+def test_render_canary_record_notes_auto_generated_do_not_hand_edit() -> None:
+    content = render_canary_record([], day=date(2026, 1, 1))
+    assert "自动生成" in content
+
+
+def test_render_canary_record_ends_with_single_trailing_newline() -> None:
+    content = render_canary_record([CanaryRow("a", "healthy", "ok")], day=date(2026, 7, 22))
+    assert content.endswith("\n")
+    assert not content.endswith("\n\n")

@@ -93,6 +93,7 @@
 | [testing/records/2026-07-21-phase1-acceptance.md](testing/records/2026-07-21-phase1-acceptance.md) | Phase 1 验收记录（AC-1 全过） | — | 2026-07-21 |
 | [testing/records/2026-07-22-arxiv-acceptance.md](testing/records/2026-07-22-arxiv-acceptance.md) | arXiv 验收记录（AC-2.3 双层 PASS） | — | 2026-07-22 |
 | [testing/records/2026-07-22-phase2-acceptance.md](testing/records/2026-07-22-phase2-acceptance.md) | Phase 2 验收汇总（AC-2 达成；openreview 在线层待 token） | — | 2026-07-22 |
+| [testing/records/canary/README.md](testing/records/canary/README.md) | Canary 健康矩阵记录目录（`crawler canary --record` 落盘，按日覆盖） | approved | 2026-07-22 |
 
 ## process/ — 流程规范
 

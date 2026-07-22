@@ -23,11 +23,18 @@ T7 canary 三样本注册），T3 阶段尚不实现，`§4` 既有语义不因�
 `detail` 文本一律先经 `obslog.redact()` 处理——健康检查异常消息可能透传上游
 文本（未来真实 adapter 的 HTTP 错误信息等），与 `RunReport.render_markdown()`
 同样的纵深防御口径（AC-0 红线："日志与报告无未脱敏敏感值"）。
+
+`canary_record_path`/`render_canary_record`：Phase 2 运维收尾项（phase2-report
+§6 检查单第 8 条）——`crawler canary --record` 的落盘内容/路径纯函数，与终端
+`render_canary_markdown` 同源渲染（不重复表格逻辑），CLI 侧只做 `--record`
+判断与文件写入（同 `cli.py` 模块 docstring"只做接线"的既有分工）。
 """
 
 from __future__ import annotations
 
+import datetime as dt
 from dataclasses import dataclass
+from pathlib import Path
 from typing import Literal
 
 from paper_crawler.adapter import SourceAdapter
@@ -88,4 +95,48 @@ def render_canary_markdown(rows: list[CanaryRow]) -> str:
     return "\n".join(lines)
 
 
-__all__ = ["CanaryRow", "CanaryStatus", "canary_exit_code", "render_canary_markdown", "run_canary"]
+# `crawler canary --record` 落盘目录（doc-conventions.md §1"测试记录"命名惯例的子目录，
+# 见该目录 README.md）。**相对当前工作目录解析**——CLI 不做仓库根探测，预期在仓库根
+# 目录下调用，与 `docs/logs`/`docs/testing/records` 现有人工留痕的调用习惯一致。
+_RECORD_DIR = Path("docs/testing/records/canary")
+
+
+def canary_record_path(day: dt.date | None = None) -> Path:
+    """`--record` 的落盘路径：`docs/testing/records/canary/<YYYY-MM-DD>-canary.md`。
+
+    `day` 缺省取本地今日日期；同一天多次 `--record` 落到同一路径（健康快照取
+    "当天最后一次"语义，覆盖而非追加——canary 是状态探测，不是事件日志）。
+    """
+    resolved = day if day is not None else dt.date.today()
+    return _RECORD_DIR / f"{resolved.isoformat()}-canary.md"
+
+
+def render_canary_record(rows: list[CanaryRow], day: dt.date | None = None) -> str:
+    """`--record` 落盘文件的完整内容：标题 + 生成说明 + 健康矩阵表。
+
+    表格部分直接复用 `render_canary_markdown`——与终端输出**同源数据**，不另起一套
+    渲染逻辑（避免落盘内容与终端回显日后各自漂移）。不含 YAML front matter：本文件
+    是逐日重新生成、按需覆盖的机器快照，不是需 draft→review→approved 人工走查的设计
+    文档，status 状态机语义不适用（docs/process/status-workflow.md §1）；目录本身的
+    README.md 走标准 front matter 说明用途与命名约定。
+    """
+    resolved = day if day is not None else dt.date.today()
+    lines = [
+        f"# Canary 健康矩阵 — {resolved.isoformat()}",
+        "",
+        "> 由 `crawler canary --record` 自动生成；同名文件按日覆盖，不手工编辑。",
+        "",
+        render_canary_markdown(rows),
+    ]
+    return "\n".join(lines) + "\n"
+
+
+__all__ = [
+    "CanaryRow",
+    "CanaryStatus",
+    "canary_exit_code",
+    "canary_record_path",
+    "render_canary_markdown",
+    "render_canary_record",
+    "run_canary",
+]

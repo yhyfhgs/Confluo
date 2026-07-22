@@ -27,7 +27,7 @@ updated: 2026-07-22
 | id | 名称 | tier | Anthology venue | DBLP key | 备注 |
 |---|---|---|---|---|---|
 | acl | ACL | T1 | acl | conf/acl | ID `2023.acl-long.1` |
-| emnlp | EMNLP | T1 | emnlp | conf/emnlp | SIGDAT |
+| emnlp | EMNLP | T1 | emnlp | conf/emnlp | SIGDAT（supported_since: phase-2） |
 | naacl | NAACL | T1 | naacl | conf/naacl | 非每年 |
 | coling | COLING | T2 | coling | conf/coling | ICCL 主办 |
 | eacl | EACL | T2 | eacl | conf/eacl | 非每年 |

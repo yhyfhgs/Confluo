@@ -61,6 +61,7 @@ PENDING 任务，会在下一次任意 pipeline 命令运行时被顺带回收�
 from __future__ import annotations
 
 import contextlib
+import datetime as dt
 import sqlite3
 from collections.abc import Iterator
 from dataclasses import dataclass
@@ -75,7 +76,13 @@ from paper_crawler.adapter import (
     bind_http_client,
     load_adapters,
 )
-from paper_crawler.canary import canary_exit_code, render_canary_markdown, run_canary
+from paper_crawler.canary import (
+    canary_exit_code,
+    canary_record_path,
+    render_canary_markdown,
+    render_canary_record,
+    run_canary,
+)
 from paper_crawler.config import Config
 from paper_crawler.errors import CrawlerError, ErrorClass, IllegalTransition
 from paper_crawler.http import HttpClient
@@ -748,6 +755,13 @@ def report(
 @app.command()
 def canary(
     adapter: Annotated[str | None, typer.Option("--adapter", help="仅检查指定 adapter id")] = None,
+    record: Annotated[
+        bool,
+        typer.Option(
+            "--record",
+            help="额外把健康矩阵落盘到 docs/testing/records/canary/<今日>-canary.md",
+        ),
+    ] = False,
     home: HomeOpt = None,
     verbose: VerboseOpt = False,
 ) -> None:
@@ -760,6 +774,11 @@ def canary(
 
     `--adapter ID` 限定只检查该 adapter；给了未注册的 id 视为用法错，退出 2。
     退出码契约见模块 docstring："canary 命令不产出 RunReport" 一段。
+
+    `--record`：额外把同一份健康矩阵（与终端输出同源数据，`canary.render_canary_record`
+    内部复用 `render_canary_markdown`）写入 `docs/testing/records/canary/<YYYY-MM-DD>
+    -canary.md`（相对当前工作目录，预期仓库根目录下调用，见 `canary.canary_record_path`
+    docstring）。省略 `--record` 时行为与此前完全一致，不建目录、不写文件。
     """
     with _env(home, verbose):
         adapters = load_adapters()
@@ -770,6 +789,12 @@ def canary(
 
         rows = run_canary(adapters)
         typer.echo(render_canary_markdown(rows))
+        if record:
+            today = dt.date.today()
+            path = canary_record_path(today)
+            path.parent.mkdir(parents=True, exist_ok=True)
+            path.write_text(render_canary_record(rows, today), encoding="utf-8")
+            typer.echo(f"健康矩阵已落盘：{path}")
         exit_code = canary_exit_code(rows)
     raise typer.Exit(code=exit_code)
 
