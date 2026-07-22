@@ -18,8 +18,8 @@ updated: 2026-07-23
 
 **Goal**：AuthProvider 四实现（APIKey/CookieSession/SSOFlow/EZProxy）+ 凭证库 + `crawler auth login/status/logout`
 CLI + session 健康门上线；平台深做 `elsevier_sd`（AC-4.1 载体，API 路径）+ `oup_silverchair`（QJE fulltext 收敛，
-cookie 路径）；`wiley` 依 R0 裁决（纳入/骨架/顺延）；pipeline 认证接缝全接线（OA-fallback / 健康门 / 日配额 /
-BLOCKED 恢复）；闭合 Phase 3 移交检查单 #2/#3/#4/#12/#13。AC-4.1~4.6 全过（离线 mock 层 + 真实凭证 runbook 分层）。
+cookie 路径）+ `wiley`（**R0 裁决=纳入**，TDM 路径 + token 门控，D-024）；pipeline 认证接缝全接线（OA-fallback / 健康门 /
+日配额 / BLOCKED 恢复）；闭合 Phase 3 移交检查单 #2/#3/#4/#12/#13。AC-4.1~4.6 全过（离线 mock 层 + 真实凭证 runbook 分层）。
 
 **Architecture**：Phase 1/2/3 冻结接口不变（SourceAdapter 五方法协议 / HttpClient 签名 / pipeline 六阶段 /
 MergeEngine）。Phase 4 增量全部**纯附加**：①`types.SessionHandle = Any` → 具体 frozen dataclass（既有代码
@@ -49,8 +49,9 @@ line 128 注释预留的受控具体化）；②`errors.CrawlerError` 加 `statu
 - **门禁**：`make check` 全绿方可合并（覆盖率 ≥80% 不回退，现 99.18%）；auth 包解析/判定模块 + 平台解析器 ≥90%。
 - **详设硬门禁**：`auth-framework.md` 双评审 approved 前 T1~T7 不开工；`elsevier-sd.md`/`oup-silverchair.md`
   平台详设（P0b，依 R0）approved 前 T3/T4 平台实现不开工（框架件 T1/T2 不受平台详设门禁约束，可先行）。
-- **范围只减不增**（development-plan R5 范围锁定）：深做 elsevier_sd + oup_silverchair；wiley 条件件；
-  uchicago/informs/ieee_xplore/cambridge/springer/jstor 顺延；acm_dl D-020 重评为文档级独立小件。
+- **范围只减不增**（development-plan R5 范围锁定）：深做 elsevier_sd + oup_silverchair + **wiley（R0 裁决纳入，D-024）**；
+  uchicago/informs/ieee_xplore/cambridge/springer/jstor 顺延；**acm_dl 维持 D-020 出列**（D-024：挑战墙+ToS 禁自动下载证据未变，
+  全文改道 unpaywall OA-fallback、元数据维持 crossref+dblp）。
 - **提交规范**：Conventional Commits，scope `auth` / `adapter:<id>` / `pipeline` / `core` / `testing`；
   尾行 `Co-Authored-By: Claude Fable 5 <noreply@anthropic.com>`；任何 git 写操作前确认分支（worktree 纪律）。
 - **fixture 纪律**：认证响应录制**一律脱敏**（无 cookie/token/storage_state/个人信息）；auth 四类 fixture
@@ -82,20 +83,23 @@ line 128 注释预留的受控具体化）；②`errors.CrawlerError` 加 `statu
 
 | 分项 | 估算 | 依据 |
 |---|---|---|
-| R0 平台勘察复核（elsevier API 端点/配额头、oup URL 模式/robots/挑战态、wiley TDM 裁决） | ≤25 | 三平台各 ~8：端点连通 + robots + 挑战页样本捕获（脱敏入 fixture） |
-| elsevier 真实 key 实测冒烟（AC-4.1 载体） | ≤40 | entitlement 预检 + JFE 单篇取回 + 配额头审计 + no_entitlement 样本 + 重录缓冲（真实 key 授权窗口一次性用足） |
+| R0 平台勘察复核（elsevier API/oup URL·挑战态/wiley TDM/acm ToS） | **已执行 5**（上限 25） | [publisher-platforms-p4-recheck.md](../research/site-survey/publisher-platforms-p4-recheck.md) 台账实耗 5/25（keyless E2 429 一次即停、oup O2 403 challenge 记录即停、robots ×3） |
+| elsevier 真实 key 实测冒烟（AC-4.1 载体；**BLOCKER-1：key 到位后执行**） | ≤40 | entitlement 预检 + JFE 单篇取回 + 配额头审计 + keyless/quota 429 分流核验 + 重录缓冲（真实 key 授权窗口一次性用足） |
+| **wiley TDM 冒烟（D-024；token 到位后执行 · 条件项）** | ≤10 | 已知有权 DOI 单篇取回 + 401/403/429 三态核验 + 双窗口 429 实触审计（token 自助可得，entitlement 受订阅约束） |
 | D-019 四站锚点补跑（检查单 #13：pmlr/cvf/acl_anthology/neurips_proceedings） | ≤25 | 每站 ≥1 锚点人工核准复核（Phase 2 末 partial 状态清账，随本 Phase 在线窗一并核） |
-| 缓冲（重试/重录/边界复核/oup cookie 真实 runbook 抽验） | ≤30 | oup 真实 SSO 首登属 runbook（不计 CI），此处仅留抽验余量 |
-| **合计** | **≤120** | — |
+| 缓冲（重试/重录/边界复核/oup cookie 真实 runbook 抽验） | ≤20 | oup 真实 SSO 首登属 runbook（不计 CI），此处仅留抽验余量 |
+| **合计** | **≤120**（R0 已耗 5，余 ≤115） | — |
 
 - **离线 DoD 不消耗在线预算**：AC-4.2/4.3/4.4/4.5/4.6 全在 mock IdP 离线层判定（auth-framework §9/§12）；
-  在线预算只服务 R0 勘察、AC-4.1 真实 key 冒烟、D-019 锚点补跑三类**必须真实网络**的项。
-- **S2/Elsevier/Kaggle key 状态 Phase 4 开工时复核**（检查单 #16：Phase 3 无复核记录）——elsevier key 是
-  AC-4.1 前置外部依赖（申请周期 1–2 周，R0 阶段确认到位否，未到则 AC-4.1 降级为 runbook-only 分层）。
+  在线预算只服务 R0 勘察（已执行）、AC-4.1 真实 key 冒烟、wiley token 冒烟、D-019 锚点补跑四类**必须真实网络**的项。
+- **BLOCKER-1 应对策略**（R0 [LIVE 2026-07-23]：config/env 无 elsevier key）：elsevier key 是 AC-4.1 前置外部依赖
+  （机构订阅关联、非商业；申请周期 1–2 周）——**T3 在线冒烟层标注"key 到位后执行"**（`tests/online/test_elsevier_smoke.py`
+  `skipif` 无 key）；未到位则 AC-4.1 降级 runbook-only 分层（D-018），**离线 DoD（resolve/fetch 逻辑 + AuthRequired 分支 +
+  fixture 回放）先行 PASS 不阻塞**。同理 wiley token 缺失→在线层 skip（条件项），s2/Kaggle key 缺失沿检查单 #16 复核。
 
 ## §4 任务卡
 
-> 依赖：**T3/T4/T5 依赖 T1+T2；T6 依赖 T1；T7 依赖 T3/T4/T5/T6；M2 独立**。每任务 = implementer(worktree) →
+> 依赖：**T3/T4/T-wiley/T5 依赖 T1+T2；T6 依赖 T1；T7 依赖 T3/T4/T-wiley/T5/T6；M2 独立**。每任务 = implementer(worktree) →
 > 双裁决审查（Spec+质量，限量真实交叉验证 ≤5 req 授权）→ fix 回派 → controller 合并亲跑 `make check`。
 
 ### T1 auth 核心框架 + 凭证库 + CLI（`feat/auth-core`）——最重件，安全红线密度最高
@@ -160,6 +164,19 @@ article-abstract→no_entitlement、PDF 解析 0 命中→parse、HTML 伪装→
 门禁**：`oup-silverchair.md`（P0b，依 R0）approved 后开工。
 **测试判据**：AC-4.2/4.3（mock 层）、AC-4.6（挑战判定）；检查单 #2（QJE fulltext 收敛）。
 
+### T-wiley wiley adapter（`adapter/wiley`，TDM 档 + 双窗口限速 + token 门控）——D-024 纳入，W2 平台波第三件
+**Files**：新建 `src/paper_crawler/adapters/wiley/`（`adapter.py`/`parse.py` + entry point）、`tests/fixtures/wiley/`
+（TDM 成功响应截断脱敏 / 401·403·429 三态 / 页面 auth 四件套）、`tests/{unit,contract}/test_wiley_*.py`、
+`tests/online/test_wiley_smoke.py`（`-m online`，token 门控）、`tests/manual/wiley_runbook.md`。
+**Interfaces**：`RESOLVE|FETCH`（enumerate 走 crossref，DOI 前缀 10.1111/10.1002/10.3982）；TDM 客户端 = httpx +
+`Wiley-TDM-Client-Token` 专属 client（wiley.md §3）；**双窗口限速** = 单 token bucket `RatePolicy(rpm=5, burst=3)`
+（起步保守；wiley.md §4 接缝结论：**无需扩展 ratelimit.py 冻结件**）；`ApiKeyProvider` token `[auth.wiley].token`（Config-slot，
+T1 凭证库面）；错误映射（wiley.md §5）：401→auth_expired、403→no_entitlement（订阅域约束）、429→rate_limited、CF→challenge。
+**DoD**：`make check` 绿；解析器 ≥90%；三态 fixture 回放全绿；双窗口限速器映射单测（3 连发 wait=0、第 4 wait≈10s，假时钟）；
+**token 门控**——无 token → 在线冒烟 skip + canary NotImplementedError→SKIP（不阻塞验收，s2 先例）；有 token → 单篇冒烟 ≤1。
+**平台详设门禁**：`wiley.md`（本次 P0b approved）后开工。
+**测试判据**：AC-4.1（JF/ECMA 单篇，token 到位）、AC-4.3（403 no_entitlement 降级）、AC-4.4（日配额）。**依赖 T1+T2**（同 T3/T4）。
+
 ### T5 pipeline 集成（`pipeline/auth-integration`，OA-fallback #12 + 健康门 + 日配额 + BLOCKED 恢复）——跨模块缝合面
 **Files**：`src/paper_crawler/pipeline/stages.py`（`StageContext.oa_fallback`/`unpaywall_adapter` 槽 + `_stage_oa_fallback`
 第七 handler + 健康门/日配额前置检查）、`src/paper_crawler/pipeline/runner.py`（`_auth_batch` 健康门编排 +
@@ -190,17 +207,17 @@ $PC_BROWSER_TESTS)` 默认 CI 双重跳过。
 ### T7 AC-4 端到端 + elsevier 真实 runbook + BLOCKED 演练（`feat/ac4-e2e`）
 **Files**：`docs/testing/records/2026-MM-DD-ac4-acceptance.md`（AC-4.1~4.6 汇总验收记录）、`tests/manual/`（elsevier/oup
 runbook 执行留痕）、`tests/online/test_elsevier_smoke.py`（真实 key 冒烟 committed）。
-**Interfaces**：依 T3/T4/T5/T6 合流；分层验收（D-018）：离线 mock 层（AC-4.2~4.6）+ 真实凭证层（AC-4.1 elsevier API /
+**Interfaces**：依 T3/T4/T-wiley/T5/T6 合流；分层验收（D-018）：离线 mock 层（AC-4.2~4.6）+ 真实凭证层（AC-4.1 elsevier API /
 oup SSO runbook）。BLOCKED 人工介入演练：auth login→resume 恢复、challenge 冷却→resume。
 **DoD**：AC-4.1~4.6 全过（离线 PASS + runbook 留痕）；elsevier 真实 key 单篇 JFE PDF 魔数校验合格；日配额对账
 （FetchLog）；BLOCKED-resume 演练通过。**controller 亲验**。
 **测试判据**：AC-4.1~4.6 全线 + AC-4.4 配额对账。
 
 ### T8 收尾（`fable 编排 + sonnet 执行`）
-**Files**：`docs/testing/records/`（AC-4 验收记录终稿）、AC-0 系统性扫描脚本产物、`aggregators.md`/`elsevier-sd.md`/
-`oup-silverchair.md` → implemented、`auth-framework.md`/`07`/`04` → implemented、`docs/INDEX.md`/`progress.md`/
-`decision-log.md`（新 ADR：cryptography 依赖 / SessionHandle 具体化 / 若有）同步、`docs/reports/2026-MM-DD-phase4-report.md`、
-tag `phase-4`。
+**Files**：`docs/testing/records/`（AC-4 验收记录终稿）、AC-0 系统性扫描脚本产物、`elsevier-sd.md`/`oup-silverchair.md`/
+`wiley.md` → implemented、`auth-framework.md`/`07`/`04` → implemented、`docs/INDEX.md`（登记 auth-framework.md/phase4-plan +
+三平台状态）/`progress.md`/`decision-log.md`（D-023/D-024 已于 P0b 落地，此处只需 INDEX 摘要与状态同步）、
+`docs/reports/2026-MM-DD-phase4-report.md`、tag `phase-4`。
 **DoD**：AC-4.1~4.6 + AC-0 系统性扫描（git 全历史无 `*.enc`/cookie 形态 AC-0.3、日志正则 AC-0.4、限速/robots AC-0.5）
 全过；INDEX/progress/decision-log 同步；阶段报告成稿；`make check` 全绿状态打 tag。**fable 全分支终审**。
 
@@ -218,10 +235,10 @@ sonnet 执行 + 轻审，随主线并行不阻塞。
 W0(现在):  R0 平台勘察（elsevier API/oup URL/wiley TDM 裁决）‖ auth-framework.md 双评审 → approved + 本计划定稿
                                                               ‖ elsevier-sd.md/oup-silverchair.md 平台详设(P0b)
 W1:        T1 auth 核心框架(fable)  ‖  T2 HttpClient status_code+canary(sonnet)     [框架件不受平台详设门禁]
-W2:        T3 elsevier_sd(opus)  ‖  T4 oup_silverchair(opus)  ‖  T6 mock IdP(sonnet)   [T3/T4 依 T1+T2；T6 依 T1]
-                                                                                        [T3/T4 另依平台详设 approved]
+W2:        T3 elsevier_sd(opus) ‖ T4 oup_silverchair(opus) ‖ T-wiley(opus) ‖ T6 mock IdP(sonnet)  [T3/T4/T-wiley 依 T1+T2；T6 依 T1]
+                                                                                        [T3/T4/T-wiley 另依各自平台详设 approved]
 W3:        T5 pipeline 集成(opus)                              [依 T1+T2；消费 T6 mock 载体]
-W4:        T7 AC-4 端到端(opus→controller 亲验)  →  T8 收尾(sonnet+fable 终审)   [T7 依 T3/T4/T5/T6]
+W4:        T7 AC-4 端到端(opus→controller 亲验)  →  T8 收尾(sonnet+fable 终审)   [T7 依 T3/T4/T-wiley/T5/T6]
 并行全程:  M2 债务清理包(sonnet)                              [独立，随主线任意波次并行]
 每任务: implementer(worktree) → 双裁决审查(Spec+质量, 限量真实交叉验证 ≤5 req) → fix 回派 → controller 合并亲跑 make check
 ```
@@ -230,7 +247,7 @@ W4:        T7 AC-4 端到端(opus→controller 亲验)  →  T8 收尾(sonnet+fa
 | 文件 | 写方任务 | 冲突管理 |
 |---|---|---|
 | `types.py` | T1（SessionHandle 具体化） | T1 独占；T2-T7 只读消费 |
-| `errors.py` | T2（status_code + 异常子类） | T2 独占；T1 的 provider 抛 AuthRequired/Challenged 依赖 T2 先落——**T1/T2 同波次需序化此依赖**（T2 的 errors 变更先合，或 T1 引用时 rebase）|
+| `errors.py`/`http.py` | T2（status_code + AuthRequired/Challenged 异常子类，**权威版**） | **controller 裁决 2026-07-23（D-024 波次）**：T2 为 `errors.py`/`http.py` **单一权威版**——T1/T2 同波开工，T1 provider 若需本地最小异常定义，合并时取 **T2 权威版**（沿 Phase 3 `ids.py` 单一权威约定，非各自维护分叉）；小件 T2 先合、T1 rebase 后 `import` 引用 |
 | `http.py` | T2（status_code 映射） | T2 独占（冻结面，opus 审）|
 | `obslog.py` | T2（脱敏键） | T2 独占 |
 | `cli.py` | T1（auth 子 app 挂载）、T2（canary 装配）、T5（pull/grab AuthManager 注入） | **三方写同文件**——按波次序化（T1→T2→T5 逐波合并，各自 rebase）；分节写入降低文本冲突 |
@@ -239,9 +256,11 @@ W4:        T7 AC-4 端到端(opus→controller 亲验)  →  T8 收尾(sonnet+fa
 | `pyproject.toml`/`.gitignore` | T1（extras + gitignore） | T1 独占 |
 | `venues/econ/qje.yaml` | T4（fulltext 收敛） | T4 独占 |
 
-- **关键序化**：`errors.py`（T2）→ `auth/providers/*`（T1 抛异常）存在跨任务依赖——建议 **T2 的 errors.py
-  变更先合入**（小件先行），T1 rebase 后引用；或 T1/T2 约定异常子类归 T2、T1 只 import。冲突面最重处 = `cli.py`
-  三方写，靠波次逐合 + 分节降冲突。
+- **关键序化（controller 裁决，D-024 波次）**：`errors.py`/`http.py`（T2）→ `auth/providers/*`（T1 抛异常）跨任务依赖——
+  **T2 = 单一权威版**（sole authoritative；T1 不维护分叉，合并取 T2，沿 Phase 3 `ids.py` 约定）；执行序 = 小件 T2 先合入、
+  T1 rebase 后 `import` 引用。冲突面最重处 = `cli.py` 三方写（T1 auth 子 app / T2 canary 装配 / T5 pull 注入），靠波次逐合 + 分节降冲突。
+- **T-wiley/T3/T4 平台并行无相互冲突**：三平台各独占自己的 `adapters/<id>/` 包目录 + fixture 目录（disjoint），
+  仅共享只读的 T1/T2 冻结件——W2 三平台波真并行安全（沿 Phase 2/3 逐 adapter 独立分支先例）。
 
 ## §6 模型分配建议
 
@@ -256,6 +275,7 @@ W4:        T7 AC-4 端到端(opus→controller 亲验)  →  T8 收尾(sonnet+fa
 | T2 HttpClient status_code + canary 注入 | sonnet | opus（动 HttpClient 冻结面，全 adapter 受影响） |
 | T3 elsevier_sd | opus | opus |
 | T4 oup_silverchair | opus | opus |
+| T-wiley wiley adapter（TDM + 双窗口限速 + token 门控，D-024） | **opus** | **opus** |
 | T5 pipeline 集成（OA-fallback / 健康门 / 日配额 / BLOCKED） | opus | **fable**（跨 pipeline/auth/unpaywall 三模块缝合面） |
 | T6 mock IdP 集成测试 | sonnet | opus |
 | T7 AC-4 端到端 + runbook + BLOCKED 演练 | opus | controller 亲验 |
@@ -266,7 +286,7 @@ W4:        T7 AC-4 端到端(opus→controller 亲验)  →  T8 收尾(sonnet+fa
 
 | AC | 载体任务 | 验收形态 |
 |---|---|---|
-| AC-4.1 首登+取一篇 | T3（elsevier API）+ T7 | 真实 key runbook（JFE 单篇魔数校验） |
+| AC-4.1 首登+取一篇 | T3（elsevier API，主载体）+ T-wiley（JF/ECMA，token 到位）+ T7 | 真实 key/token runbook（JFE/JF 单篇魔数校验） |
 | AC-4.2 过期检测不轰炸 | T5+T6 | mock IdP 集成（≤20 篇 BLOCKED，无 401 轰炸） |
 | AC-4.3 无权限降级 | T5+T6（+T3/T4 真实 no_entitlement） | 集成（no_entitlement→unpaywall OA） |
 | AC-4.4 日配额 | T5 | FetchLog 对账集成 |
@@ -275,6 +295,7 @@ W4:        T7 AC-4 端到端(opus→controller 亲验)  →  T8 收尾(sonnet+fa
 
 风险：①**elsevier key 未到位**（AC-4.1 前置外部依赖，申请 1–2 周）——R0 阶段确认，未到则 AC-4.1 降级 runbook-only
 分层、离线 DoD 不阻塞（D-018）；②**oup 真实 SSO 含 MFA 无法自动化**（D-006 R2 已接受）——oup 取回归 runbook，
-CI 层只测判定器 + mock；③**cryptography 首个二进制依赖**（虽 optional extra）——待 controller 裁决是否需独立 ADR；
-④**wiley 条件件**依 R0 裁决，未定则不阻塞主线（elsevier+oup 已覆盖 AC-4 全判据）；⑤**Cloudflare 挑战升级**
-（elsevier/oup/wiley 均 Cloudflare 深度集成，R1 风险）——API 优先（elsevier）+ 挑战即 BLOCKED（不对抗）+ canary 周检。
+CI 层只测判定器 + mock；③**cryptography 首个二进制依赖**（虽 optional extra）——已由 **D-023** 定裁（optional extra + 惰性 import，APIKey 路径不触）；
+④**wiley 已纳入**（D-024）但 token 缺失→在线层 skip（条件项，不阻塞主线；elsevier+oup 已覆盖 AC-4 全判据）；⑤**Cloudflare 挑战升级**
+（elsevier/oup/wiley 均 Cloudflare 深度集成，R1 风险，R0 复核 elsevier API 返结构化 error 非挑战墙、oup/wiley 页面档撞挑战）——
+API 优先（elsevier/wiley TDM）+ 挑战即 BLOCKED（不对抗）+ canary 周检。

@@ -157,7 +157,10 @@ class CredentialStore:
 ### 2.4 AuthRequired / Challenged 异常（`errors.py` 分类学中的位置）
 
 沿 `CapabilityNotSupported(CrawlerError)` 固定 `error_class` 的先例（errors.py line 42–46），
-**纯附加**两个 `CrawlerError` 子类，落进既有九类错误分类学（design/05 §4），不新增 ErrorClass：
+**纯附加**两个 `CrawlerError` 子类，落进既有九类错误分类学（design/05 §4），不新增 ErrorClass。
+**任务归属（controller 裁决 2026-07-23，D-024 波次）**：本节两子类 + §6 `status_code` 字段的
+`errors.py`/`http.py` **权威版归 T2 交付**——T1/T2 同波开工，T1 的 provider 若需本地最小异常定义，
+合并时取 T2 权威版（沿 Phase 3 `ids.py` 单一权威约定；见 plan §5 冲突面预算）。
 
 ```python
 # errors.py 追加（不改 ErrorClass 九类）
@@ -272,12 +275,30 @@ state_ref = "ezproxy_myuniv_state"        # proxy cookie
 est_ttl_hours = 12
 ```
 
-对应 `config.toml`（非敏感）声明运行时选择（07 §6）：
+对应 `config.toml`（07 §6 运行时选择 + **简单字符串密钥槽**）：
 ```toml
 [auth]
 active_profile = { oup_silverchair = "oup@campus", elsevier_sd = "elsevier" }
 # CLI --profile 临时覆盖；场景：在校用直连、离校切 elsevier@ezproxy，无需改 VenueSpec
+
+# -- API key / TDM token 类简单字符串密钥（沿 [auth.s2].api_key / [auth.openreview].token 既有 Config-slot 惯例）--
+[auth.elsevier]
+api_key = ""        # Elsevier APIKey（家目录 config，仓库外；env PAPER_CRAWLER_ELSEVIER_API_KEY 覆盖）
+insttoken = ""      # 可选 机构 token（env PAPER_CRAWLER_ELSEVIER_INSTTOKEN 覆盖）
+[auth.wiley]
+token = ""          # Wiley TDM Client Token（UUID；env PAPER_CRAWLER_WILEY_TDM_TOKEN 覆盖）
 ```
+
+- **两级凭证模型（R0 2026-07-23 落地口径）**：①**简单字符串密钥**（elsevier `api_key`+`insttoken`、
+  wiley TDM `token`、既有 s2/openalex/openreview）走上列 `[auth.<platform>]` **Config-slot 机制**
+  （config.py 解析为 `Config` 字段，config.toml 家目录仓库外 + `PAPER_CRAWLER_*` env 覆盖，空白归一 None，
+  obslog redact 覆盖）——**不需 AES-GCM/keyring**（R0：elsevier key 就是一个串，纯 API 路径无 storage_state）；
+  ②**有状态凭证**（cookie jar / storage_state，CookieSession/SSO）走 §3.2/§3.3 的 **AES-GCM `CredentialStore`**
+  （profiles.toml `state_ref` + keyring 主密钥）。`ApiKeyProvider` 经 `store.read_key(ref)` 统一取①类值
+  （内部委派 Config 字段，keyring 可选加固）——AC-4.1（elsevier）因此落在**不触 `cryptography`** 的轻路径。
+- `config.py` 纯附加字段（T1）：`elsevier_api_key`/`elsevier_insttoken`/`wiley_tdm_token: str | None = None`
+  （+ env `PAPER_CRAWLER_ELSEVIER_API_KEY`/`_ELSEVIER_INSTTOKEN`/`_WILEY_TDM_TOKEN`），沿 line 100–124 既有
+  三源 key 解析样板；均**不入日志/报告**（obslog redact `api_key`/`token`/`insttoken` 形态，§5）。
 
 - `ProviderProfile` dataclass（store 解析产物）字段 = 上表全键，`extra` 严格拒绝（未知键 → `CrawlerError(CONFIG)`，
   仿 `VenueSpec` 的 `extra="forbid"`）；`kind` 与必填字段的组合校验在 `load_profiles`（如 `api_key` 必有 `key_ref`）。
@@ -673,6 +694,8 @@ class ChallengeDetector:
 
 | # | 日期 | 修订 | 依据 |
 |---|---|---|---|
-| 1 | 2026-07-23 | 初稿：07 §2 伪代码 → 实现级冻结签名（SessionHandle/AuthProvider/CredentialStore/异常）；04 §4/§5/§7 运行时协议 → pipeline 接线点（OA-fallback #12 / 健康门 / 日配额 / BLOCKED 冷却）；闭合检查单 #2（QJE fulltext_source，见 plan T4）/#3（canary 凭证注入）/#4（status_code）/#12（OA-fallback）；`cryptography` vs 标准库评估（结论：cryptography 作 `[auth]` extra）；mock IdP 纯 httpx vs Playwright 结论（结论：生命周期全纯 httpx 进 CI，Playwright 仅真实首登不进 CI） | 本次 W0 P0 扩写任务（controller 预裁决 §0） |
+| 1 | 2026-07-23 | 初稿（P0a）：07 §2 伪代码 → 实现级冻结签名（SessionHandle/AuthProvider/CredentialStore/异常）；04 §4/§5/§7 运行时协议 → pipeline 接线点（OA-fallback #12 / 健康门 / 日配额 / BLOCKED 冷却）；闭合检查单 #2/#3/#4/#12；`cryptography` vs 标准库评估（结论：cryptography 作 `[auth]` extra）；mock IdP 纯 httpx vs Playwright 结论 | W0 P0a 扩写（controller 预裁决 §0） |
+| 2 | 2026-07-23 | P0b R0 落地：§2.4 异常子类 + §6 status_code 权威版**归 T2**（D-024 波次，plan §5）；§3.4 补 `[auth.elsevier]`/`[auth.wiley]` Config-slot + **两级凭证模型**（简单串走 Config-slot 不触 cryptography / 有状态走 AES-GCM store）；P0a 开放题①②由 **D-023** 定裁（cryptography optional extra + SessionHandle 具体化附注）、③健康门/配额/冷却默认值确认沿 04 原文 | [R0 勘察](../research/site-survey/publisher-platforms-p4-recheck.md) [LIVE 2026-07-23] + controller 裁决 D-023/D-024 |
 
-> **[待 controller 裁决 / 双评审]**：①`cryptography` 依赖引入（虽为 optional extra，仍是首个二进制依赖——是否需独立 ADR）；②`types.SessionHandle` 具体化虽有代码注释预留，是否需在 decision-log 追记为受控变更；③健康门阈值 N=20/15min、日配额默认 200、challenge 冷却 24h 的默认值确认（04 §4/§5 已给，本稿沿用）；④wiley 是否纳入本 Phase（R0 勘察后裁决，§0 条件件）。
+> **[已裁决]**（P0b，2026-07-23）：①`cryptography` optional extra → **D-023**（含 `types.SessionHandle` 具体化系 types.py:128 预留的计划内变更之附注）；②健康门 N=20/15min、日配额 200、challenge 冷却 24h **确认沿 04 §4/§5 原文**；③异常子类 + status_code **归 T2 权威版**（plan §5）；④wiley **纳入本 Phase + token 门控** → **D-024**（acm_dl 维持出列、全文改道 unpaywall 一并入 D-024）。
+> **[待双评审]**：elsevier entitlement 语义、`X-RateLimit-*` 真值、全文/attachment 字段名——R0 keyless 429 拦在 auth 层前无法活验，留 T3 实现期真实 key 核验（BLOCKER-1，见 elsevier-sd.md §2/§5）。
