@@ -1,0 +1,20 @@
+# venues/finance/jbf.yaml —— Journal of Banking & Finance（Phase 3 T7；AC-3.5）
+id: jbf
+kind: journal
+names:
+  full: Journal of Banking & Finance
+  aliases: [JBF]
+field: [finance]
+tier: T2                      # catalog/finance-journals.md Field Top（高发文量 field 刊）
+identifiers:
+  issn: ["0378-4266"]         # 期刊必填（D-015）
+metadata_source: crossref     # D-005 元数据主干（DOI 前缀 10.1016）
+fulltext_source: elsevier_sd  # 真实平台：Elsevier ScienceDirect（Phase 4 实现）
+auth:
+  level: institutional
+  provider_hint: elsevier
+status: active
+notes: >
+  元数据经 Crossref 按 ISSN 枚举（D-005）。全文平台 Elsevier ScienceDirect
+  （`elsevier_sd`，resolve/fetch 留 Phase 4）。银行与金融，年发文量 ~400+，压测
+  Crossref cursor 深翻断点续拉路径；论文常先在 SSRN 出先行版（D-011）。

@@ -2,7 +2,7 @@
 title: Adapter 设计 · 聚合元数据源（Crossref/DBLP/OpenAlex/S2/Unpaywall/CORE）
 status: approved
 owner: fable5
-updated: 2026-07-22
+updated: 2026-07-23
 ---
 
 # Adapter · `aggregators`（五源 committed + core 保留的合册实现级详设）
@@ -356,11 +356,11 @@ openalex/s2 **不承担枚举**（capabilities 已收回 ENUMERATE，§1；两�
 
 | 源 | 锚点定义 | 种子值 | 状态 |
 |---|---|---|---|
-| crossref | `{issn, total_all, total_year:{Y:n}, sample_doi, note}` | QJE `0033-5533`：`total_all=6655`（截至 2026-07-22，随出版增长）、`total_2024=46`（闭合年，稳定）；`sample_doi=`**[PENDING]**（= §5.1 healthcheck 固定 DOI，同一未决项，实现期同批捕获）；`note`=「total_all 随出版增长、非稳定锚；验收以 total_2024 闭合年为准」 | [LIVE] 2026-07-22（`sample_doi` [PENDING]）|
-| dblp | `{slug, year, record_count, note}` | `conf/icml/icml2023`：`record_count=`**[PENDING]**（勘察未计数；实现期取卷内 `inproceedings` 数 + 人工对照 DBLP TOC） | [PENDING] |
+| crossref | `{issn, total_all, total_year:{Y:n}, sample_doi, note}` | QJE `0033-5533`：`total_all=6655`（T7 实跑 `crawler timeline qje` 逐年 facet 计数之和 = 6655，= 锚点下限，2026-07-23；随出版增长故验收判据为 `≥6655`）、`total_2024=46`（闭合年，稳定，实跑一致）；`sample_doi=10.1038/nature14539`（= §5.1 healthcheck 固定 DOI）→ 规整化 `title[0]=`**"Deep learning"**（[LIVE] 2026-07-23 捕获，`_HEALTHCHECK_TITLE` UPDATE_GOLDEN 候选）；`note`=「total_all 随出版增长、非稳定锚；验收以 total_2024 闭合年为准」 | [LIVE] 2026-07-23（T7 AC-3.5 实跑；`sample_doi` title 真值已捕获，adapter golden 化留 UPDATE_GOLDEN）|
+| dblp | `{slug, year, record_count, note}` | `conf/icml/icml2023`：`record_count=1828`（T7 实跑 `parse_volume_xml` 卷内 `inproceedings` 计数 = 1828，2026-07-23；首条 key `conf/icml/AamandACINS23`；与审查实测一致）；`note`=「真实届记录数随年份增长，本行锚定 icml2023 单卷」 | [LIVE] 2026-07-23 |
 | openalex | `{filter, count, cost_usd, note}` | `works?filter=doi:10.1257/aer.20221079`→`count:0`（**负锚点**，该 DOI 三源证实不存在）、`cost_usd:0.0001`；**正锚点** [PENDING]（需一确证收录 DOI 的 count） | 部分 [LIVE] |
 | s2 | `{query, expected_present, note}` | `DOI:{固定DOI}`：有 key→命中；无 key→404 not-found。真值 **[PENDING]**（需 key 验证） | [PENDING] |
-| unpaywall | `{doi, is_oa, oa_status, oa_locations_n, version, url_for_pdf, note}` | `10.1371/journal.pmed.0020124`：`is_oa:true`、`oa_status:"gold"`、`oa_locations:4`、`version:"publishedVersion"`、`url_for_pdf:null` | [LIVE] 2026-07-22 |
+| unpaywall | `{doi, is_oa, oa_status, oa_locations_n, version, url_for_pdf, note}` | `10.1371/journal.pmed.0020124`：`is_oa:true`、`oa_status:"gold"`、`oa_locations:4`、`version:"publishedVersion"`、`url_for_pdf:null` | [LIVE] 2026-07-22（2026-07-23 T7 复核：五字段全一致，`test_unpaywall_smoke` PASS）|
 
 - dblp 锚点表**同时服务 AC-2.1 及 Stage B 各 adapter 的外源比对**（D-019：DBLP 卷数是 iclr/pmlr/cvf/acl/neurips/aaai 完整性验收的外源真值提供者）。
 
@@ -431,6 +431,7 @@ openalex/s2 **不承担枚举**（capabilities 已收回 ENUMERATE，§1；两�
 | 7 | 2026-07-22 | **CORE ⚠ 清账**：token 制数字替换「~5/10s」；显式标注 Phase 3 范围外不实现 | 增量复核 D3 [DOCS] |
 | 8 | 2026-07-22 | 全文从 80 行合册草案扩写为实现级详设（逐源端点/映射/错误/healthcheck/fixture + 合并交互面 + D-019 锚点 + 测试验收） | 本次 W0 扩写任务 |
 | 9 | 2026-07-22 | **双评审 REJECT → 修订清单落地**：§6/§10 引 D-021 清除假 [UNRESOLVED] 优先级、改用冻结表 `official>crossref>dblp>openalex>s2>heuristic`（A-B1/B-B2）；openalex/s2 **收回 ENUMERATE** + 补 duck-typed `enrich_batch` 可选接口与 `crawler enrich` 驱动通道（A-B2）；unpaywall **删 `POST /v2/dois`**、OA 报告改**单 DOI GET 循环**（B-B3）；§3 补 unpaywall email 日志脱敏 **T5 先决条款**（B-B4）；补 `meta` str→str 约定（A-C1）/dblp `ee` **paper 级护栏**（A-C3）/**同源著作**判界（A-C4）/`auth_needed` 勘误（A-C5）/删无源 ~519KB（A-C6）；§8 补 **AC-3.4** 行（B-C1）+ **逐 error_class fixture 表**（B-C4）+ 总预算 ≤100 同步；§5.3/5.4 healthcheck **`NotImplementedError`→canary SKIP**（B-C3）；§7 crossref 锚点补 schema（B-C5） | 双评审 REJECT + controller 裁决 |
+| 10 | 2026-07-23 | **§7 D-019 锚点 T7 实跑回填**：crossref QJE `total_all=6655`(=下限) / `total_2024=46` 实跑确认、`sample_doi=10.1038/nature14539` title 真值 **"Deep learning"** 捕获（UPDATE_GOLDEN 候选）；dblp `icml2023.record_count=1828` [LIVE] 落定（首 key `conf/icml/AamandACINS23`）；unpaywall 金锚点五字段复核一致。§10 [UNRESOLVED] 相应销项。证据：[records/2026-07-23-ac35-acceptance.md](../../testing/records/2026-07-23-ac35-acceptance.md) | T7 AC-3.5 在线实跑（授权真实网络，33/50 请求台账） |
 
 ## 10. 风险与维护
 
@@ -438,4 +439,4 @@ openalex/s2 **不承担枚举**（capabilities 已收回 ENUMERATE，§1；两�
 - **S2 key 审批趋严**（2024-11 起）：Phase 3 开工前预申请（plan 依赖项）；未到则在线层 skip 门控（不阻塞离线 DoD）。
 - **DBLP dump 月度 DOI 快照**（`10.4230/dblp.xml.YYYY-MM-01`，Dagstuhl DROPS）为可复现研究提供固定锚——backfill 记录所用快照版本 + md5 校验。
 - **canary 存在性纪律**：合成/锚点 canary 必须先实证存在性（Phase 2「合成假设是盲区源」+ 本次 `10.1257/aer.20221079` 三源不存在教训）。
-- **[UNRESOLVED] 残留**：①crossref/openalex/s2 healthcheck 固定样本真值（§5，[PENDING] 实现期捕获）②dblp icml2023 记录数、openalex 正锚点、s2 需 key 锚点（§7 [PENDING]）③OpenAlex 预算状态持久化载体（§4，T6 确认）。（原「dblp 字段级优先级位次」一项已由 **D-021 定裁**、非未决，从残留清单移除——2026-07-22 修订清单 A-B1/B-B2。）
+- **[UNRESOLVED] 残留**：①openalex/s2 healthcheck 固定样本真值（§5，[PENDING] 需 credit/key）②openalex 正锚点、s2 需 key 锚点（§7 [PENDING]）③OpenAlex 预算状态持久化载体（§4，T6 确认）。（原「dblp 字段级优先级位次」已由 **D-021 定裁**移除；**crossref healthcheck 真值 "Deep learning" 与 dblp icml2023=1828 已由 T7 AC-3.5 实跑捕获销项**——2026-07-23 §9 修订 #10，crossref adapter `_HEALTHCHECK_TITLE` golden 化留 UPDATE_GOLDEN，非本次范围。）

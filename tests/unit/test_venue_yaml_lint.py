@@ -47,6 +47,11 @@ _NON_ARXIV_VENUE_IDS = {
     "wacv",
     "aaai",
     "neurips",
+    # Phase 3 T7 期刊聚合层（crossref metadata_source；fulltext_source Phase 4 占位）。
+    "qje",
+    "jet",
+    "jpubeco",
+    "jbf",
 }
 
 

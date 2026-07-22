@@ -1,0 +1,24 @@
+# venues/econ/qje.yaml —— Quarterly Journal of Economics（Phase 3 T7；AC-3.5）
+id: qje                       # 全局唯一，小写蛇形
+kind: journal                 # journal | conference | preprint_channel
+names:
+  full: The Quarterly Journal of Economics
+  aliases: [QJE]
+field: [econ]                 # finance | econ | cs_ai | or_ms
+tier: T1                      # catalog/economics-journals.md Top 5
+identifiers:
+  issn: ["0033-5533"]         # 期刊必填（D-015）；Crossref 按 ISSN 枚举全史
+metadata_source: crossref     # discover/enumerate 用（D-005 元数据主干）
+fulltext_source: elsevier_sd  # ⚠ Phase 4 占位——见 notes（真实平台 oup_silverchair 未注册）
+auth:
+  level: institutional        # QJE 机构订阅刊（OUP）
+status: active                # active | dormant | dead
+notes: >
+  元数据经 Crossref 按 ISSN 枚举全史 DOI 清单（D-005）。真实全文平台为 Oxford
+  University Press（Silverchair 系，catalog/economics-journals.md 记为
+  `oup_silverchair`）；该平台 adapter 属 Phase 4，当前**尚未注册**，故 fulltext_source
+  暂取已注册的机构认证占位 `elsevier_sd`（沿 venues/finance/jfe.yaml 与
+  tests/online/test_crossref_smoke.py 的 QJE 占位先例，registry lint 通过），待 Phase 4
+  落地 `oup_silverchair` adapter 后改写为真实平台。QJE 论文 DOI 可回溯至 1886，早于
+  DOI 时代的过刊主要在 JSTOR（tier T3）——Crossref total-results 与逐年计数的口径解释
+  见 AC-3.5 验收记录。
