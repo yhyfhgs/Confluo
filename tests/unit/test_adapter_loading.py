@@ -35,6 +35,7 @@ EXPECTED_ADAPTER_IDS = {
     "neurips_proceedings",
     "unpaywall",
     "dblp",
+    "wiley",  # Phase 4 T-wiley（auth_gated；RESOLVE|FETCH，TDM API + token 门控）
     "openalex",  # T6
     "s2",  # T6
 }
@@ -300,6 +301,7 @@ def test_bind_http_client_injects_only_consumers(adapters: dict[str, SourceAdapt
         "crossref",
         "unpaywall",
         "dblp",
+        "wiley",  # Phase 4 T-wiley（auth_gated；专属 token client 的 CLI 覆盖属后续 union 点）
         "openalex",  # T6
         "s2",  # T6
     }

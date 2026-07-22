@@ -114,6 +114,7 @@ def _make_env(tmp_path: Path, handler: Handler, *, inception: str = "2024-01") -
         "crossref",
         "unpaywall",
         "dblp",
+        "wiley",  # Phase 4 T-wiley（auth_gated；注入不参与 arxiv watch——preprint venue only）
         "openalex",  # T6
         "s2",  # T6
     }
