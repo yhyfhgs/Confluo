@@ -47,7 +47,8 @@ def adapters() -> dict[str, SourceAdapter]:
 
 
 def test_load_adapters_discovers_all_registered(adapters: dict[str, SourceAdapter]) -> None:
-    # 三个内置 stub + mock + 七个真实 adapter（Phase 2 经 entry point 注册）。
+    # 内置 mock + 全部真实 adapter（entry point 注册；占位 stub 均已退役，含 Phase 4 T3 的
+    # elsevier_sd——现为真实 auth_gated adapter，非 stub）。
     assert set(adapters) == EXPECTED_ADAPTER_IDS
 
 
@@ -117,13 +118,21 @@ def test_openreview_attributes(adapters: dict[str, SourceAdapter]) -> None:
     )
 
 
-def test_elsevier_stub_attributes(adapters: dict[str, SourceAdapter]) -> None:
+def test_elsevier_attributes(adapters: dict[str, SourceAdapter]) -> None:
+    # Phase 4 T3：elsevier_sd 落地为真实 auth_gated/官方 API adapter（entry point 注册），非 stub。
+    # 域自 www.sciencedirect.com（页面路线，robots 全禁）改 api.elsevier.com（API 唯一正道，
+    # elsevier-sd.md §2）；限速自占位 10 → 自限 2 req/s = 120 rpm（§4）。
     elsevier = adapters["elsevier_sd"]
     assert elsevier.family == "auth_gated"
-    assert elsevier.capabilities == Capability.RESOLVE | Capability.FETCH
+    assert elsevier.capabilities == Capability.RESOLVE | Capability.FETCH  # enumerate 走 crossref
+    assert Capability.DISCOVER not in elsevier.capabilities
+    assert Capability.ENUMERATE not in elsevier.capabilities
     assert elsevier.auth_requirement is AuthLevel.INSTITUTIONAL
-    assert elsevier.default_rate.requests_per_minute == 10
-    assert elsevier.domains == ("www.sciencedirect.com",)
+    assert elsevier.default_rate.requests_per_minute == 120.0
+    assert "Elsevier" in elsevier.default_rate.source_note  # 出处（非占位 ⚠）
+    assert elsevier.domains == ("api.elsevier.com",)
+    # 凭证注入 seam（专属 client + key 门控）：实现 HttpClientConsumer + ApiKeyConsumer。
+    assert isinstance(elsevier, HttpClientConsumer)
 
 
 def test_arxiv_attributes(adapters: dict[str, SourceAdapter]) -> None:
@@ -197,15 +206,16 @@ def test_healthcheck_defaults_healthy(adapters: dict[str, SourceAdapter]) -> Non
 
 
 @pytest.mark.parametrize("adapter_id", ["elsevier_sd"])
-def test_stub_healthcheck_raises_not_implemented_for_canary_skip(
+def test_keyless_auth_gated_healthcheck_raises_not_implemented_for_canary_skip(
     adapters: dict[str, SourceAdapter], adapter_id: str
 ) -> None:
-    """canary SKIP 语义修正：剩余 stub 的 healthcheck 抛 NotImplementedError。
+    """canary SKIP 语义（B-M4）：无 key 的 auth_gated adapter healthcheck 抛 NotImplementedError。
 
-    此前继承 AdapterBase 默认恒 healthy，会让未实现的 stub 在 canary 假报"健康"；
-    改为抛 NotImplementedError 后 `run_canary` 归为 SKIP（不影响退出码，见 canary.py）。
-    （crossref 已 Phase 3 T3、openreview 已 Phase 2 落地真实 healthcheck，不再 stub；
-    此处只剩 elsevier_sd stub 待 Phase 4。）
+    `load_adapters()` 拿到的 elsevier_sd 未经装配期注入 key（`set_api_key` 未调用）——无 key
+    分支抛 `NotImplementedError`（复用 s2/openalex 先例），`run_canary` 归为 SKIP（不影响退出码，
+    见 canary.py），而非匿名假报"健康"或"不健康"。有 key 时改走 entitlement 探测（见
+    tests/unit/test_elsevier_adapter.py::test_healthcheck_*）。elsevier_sd 已 Phase 4 T3 落地为
+    真实 adapter，此处验证的是其**无凭证**路径（AuthProvider session 注入归 T5）。
     """
     with pytest.raises(NotImplementedError):
         adapters[adapter_id].healthcheck()
@@ -230,18 +240,10 @@ def test_undeclared_capability_raises_capability_not_supported(
         adapters["elsevier_sd"].enumerate_issue(venue, IssueRef(venue_id=venue.id))
 
 
-def test_declared_stub_methods_are_not_implemented(
-    adapters: dict[str, SourceAdapter], venue: VenueSpec
-) -> None:
-    # 声明了能力但未实现（stub until Phase 4）—— 区别于 CapabilityNotSupported。
-    # （crossref 已 Phase 3 T3、openreview 已 Phase 2 落地为真实 adapter；此处只剩
-    # elsevier_sd stub 声明的 RESOLVE|FETCH 未实现。）
-    paper = PaperStub(title="T", identifiers=(("doi", "10.9999/x"),))
-    plan = AssetPlan(kind=AssetKind.PDF, url="https://x/y")
-    with pytest.raises(NotImplementedError):
-        adapters["elsevier_sd"].resolve_assets(venue, paper)
-    with pytest.raises(NotImplementedError):
-        adapters["elsevier_sd"].fetch_asset(plan, io=_null_io())
+# （Phase 4 T3：曾有 `test_declared_stub_methods_are_not_implemented` 断言 elsevier_sd stub 的
+# RESOLVE|FETCH 抛 NotImplementedError——elsevier_sd 落地为真实 adapter 后已移除：无占位 stub 残留，
+# 且其无 key 分支现抛 `AuthRequired`（非 NotImplementedError，见 test_elsevier_adapter.py 的
+# resolve/fetch 无 key 用例）。）
 
 
 def test_mock_platform_methods_are_implemented_after_t6(
@@ -275,6 +277,7 @@ def test_arxiv_is_http_client_consumer(adapters: dict[str, SourceAdapter]) -> No
         "crossref",  # T3：aggregator 亦经注入携 config mailto 的 client（polite pool 硬要求）
         "openalex",  # T6
         "s2",  # T6
+        "elsevier_sd",  # Phase 4 T3：auth_gated，专属 client 注入（X-ELS-APIKey 头）
     ):
         assert isinstance(adapters[adapter_id], HttpClientConsumer)
 
@@ -302,6 +305,7 @@ def test_bind_http_client_injects_only_consumers(adapters: dict[str, SourceAdapt
         "dblp",
         "openalex",  # T6
         "s2",  # T6
+        "elsevier_sd",  # Phase 4 T3：auth_gated，专属 client 注入 seam（X-ELS-APIKey 头）
     }
     # 注入生效：各 adapter 的 _client() 返回被注入的实例，不再惰性自建。
 
