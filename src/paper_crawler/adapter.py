@@ -1,8 +1,8 @@
 """SourceAdapter 协议、便利基类与注册发现（接口冻结件 §2.3）。
 
-注册语义（design/02 §4）：`load_adapters()` 先注册包内内置者（三个占位 stub +
-mock），再扫描 entry point 组 `paper_crawler.adapters` 覆盖/新增（第三方可插拔的
-"插"）。key = adapter_id。
+注册语义（design/02 §4）：`load_adapters()` 先注册包内内置者（mock——占位 stub 均已随
+各 Phase 落地退役），再扫描 entry point 组 `paper_crawler.adapters` 覆盖/新增（第三方
+可插拔的"插"）。key = adapter_id。
 """
 
 from collections.abc import Iterable, Mapping, Sequence
@@ -181,23 +181,19 @@ def bind_http_client(adapters: Mapping[str, SourceAdapter], client: HttpClient) 
 def load_adapters() -> dict[str, SourceAdapter]:
     """构建 adapter_id → adapter 实例表。
 
-    顺序：先内置（stubs + mock），再扫描 entry point 组覆盖/新增（design/02 §4）。
+    顺序：先内置（mock），再扫描 entry point 组覆盖/新增（design/02 §4）。
     延迟导入内置 adapter 以避免与本模块的 import 环。
     """
     # 延迟导入：adapters.* 在模块顶层 `from paper_crawler.adapter import AdapterBase`，
     # 若在此模块顶层导入它们会成环。
     from paper_crawler.adapters.mock_platform import MockPlatformAdapter
-    from paper_crawler.adapters.stubs import ElsevierScienceDirectStub
 
-    # crossref 曾有内置 CrossrefStub 占位（Phase 3 前）；Phase 3 落地为真实 entry
-    # point adapter 后 CrossrefStub 已退役移除（stubs.py 模块 docstring、Phase 4
-    # M2b 检查单 #15d）——不再需要在此预注册一个必然被下方 entry point 扫描覆盖的
-    # 死实例。
+    # 占位 stub 均已退役：CrossrefStub（Phase 3 T3）、OpenReviewStub（Phase 2）、
+    # ElsevierScienceDirectStub（Phase 4 T3——elsevier_sd 落地为真实 entry point adapter，
+    # `adapters/elsevier_sd/`）——不再需要在此预注册必然被 entry point 扫描覆盖的死实例。
+    # mock_platform 保留为内置（亦有 entry point，行为等价；Phase 1 假 adapter 基线）。
     adapters: dict[str, SourceAdapter] = {}
-    for builtin in (
-        ElsevierScienceDirectStub(),
-        MockPlatformAdapter(),
-    ):
+    for builtin in (MockPlatformAdapter(),):
         adapters[builtin.adapter_id] = builtin
 
     for entry_point in metadata.entry_points(group=ADAPTER_ENTRY_POINT_GROUP):
