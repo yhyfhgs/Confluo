@@ -8,13 +8,18 @@
 健康/不健康两态与 SKIP 态都借 `MockPlatformAdapter.healthcheck` 猴补丁注入
 （`--adapter mock_platform` 收窄检查范围，不依赖 crossref/openreview/elsevier_sd
 当前"未覆写 healthcheck 故默认 healthy"这一容易随后续 Phase 变化的现状）。
-纯函数层（三态分类/排序/redact/markdown 渲染细节）见
-`tests/unit/test_canary.py`；这里只测 CLI 接线（`--adapter` 过滤、退出码、
-未知 id 用法错）。
+纯函数层（三态分类/排序/redact/markdown 渲染细节、`--record` 落盘内容/路径纯函数）
+见 `tests/unit/test_canary.py`；这里只测 CLI 接线（`--adapter` 过滤、退出码、
+未知 id 用法错、`--record` 实际落盘/默认不落盘）。
+
+`--record` 用例用 `monkeypatch.chdir(tmp_path)` 隔离出一个临时"仓库根"——
+`canary_record_path` 相对当前工作目录解析（不做仓库根探测，见 canary.py
+docstring），借此避免测试真的写进本仓库的 `docs/` 树。
 """
 
 from __future__ import annotations
 
+from datetime import date
 from pathlib import Path
 
 import pytest
@@ -133,3 +138,88 @@ def test_canary_without_filter_checks_all_registered_adapters(
         "neurips_proceedings",
     ):
         assert adapter_id in result.output
+
+
+# --- --record ------------------------------------------------------------------
+
+
+def test_canary_record_writes_file_matching_terminal_output(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    def _fake_healthcheck(self: MockPlatformAdapter, session: object = None) -> HealthReport:
+        return HealthReport(healthy=True, detail="ok")
+
+    monkeypatch.setattr(MockPlatformAdapter, "healthcheck", _fake_healthcheck)
+    monkeypatch.chdir(tmp_path)  # canary_record_path 相对 CWD 解析，隔离出临时"仓库根"
+
+    result = runner.invoke(
+        app,
+        ["canary", "--adapter", "mock_platform", "--record", "--home", str(_home(tmp_path))],
+    )
+
+    assert result.exit_code == 0, result.output
+    record_path = (
+        tmp_path
+        / "docs"
+        / "testing"
+        / "records"
+        / "canary"
+        / f"{date.today().isoformat()}-canary.md"
+    )
+    assert record_path.is_file()
+    recorded = record_path.read_text(encoding="utf-8")
+    assert "| mock_platform | healthy | ok |" in recorded
+    # 同源数据：落盘内容与终端回显里的表格行一致。
+    assert "| mock_platform | healthy | ok |" in result.output
+    # 落盘提示打印相对路径（canary_record_path 本就相对 CWD 解析，不额外绝对化）。
+    assert "docs/testing/records/canary/" in result.output
+    assert f"{date.today().isoformat()}-canary.md" in result.output
+
+
+def test_canary_without_record_flag_writes_no_file(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """默认行为不变：省略 `--record` 时不建目录、不落盘，只终端输出。"""
+
+    def _fake_healthcheck(self: MockPlatformAdapter, session: object = None) -> HealthReport:
+        return HealthReport(healthy=True, detail="ok")
+
+    monkeypatch.setattr(MockPlatformAdapter, "healthcheck", _fake_healthcheck)
+    monkeypatch.chdir(tmp_path)
+
+    result = runner.invoke(
+        app, ["canary", "--adapter", "mock_platform", "--home", str(_home(tmp_path))]
+    )
+
+    assert result.exit_code == 0, result.output
+    assert "| mock_platform | healthy | ok |" in result.output
+    assert not (tmp_path / "docs").exists()
+
+
+def test_canary_record_persists_even_when_unhealthy(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """健康快照要如实留痕不健康态——不能因为 unhealthy 就跳过落盘。"""
+
+    def _fake_healthcheck(self: MockPlatformAdapter, session: object = None) -> HealthReport:
+        return HealthReport(healthy=False, detail="site down")
+
+    monkeypatch.setattr(MockPlatformAdapter, "healthcheck", _fake_healthcheck)
+    monkeypatch.chdir(tmp_path)
+
+    result = runner.invoke(
+        app,
+        ["canary", "--adapter", "mock_platform", "--record", "--home", str(_home(tmp_path))],
+    )
+
+    assert result.exit_code == 1, result.output
+    record_path = (
+        tmp_path
+        / "docs"
+        / "testing"
+        / "records"
+        / "canary"
+        / f"{date.today().isoformat()}-canary.md"
+    )
+    assert record_path.is_file()
+    assert "| mock_platform | unhealthy | site down |" in record_path.read_text(encoding="utf-8")
