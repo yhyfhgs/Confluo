@@ -1,6 +1,6 @@
 ---
 title: Phase 3 实施计划 — 聚合元数据层
-status: draft
+status: approved
 owner: fable5
 updated: 2026-07-22
 ---
@@ -49,7 +49,7 @@ updated: 2026-07-22
    - **schema v2 迁移**（0002）：`paper` 增列 `title_norm TEXT` + 索引 `idx_paper_title_norm`；迁移器回填存量行。纯附加，v1 库自动升级。
    - **DOI 规范化**：`ids.normalize_doi()`（小写化/剥 `https://doi.org/`、`doi:` 前缀）——identifier 写入的唯一入口经过它（crossref/unpaywall/dblp ee 回填共用）。
 2. **VenueSpec 分离语义**（D-005，T3 第一消费者落地，纯附加）：`metadata_source: str | None`（默认 None=沿用 adapter 自身；现冻结 types.py 为必填 `str`，本字段松弛为可选 `str | None` 属有意的纯附加变更，与详设 §6 措辞互查一致）；registry 校验：声明了 metadata_source 的 venue，其值必须是已注册 aggregator adapter id；期刊 kind 且 metadata_source=crossref 时 issn 必填（D-015 既有规则保持）。
-3. **aggregator 无 FETCH 契约**：家族 capabilities 不含 FETCH；unpaywall RESOLVE 产 `AssetPlan(url_strategy="direct", auth="none")` 交通用 fetcher；pipeline 对 metadata-only venue 的 fetch 阶段行为=空集跳过（现有语义已支持，回归测试锁定）。
+3. **aggregator 无 FETCH 契约**：家族 capabilities 不含 FETCH；unpaywall RESOLVE 产 `AssetPlan(url_strategy="direct", auth_needed="none")` 交通用 fetcher；pipeline 对 metadata-only venue 的 fetch 阶段行为=空集跳过（现有语义已支持，回归测试锁定）。
 4. **在线预算**（T5 契约沿用）：每源在线冒烟 `MAX_REAL_REQUESTS ≤ 5`；本 Phase 在线总预算 **≤100 请求**，超支须如 Phase 2 C-A 入档。分项估算：
 
    | 分项 | 估算 | 依据 |
@@ -99,7 +99,8 @@ updated: 2026-07-22
 - conf 索引页卷 key 发现 → 卷 XML 解析（inproceedings/ee/author-pid）→ `ee` DOI 经 `normalize_doi` 回填 identifier；404→gone 回索引重发现一次再 parse；**≥4s/req（robots `Crawl-delay: 4`，D-021）**；healthcheck icml 已知卷。
 
 ### T5 unpaywall adapter（sonnet，`adapter/unpaywall`）
-- 按 DOI RESOLVE：`best_oa_location.url_for_pdf` → AssetPlan(direct)；version 映射（[LIVE] 全拼串 `submittedVersion`/`acceptedVersion`/`publishedVersion`）→ Asset.version 并标注非正式版；`url_for_pdf` 为 null 时不产 AssetPlan（landing 仅记 meta）；触发条件（no_entitlement 兜底 / VenueSpec OA-fallback 声明）；**OA 命中率报告**：批量 DOI 输入 → 命中率统计 markdown（DoD 第二项）。
+- 按 DOI RESOLVE：`best_oa_location.url_for_pdf` → AssetPlan(direct)；version 映射（[LIVE] 全拼串 `submittedVersion`/`acceptedVersion`/`publishedVersion`）→ Asset.version 并标注非正式版；`url_for_pdf` 为 null 时不产 AssetPlan（landing 仅记 meta）；触发条件（no_entitlement 兜底 / VenueSpec OA-fallback 声明）；**OA 命中率报告**：对库内 DOI 集合做**单 DOI `GET /v2/{doi}` 循环**（无批量端点，详设 §5.5）→ 命中率统计 markdown（DoD 第二项）。
+- **T5 先决步骤（B-B4，详设 §3）**：先扩展 obslog 脱敏正则（`email` 并入 `_SENSITIVE_KEYS`，`email=[^&]+` → `email=<redacted>`）+ 脱敏单测，**再**实现 unpaywall adapter——否则 `?email=` 参数明文入 jsonl 日志。
 
 ### T6 openalex + s2 补充层 enrich 通道（sonnet，`adapter/openalex-s2`）
 - **交付 enrich 通道**（§2-5 契约）：openalex/s2 的 `enrich_batch(dois)` 实现（**不进** SourceAdapter 冻结协议，duck-typed）+ 新 CLI `crawler enrich [--venue ID] [--source openalex|s2]`（扫 DB 带 `doi` identifier 的 paper → 分批 → `MergeEngine.ingest` 回注，补缺不覆盖）+ 预算护栏。

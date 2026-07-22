@@ -1,6 +1,6 @@
 ---
 title: Adapter 设计 · 聚合元数据源（Crossref/DBLP/OpenAlex/S2/Unpaywall/CORE）
-status: review
+status: approved
 owner: fable5
 updated: 2026-07-22
 ---
