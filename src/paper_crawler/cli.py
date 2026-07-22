@@ -83,6 +83,7 @@ from paper_crawler.adapters.openalex import budget as openalex_budget
 from paper_crawler.adapters.openalex.adapter import OpenAlexAdapter
 from paper_crawler.adapters.unpaywall import report as oa_report
 from paper_crawler.adapters.unpaywall.adapter import UnpaywallAdapter
+from paper_crawler.auth.cli import auth_app
 from paper_crawler.canary import (
     canary_exit_code,
     canary_record_path,
@@ -383,6 +384,9 @@ venues_app = typer.Typer(no_args_is_help=True, help="venue 注册表浏览与校
 app.add_typer(venues_app, name="venues")
 config_app = typer.Typer(no_args_is_help=True, help="生效配置自查（分层来源 + 脱敏）。")
 app.add_typer(config_app, name="config")
+# T1b（auth-framework §1/§4）：auth 子命令组（login/status/logout）——实现与纯逻辑
+# 在 `auth/cli.py` + `auth/manager.py`，此处只挂载（既有分工：cli.py 仅接线）。
+app.add_typer(auth_app, name="auth")
 
 
 # -- venues -------------------------------------------------------------------

@@ -123,6 +123,9 @@ REPO_ROOT = Path(__file__).resolve().parents[2]
 GITIGNORED_CANDIDATES = [
     # auth/state/（仓库根锚定——config-home 误置仓库内的双保险）
     "auth/state/oup_campus_state.enc",
+    # T1a 审查 MINOR-1（T1b 回填）：`auth/state/` 目录条目须覆盖**任意**文件名——
+    # 不止 .enc/.filekey 模式（如手工导出的明文残留也绝不入 git）。
+    "auth/state/plain.txt",
     # *.enc（任意层级）
     "stray.enc",
     "some/dir/session.enc",
