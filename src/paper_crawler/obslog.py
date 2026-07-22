@@ -15,7 +15,8 @@
   不止 url 一个字段——本实现额外对 `msg` 与字符串类型的 `**extra` 值也过
   `redact()`，作为纵深防御（不改变函数签名，只加固内部行为）。
 - `redact`：大小写不敏感识别 cookie/set-cookie/authorization/token/
-  api_key(含下划线、短横变体)/password/secret/session_id(含短横变体)/email 的
+  api_key(含下划线、短横变体)/password/secret/session_id(含短横变体)/email/
+  insttoken/x-els-apikey/wiley-tdm-client-token(Phase 4 认证头，auth-framework §5) 的
   键值对（`Key: value`、`key=value`，以及二者的引号变体 `"Key": "value"` /
   `'key'='value'` 等——JSON 体、Python dict repr 常见），把值替换为 `***`；
   不匹配的文本原样返回。**`email`（T5 先决步骤，aggregators.md §3 B-B4）**：
@@ -37,16 +38,18 @@ import re
 from datetime import UTC, datetime
 from pathlib import Path
 
+from paper_crawler.sensitive import REDACT_KEY_PATTERN
 from paper_crawler.types import utcnow_iso
 
 _LOGGER_NAME = "paper_crawler"
 
-# design/05 §7 + 接口冻结件 §2.6 的脱敏键名清单（大小写不敏感）。`email`
-# 2026-07-22 并入（aggregators.md §3 B-B4，T5 先决步骤）：Unpaywall `?email=`
-# 查询参数须与 cookie/token 同等脱敏，见上方 docstring「email」小节。
-_SENSITIVE_KEYS = (
-    r"set-cookie|cookie|authorization|token|api[_-]?key|password|secret|session[_-]?id|email"
-)
+# 脱敏键名清单 = `sensitive.REDACT_KEY_PATTERN`（**单一权威源**——与 config 项目级敏感键
+# 护栏共享核心凭证键，集中于 `sensitive.py` 防两处各自漂移，D-025/10-config-layout §3.1）。
+# 含：核心凭证键（cookie/authorization/token/api_key/password/secret/session_id）+ `email`
+# （Unpaywall `?email=` 查询参数，aggregators §3 B-B4）+ Phase 4 具名认证头
+# （`insttoken`/`inst-token`/`x-els-apikey`/`tdm-token`/`wiley-tdm-client-token`，
+# auth-framework §5——`\btoken` 对 "insttoken"/"APIKey" 内嵌形态无词边界漏匹配，故显式补齐）。
+_SENSITIVE_KEYS = REDACT_KEY_PATTERN
 # extra 结构体里"键名整体等于某个敏感关键词"的判定（而非"文本中包含"）。
 _SENSITIVE_KEY_NAME = re.compile(_SENSITIVE_KEYS, re.IGNORECASE)
 

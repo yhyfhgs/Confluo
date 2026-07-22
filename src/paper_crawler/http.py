@@ -73,37 +73,50 @@ def _parse_retry_after(response: httpx.Response) -> int | None:
 
 
 def _error_for_status(response: httpx.Response) -> CrawlerError:
-    """把 >=400 的响应状态映射为 `CrawlerError`（§2.1 冻结映射表）。"""
+    """把 >=400 的响应状态映射为 `CrawlerError`（§2.1 冻结映射表）。
+
+    **纯附加**（auth-framework §6，检查单 #4）：各分支额外携带 `status_code=status`
+    （此处 `response.status_code` 已在手）——**映射表本身不变**，消息格式逐字不变，只是
+    异常多带原始 status，供上层精确重分类（如 openalex 402→`exc.status_code == 402`）。
+    """
     status = response.status_code
     msg = f"HTTP {status} for {redact(str(response.url))}"
 
     if status == 429:
         return _rate_limited(response, msg)
     if status == 401:
-        return CrawlerError(ErrorClass.AUTH_EXPIRED, msg)
+        return CrawlerError(ErrorClass.AUTH_EXPIRED, msg, status_code=status)
     if status == 403:
-        return CrawlerError(ErrorClass.NO_ENTITLEMENT, msg)
+        return CrawlerError(ErrorClass.NO_ENTITLEMENT, msg, status_code=status)
     if status in (404, 410, 451):
         # 404/410 资源消失；451 法律不可用——同属"资源终态、不重试"。
-        return CrawlerError(ErrorClass.GONE, msg)
+        return CrawlerError(ErrorClass.GONE, msg, status_code=status)
     if status == 503:
         # 5xx→TRANSIENT，但 503 带 Retry-After 视为限流信号 → RATE_LIMITED。
         retry_after = _parse_retry_after(response)
         if retry_after is not None:
-            return CrawlerError(ErrorClass.RATE_LIMITED, msg, detail=f"retry_after_s={retry_after}")
-        return CrawlerError(ErrorClass.TRANSIENT, msg)
+            return CrawlerError(
+                ErrorClass.RATE_LIMITED,
+                msg,
+                detail=f"retry_after_s={retry_after}",
+                status_code=status,
+            )
+        return CrawlerError(ErrorClass.TRANSIENT, msg, status_code=status)
     if 500 <= status < 600:
-        return CrawlerError(ErrorClass.TRANSIENT, msg)
+        return CrawlerError(ErrorClass.TRANSIENT, msg, status_code=status)
     # 其余 4xx（400/405/406…）：请求构造有缺陷（如 arxiv offset>30000→400 属 config
     # 类设计案例）——响亮停机而非标资源终态；CONFIG 经 pipeline 特判转 BLOCKED。
-    return CrawlerError(ErrorClass.CONFIG, msg)
+    # 402（credit 耗尽）亦落此分支——status_code 供上层（openalex）精确重分类为限流。
+    return CrawlerError(ErrorClass.CONFIG, msg, status_code=status)
 
 
 def _rate_limited(response: httpx.Response, msg: str) -> CrawlerError:
     """429 → RATE_LIMITED；有 Retry-After 则 detail 含 `retry_after_s=<n>`，无则省略。"""
     retry_after = _parse_retry_after(response)
     detail = f"retry_after_s={retry_after}" if retry_after is not None else ""
-    return CrawlerError(ErrorClass.RATE_LIMITED, msg, detail=detail)
+    return CrawlerError(
+        ErrorClass.RATE_LIMITED, msg, detail=detail, status_code=response.status_code
+    )
 
 
 def _log_exchange(response: httpx.Response, *, elapsed_ms: float) -> None:

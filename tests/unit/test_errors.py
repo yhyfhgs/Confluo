@@ -4,7 +4,9 @@ import pytest
 
 from paper_crawler.errors import (
     RETRY_TABLE,
+    AuthRequired,
     CapabilityNotSupported,
+    Challenged,
     CrawlerError,
     ErrorClass,
     IllegalTransition,
@@ -103,3 +105,75 @@ def test_retry_spec_is_frozen() -> None:
     spec = RetrySpec(4, (2.0,))
     with pytest.raises(AttributeError):
         spec.max_attempts = 9  # type: ignore[misc]
+
+
+# -- status_code（纯附加，auth-framework §6 / 检查单 #4）----------------------------------
+
+
+def test_crawler_error_status_code_defaults_none() -> None:
+    """既有全部构造点不传 status_code → None（非 HTTP 来源天然 None，不误命中 `== <int>`）。"""
+    err = CrawlerError(ErrorClass.PARSE, "0 hits")
+    assert err.status_code is None
+
+
+def test_crawler_error_carries_status_code_when_given() -> None:
+    err = CrawlerError(ErrorClass.NO_ENTITLEMENT, "HTTP 403", status_code=403)
+    assert err.status_code == 403
+    assert err.error_class is ErrorClass.NO_ENTITLEMENT
+
+
+def test_crawler_error_status_code_is_keyword_only() -> None:
+    # keyword-only：位置传参不落到 status_code（保护既有构造点签名）。
+    err = CrawlerError(ErrorClass.CONFIG, "msg", detail="d")
+    assert err.status_code is None
+    assert err.detail == "d"
+
+
+def test_capability_not_supported_status_code_none() -> None:
+    """既有子类不传 status_code → None（纯附加不改子类构造）。"""
+    assert CapabilityNotSupported().status_code is None
+
+
+# -- AuthRequired / Challenged 子类（auth-framework §2.4，固定 error_class）-----------------
+
+
+def test_auth_required_fixed_auth_expired_class() -> None:
+    err = AuthRequired()
+    assert isinstance(err, CrawlerError)
+    assert err.error_class is ErrorClass.AUTH_EXPIRED
+    assert err.status_code is None
+    assert str(err)  # 非空默认文案
+
+
+def test_auth_required_custom_msg_and_detail() -> None:
+    err = AuthRequired("need login", detail="provider=elsevier")
+    assert err.error_class is ErrorClass.AUTH_EXPIRED
+    assert "need login" in str(err)
+    assert err.detail == "provider=elsevier"
+
+
+def test_challenged_fixed_challenge_class() -> None:
+    err = Challenged()
+    assert isinstance(err, CrawlerError)
+    assert err.error_class is ErrorClass.CHALLENGE
+    assert err.status_code is None
+    assert str(err)
+
+
+def test_challenged_custom_msg_and_detail() -> None:
+    err = Challenged("captcha wall", detail="cloudflare")
+    assert err.error_class is ErrorClass.CHALLENGE
+    assert "captcha wall" in str(err)
+    assert err.detail == "cloudflare"
+
+
+@pytest.mark.parametrize(
+    ("subclass", "expected_class"),
+    [(AuthRequired, ErrorClass.AUTH_EXPIRED), (Challenged, ErrorClass.CHALLENGE)],
+)
+def test_auth_subclasses_route_via_existing_error_class(
+    subclass: type[CrawlerError], expected_class: ErrorClass
+) -> None:
+    # 不新增 ErrorClass 九类——子类只固定既有类别（沿 CapabilityNotSupported 先例）。
+    assert subclass().error_class is expected_class
+    assert expected_class in set(ErrorClass)

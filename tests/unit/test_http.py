@@ -242,6 +242,73 @@ def test_other_4xx_maps_to_config(status: int) -> None:
     assert exc_info.value.error_class is ErrorClass.CONFIG
 
 
+# ---------------------------------------------------------------------------
+# status_code 携带（纯附加，auth-framework §6 / 检查单 #4）：映射不变，额外带原始 status
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.parametrize(
+    ("status", "expected"),
+    [
+        (401, ErrorClass.AUTH_EXPIRED),
+        (403, ErrorClass.NO_ENTITLEMENT),
+        (404, ErrorClass.GONE),
+        (410, ErrorClass.GONE),
+        (451, ErrorClass.GONE),
+        (500, ErrorClass.TRANSIENT),
+        (502, ErrorClass.TRANSIENT),
+        (429, ErrorClass.RATE_LIMITED),
+        (400, ErrorClass.CONFIG),
+        (405, ErrorClass.CONFIG),
+        (402, ErrorClass.CONFIG),  # 402 落"其余 4xx→CONFIG"，但携 status_code 供上层重分类
+    ],
+)
+def test_mapped_error_carries_status_code(status: int, expected: ErrorClass) -> None:
+    """各状态码映射为对应 ErrorClass **且** `status_code` 携带原始 status（映射表本身不变）。"""
+    client = make_client(_status_handler(status))
+    with pytest.raises(CrawlerError) as exc_info:
+        client.get_text("https://x.local/p")
+    assert exc_info.value.error_class is expected
+    assert exc_info.value.status_code == status
+
+
+def test_402_maps_config_but_carries_status_code_402() -> None:
+    """检查单 #4 闭合：402 credit 耗尽仍映射 CONFIG（冻结表不改），但 status_code=402 供
+    openalex 等上层经 `exc.status_code == 402` 精确重分类（不再靠异常消息文本嗅探）。"""
+    client = make_client(_status_handler(402))
+    with pytest.raises(CrawlerError) as exc_info:
+        client.get_text("https://api.openalex.org/works")
+    assert exc_info.value.error_class is ErrorClass.CONFIG
+    assert exc_info.value.status_code == 402
+
+
+def test_503_with_retry_after_carries_status_code() -> None:
+    client = make_client(_status_handler(503, headers={"Retry-After": "30"}))
+    with pytest.raises(CrawlerError) as exc_info:
+        client.get_text("https://x.local/p")
+    assert exc_info.value.error_class is ErrorClass.RATE_LIMITED
+    assert exc_info.value.status_code == 503
+    assert exc_info.value.detail == "retry_after_s=30"
+
+
+def test_transport_errors_have_no_status_code() -> None:
+    """超时/连接错是非 HTTP 来源 → status_code 恒 None（`== <int>` 判据天然不误命中）。"""
+
+    def timeout_handler(request: httpx.Request) -> httpx.Response:
+        raise httpx.ConnectTimeout("slow", request=request)
+
+    with pytest.raises(CrawlerError) as exc_info:
+        make_client(timeout_handler).get_text("https://x.local/p")
+    assert exc_info.value.status_code is None
+
+    def conn_handler(request: httpx.Request) -> httpx.Response:
+        raise httpx.ConnectError("refused", request=request)
+
+    with pytest.raises(CrawlerError) as exc_info:
+        make_client(conn_handler).get_text("https://x.local/p")
+    assert exc_info.value.status_code is None
+
+
 def test_429_maps_to_rate_limited() -> None:
     client = make_client(_status_handler(429))
     with pytest.raises(CrawlerError) as exc_info:

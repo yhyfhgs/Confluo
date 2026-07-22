@@ -281,6 +281,43 @@ def test_enrich_batch_server_402_reclassified_as_rate_limited(tmp_path: Path) ->
     assert "402" in str(exc.value)
 
 
+def test_enrich_batch_402_reclassified_by_status_code_not_message(tmp_path: Path) -> None:
+    """检查单 #4 迁移：402 重分类靠 `exc.status_code == 402`（结构化契约），非异常消息文本嗅探。
+
+    构造一个 `status_code=402` 但消息里**不含** "HTTP 402" 前缀的 CONFIG 错——旧文本嗅探
+    （`_looks_like_status` 解析 "HTTP {status}" 前缀）会漏判成普通 CONFIG，status_code 判据仍准确。
+    """
+
+    class _Fake402Client:
+        def get_bytes(self, url: str, *, accept: str | None = None) -> bytes:
+            raise CrawlerError(ErrorClass.CONFIG, "credit limit exceeded", status_code=402)
+
+    adapter = OpenAlexAdapter(http=_Fake402Client())  # type: ignore[arg-type]
+    adapter.set_api_key("k")
+    adapter.configure_budget(daily_budget_usd=1.0, state_path=tmp_path / "budget.json")
+
+    with pytest.raises(CrawlerError) as exc:
+        adapter.enrich_batch(["10.1/a"])
+    assert exc.value.error_class is ErrorClass.RATE_LIMITED
+    assert "402" in str(exc.value)  # 本层构造的固定文案含 402
+
+
+def test_enrich_batch_non_402_config_error_propagates(tmp_path: Path) -> None:
+    """400（非 402）的 CONFIG 错不被误重分类——只有 status_code==402 才转 RATE_LIMITED。"""
+
+    class _Fake400Client:
+        def get_bytes(self, url: str, *, accept: str | None = None) -> bytes:
+            raise CrawlerError(ErrorClass.CONFIG, "HTTP 400 for ...", status_code=400)
+
+    adapter = OpenAlexAdapter(http=_Fake400Client())  # type: ignore[arg-type]
+    adapter.set_api_key("k")
+    adapter.configure_budget(daily_budget_usd=1.0, state_path=tmp_path / "budget.json")
+
+    with pytest.raises(CrawlerError) as exc:
+        adapter.enrich_batch(["10.1/a"])
+    assert exc.value.error_class is ErrorClass.CONFIG
+
+
 # --- 其余错误映射（经 HttpClient 冻结映射，未特化的原样透传）------------------------------------
 
 

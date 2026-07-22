@@ -24,10 +24,9 @@ OpenAlex 官方未文档化 OR 项数上限，真实约束是**整条请求 URL 
 (RATE_LIMITED, ...)`，不发这次请求（未消费的批次直接放弃，不做部分退化）；请求成功后
 按响应 `meta.cost_usd` 累计持久化。服务端 402（credit 耗尽）在 `HttpClient` 冻结映射
 下落入"其余 4xx→CONFIG"分支（§2.1 表未单列 402，不可改动冻结映射）——本层捕获后按
-**响应状态码文本嗅探**（`_looks_like_status`，解析 `CrawlerError` 消息里
-`f"HTTP {status} for ..."` 的固定前缀）重分类为 `RATE_LIMITED`，与预算熔断同语义
-（"明日恢复"）。该嗅探依赖 `http.py` 当前的异常消息格式，非稳定契约（若该格式改变，
-本层退化为把 402 误判成普通 CONFIG——已知取舍，见任务报告 concerns）。
+`exc.status_code == 402` 精确重分类为 `RATE_LIMITED`，与预算熔断同语义（"明日恢复"）。
+`CrawlerError.status_code` 是 `http.py` 状态映射携带的**结构化状态码**（auth-framework §6，
+检查单 #4 闭合，T2 落地），非异常消息文本——契约稳定，不随消息措辞变动漂移。
 
 **healthcheck 的 key 门控**（不同于 `enrich_batch` 可匿名运行）：未配置 key → `raise
 NotImplementedError("openalex key 未配置")` → `crawler canary` 现有语义显示 SKIP；
@@ -40,7 +39,6 @@ NotImplementedError("openalex key 未配置")` → `crawler canary` 现有语义
 from __future__ import annotations
 
 import os
-import re
 from collections.abc import Sequence
 from pathlib import Path
 from urllib.parse import quote_plus, urlencode
@@ -79,18 +77,10 @@ _STATE_SUBPATH = ("state", "openalex-budget.json")  # <config-home>/state/openal
 _HEALTHCHECK_ID = "W2741809807"
 _HEALTHCHECK_TITLE: str | None = None
 
-_HTTP_STATUS_PREFIX_RE = re.compile(r"^HTTP (\d{3}) ")
-
 
 def _default_user_agent() -> str:
     email = os.environ.get(_CONTACT_EMAIL_ENV, "").strip() or _PLACEHOLDER_EMAIL
     return build_user_agent(email)
-
-
-def _looks_like_status(exc: CrawlerError, status: int) -> bool:
-    """从 `CrawlerError` 消息嗅探是否为给定 HTTP 状态码（模块 docstring 已述取舍/局限）。"""
-    match = _HTTP_STATUS_PREFIX_RE.match(str(exc))
-    return match is not None and int(match.group(1)) == status
 
 
 def _batch_dois(dois: Sequence[str]) -> list[list[str]]:
@@ -235,7 +225,10 @@ class OpenAlexAdapter(AdapterBase):
         try:
             return self._client().get_bytes(url)
         except CrawlerError as exc:
-            if exc.error_class is ErrorClass.CONFIG and _looks_like_status(exc, 402):
+            # 402 credit 耗尽 → 与本地预算熔断同语义的 RATE_LIMITED（"明日恢复"）。判据是
+            # `http.py` 携带的结构化 `status_code`（auth-framework §6），非异常消息文本嗅探
+            # ——契约稳定。402 在冻结映射下 error_class=CONFIG，但此处只认 status_code。
+            if exc.status_code == 402:
                 raise CrawlerError(
                     ErrorClass.RATE_LIMITED,
                     "openalex daily budget exhausted (server 402 credit exhausted)",
