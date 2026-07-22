@@ -106,6 +106,7 @@ def test_canary_without_filter_checks_all_registered_adapters(
     from paper_crawler.adapters.aaai_ojs.adapter import AaaiOjsAdapter
     from paper_crawler.adapters.acl_anthology.adapter import AclAnthologyAdapter
     from paper_crawler.adapters.arxiv.adapter import ArxivAdapter
+    from paper_crawler.adapters.crossref.adapter import CrossrefAdapter
     from paper_crawler.adapters.cvf.adapter import CVFAdapter
     from paper_crawler.adapters.neurips_proceedings.adapter import NeuripsProceedingsAdapter
     from paper_crawler.adapters.openreview.adapter import OpenReviewAdapter
@@ -115,6 +116,9 @@ def test_canary_without_filter_checks_all_registered_adapters(
         return HealthReport(healthy=True, detail="patched offline")
 
     monkeypatch.setattr(ArxivAdapter, "healthcheck", _fake_healthy)
+    # crossref 已 Phase 3 T3 落地为真实 adapter：healthcheck 发真实请求，离线须猴补丁
+    # （同其余真实 adapter；否则 socket 护栏拦截 → unhealthy → 退出码 1）。
+    monkeypatch.setattr(CrossrefAdapter, "healthcheck", _fake_healthy)
     monkeypatch.setattr(OpenReviewAdapter, "healthcheck", _fake_healthy)
     monkeypatch.setattr(PmlrAdapter, "healthcheck", _fake_healthy)
     monkeypatch.setattr(AclAnthologyAdapter, "healthcheck", _fake_healthy)

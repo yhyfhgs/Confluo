@@ -1,0 +1,28 @@
+{
+  "_synthetic": "SYNTHETIC (Phase 3 T3). Cursor deep-paging page 1: has next-cursor + items. Per aggregators.md §5.1 fixture ④ (cursor 两页续拉). Page 2 = 04b (items empty → termination).",
+  "status": "ok",
+  "message-type": "work-list",
+  "message": {
+    "total-results": 3,
+    "next-cursor": "AoJ4sample4cursor4page2",
+    "items-per-page": 2,
+    "items": [
+      {
+        "DOI": "10.1093/qje/qjae010",
+        "title": ["Cursor Page One Article A"],
+        "author": [{"given": "Grace", "family": "Hopper", "sequence": "first"}],
+        "published-print": {"date-parts": [[2024, 5]]},
+        "volume": "139",
+        "issue": "2"
+      },
+      {
+        "DOI": "10.1093/qje/qjae011",
+        "title": ["Cursor Page One Article B"],
+        "author": [{"given": "Alan", "family": "Turing", "sequence": "first"}],
+        "published-print": {"date-parts": [[2024, 5]]},
+        "volume": "139",
+        "issue": "2"
+      }
+    ]
+  }
+}

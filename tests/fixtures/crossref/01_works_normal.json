@@ -1,0 +1,51 @@
+{
+  "_synthetic": "SYNTHETIC (Phase 3 T3). Shape per Crossref REST /journals/{issn}/works [DOCS]; key numbers [LIVE]-grounded (QJE ISSN 0033-5533, total_2024=46, aggregators.md §7). Item DOIs/titles/authors are constructed, not real captures. Mixed page: 3 valid records + 1 empty-title (skipped) + 1 doi-less (skipped).",
+  "status": "ok",
+  "message-type": "work-list",
+  "message": {
+    "total-results": 46,
+    "next-cursor": "AoJ4sample4cursor4page1",
+    "items-per-page": 20,
+    "items": [
+      {
+        "DOI": "10.1093/qje/qjae001",
+        "title": ["Market Design and the Allocation of   Scarce Resources"],
+        "author": [
+          {"given": "Jane", "family": "Doe", "sequence": "first", "ORCID": "http://orcid.org/0000-0002-1825-0097"},
+          {"given": "John Q.", "family": "Public", "sequence": "additional"}
+        ],
+        "published-print": {"date-parts": [[2024, 2]]},
+        "published-online": {"date-parts": [[2023, 11, 15]]},
+        "issued": {"date-parts": [[2024, 2]]},
+        "volume": "139",
+        "issue": "1",
+        "abstract": "<jats:p>We study the allocation of scarce resources.</jats:p>"
+      },
+      {
+        "DOI": "https://doi.org/10.1093/QJE/QJAE002",
+        "title": ["Online-Only Access and Publication Lags"],
+        "author": [{"given": "Ada", "family": "Lovelace", "sequence": "first"}],
+        "published-online": {"date-parts": [[2024, 1, 8]]},
+        "issued": {"date-parts": [[2024]]},
+        "volume": "139"
+      },
+      {
+        "DOI": "10.1093/qje/qjae003",
+        "title": ["Special Issue Introduction"],
+        "author": [{"name": "The Editors"}],
+        "issued": {"date-parts": [[2024, 3]]},
+        "volume": "139",
+        "issue": "S1"
+      },
+      {
+        "DOI": "10.1093/qje/qjae004",
+        "title": [],
+        "issued": {"date-parts": [[2024, 3]]}
+      },
+      {
+        "title": ["A Work Missing Its DOI"],
+        "issued": {"date-parts": [[2024, 3]]}
+      }
+    ]
+  }
+}
