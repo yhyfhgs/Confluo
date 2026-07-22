@@ -187,7 +187,7 @@ def test_resolve_missing_doi_raises_config() -> None:
 def test_fetch_streams_pdf_and_returns_ok() -> None:
     def handler(request: httpx.Request) -> httpx.Response:
         assert "onlinelibrary/tdm/v1/articles/10.1111/jofi.13123" in str(request.url)
-        return _resp(fixture_bytes("01_tdm_article_success.pdf"))
+        return _resp(fixture_bytes("01_tdm_article_success.pdf.bin"))
 
     adapter = _adapter(handler)
     plan = adapter.resolve_assets(make_wiley_venue(), _PAPER)[0]
@@ -207,7 +207,7 @@ def test_fetch_sends_tdm_token_header_on_request() -> None:
 
     def handler(request: httpx.Request) -> httpx.Response:
         captured.append(request)
-        return _resp(fixture_bytes("01_tdm_article_success.pdf"))
+        return _resp(fixture_bytes("01_tdm_article_success.pdf.bin"))
 
     adapter = _adapter(handler)
     plan = adapter.resolve_assets(make_wiley_venue(), _PAPER)[0]
@@ -253,7 +253,7 @@ def test_fetch_429_maps_rate_limited_with_retry_after() -> None:
 def test_healthcheck_with_token_pdf_probe_healthy() -> None:
     def handler(request: httpx.Request) -> httpx.Response:
         assert _HEALTHCHECK_DOI in str(request.url)
-        return _resp(fixture_bytes("01_tdm_article_success.pdf"))
+        return _resp(fixture_bytes("01_tdm_article_success.pdf.bin"))
 
     report = _adapter(handler).healthcheck()
     assert report.healthy is True

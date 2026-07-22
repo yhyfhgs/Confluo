@@ -1,7 +1,8 @@
 """wiley fixture 加载器（`tests/fixtures/wiley/`）。
 
 **四件套均为合成/[DOCS] fixture**（design/adapters/wiley.md §6；无 token 未取过真实响应）：
-- `01_tdm_article_success.pdf`：TDM 成功响应的截断脱敏 PDF 样例（`%PDF-` 魔数 + application/pdf）
+- `01_tdm_article_success.pdf.bin`：TDM 成功响应截断脱敏 PDF 样例（`%PDF-` 魔数；.bin 后缀
+  避 .gitignore `*.pdf` 红线条目吞入库文件）
   ——⚠ [DOCS] 端点已 [LIVE 2026-07-23] 活验但无 token 未取真实体，待 token 到位重录。
 - `02_tdm_401_token_invalid.http` / `03_tdm_403_no_entitlement.http` /
   `04_tdm_429_rate_limited.http`：401/403/429 三态封套——⚠ [DOCS] 依官方 TDM 文档形态合成，

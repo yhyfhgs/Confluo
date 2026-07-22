@@ -61,7 +61,7 @@
 
 ## 5. 重录真实 fixture（token 到位后）
 
-`tests/fixtures/wiley/` 四件套当前为合成/[DOCS]（`01_tdm_article_success.pdf` + 401/403/429 三态封套）。
+`tests/fixtures/wiley/` 四件套当前为合成/[DOCS]（`01_tdm_article_success.pdf.bin` + 401/403/429 三态封套）。
 token 到位后用真实响应**截断脱敏**（去 token、留形态）重录，并更新 `tests/helpers/wiley_fixtures.py` 文件头出处等级为 [LIVE]。
 
 ## 6. 归档
