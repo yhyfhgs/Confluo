@@ -1,0 +1,90 @@
+<?xml version="1.0" encoding="ISO-8859-1"?>
+<!-- SYNTHETIC fixture (Phase 3 T4, dblp adapter). Structure follows the public
+     dblp.xml schema (dblp.dtd) as described in
+     docs/design/adapters/aggregators.md §5.2 and
+     docs/research/site-survey/aggregators-unpaywall-dblp-core.md [LIVE]
+     2026-07-20/22; no live network recon was performed this session
+     (PAPER_CRAWLER_CONTACT_EMAIL unset; per D-014 that means fully-synthetic
+     fixtures). The key "conf/icml/AamandACINS23" and its PMLR-hosted `ee` form
+     are the concrete example cited verbatim in aggregators.md §5.2's field
+     mapping table ("inproceedings/@key（如 conf/icml/AamandACINS23）"); the
+     surrounding title/authors/pages content is a labeled placeholder, not a
+     transcription of the real paper. The "conf/xyz/*" records are entirely
+     fabricated and purpose-built to exercise the paper-level-ee-vs-container-DOI
+     guardrail (aggregators.md §5.2 "ee→DOI 同源护栏", A-C3). -->
+<!DOCTYPE dblp SYSTEM "https://dblp.org/xml/dblp.dtd">
+<dblp>
+
+<proceedings mdate="2023-08-01" key="conf/icml/2023">
+<editor pid="1/1">Canary Editor</editor>
+<title>Proceedings of the 40th International Conference on Machine Learning</title>
+<booktitle>ICML</booktitle>
+<year>2023</year>
+<volume>202</volume>
+<publisher>PMLR</publisher>
+<ee type="oa">https://proceedings.mlr.press/v202/</ee>
+</proceedings>
+
+<inproceedings mdate="2023-07-25" key="conf/icml/AamandACINS23">
+<author pid="111/1111">Anders Aamand</author>
+<author pid="222/2222">Fabrizio Boninsegna</author>
+<title>Optimal Weak to Strong Learning.</title>
+<pages>1-18</pages>
+<year>2023</year>
+<booktitle>ICML</booktitle>
+<crossref>conf/icml/2023</crossref>
+<ee type="oa">https://proceedings.mlr.press/v202/aamand23a.html</ee>
+</inproceedings>
+
+<inproceedings mdate="2023-07-25" key="conf/icml/NoLinkExample23">
+<author pid="333/3333">Canary NoLink Author</author>
+<title>A Synthetic Canary Paper With No External Link.</title>
+<pages>19-33</pages>
+<year>2023</year>
+<booktitle>ICML</booktitle>
+<crossref>conf/icml/2023</crossref>
+</inproceedings>
+
+<proceedings mdate="2023-05-10" key="conf/xyz/2023">
+<editor pid="9/9">Canary Springer Editor</editor>
+<title>Proceedings of the Synthetic XYZ Conference 2023</title>
+<booktitle>XYZ</booktitle>
+<year>2023</year>
+<publisher>Springer</publisher>
+<series href="db/series/lncs/index.html">Lecture Notes in Computer Science</series>
+<volume>9999</volume>
+<ee>https://doi.org/10.1007/978-3-030-99999-9</ee>
+</proceedings>
+
+<inproceedings mdate="2023-06-01" key="conf/xyz/Smith23">
+<author pid="444/4444">Jane Smith</author>
+<title>A Synthetic Paper With Its Own Chapter DOI.</title>
+<pages>1-15</pages>
+<year>2023</year>
+<booktitle>XYZ</booktitle>
+<crossref>conf/xyz/2023</crossref>
+<ee>https://doi.org/10.1007/978-3-030-99999-9_1</ee>
+</inproceedings>
+
+<inproceedings mdate="2023-06-01" key="conf/xyz/Jones23">
+<author pid="555/5555">Robert Jones</author>
+<author pid="666/6666">Amara Okafor</author>
+<title>Another Synthetic Paper With a Distinct Chapter DOI.</title>
+<pages>16-30</pages>
+<year>2023</year>
+<booktitle>XYZ</booktitle>
+<crossref>conf/xyz/2023</crossref>
+<ee>https://doi.org/10.1007/978-3-030-99999-9_2</ee>
+</inproceedings>
+
+<inproceedings mdate="2023-06-01" key="conf/xyz/Adversary23">
+<author pid="777/7777">Adversarial Author</author>
+<title>A Synthetic Paper Whose Own ee Accidentally Repeats the Container DOI.</title>
+<pages>31-40</pages>
+<year>2023</year>
+<booktitle>XYZ</booktitle>
+<crossref>conf/xyz/2023</crossref>
+<ee>https://doi.org/10.1007/978-3-030-99999-9</ee>
+</inproceedings>
+
+</dblp>
