@@ -188,3 +188,10 @@ updated: 2026-07-22
   3. **合并优先级表补 dblp 位次**（phase3-implementation-plan §2-1 冻结件扩展）：`official > crossref > dblp > openalex > s2 > heuristic`。理由：Crossref 为 DOI 注册源头（出版社存缴）元数据居先；DBLP 人工策展（CC0）质量高于 OpenAlex/S2 机器聚合。
   4. **OpenAlex 预算核销精确化**：响应 `meta.cost_usd` 字段（[LIVE] 新发现）作为 credit 熔断的实时核销信号，取代估算制。
 - **影响**：aggregators.md 扩写版（396 行）承载全部修正；勘察复核前置（Phase 2 REJECT 教训的制度化延续）再次在写代码前拦下合规缺陷。
+
+## D-022 零网络 resolve 豁免限速闸 + --limit 前置圈选（C-C 修复语义定案）
+
+- 状态：accepted · 日期：2026-07-22
+- **背景**：Phase 2 终检置顶缺陷 C-C——`url_strategy=direct` 的 resolve 是零网络纯 URL 构造却逐篇过 per-domain 限速闸，且 `--limit` 在全量 resolve 后才截断：ICLR 2024（2260 篇）量级 pull 的 resolve 阶段数十分钟纯空转。
+- **决策**：① adapter 以 `AdapterBase.resolve_offline = True`（类属性，非冻结协议成员，pipeline `getattr` 兜底，默认 `False` 安全侧）声明零网络 resolve，声明者 resolve 阶段免限速 token；本仓 8 个 adapter 逐个核实零网络后显式置 `True`（独立审查复核无错标）。② `--limit N` 前置：按 `list_papers` 稳定序（`ORDER BY (title, id)`，审查发现并修复并列标题 tiebreaker 缺口）圈选前 N 篇建 resolve 任务。③ 语义边界显式化：前 N 篇含零资产 paper 时落盘可 < N，不往后凑满（凑满与前置目标根本矛盾）；AC-2.2 类场景（camera-ready 恒有 PDF）不受影响。④ AC-1.4 限速压力测试测量窗收窄至稳态尾段（resolve 免闸后 burst 移至 fetch 起点），判据 ≤ 配置×1.05 不变。
+- **影响**：design/05 §6 修订注记；2260 篇量级 resolve 壁钟从数十分钟降至秒级（回归测试锁定 <5s）；真实网络 resolve 策略的限速闸保留（反向 guard 测试锁定）。

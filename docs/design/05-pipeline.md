@@ -91,6 +91,8 @@ crawler verify / report [--last-run]                   # 对账与报告
 
 `--dry-run` 贯穿：完成到 resolve 为止，输出"将下载 N 篇 / M MB（估）/ 命中过滤 K 篇"清单不落盘（FR-05）。
 
+- **修订注记（2026-07-22，D-022 · C-C 修复）**：① **零网络 resolve 豁免限速闸**——adapter 经 `AdapterBase.resolve_offline = True` 声明其 `resolve_assets` 为纯本地构造（不发任何网络请求）时，resolve 阶段不取限速 token（未声明者默认 `False`，闸保留——安全侧）；该标记不属 `SourceAdapter` 冻结协议，pipeline 经 `getattr` 兜底读取。② **`--limit N` 前置到 resolve 圈选**——只对稳定序（`list_papers` 的 `ORDER BY (title, id)`，主键收尾保证并列标题确定性）前 N 篇建 resolve 任务；dry-run 计数与实跑一致、两次重跑圈选同一子集。语义边界：前 N 篇中存在零资产 paper 时落盘可 < N（不往后凑满——凑满需 resolve 更多 paper，与前置目标矛盾）；RunReport 如实呈现计划/实际计数。
+
 ## 7. 观测性（FR-14）
 
 - **结构化日志**：jsonl，每行含 `ts, level, task_id, venue, stage, domain, url(脱敏), error_class, msg`；控制台人读摘要，文件机读全量。
