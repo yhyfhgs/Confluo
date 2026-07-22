@@ -1,0 +1,7 @@
+# SYNTHETIC fixture (Phase 3 T4, dblp adapter). HTTP 404 for a volume key that
+# does not exist -> ErrorClass.GONE (docs/design/adapters/aggregators.md §5.2
+# error table: "卷 key 404 -> gone -> 回索引页重发现一次，再失败 -> parse").
+HTTP-STATUS: 404
+Content-Type: text/html; charset=UTF-8
+
+<html><body><h1>404 Not Found</h1></body></html>

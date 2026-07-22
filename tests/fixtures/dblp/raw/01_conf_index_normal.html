@@ -1,0 +1,33 @@
+<!DOCTYPE html>
+<!-- SYNTHETIC fixture (Phase 3 T4, dblp adapter). Best-effort approximation of a
+     dblp.org conf index/TOC page (`/db/conf/{acr}/`) -- no live network recon was
+     performed to build this file this session (AC-0.5/D-014: recording requires
+     PAPER_CRAWLER_CONTACT_EMAIL + honoring robots Crawl-delay:4; neither was
+     exercised here). The parser (`adapters/dblp/parse.py::parse_conf_index`) is
+     deliberately href-pattern based rather than tied to specific CSS classes,
+     precisely because this markup has not been verified against the live site --
+     see that module's docstring. Used as the primary discover/enumerate/healthcheck
+     test subject for the `icml` venue (identifiers.dblp_key='conf/icml').
+     Decoy links (nav/home/faq, no trailing 4-digit year) must NOT be picked up. -->
+<html lang="en">
+<head><title>dblp: International Conference on Machine Learning</title></head>
+<body>
+<header id="headline"><h1>International Conference on Machine Learning (ICML)</h1></header>
+<div id="main">
+<ul class="publ-list">
+<li class="year"><span>2024</span></li>
+<li class="entry"><cite><a href="icml2024.html">ICML 2024: Proceedings of the 41st International Conference on Machine Learning</a></cite></li>
+<li class="year"><span>2023</span></li>
+<li class="entry"><cite><a href="icml2023.html">ICML 2023: Proceedings of the 40th International Conference on Machine Learning</a></cite></li>
+<li class="year"><span>2022</span></li>
+<li class="entry"><cite><a href="icml2022.html">ICML 2022: Proceedings of the 39th International Conference on Machine Learning</a></cite></li>
+<li class="entry"><cite><a href="https://dblp.org/db/conf/icml/icml2022w.html">ICML 2022 Workshop track (synthetic multi-volume-suffix example)</a></cite></li>
+</ul>
+</div>
+<nav id="sidebar">
+<a href="index.html">Home</a>
+<a href="https://dblp.org/faq/">FAQ</a>
+<a href="../../../search/publ?q=icml">Search (decoy -- must never be requested by the adapter; robots-disallowed)</a>
+</nav>
+</body>
+</html>

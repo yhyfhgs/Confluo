@@ -108,6 +108,7 @@ def test_canary_without_filter_checks_all_registered_adapters(
     from paper_crawler.adapters.arxiv.adapter import ArxivAdapter
     from paper_crawler.adapters.crossref.adapter import CrossrefAdapter
     from paper_crawler.adapters.cvf.adapter import CVFAdapter
+    from paper_crawler.adapters.dblp.adapter import DblpAdapter
     from paper_crawler.adapters.neurips_proceedings.adapter import NeuripsProceedingsAdapter
     from paper_crawler.adapters.openreview.adapter import OpenReviewAdapter
     from paper_crawler.adapters.pmlr.adapter import PmlrAdapter
@@ -126,6 +127,7 @@ def test_canary_without_filter_checks_all_registered_adapters(
     monkeypatch.setattr(CVFAdapter, "healthcheck", _fake_healthy)
     monkeypatch.setattr(AaaiOjsAdapter, "healthcheck", _fake_healthy)
     monkeypatch.setattr(NeuripsProceedingsAdapter, "healthcheck", _fake_healthy)
+    monkeypatch.setattr(DblpAdapter, "healthcheck", _fake_healthy)
     monkeypatch.setattr(MockPlatformAdapter, "healthcheck", _fake_healthy)
     monkeypatch.setattr(UnpaywallAdapter, "healthcheck", _fake_healthy)
 
