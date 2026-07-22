@@ -1,0 +1,6 @@
+# SYNTHETIC (aggregators.md §8: "合成需补"). Generic 5xx -> HttpClient maps to
+# transient (fixed-backoff retry). Not observed live.
+HTTP-STATUS: 500
+Content-Type: application/json
+
+{"HTTP_status_code": 500, "message": "Internal Server Error"}

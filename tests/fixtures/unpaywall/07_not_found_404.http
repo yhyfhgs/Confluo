@@ -1,0 +1,9 @@
+# SYNTHETIC (Phase 3 T5, no live capture yet). 404 for a DOI Unpaywall has no
+# record of. Body shape per Unpaywall's documented error format
+# (https://unpaywall.org/products/api -> "HTTP_status_code"/"message"), content
+# fabricated. HttpClient maps 404 -> gone; adapter.lookup() treats gone as
+# "not indexed" (returns None, not an error) per aggregators.md §5.5.
+HTTP-STATUS: 404
+Content-Type: application/json
+
+{"HTTP_status_code": 404, "message": "The DOI 10.9999/does-not-exist was not found in Crossref, and therefore not found in Unpaywall as well."}

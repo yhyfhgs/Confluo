@@ -1,0 +1,9 @@
+# SYNTHETIC (Phase 3 T5, no live capture yet). 422 when the `email` query
+# param is absent (our own request-construction bug, not an external fault) --
+# per aggregators.md §5.5 this is error_class=config, mapped by HttpClient's
+# default "other 4xx" branch (no adapter-side reclassification needed). Body
+# shape per Unpaywall's documented error format, content fabricated.
+HTTP-STATUS: 422
+Content-Type: application/json
+
+{"HTTP_status_code": 422, "message": "This method requires an email so we can maintain our program and continue to offer it for free. Please add the parameter \"email=YOUR_EMAIL\" to your query."}

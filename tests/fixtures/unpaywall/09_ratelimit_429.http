@@ -1,0 +1,9 @@
+# SYNTHETIC (aggregators.md §8: "合成需补" -- Unpaywall's 5 req/s ceiling makes
+# a live 429 unlikely to observe deliberately). Shape modeled on typical
+# rate-limit response conventions (Retry-After header); not observed live.
+# HttpClient maps 429 -> rate_limited (Retry-After -> detail retry_after_s).
+HTTP-STATUS: 429
+Content-Type: application/json
+Retry-After: 5
+
+{"HTTP_status_code": 429, "message": "Too many requests. Please slow down (5 req/s, <100k/day)."}
