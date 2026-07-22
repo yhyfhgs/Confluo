@@ -78,8 +78,14 @@ _LOGIN_URL_SIGNATURES: tuple[str, ...] = (
 )
 
 # 账号标识（body 子串，小写）——命中即"已带登录态"，否决 LOGIN_REDIRECT
-# （auth-framework §11"且无账号标识"守卫；oup-silverchair.md §5 探针判定=含账号标识。
-# ⚠ 具体站点 DOM 标记待 T4 真实脱敏 fixture 校准，表可增补）。
+# （auth-framework §11"且无账号标识"守卫；oup-silverchair.md §5 探针判定=含账号标识）。
+# T4 校准（2026-07-23，兑现 T1a ⚠ 注释）：三串**经 oup 四件套 fixture ④（已登录全文页，
+# Silverchair 登录态 header 含 `My Account` 按钮 + `My Account`/`Sign out` 菜单项）验证充分
+# ——"sign out"/"my account" 为 Silverchair 登录态菜单强特征；"signed in as" 为通用兜底守卫
+# （只增不改语义原则下保留，无害）。**未增删**：OUP 的 OK 正例主锚是全文节点
+# （article-pdf/citation_pdf_url，`_FULLTEXT_BODY_SIGNATURES`），账号标识仅作 LOGIN_REDIRECT
+# 否决的辅助守卫，故三串已足。fixture ③④ 为合成占位（无凭证的诚实现实），runbook 首登采
+# 真实脱敏样本后可再核（oup-silverchair.md §7；表仍循"只增不改语义"）。
 _ACCOUNT_IDENTITY_SIGNATURES: tuple[str, ...] = (
     "sign out",
     "signed in as",
