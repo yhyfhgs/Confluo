@@ -1,7 +1,7 @@
 """OpenReview 在线冒烟（Phase 2 AC-2.1 / AC-2.2 在线层；design/adapters/openreview.md §7）。
 
 默认经 `addopts = -m 'not online'` 排除，显式 `-m online` 才跑。硬预算
-`MAX_REAL_REQUESTS = 18`。UA 携真实 mailto（D-014，`PAPER_CRAWLER_CONTACT_EMAIL`）。
+`MAX_REAL_REQUESTS = 10`。UA 携真实 mailto（D-014，`PAPER_CRAWLER_CONTACT_EMAIL`）。
 
 三层，按 token 依赖分级：
 
@@ -21,16 +21,23 @@
 - **匿名 healthcheck 基线（token-free）**：`adapter.healthcheck()`（v2 2024 + v1 2014 群，
   匿名 2 请求）判 healthy——平台健康与用户凭证分离（§4），无 token 也须绿。
 
-- **AC-2.2 在线层（token-gated，Closes: AC-2.2 (online layer)）**：`pull iclr --year 2024
-  --limit 10` 真实执行——10 个 %PDF 落盘（魔数 + >10KB）+ DB↔文件对账。**需有效
-  OpenReview token**（env `PAPER_CRAWLER_OPENREVIEW_TOKEN`）；未设则 skip。
-  > ⚠ 2026-07-22 本会话用户 token 已过期（401 TokenExpiredError，非 UA 挑战、非机制缺陷
-  > ——cookie 机制经服务器验证正确）。故 AC-2.2 在线层**本会话未执行、待用户 token 刷新**；
-  > 该项验收在线判定 = BLOCKED(pending valid token)。离线层（tests/integration/
-  > test_openreview_pull.py）已全绿覆盖同一 --year 2024 --limit 10 全链。
+- **AC-2.2 在线层（token-gated，Closes: AC-2.2 (online layer)）**：真实 enumerate ICLR
+  2024 主会 → **accepted stub 数 == DBLP 锚点 2260**（api2 v2；`content.venueid=
+  ICLR.cc/2024/Conference`，[LIVE] 2026-07-22 交叉核验：OpenReview accepted 2260 == DBLP
+  iclr2024 toc 2260），再对首篇 accepted 的真实 PDF 流式取首 chunk 断 **`%PDF` 魔数 +
+  ≥10KB**。**需有效 OpenReview token**（env `PAPER_CRAWLER_OPENREVIEW_TOKEN`）；未设则 skip。
+  > 契约（AC-2.2 final，2026-07-22）：本层与 5 个兄弟 adapter 在线冒烟同构——**enumerate
+  > 计数对锚点 + 单篇 PDF %PDF 探测**（pmlr/cvf/neurips/acl/aaai 同款），验证「真实站点
+  > 应答 + accepted 集合 + 真 PDF 下载」。**不**走 `pull --limit 10` 全级联：pipeline 的
+  > resolve 阶段对**每篇** enumerate 出的 paper 逐个 `acquire_and_wait`（30rpm 闸），而
+  > openreview 的 `resolve_assets` 是零网络纯构造——2024 的 2260 篇会被逐个限速空转（≈数十
+  > 分钟墙钟，见 pipeline/stages.py:371 与 runner.py:465-473「resolve 全量后按 limit 截断」），
+  > 对 10 篇的在线冒烟不切实际。`pull --year 2024 --limit 10` 的「10 落盘 + DB↔文件对账」
+  > 全链仍由离线 tests/integration/test_openreview_pull.py（mock HTTP，确定性）全绿覆盖。
 
-MAX_REAL_REQUESTS=18 = AC-2.1(venues 1 + dblp index 1) + healthcheck(2) + AC-2.2(groups 1
-+ notes ~3 + pdf 10 = 14)。真实执行结果归档 scratchpad/openreview-online-run.txt。
+MAX_REAL_REQUESTS=10 = AC-2.1(venues 1 + dblp index 1) + healthcheck(2) + AC-2.2(groups 1
++ notes 3〔2260 accepted @1000/页〕+ pdf 首 chunk 1 = 5)。真实执行结果归档
+scratchpad/ac22-final-run.txt。
 """
 
 from __future__ import annotations
@@ -47,15 +54,17 @@ from typer.testing import CliRunner
 
 from helpers import make_openreview_venue
 from online.conftest import RealRequestBudget
-from online.smoke_helpers import make_rate_limited_client
-from paper_crawler.adapters.openreview import venues
+from online.smoke_helpers import make_rate_limited_client, stream_first_chunk
+from paper_crawler.adapters.openreview import parse, venues
 from paper_crawler.adapters.openreview.adapter import OpenReviewAdapter
 from paper_crawler.cli import app
 from paper_crawler.http import HttpClient
+from paper_crawler.ratelimit import RateLimiter
 from paper_crawler.storage.db import Database
-from paper_crawler.types import RatePolicy
+from paper_crawler.types import AssetKind, RatePolicy
+from paper_crawler.useragent import build_user_agent
 
-MAX_REAL_REQUESTS = 18
+MAX_REAL_REQUESTS = 10
 
 runner = CliRunner()
 
@@ -79,6 +88,10 @@ _DBLP_INDEX_URL = "https://dblp.org/db/conf/iclr/index.html"
 # 已核销的 timeline↔DBLP 口径差（design §7 anchor；[LIVE] 2026-07-22）——见模块 docstring。
 _DBLP_ONLY_YEARS = {2015, 2016}  # 主会 @ iclr.cc、不在 OpenReview
 _OPENREVIEW_ONLY_YEARS = {2026, 2027}  # 未来/新近届，DBLP 卷未发布
+
+# AC-2.2 accepted 锚点：ICLR 2024 主会 accepted = 2260（[LIVE] 2026-07-22 api2 v2
+# content.venueid=ICLR.cc/2024/Conference count；== DBLP iclr2024 toc 2260，两源互证）。
+_ICLR_2024_ACCEPTED = 2260
 
 
 # --- 活体源解析（零依赖，与勘察脚本同逻辑）--------------------------------------------------
@@ -136,6 +149,29 @@ def dblp_client() -> Iterator[HttpClient]:
         client.close()
 
 
+@pytest.fixture(scope="session")
+def openreview_token_client() -> Iterator[HttpClient]:
+    """携 token 的 openreview 专属限速 client（AC-2.2）。
+
+    client 级附加头 `Cookie: openreview.accessToken=<token>`（与 CLI 装配期同机制，
+    adapter.py §3）——**专属** client，绝不复用匿名 client（cookie 外泄他站属凭证红线）。
+    token 仅在进程内经 env `_TOKEN` 注入到该 client，绝不落盘/入日志。三域共享一份 30rpm。
+    """
+    limiter = RateLimiter()
+    limiter.register(OpenReviewAdapter.domains[0], OpenReviewAdapter.default_rate)
+    for mirror in OpenReviewAdapter.domains[1:]:
+        limiter.alias(mirror, OpenReviewAdapter.domains[0])
+    client = HttpClient(
+        user_agent=build_user_agent(_CONTACT_EMAIL),
+        rate_limiter=limiter,
+        extra_headers={"Cookie": f"openreview.accessToken={_TOKEN}"},
+    )
+    try:
+        yield client
+    finally:
+        client.close()
+
+
 # --- home 装配（iclr venue；identity email 令 UA 携 mailto）-----------------------------------
 
 
@@ -175,27 +211,6 @@ def _issue_years(home: Path) -> set[int]:
             "SELECT DISTINCT year FROM issue WHERE venue_id='iclr' AND year IS NOT NULL"
         )
         return {int(r["year"]) for r in rows}
-    finally:
-        db.close()
-
-
-def _pdf_files(home: Path) -> list[Path]:
-    root = home / "data" / "pdf"
-    return sorted(root.rglob("*.pdf")) if root.is_dir() else []
-
-
-def _fetched_assets(home: Path) -> int:
-    db = Database(home / "catalog.sqlite")
-    try:
-        return int(db.query("SELECT COUNT(*) AS n FROM asset WHERE state='fetched'")[0]["n"])
-    finally:
-        db.close()
-
-
-def _paper_count(home: Path) -> int:
-    db = Database(home / "catalog.sqlite")
-    try:
-        return int(db.query("SELECT COUNT(*) AS n FROM paper")[0]["n"])
     finally:
         db.close()
 
@@ -269,34 +284,39 @@ def test_healthcheck_anonymous_baseline_is_healthy(
 
 @pytest.mark.online
 @pytest.mark.skipif(not _TOKEN, reason="PAPER_CRAWLER_OPENREVIEW_TOKEN 未设——AC-2.2 需有效 token")
-def test_ac_2_2_pull_2024_limit_10_real(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, real_request_budget: RealRequestBudget
+def test_ac_2_2_enumerate_2024_accepted_matches_anchor_and_fetches_real_pdf(
+    openreview_token_client: HttpClient, real_request_budget: RealRequestBudget
 ) -> None:
-    """Closes: AC-2.2 (online layer). `pull iclr --year 2024 --limit 10` 真实执行。
+    """Closes: AC-2.2 (online layer).
 
-    10 个 %PDF 落盘（魔数 + >10KB）+ DB↔文件对账。token 经 env 注入（config 不落盘）。
-    ⚠ 需**有效** token；过期 token 会走 auth_expired→BLOCKED(退出 3)，本测试断言完成态
-    （退出 0）——过期时应 skip 本测试（勿以过期 token 跑）。
+    真实 enumerate ICLR 2024 主会 accepted → 数 == DBLP 锚点 2260（两源互证），再对
+    首篇 accepted 的真实 PDF 流式取首 chunk 断 `%PDF` 魔数 + ≥10KB。契约（不走 pull
+    全级联的理由 + 离线全链覆盖）见模块 docstring。token 经 client cookie（不落盘）。
     """
-    # groups 1 + notes 分页（2024 ~2260 @1000/页 ≈ 3）+ pdf 10 ≈ 14；上限声明（CLI 内部翻页
-    # 无逐请求 spend 钩子，此处按设计上限一次性记账）。
-    real_request_budget.spend(14)
-    home = _write_iclr_home(tmp_path, identity_email=_CONTACT_EMAIL)
-    # token 仅经 env（Config.load 读 PAPER_CRAWLER_OPENREVIEW_TOKEN 覆盖 config；不落盘）。
-    monkeypatch.setenv("PAPER_CRAWLER_OPENREVIEW_TOKEN", _TOKEN)
+    adapter = OpenReviewAdapter(http=openreview_token_client)
+    venue = make_openreview_venue()
+    # discover 零网络（内置届表）取 2024 IssueRef，不手搓字段。
+    issue = next(i for i in adapter.discover_timeline(venue) if i.year == 2024)
 
-    result = runner.invoke(
-        app, ["pull", "iclr", "--year", "2024", "--limit", "10", "--home", str(home)]
+    # enumerate = groups(判版本 1) + notes 翻页（2260 accepted @1000/页 = 3）。CLI 外直调
+    # adapter、逐请求无 spend 钩子，按设计一次性记账（2260 钉死→翻页数随之钉死）。
+    real_request_budget.spend(4)
+    stubs = list(adapter.enumerate_issue(venue, issue))
+    print(f"AC2.2 enumerate 2024 accepted={len(stubs)} anchor={_ICLR_2024_ACCEPTED}")
+    assert len(stubs) == _ICLR_2024_ACCEPTED, (
+        f"2024 accepted enumerate {len(stubs)} != DBLP 锚点 {_ICLR_2024_ACCEPTED}"
+        "（OpenReview accepted 集合漂移或 DBLP 卷更新——需重新核销 anchor，design §7）"
     )
-    assert result.exit_code == 0, result.output
+    # accepted 判定生效：每篇 stub 的单一 identifier 为 ('openreview', forum)。
+    assert all(s.identifiers and s.identifiers[0][0] == "openreview" for s in stubs)
 
-    pdfs = _pdf_files(home)
-    assert len(pdfs) == 10, f"期望 10 个 PDF 落盘，实得 {len(pdfs)}"
-    for f in pdfs:
-        head = f.read_bytes()[:8]
-        assert head.startswith(b"%PDF"), f"{f.name} 前 8 字节非 %PDF: {head!r}"
-        assert f.stat().st_size > 10_240, f"{f.name} 仅 {f.stat().st_size}B（<10KB，疑非真 PDF）"
-    assert _fetched_assets(home) == 10  # DB↔文件对账：10 个 asset state=fetched
-    # limit 只截断 fetch 不截断 enumerate：2024 accepted 远超 10。
-    assert _paper_count(home) >= 10
-    print(f"AC2.2 pulled pdfs={len(pdfs)} fetched_assets=10 papers>={_paper_count(home)}")
+    # 首篇携 openreview_pdf 相对路径的 accepted stub → resolve 纯构造绝对 URL → 流式探测。
+    first_pdf = next((s for s in stubs if dict(s.meta).get(parse.META_PDF_PATH)), None)
+    assert first_pdf is not None, "2024 无任何 accepted stub 携带 openreview_pdf 路径"
+    plan = next(p for p in adapter.resolve_assets(venue, first_pdf) if p.kind is AssetKind.PDF)
+
+    real_request_budget.spend(1)
+    head = stream_first_chunk(openreview_token_client, plan.url, min_bytes=11_000)
+    print(f"AC2.2 pdf url={plan.url} head={head[:8]!r} first_chunk_bytes={len(head)}")
+    assert head.startswith(b"%PDF"), f"下载体前 8 字节非 %PDF: {head[:8]!r}（token 失效/删除页？）"
+    assert len(head) >= 10_240, f"PDF 首 chunk 仅 {len(head)}B（<10KB，疑非真 PDF）"
