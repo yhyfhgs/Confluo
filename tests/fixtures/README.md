@@ -132,3 +132,33 @@ docs.openreview.net v1/v2 note schema 与勘察 §1-§7 [DOC]/[LIVE] 手写，�
 **在线部分（带 token 冒烟 + anchor 正式 count 生成）BLOCKED 待用户 token**——离线全链
 （enumerate→resolve→fetch MockTransport 回放、AC-2.1 anchor 结构比对、AC-2.2 pull 回放）
 是本期 DoD。加载器 `tests/helpers/openreview_fixtures.py`（`fixture_bytes`/`http_fixture`）。
+
+## Unpaywall fixture 十二件套（Phase 3 T5；design/adapters/aggregators.md §5.5/§8）
+
+`tests/fixtures/unpaywall/`（无 `golden/` 层——回放**输入**，断言在
+`tests/unit/test_unpaywall_parse.py` / `test_unpaywall_adapter.py` / `test_unpaywall_report.py`）：
+
+| 件 | 文件 | 覆盖（aggregators.md §5.5/§8） |
+|---|---|---|
+| ① | `01_normal_gold_fallback.json` | 正常 OA（gold，`best_oa_location.url_for_pdf:null` 触发 `oa_locations[]` 回退链）；D-019 锚点，见下 |
+| ② | `02_direct_pdf_hit_hybrid.json` | 直接命中 `url_for_pdf`（无需回退）；hybrid + 非正式版 `acceptedVersion` |
+| ③ | `03_landing_only_no_pdf_anywhere.json` | `url_for_pdf` 全线为空，仅 landing 有值 → 0 AssetPlan（★裁决 J4） |
+| ④ | `04_closed.json` | closed（`is_oa:false`，无 OA 副本，非错误） |
+| ⑤ | `05_oa_status_green_submitted.json` | oa_status=green 代表值 + 非正式版 `submittedVersion` |
+| ⑥ | `06_oa_status_bronze.json` | oa_status=bronze 代表值 + 正式版 `publishedVersion` |
+| ⑦ | `07_not_found_404.http` | 404（DOI 未收录）→ `gone`（adapter 侧归一为 `None`，非错误） |
+| ⑧ | `08_missing_email_422.http` | 422（缺 email）→ `config` |
+| ⑨ | `09_ratelimit_429.http` | 429 + Retry-After → `rate_limited` |
+| ⑩ | `10_server_error_500.http` | 5xx → `transient` |
+| ⑪ | `11_malformed.json` | 畸形 JSON → `parse` |
+| ⑫ | `12_missing_required_fields.json` | 语法合法但缺 `is_oa` → `parse`（防御性覆盖，非纯语法错误） |
+
+①②③④⑤⑥ 合计覆盖 oa_status 五枚举值全量（gold/hybrid/green/bronze/closed）。
+**⚠ 部分为 [LIVE] 核验值 + 合成外壳**：①的 `is_oa`/`oa_status`/`best_oa_location.
+version`/`best_oa_location.url_for_pdf`/`oa_locations` 计数四项系 D-019 锚点
+（`10.1371/journal.pmed.0020124`，[LIVE] 2026-07-22，aggregators.md §7）核验值，
+其余字段与②-⑫全部内容均为按 Unpaywall v2 响应 schema 手写的构造值（文件头
+`_grounded`/`_synthetic` 键标注）。①同时充当 `UnpaywallAdapter.healthcheck()` 的
+mock 回放素材；真实在线核对留待 `tests/online/test_unpaywall_smoke.py`（已写、
+按契约未执行，MAX_REAL_REQUESTS=1）。加载器 `tests/helpers/unpaywall_fixtures.py`
+（`fixture_bytes`/`http_fixture`，与 openreview 同构）。
