@@ -1,0 +1,30 @@
+{
+  "_synthetic": "SYNTHETIC but [LIVE]-grounded (2026-07-22, research/site-survey/openreview.md §11). ICLR 2018 venue-level Acceptance_Decision notes as served by v1 api.openreview.net: content.<field> read DIRECTLY (no .value wrapper). content.decision vocabulary is REAL (observed: GET api.openreview.net/notes?invitation=ICLR.cc/2018/Conference/-/Acceptance_Decision -> 935 decisions {'Accept (Poster)':314,'Accept (Oral)':23,'Reject':508,'Invite to Workshop Track':90}); note/forum ids fabricated. `forum` points at the Blind_Submission forum (see 13_v1_2018_submissions.json). No token/PII (decisions are CC0 metadata; recorded values only).",
+  "notes": [
+    {
+      "id": "dec_oral",
+      "forum": "sub_oral",
+      "invitation": "ICLR.cc/2018/Conference/-/Acceptance_Decision",
+      "content": {"title": "ICLR 2018 Conference Acceptance Decision", "decision": "Accept (Oral)"}
+    },
+    {
+      "id": "dec_poster",
+      "forum": "sub_poster",
+      "invitation": "ICLR.cc/2018/Conference/-/Acceptance_Decision",
+      "content": {"title": "ICLR 2018 Conference Acceptance Decision", "decision": "Accept (Poster)"}
+    },
+    {
+      "id": "dec_reject",
+      "forum": "sub_reject",
+      "invitation": "ICLR.cc/2018/Conference/-/Acceptance_Decision",
+      "content": {"title": "ICLR 2018 Conference Acceptance Decision", "decision": "Reject"}
+    },
+    {
+      "id": "dec_workshop",
+      "forum": "sub_workshop",
+      "invitation": "ICLR.cc/2018/Conference/-/Acceptance_Decision",
+      "content": {"title": "ICLR 2018 Conference Acceptance Decision", "decision": "Invite to Workshop Track"}
+    }
+  ],
+  "count": 4
+}

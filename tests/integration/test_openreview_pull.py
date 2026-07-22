@@ -23,6 +23,7 @@ import pytest
 import yaml
 from typer.testing import CliRunner
 
+from helpers.openreview_fixtures import fixture_bytes
 from paper_crawler import cli as cli_module
 from paper_crawler.cli import app
 from paper_crawler.config import Config
@@ -239,6 +240,49 @@ def test_pull_2024_dry_run_stops_at_resolve(
     assert result.exit_code == 0, result.output
     assert _papers(home) == 12
     assert _pdf_files(home) == []  # 止于 resolve，无下载
+
+
+# --- 缺陷 C-D：2018 决定帖 join 全链（venueid 惯例外的早届）------------------------------------
+
+
+def test_pull_2018_decision_join_full_chain(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """缺陷 C-D 回归：ICLR 2018（blind submission 无 venueid）经 venue 级 Acceptance_Decision
+    join 枚举出 accepted——由修复前的 0 篇修为 2 篇（sub_oral/sub_poster），全链落盘 2 个 %PDF。
+
+    fixtures 12（决定帖：Accept Oral/Poster + Reject + Invite to Workshop Track）+ 13（提交帖，
+    无 venueid，带 pdf）——形态 [LIVE] 2026-07-22 实证（research/site-survey/openreview.md §11）。
+    """
+    monkeypatch.delenv("PAPER_CRAWLER_OPENREVIEW_TOKEN", raising=False)
+    home = _write_iclr_home(tmp_path)
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        if "/pdf" in request.url.path:
+            return httpx.Response(200, content=_PDF)
+        if "/groups" in request.url.path:
+            return httpx.Response(
+                200, content=_v1_group("ICLR.cc/2018/Conference")
+            )  # 无 domain → v1
+        inv = request.url.params.get("invitation", "")
+        name = (
+            "12_v1_2018_decisions.json"
+            if "Acceptance_Decision" in inv
+            else "13_v1_2018_submissions.json"
+        )
+        return httpx.Response(200, content=fixture_bytes(name))
+
+    _patch_clients(monkeypatch, handler)
+    result = runner.invoke(app, ["pull", "iclr", "--year", "2018", "--home", str(home)])
+    assert result.exit_code == 0, result.output
+
+    # 决定帖 join：Reject + Invite to Workshop Track 排除 → 只 2 篇 accepted 落库。
+    assert _papers(home) == 2
+    assert _openreview_identifiers(home) == {"sub_oral", "sub_poster"}
+    # 提交帖带 pdf → resolve 纯构造 URL → 2 个 %PDF 落盘。
+    pdfs = _pdf_files(home)
+    assert len(pdfs) == 2
+    assert all(f.read_bytes().startswith(b"%PDF-") for f in pdfs)
 
 
 # --- v1/v2 双路 -----------------------------------------------------------------------------
