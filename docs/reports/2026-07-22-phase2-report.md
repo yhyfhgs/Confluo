@@ -153,3 +153,9 @@ development-plan §Phase 2 范围逐项：
    补标（Phase 0-2 累计缺口，建议一次性批处理而非逐 Phase 补）。
 9. AC-0 红线的系统性终验扫描（git 全历史+日志正则）——本报告 §2 已标注为待终验 agent 执行项，
    不可省略（Phase 1 report 先例）。
+
+
+### Phase 3 检查单增补（终检发现，2026-07-22）
+
+- **【置顶】C-D openreview venueid 异构缺陷**：ICLR 2018/2019 接收论文 venueid ≠ group id（实测 0 匹配）——需逐年实测 venueid 惯例（~10 在线请求）+ adapter 按届 accepted 规则（quirks 通道已预留）；2022/2023 v1 计数含非接收态同批澄清。
+- **【置顶】C-C 大 venue pull 可用性**：零网络 resolve 被逐篇限速 + `--limit` 在 resolve 后生效 → 2260 篇量级 venue 的 pull 壁钟数十分钟。修法方向：`url_strategy=direct` 的零网络 resolve 跳过限速闸，和/或 `--limit` 前置到 resolve 圈选。

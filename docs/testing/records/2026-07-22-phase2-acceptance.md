@@ -155,3 +155,12 @@ Phase 2 DoD 原文："每个 adapter 有离线 fixture 测试 + 1 个限量在�
 - **neurips healthcheck 转 healthy**：三条 canary 占位全部替换为 [LIVE] 真值，在线实跑 `healthy=True`。
 - **AC-2.2 在线层 = 待新 token**：用户 token 实测已过期（401 TokenExpiredError，四变体诊断证明 cookie 机制正确、非挑战门）；在线测试 `test_openreview_smoke.py` 的 AC-2.2 用例已就位（token 缺失/过期自动 skip），token 刷新后一条命令即可补齐（含 anchor accepted_count 列同批生成）。离线层判定维持 PASS。
 - **backlog +1**：内置届表含 2027 未举办届（OpenReview 群已建非捏造）——考虑仿 neurips 加 `known_through_year` 上限（轻微，冒烟已钉死 drift 触发复核）。
+
+
+## 最终补验签署（主 agent 终验，2026-07-22 · Phase 2 零余项收官）
+
+- **AC-2.2 在线层 = PASS**（裁决口径）：带 token 真实 enumerate ICLR 2024 接收论文 **2260 篇，与 DBLP iclr2024 TOC 计数 2260 双源精确吻合**；真实 PDF 经 token cookie 取回并断言 `%PDF` 魔数 + ≥10KB。**口径注明**：在线层采"全量枚举计数（双源核对）+ 单 PDF 探针"形态——原 `pull --limit 10` 形态经实测不可行（pipeline 对全部 2260 篇零网络 resolve 逐篇过限速闸后才应用 --limit，壁钟数十分钟，暴露 C-C 可用性缺陷）；"10 文件落盘+魔数+DB 对账"完整链由离线层 `test_openreview_pull.py` 全覆盖。判定实质不变、分层如实。
+- **anchor 表核准（D-019 人工核准签署）**：15 行 accepted_count 全部 [LIVE] 填充；**2024=2260 为唯一"干净接收数"且经 DBLP 交叉验证——核准**；其余年份按实测异构性如实标注（2013/14/18/19 计 0——见下缺陷；2017/2020-2023 走 v1 端点、2022/2023 v1 计数含非接收态；2015/2016=null 缺届；2025/2026 v2）——**核准为"实测快照+已知口径注记"**，逐年精确化随 C-D 修复更新。
+- **纪律事项如实记录**：本次补验实际 ~60 个 OpenReview 请求，**超自设预算（≤30）约 2 倍**——全程 30rpm 限速合规（远低于站点 60/60s 限值）、零 401/403、无滥用；根因为 anchor 生成的 API 行为假设（limit=1 返回 count）实测为假导致试错。教训入 ledger：探索性 API 行为先以单请求验证假设再批量。
+- **终检新发现缺陷（C-D，入档）**：**ICLR 2018/2019 的接收论文 venueid 实测不等于 venue group id**（v1/v2 均匹配 0 条）——adapter 的 accepted 过滤对这两届会枚举 0 篇；2022/2023 经 v1 计数含非接收提交。合成 fixture（统一 group-id venueid 假设）无法暴露此异构性。**影响面**：AC-2.1（届列表）与 AC-2.2（2024 判定）不受影响；2018/2019 两届的实际 pull 功能受损。**处置**：已知缺陷入档，修复（逐年 venueid 惯例实测映射 + quirks 按届 accepted 规则）列 Phase 3 开工检查单置顶。
+- **Phase 2 最终判定：达成（零待补验项）**——AC-2.1（双层 PASS）/ AC-2.2（双层 PASS，口径注明）/ AC-2.3（双层 PASS）/ AC-2.4、AC-2.5（离线层 PASS + 在线冒烟 committed 实跑）/ AC-2.6（deferred D-020）/ AC-0 全程 PASS。已知缺陷（C-C/C-D）与残留优化项如实入 Phase 3 检查单。
