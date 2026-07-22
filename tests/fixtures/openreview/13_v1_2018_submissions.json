@@ -1,0 +1,50 @@
+{
+  "_synthetic": "SYNTHETIC but [LIVE]-grounded (2026-07-22, research/site-survey/openreview.md §11). ICLR 2018 Blind_Submission notes as served by v1 api.openreview.net (content.<field> DIRECT). KEY [LIVE] FACT: accepted 2018 submissions carry NO content.venueid / content.venue field (observed on real accepted forum ryQu7f-RZ) — so the default venueid filter enumerates 0 (defect C-D). Acceptance is joined from 12_v1_2018_decisions.json by forum id. sub_oral/sub_poster accepted; sub_reject/sub_workshop not main-conference accepted. content.pdf is the real /pdf/<hex>.pdf relative shape. ids fabricated; no token/PII.",
+  "notes": [
+    {
+      "id": "sub_oral",
+      "forum": "sub_oral",
+      "invitation": "ICLR.cc/2018/Conference/-/Blind_Submission",
+      "content": {
+        "title": "A 2018 Accepted Oral Paper",
+        "abstract": "Accepted as oral; blind submission carries no venueid.",
+        "authors": ["Anonymous"],
+        "pdf": "/pdf/0ra10000000000000000000000000000000000aa.pdf"
+      }
+    },
+    {
+      "id": "sub_poster",
+      "forum": "sub_poster",
+      "invitation": "ICLR.cc/2018/Conference/-/Blind_Submission",
+      "content": {
+        "title": "A 2018 Accepted Poster Paper",
+        "abstract": "Accepted as poster; blind submission carries no venueid.",
+        "authors": ["Anonymous"],
+        "pdf": "/pdf/p0ster0000000000000000000000000000000bb.pdf"
+      }
+    },
+    {
+      "id": "sub_reject",
+      "forum": "sub_reject",
+      "invitation": "ICLR.cc/2018/Conference/-/Blind_Submission",
+      "content": {
+        "title": "A 2018 Rejected Paper Not To Be Enumerated",
+        "abstract": "Rejected; must be excluded by the decision join.",
+        "authors": ["Anonymous"],
+        "pdf": "/pdf/re8ect0000000000000000000000000000000cc.pdf"
+      }
+    },
+    {
+      "id": "sub_workshop",
+      "forum": "sub_workshop",
+      "invitation": "ICLR.cc/2018/Conference/-/Blind_Submission",
+      "content": {
+        "title": "A 2018 Workshop-Invited Paper Not Main-Conference Accepted",
+        "abstract": "Invite to Workshop Track is NOT a main-conference accept.",
+        "authors": ["Anonymous"],
+        "pdf": "/pdf/w0rksh0p00000000000000000000000000000dd.pdf"
+      }
+    }
+  ],
+  "count": 4
+}

@@ -203,6 +203,66 @@ server: nginx ; via: 1.1 google    # OpenReview 托管在 GCP
 1. **默认需鉴权**：把"匿名不可读 notes/PDF、须持 `openreview.accessToken`（或用 openreview-py，含 guest login 取 token）"写进适配器前提；只有 venue 发现走匿名 `/groups`。
 2. **版本判定**：先 `groups?id=<venue>` 看有无 `domain` → v2(api2) / v1(api)；勿用年份线。
 3. **venue-id 生成**：查表而非拼接——2013/2014/2016/2017 小写、2018+ 大写、2015/2016 主会缺；用 `groups?id=venues` 过滤 `ICLR.cc/*` 动态获取最稳。
-4. **accepted 判定**：`content.venueid.value == 主会 venue id` 为接收；`*_Submission/Withdrawn/Desk_Rejected` 类为未收。
+4. **accepted 判定**：`content.venueid.value == 主会 venue id` 为接收；`*_Submission/Withdrawn/Desk_Rejected` 类为未收。**⚠ 勘误见 §11**：此惯例**只对 2017、2020-2026 成立**；2013/2014/2018/2019 的接收态**不在 venueid**（详见 §11 逐届表）。
 5. **分页/限流**：limit≤1000 + offset 循环到 `count`；节流 <1 req/s（60/60s 窗）。
 6. **golden 篇数**：本报告 §9 约值仅量级参考，正式 golden 须鉴权后按 venueid 过滤取 `count` 重生成；2015/2016、2013/2014(arxiv 源) 特别标注。
+
+---
+
+## 11. 逐届 accepted 判定惯例（[LIVE] 2026-07-22 · 缺陷 C-D 实测）★权威表
+
+> 触发：Phase 2 终检缺陷 **C-D**——adapter 的 `content.venueid == 主会 id` accepted 过滤对
+> ICLR **2018/2019 枚举出 0 篇**。本节以带 token 实测（**15 请求**，间隔 ≥1.6s，UA 携 mailto，
+> 全 200 除 1 次故意 404，token 零回显）逐届搞清接收判定的真实出处。**结论：venueid 规约是
+> 后期（2020+）才统一的惯例；早届接收态另有出处，逐届异构。**
+
+**头号发现**：ICLR **2018/2019 的 blind submission 帖根本没有 `content.venueid`/`content.venue`
+字段**（在真实接收论文 forum `ryQu7f-RZ`（2018）与 `rJl0r3R9KX`（2019，Meta_Review 明言"could
+be accepted"）上实证）。§3 的 "接收 = venueid==主会 id、未收落 `*_Submission` 类" [DOC] 推断对这
+两届**不成立**——它们的 venueid 是**缺席**而非"另一个值"。接收态记在**独立的决定帖**里。
+
+### 11.1 逐届 accepted 判定表
+
+| 届 | note 存储 | group `domain` | 接收态出处（[LIVE]） | 可靠过滤谓词 | accepted 数（[LIVE]） |
+|----|-----------|----------------|----------------------|--------------|------------------------|
+| 2013 | v1 | 无 | **submission 自身** `content.decision`（值 'reject' / 'conferencePoster-iclr2013-workshop' 等） | submission `content.decision` ∈ 主会 accept 词表 | 未全量 tally（67 投稿）；**Phase 3** |
+| 2014 | v1 | 无 | **submission 自身** `content.decision`（值 'submitted, no decision' / 'reject' 等） | 同上 | 未全量 tally（69 投稿）；**Phase 3** |
+| 2017 | v1 | 无 | `content.venueid`（存在） | **venueid==主会 id**（默认） | 543（上一 session；含面偏宽，未 DBLP 交叉） |
+| **2018** | **v1** | **无** | **venue 级决定帖** `ICLR.cc/2018/Conference/-/Acceptance_Decision` 的 `content.decision` | **决定帖 `decision` startswith 'Accept'** | **337**（314 Poster + 23 Oral；935 决定帖：Reject 508 + Invite-to-Workshop 90 排除） |
+| **2019** | **v1** | **无** | **per-paper 决定帖** `…/Paper<N>/Meta_Review` 的 `content.recommendation`（**非** venue 级——venue 级 `-/Meta_Review` 查询 count=0） | **submission `details=directReplies` 里 Meta_Review `recommendation` startswith 'Accept'** | **~500**；page-1 [LIVE] 391/1000（372 Poster + 19 Oral + 609 Reject）；exact 待 fixed-adapter smoke |
+| 2020-2023 | v1 | 无 | `content.venueid`（存在） | venueid==主会 id | 825 / 860 / **2617** / **3792**（2022/2023 **含非接收**，见 11.3） |
+| 2024-2026 | v2 | 有 | `content.venueid`（存在） | venueid==主会 id | 2260（==DBLP✓）/ 3703 / 5351 |
+
+**版本/端点边界**：2018/2019 的 group 无 `domain` → 判定 **v1（api.openreview.net）**；notes 亦只在 v1
+存储（`id=ryQu7f-RZ` 在 api2 查 **404**、在 api 查 **200**）。adapter 现有"groups 判 domain → 定
+base URL"逻辑对这两届路由正确，缺陷纯在 accepted 过滤谓词。
+
+### 11.2 决定帖形态（[LIVE] 实测样例，供 fixture 保真）
+
+- **2018 决定帖**（v1 直取）：`invitation=ICLR.cc/2018/Conference/-/Acceptance_Decision`，`forum`=blind
+  submission id，`content.decision` ∈ {`Accept (Oral)`, `Accept (Poster)`, `Reject`, `Invite to
+  Workshop Track`}。venue 级单一 invitation → 一次翻页即得全届 935 决定。
+- **2019 决定帖**（v1 直取）：`invitation=…/Paper<N>/Meta_Review`（**per-paper**），`content` 键
+  `{metareview, recommendation, confidence, title}`，`recommendation` ∈ {`Accept (Poster)`,
+  `Accept (Oral)`, `Reject`}。因 per-paper，无 venue 级聚合 invitation——须走 submission
+  `details=directReplies`（v1 [LIVE] 支持）一遍取 submission+其决定。
+- **2013/2014 submission**（v1 直取）：`invitation=…/-/submission`，`content` 含 `decision` **与
+  `pdf`** 字段——即这两届 OpenReview **有** pdf（勘误 §9/design §4 的"2013/2014 note 无 pdf、正文只在
+  arXiv"表述：pdf 字段**存在**；但正文仍多在 arXiv，跨源发现归 Phase 3）。
+
+### 11.3 顺带疑点（预算所限未逐一实测，如实标注）
+
+- **2022/2023 v1 `content.venueid==主会 id` 计数 2617/3792 >> survey accepted ~1095/~1570**：说明这两届
+  venueid 过滤**含非接收**（over-count）。**本 session 未再单独实测其分辨谓词**（15 请求预算优先给了
+  C-D 核心的 2018/2019/2013/2014）。此为**独立缺陷**（over-count，非 C-D 的 under-count-to-zero），
+  留 Phase 3 跟进：疑似 rejected/withdrawn 也被赋了主会 venueid，或 venueid 精确匹配对这两届失真——
+  须实测 rejected 论文的真实 venueid 值再定谓词。
+
+### 11.4 对设计/实现的落地结论
+
+1. **accepted 判定必须逐届数据驱动**，不能全局 `venueid==id`。已落地 `adapters/openreview/acceptance.py`
+   的逐届规则表（`_ICLR_RULES`）：默认 `VenueidRule`；2018=`DecisionInvitationRule`；2019=`DirectRepliesRule`。
+2. **2013/2014 保留默认（→0）**：符合 design §4 的"正文在 arXiv、跨源 Phase 3"口径；submission
+   `content.decision` 惯例已实证记档，Phase 3 可补 `SubmissionDecisionRule`。
+3. **2022/2023 over-count** 与 **2019 exact 数**：留 Phase 3 / 下次在线补验（见 11.3、anchor
+   `cd_resolution`）。

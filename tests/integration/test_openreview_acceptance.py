@@ -63,9 +63,8 @@ def test_2013_2014_note_marks_arxiv_body() -> None:
 
 
 def test_anchor_accepted_counts_live_populated() -> None:
-    # accepted_count 已由 [LIVE] 2026-07-22 token 化查询填充（content.venueid=<group_id>
-    # count；见 live_verification）。2024 是唯一 DBLP 交叉核验的干净 accepted 值。
-    assert _ANCHOR["count_status"] == "LIVE_2026-07-22_HETEROGENEOUS"
+    # accepted_count 由 [LIVE] 2026-07-22 token 化查询填充。2024 是唯一 DBLP 交叉核验的干净值。
+    assert _ANCHOR["count_status"] == "LIVE_2026-07-22_CD_RESOLVED"
     e2024 = _ANCHOR_BY_YEAR[2024]
     assert e2024["accepted_count"] == 2260  # [LIVE] api2 v2 content.venueid count
     assert e2024["accepted_count"] == e2024["dblp_toc_count"]  # 2260 == 2260 两源互证
@@ -73,10 +72,29 @@ def test_anchor_accepted_counts_live_populated() -> None:
     # 缺届（2015/2016）无 OpenReview 群 → accepted_count 恒 None。
     for year in (2015, 2016):
         assert _ANCHOR_BY_YEAR[year]["accepted_count"] is None
-    # 其余有 venueid 的届均已填充为 int（含异常届 2013/2014/2018/2019 记 0）。
+    # 有 venueid 的届均填 int，例外 2019：C-D 修复后 accepted_count 留 null（exact 待
+    # fixed-adapter smoke），仅 accepted_count_partial_live 记 [LIVE] page-1 下界。
     for year, entry in _ANCHOR_BY_YEAR.items():
-        if entry["openreview_venueid"]:
+        if entry["openreview_venueid"] and year != 2019:
             assert isinstance(entry["accepted_count"], int), f"year {year} accepted_count 未填充"
+
+
+def test_anchor_cd_defect_resolved_2018_2019() -> None:
+    """缺陷 C-D 在 anchor 的入档：2018 决定帖 join 得 337（exact）；2019 directReplies join
+    留 null + page-1 [LIVE] 下界 391；两届 endpoint 标注非 venueid 路径。"""
+    e2018 = _ANCHOR_BY_YEAR[2018]
+    assert e2018["accepted_count"] == 337  # 314 Poster + 23 Oral（935 决定帖 [LIVE]）
+    assert e2018["accepted_count_endpoint"] == "v1_decision_join"
+    e2019 = _ANCHOR_BY_YEAR[2019]
+    assert e2019["accepted_count"] is None  # exact 待 fixed-adapter smoke
+    assert e2019["accepted_count_partial_live"] == 391  # [LIVE] page-1 of 1419 下界
+    assert e2019["accepted_count_endpoint"] == "v1_directreplies"
+    # 逐届惯例入档在 live_verification.cd_resolution（核心知识产出）。
+    cd = _ANCHOR["live_verification"]["cd_resolution"]
+    assert cd["defect"].startswith("C-D") and "per_year_convention" in cd
+
+
+def test_anchor_live_verification_records_method_and_caveat() -> None:
     # heterogeneity 口径（method + caveat）在 live_verification 明示（如实记录，非静默）。
     lv = _ANCHOR["live_verification"]
     assert "accepted_count_method" in lv and "accepted_count_caveat" in lv
