@@ -14,7 +14,12 @@ type:
 	uv run mypy src
 
 # 本地门禁（D-017）：lint + type + test 三者全绿方可提交。
-check: lint type test
+# Phase 4 起标准环境含 [auth] extra（B-m7 口径：cryptography/keyring 供 mypy 与加密测试；
+# 惰性 import 只保护最终用户运行时）——sync 幂等，秒级空转。
+check: sync-dev lint type test
+
+sync-dev:
+	uv sync --extra auth
 
 # 便捷：自动格式化 + 修复可修的 lint。
 fmt:
