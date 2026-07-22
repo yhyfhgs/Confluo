@@ -101,6 +101,7 @@ def _make_env(tmp_path: Path, handler: Handler, *, inception: str = "2024-01") -
     # 不参与——conference/journal 不入 watch）。
     # ★共享花名册（5 线并行 union 点）：crossref（T3）已加入注入集；T4/T5/T6 亦将扩集——
     # controller 合并取并集（另见 tests/unit/test_adapter_loading.py 同名断言）。
+    # unpaywall（T5）亦为 HttpClientConsumer（RESOLVE-only，注入不参与 watch）。
     assert set(bind_http_client(adapters, client)) == {
         "arxiv",
         "openreview",
@@ -110,6 +111,7 @@ def _make_env(tmp_path: Path, handler: Handler, *, inception: str = "2024-01") -
         "aaai_ojs",
         "neurips_proceedings",
         "crossref",
+        "unpaywall",
     }
     registry = VenueRegistry(adapters)
     assert registry.load_dirs([venues_dir]) == []

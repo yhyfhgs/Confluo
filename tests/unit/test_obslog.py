@@ -198,6 +198,8 @@ def test_file_receives_all_levels_regardless_of_console_level(tmp_path: Path) ->
         ("Secret: shh", "Secret: ***"),
         ("Session-Id: xyz789", "Session-Id: ***"),
         ("Session_Id: xyz789", "Session_Id: ***"),
+        ("Email: someone@example.com", "Email: ***"),
+        ("email: someone@example.com", "email: ***"),
     ],
 )
 def test_redact_header_style_key_value(raw: str, expected: str) -> None:
@@ -213,10 +215,41 @@ def test_redact_header_style_key_value(raw: str, expected: str) -> None:
         ("?token=abc123&y=2", "?token=***&y=2"),
         ("?session_id=abc123&z=3", "?session_id=***&z=3"),
         ("a=1&password=topsecret&b=2", "a=1&password=***&b=2"),
+        # T5 先决步骤（aggregators.md §3 B-B4）：unpaywall `?email=` 查询参数脱敏。
+        ("?email=me@example.com&x=1", "?email=***&x=1"),
+        ("?doi=10.1371/x&email=me@example.com", "?doi=10.1371/x&email=***"),
     ],
 )
 def test_redact_url_query_style_param(raw: str, expected: str) -> None:
     assert redact(raw) == expected
+
+
+def test_redact_unpaywall_style_url_hides_email() -> None:
+    """T5 先决步骤：Unpaywall `GET /v2/{doi}?email=<addr>` 的完整 URL 形态脱敏。
+
+    效果 `email=[^&]+` → `email=***`（复用既有 `_QUERY_STYLE` 分支，非新正则）；
+    脱敏后原始邮箱明文不得在结果中出现——先于任何 unpaywall adapter 代码落地，
+    避免 `http.py` 的无条件 `log_event(url=...)` 把邮箱写入 jsonl（AC-0.4 精神扩展）。
+    """
+    raw = "https://api.unpaywall.org/v2/10.1371/journal.pmed.0020124?email=researcher@example.com"
+    redacted = redact(raw)
+    assert redacted == "https://api.unpaywall.org/v2/10.1371/journal.pmed.0020124?email=***"
+    assert "researcher@example.com" not in redacted
+
+
+def test_log_event_redacts_unpaywall_email_query_param(tmp_path: Path) -> None:
+    """`log_event(url=...)` 端到端：unpaywall 请求 URL 落盘前邮箱已脱敏（非新增字段路径）。"""
+    setup_logging(tmp_path)
+    log_event(
+        "DEBUG",
+        "http exchange",
+        url="https://api.unpaywall.org/v2/10.1371/journal.pmed.0020124?email=me@example.com",
+    )
+
+    record = json.loads(_jsonl_path(tmp_path).read_text(encoding="utf-8").strip())
+
+    assert record["url"] == "https://api.unpaywall.org/v2/10.1371/journal.pmed.0020124?email=***"
+    assert "me@example.com" not in record["url"]
 
 
 @pytest.mark.parametrize(

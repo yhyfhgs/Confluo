@@ -33,6 +33,7 @@ EXPECTED_ADAPTER_IDS = {
     "cvf",
     "aaai_ojs",
     "neurips_proceedings",
+    "unpaywall",
 }
 VALID_FAMILIES = {"open_access", "auth_gated", "aggregator"}
 
@@ -293,6 +294,7 @@ def test_bind_http_client_injects_only_consumers(adapters: dict[str, SourceAdapt
         "aaai_ojs",
         "neurips_proceedings",
         "crossref",
+        "unpaywall",
     }
     # 注入生效：各 adapter 的 _client() 返回被注入的实例，不再惰性自建。
 

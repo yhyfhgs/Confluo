@@ -28,6 +28,7 @@ acl_anthology = "paper_crawler.adapters.acl_anthology.adapter:AclAnthologyAdapte
 cvf = "paper_crawler.adapters.cvf.adapter:CVFAdapter"
 aaai_ojs = "paper_crawler.adapters.aaai_ojs.adapter:AaaiOjsAdapter"
 neurips_proceedings = "paper_crawler.adapters.neurips_proceedings.adapter:NeuripsProceedingsAdapter"
+unpaywall = "paper_crawler.adapters.unpaywall.adapter:UnpaywallAdapter"
 
 [dependency-groups]
 dev = [

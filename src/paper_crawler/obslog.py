@@ -15,10 +15,15 @@
   不止 url 一个字段——本实现额外对 `msg` 与字符串类型的 `**extra` 值也过
   `redact()`，作为纵深防御（不改变函数签名，只加固内部行为）。
 - `redact`：大小写不敏感识别 cookie/set-cookie/authorization/token/
-  api_key(含下划线、短横变体)/password/secret/session_id(含短横变体) 的键值对
-  （`Key: value`、`key=value`，以及二者的引号变体 `"Key": "value"` /
+  api_key(含下划线、短横变体)/password/secret/session_id(含短横变体)/email 的
+  键值对（`Key: value`、`key=value`，以及二者的引号变体 `"Key": "value"` /
   `'key'='value'` 等——JSON 体、Python dict repr 常见），把值替换为 `***`；
-  不匹配的文本原样返回。
+  不匹配的文本原样返回。**`email`（T5 先决步骤，aggregators.md §3 B-B4）**：
+  Unpaywall 把联系邮箱走 URL 查询参数 `?email=<addr>`（design/adapters/
+  aggregators.md §5.5），而 `http.py` 对每一次请求无条件 `log_event(url=...)`
+  经本函数脱敏——`email` 并入下方 `_SENSITIVE_KEYS`、复用既有 `_QUERY_STYLE`/
+  `_HEADER_STYLE` 分支（无需新正则），使 `?email=me@example.com` 落盘前即变
+  `?email=***`，不再有 unpaywall adapter 之前先补齐此项，避免明文邮箱进 jsonl。
 - `**extra` 中 dict/list/tuple 结构化值会递归脱敏（任意深度）：dict 的键名
   若整体匹配敏感关键词，对应值整体替换为 `"***"`（不再逐字符扫描该值本身，
   因为像 `"session=abc123"` 这类值单看文本不含可识别的"键=值"形态，必须靠
@@ -36,9 +41,11 @@ from paper_crawler.types import utcnow_iso
 
 _LOGGER_NAME = "paper_crawler"
 
-# design/05 §7 + 接口冻结件 §2.6 的脱敏键名清单（大小写不敏感）。
+# design/05 §7 + 接口冻结件 §2.6 的脱敏键名清单（大小写不敏感）。`email`
+# 2026-07-22 并入（aggregators.md §3 B-B4，T5 先决步骤）：Unpaywall `?email=`
+# 查询参数须与 cookie/token 同等脱敏，见上方 docstring「email」小节。
 _SENSITIVE_KEYS = (
-    r"set-cookie|cookie|authorization|token|api[_-]?key|password|secret|session[_-]?id"
+    r"set-cookie|cookie|authorization|token|api[_-]?key|password|secret|session[_-]?id|email"
 )
 # extra 结构体里"键名整体等于某个敏感关键词"的判定（而非"文本中包含"）。
 _SENSITIVE_KEY_NAME = re.compile(_SENSITIVE_KEYS, re.IGNORECASE)

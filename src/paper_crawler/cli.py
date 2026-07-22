@@ -71,11 +71,14 @@ from typing import Annotated, NoReturn
 import typer
 
 from paper_crawler.adapter import (
+    EmailConsumer,
     HttpClientConsumer,
     SourceAdapter,
     bind_http_client,
     load_adapters,
 )
+from paper_crawler.adapters.unpaywall import report as oa_report
+from paper_crawler.adapters.unpaywall.adapter import UnpaywallAdapter
 from paper_crawler.canary import (
     canary_exit_code,
     canary_record_path,
@@ -817,6 +820,85 @@ def verify(home: HomeOpt = None, verbose: VerboseOpt = False) -> None:
             typer.echo("verify: 一致，未发现问题。")
             exit_code = 0
     raise typer.Exit(code=exit_code)
+
+
+# -- oa-report ------------------------------------------------------------------
+
+
+def _doi_universe(db: Database, *, venue_id: str | None) -> list[str]:
+    """库内 DOI 集合（`identifier.scheme='doi'`），可选按 venue 过滤；去重、按值排序。
+
+    直查 `Database`（T5 共享文件纪律：`repo.py` 冻结不动，不为此新增仓储方法——
+    与 `verify_store`/`run_canary` 复用既有 `Repo` 方法的既有分工不同，本查询是纯
+    只读聚合、无跨表写语义，直接经 `Database.query` 这一冻结公共接口达成即可）。
+    """
+    if venue_id is not None:
+        rows = db.query(
+            "SELECT DISTINCT i.value FROM identifier i "
+            "JOIN paper p ON p.id = i.paper_id "
+            "WHERE i.scheme = 'doi' AND p.venue_id = ? ORDER BY i.value",
+            (venue_id,),
+        )
+    else:
+        rows = db.query("SELECT DISTINCT value FROM identifier WHERE scheme = 'doi' ORDER BY value")
+    return [str(row["value"]) for row in rows]
+
+
+def _prepare_unpaywall_adapter(env: CliEnv) -> UnpaywallAdapter:
+    """取一个可正确限速/带凭证的 `unpaywall` adapter 实例（`oa-report` 命令专用装配）。
+
+    unpaywall 不是任何 venue 的 `metadata_source`/`fulltext_source`，不经
+    `registry.route()`/`pipeline.stages.route_for` 的既有限速登记路径（T5 范围内不
+    接线 pipeline 兜底，见 `UnpaywallAdapter` 模块 docstring「触发条件语义」）——本
+    命令独立补齐：注入 `_build_env` 已装配好的共享 `http`（同一 UA/同一限速器实例）+
+    `Config.identity_email`，并把 `unpaywall.domains[0]` 登记进同一限速器（`route_for`
+    对每源域的登记同款），使批量 DOI 循环切实遵守 5 req/s（不同于 `canary` 命令对
+    `load_adapters()` 新鲜实例的"不额外装配、允许惰性自建"处理——那里只有一次探测
+    请求，本命令可能循环上百次，必须走正确限速）。
+    """
+    adapters = load_adapters()
+    adapter = adapters.get("unpaywall")
+    if not isinstance(adapter, UnpaywallAdapter):
+        _usage_error("unpaywall adapter 未注册（pyproject entry-point 缺失或被覆盖）")
+    if isinstance(adapter, HttpClientConsumer):
+        adapter.set_http_client(env.http)
+    if isinstance(adapter, EmailConsumer):
+        adapter.set_email(env.ctx.config.identity_email)
+    env.ctx.limiter.register(adapter.domains[0], adapter.default_rate)
+    return adapter
+
+
+@app.command("oa-report")
+def oa_report_cmd(
+    venue: Annotated[str | None, typer.Option("--venue", help="仅统计该 venue 的 DOI")] = None,
+    limit: Annotated[
+        int | None, typer.Option("--limit", help="限制查询的 DOI 数量（默认不限）")
+    ] = None,
+    home: HomeOpt = None,
+    verbose: VerboseOpt = False,
+) -> None:
+    """Unpaywall OA 命中率报告：库内 DOI 集合逐个 `GET /v2/{doi}`（T5 DoD 第二项）。
+
+    单 DOI GET 循环（无批量端点，design/adapters/aggregators.md §5.5）；5 req/s 限速下
+    100 DOI ≈ 20s。只读，不写 DB、不下载资产；退出码恒为 0（报告本身不是"发现问题即
+    失败"的对账判据，同 verify 不同——命中率高低是统计事实，非缺陷信号），`--venue`
+    给未知 id 时按既有用法错口径退出 2。
+    """
+    with _env(home, verbose) as env:
+        if venue is not None:
+            _require_known_venue(env, venue)
+        dois = _doi_universe(env.ctx.db, venue_id=venue)
+        if limit is not None:
+            dois = dois[:limit]
+
+        if not dois:
+            typer.echo("库内无 DOI（identifier.scheme='doi' 为空），无可查询目标。")
+            raise typer.Exit(code=0)
+
+        adapter = _prepare_unpaywall_adapter(env)
+        rep = oa_report.build_oa_report(dois, adapter.lookup)
+        typer.echo(oa_report.render_oa_report_markdown(rep))
+    raise typer.Exit(code=0)
 
 
 # -- report -------------------------------------------------------------------
