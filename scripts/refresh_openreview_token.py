@@ -87,6 +87,7 @@ def _login(username: str, password: str) -> str:
     try:
         with urllib.request.urlopen(req, timeout=30) as resp:
             payload = json.loads(resp.read().decode("utf-8"))
+            set_cookies = resp.headers.get_all("Set-Cookie") or []
     except urllib.error.HTTPError as exc:
         if exc.code in (400, 401, 403):
             # 不回显任何凭证；OpenReview 对错误凭证返回 400/401。
@@ -97,10 +98,48 @@ def _login(username: str, password: str) -> str:
         sys.exit(f"[refresh-token] 登录端点异常：HTTP {exc.code}")
     except (urllib.error.URLError, TimeoutError) as exc:
         sys.exit(f"[refresh-token] 网络错误：{type(exc).__name__}（请检查网络后重试）")
-    token = str(payload.get("token", "")).strip()
+    token = _extract_token(payload, set_cookies)
     if not token:
-        sys.exit("[refresh-token] 登录响应缺 token 字段（站点响应结构可能已变更，请人工复核）。")
+        # 诊断输出只含结构（键名/类型/cookie 名），绝不含任何值。
+        sys.exit(
+            "[refresh-token] 未能从登录响应中定位 token。响应结构（仅键名，值已脱敏）：\n"
+            f"  body: {_shape(payload)}\n"
+            f"  set-cookie 名: {[c.split('=', 1)[0] for c in set_cookies]}\n"
+            "请把以上结构信息反馈给维护者以适配新结构。"
+        )
     return token
+
+
+def _extract_token(payload: object, set_cookies: list[str]) -> str:
+    """按已知候选位置提取 accessToken：body 顶层/嵌套 → Set-Cookie 头。"""
+    if isinstance(payload, dict):
+        for key in ("token", "accessToken", "access_token"):
+            value = payload.get(key)
+            if isinstance(value, str) and value.strip():
+                return value.strip()
+        user = payload.get("user")
+        if isinstance(user, dict):
+            for key in ("token", "accessToken"):
+                value = user.get(key)
+                if isinstance(value, str) and value.strip():
+                    return value.strip()
+    for cookie in set_cookies:
+        name, _, rest = cookie.partition("=")
+        if name.strip() == "openreview.accessToken":
+            return rest.split(";", 1)[0].strip()
+    return ""
+
+
+def _shape(obj: object, depth: int = 0) -> str:
+    """响应结构骨架：键名保留、所有值替换为类型占位（诊断用，零泄漏）。"""
+    if depth > 2:
+        return "..."
+    if isinstance(obj, dict):
+        inner = ", ".join(f"{k}: {_shape(v, depth + 1)}" for k, v in obj.items())
+        return "{" + inner + "}"
+    if isinstance(obj, list):
+        return f"[{_shape(obj[0], depth + 1)} x{len(obj)}]" if obj else "[]"
+    return f"<{type(obj).__name__}>"
 
 
 def _write_back(cfg_path: Path, token: str) -> None:
