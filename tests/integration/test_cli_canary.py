@@ -110,6 +110,7 @@ def test_canary_without_filter_checks_all_registered_adapters(
     from paper_crawler.adapters.neurips_proceedings.adapter import NeuripsProceedingsAdapter
     from paper_crawler.adapters.openreview.adapter import OpenReviewAdapter
     from paper_crawler.adapters.pmlr.adapter import PmlrAdapter
+    from paper_crawler.adapters.unpaywall.adapter import UnpaywallAdapter
 
     def _fake_healthy(self: object, session: object = None) -> HealthReport:
         return HealthReport(healthy=True, detail="patched offline")
@@ -122,6 +123,7 @@ def test_canary_without_filter_checks_all_registered_adapters(
     monkeypatch.setattr(AaaiOjsAdapter, "healthcheck", _fake_healthy)
     monkeypatch.setattr(NeuripsProceedingsAdapter, "healthcheck", _fake_healthy)
     monkeypatch.setattr(MockPlatformAdapter, "healthcheck", _fake_healthy)
+    monkeypatch.setattr(UnpaywallAdapter, "healthcheck", _fake_healthy)
 
     result = runner.invoke(app, ["canary", "--home", str(_home(tmp_path))])
 
@@ -136,6 +138,7 @@ def test_canary_without_filter_checks_all_registered_adapters(
         "acl_anthology",
         "cvf",
         "neurips_proceedings",
+        "unpaywall",
     ):
         assert adapter_id in result.output
 

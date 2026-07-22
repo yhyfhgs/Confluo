@@ -103,6 +103,8 @@ def _make_env(tmp_path: Path, handler: Handler, *, inception: str = "2024-01") -
     # venue，openreview/acl_anthology 被注入但不参与——conference 不入 watch）。
     # arxiv/openreview/pmlr/neurips_proceedings 均为 HttpClientConsumer（watch 只跑
     # preprint venue，其余被注入但不参与——conference 不入 watch）。
+    # unpaywall（T5）新增为 HttpClientConsumer；同样被注入但不参与 watch（RESOLVE-only
+    # 聚合源，非 preprint venue 的 metadata/fulltext source）。
     assert set(bind_http_client(adapters, client)) == {
         "arxiv",
         "openreview",
@@ -111,6 +113,7 @@ def _make_env(tmp_path: Path, handler: Handler, *, inception: str = "2024-01") -
         "cvf",
         "aaai_ojs",
         "neurips_proceedings",
+        "unpaywall",
     }
     registry = VenueRegistry(adapters)
     assert registry.load_dirs([venues_dir]) == []
