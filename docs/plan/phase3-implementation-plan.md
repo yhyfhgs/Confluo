@@ -48,9 +48,24 @@ updated: 2026-07-22
    - **弱信号候审**：无共同 identifier 时，`title_norm`（去标点/大小写/LaTeX 宏/空白折叠）精确匹配 + 首作者姓氏一致 → 建 `paper_relation(kind=candidate_duplicate, decided=NULL, confidence, evidence_json)`，**绝不自动合并**；无匹配 → 新建 paper。
    - **schema v2 迁移**（0002）：`paper` 增列 `title_norm TEXT` + 索引 `idx_paper_title_norm`；迁移器回填存量行。纯附加，v1 库自动升级。
    - **DOI 规范化**：`ids.normalize_doi()`（小写化/剥 `https://doi.org/`、`doi:` 前缀）——identifier 写入的唯一入口经过它（crossref/unpaywall/dblp ee 回填共用）。
-2. **VenueSpec 分离语义**（D-005，T3 第一消费者落地，纯附加）：`metadata_source: str | None`（默认 None=沿用 adapter 自身）；registry 校验：声明了 metadata_source 的 venue，其值必须是已注册 aggregator adapter id；期刊 kind 且 metadata_source=crossref 时 issn 必填（D-015 既有规则保持）。
+2. **VenueSpec 分离语义**（D-005，T3 第一消费者落地，纯附加）：`metadata_source: str | None`（默认 None=沿用 adapter 自身；现冻结 types.py 为必填 `str`，本字段松弛为可选 `str | None` 属有意的纯附加变更，与详设 §6 措辞互查一致）；registry 校验：声明了 metadata_source 的 venue，其值必须是已注册 aggregator adapter id；期刊 kind 且 metadata_source=crossref 时 issn 必填（D-015 既有规则保持）。
 3. **aggregator 无 FETCH 契约**：家族 capabilities 不含 FETCH；unpaywall RESOLVE 产 `AssetPlan(url_strategy="direct", auth="none")` 交通用 fetcher；pipeline 对 metadata-only venue 的 fetch 阶段行为=空集跳过（现有语义已支持，回归测试锁定）。
-4. **在线预算**（T5 契约沿用）：每源在线冒烟 `MAX_REAL_REQUESTS ≤ 5`；本 Phase 在线总预算 ≤60 请求（冒烟批量+AC-3.5 实跑+锚点核准），超支须如 Phase 2 C-A 入档。
+4. **在线预算**（T5 契约沿用）：每源在线冒烟 `MAX_REAL_REQUESTS ≤ 5`；本 Phase 在线总预算 **≤100 请求**，超支须如 Phase 2 C-A 入档。分项估算：
+
+   | 分项 | 估算 | 依据 |
+   |---|---|---|
+   | 五源冒烟 | ≤25 | 每源 ≤5（实际 ~6 合计，详设 §8） |
+   | AC-3.5 五刊全史枚举（T7 实跑） | ~35–45 | QJE `total_all=6655` ÷ `rows≤1000` ≈ 7 页 cursor/刊 × 5 刊；JFE/其余 3 刊量级相近 |
+   | D-019 五站锚点核准 | ~15 | 每源 ≥1 锚点人工核准复核 |
+   | 缓冲 | ~15 | 重试/重录/边界复核 |
+   | **合计** | **≤100** | — |
+5. **EnrichmentSource duck-typed 接口 + `crawler enrich` CLI 契约**（T6 落地，A-B2；补充层驱动机制）：openalex/s2 **不进** `SourceAdapter` 五方法冻结协议、capabilities 无 ENUMERATE/SEARCH/FETCH；改经**冻结协议之外**的 duck-typed 可选接口（运行期 duck-typed 甄别，仿 `HttpClientConsumer`/`bind_http_client` 先例——不实现者静默跳过）：
+   ```python
+   class EnrichmentSource(Protocol):   # 立于 SourceAdapter 冻结协议之外；非 5 方法之一
+       def enrich_batch(self, dois: Sequence[str]) -> list[PaperStub]: ...
+   ```
+   - **驱动 = 新 CLI** `crawler enrich [--venue ID] [--source openalex|s2]`：扫 DB 中带 `doi` identifier 的 paper → 分批（openalex `filter=doi:` OR 拼、s2 `POST /paper/batch` ≤500 id/批）→ 产 `PaperStub` 经 `MergeEngine.ingest(stub, source=…)` 回注；字段级来源优先级收敛（§2-1，openalex/s2 低位阶）天然实现「补缺不覆盖」。无 `enrich_batch` 的 adapter 不参与 enrich。
+   - **不参与 pull 六阶段主流程、无任何 AC 依赖它**（AC-3.5 五刊全史由 crossref 独立完成）；预算护栏（openalex `meta.cost_usd` 实时核销 / s2 有 key 1 req/s，无 key 不发请求）在 enrich 循环内生效；canary healthcheck 无 key → `NotImplementedError`→SKIP。
 
 ## §3 限速与预算表（2026-07-22 勘察复核定稿，[LIVE]）
 
@@ -81,13 +96,16 @@ updated: 2026-07-22
 - `/journals/{issn}/works` 枚举（rows/cursor 深翻断点续拉）、日期过滤、字段映射（title[0]/日期族选择/author 结构）、volume/issue → Issue 行聚合、`paper_count_claimed` 记录、X-Rate-Limit 动态限速（rate_limiter 扩展点）、429/5xx 映射、healthcheck 固定 DOI 比对。含 §2-2 VenueSpec 分离语义落地。fixture：正常页/空结果/429/cursor 中断续拉。
 
 ### T4 dblp adapter（sonnet，`adapter/dblp`）
-- conf 索引页卷 key 发现 → 卷 XML 解析（inproceedings/ee/author-pid）→ `ee` DOI 经 `normalize_doi` 回填 identifier；404→gone 回索引重发现一次再 parse；1 req/2s；healthcheck icml 已知卷。
+- conf 索引页卷 key 发现 → 卷 XML 解析（inproceedings/ee/author-pid）→ `ee` DOI 经 `normalize_doi` 回填 identifier；404→gone 回索引重发现一次再 parse；**≥4s/req（robots `Crawl-delay: 4`，D-021）**；healthcheck icml 已知卷。
 
 ### T5 unpaywall adapter（sonnet，`adapter/unpaywall`）
 - 按 DOI RESOLVE：`best_oa_location.url_for_pdf` → AssetPlan(direct)；version 映射（[LIVE] 全拼串 `submittedVersion`/`acceptedVersion`/`publishedVersion`）→ Asset.version 并标注非正式版；`url_for_pdf` 为 null 时不产 AssetPlan（landing 仅记 meta）；触发条件（no_entitlement 兜底 / VenueSpec OA-fallback 声明）；**OA 命中率报告**：批量 DOI 输入 → 命中率统计 markdown（DoD 第二项）。
 
-### T6 openalex + s2 补充层（sonnet，`adapter/openalex-s2`）
-- openalex：DOI 批查摘要倒排重建；每日 credit 预算熔断（402→rate_limited 特化+报告提示）；s2：`/paper/batch`（≤500）引用计数/TLDR；无 key→`config` 不重试。在线冒烟按 key 存在性 skip（S2 key 用户申请中，诚实标注）。
+### T6 openalex + s2 补充层 enrich 通道（sonnet，`adapter/openalex-s2`）
+- **交付 enrich 通道**（§2-5 契约）：openalex/s2 的 `enrich_batch(dois)` 实现（**不进** SourceAdapter 冻结协议，duck-typed）+ 新 CLI `crawler enrich [--venue ID] [--source openalex|s2]`（扫 DB 带 `doi` identifier 的 paper → 分批 → `MergeEngine.ingest` 回注，补缺不覆盖）+ 预算护栏。
+- openalex：`filter=doi:` OR 拼批查、摘要倒排重建、OA 链接；每日 credit 预算熔断（`meta.cost_usd` 实时核销，402→rate_limited 特化+报告提示）。s2：`POST /paper/batch`（≤500）引用计数/TLDR/fieldsOfStudy；有 key 1 req/s。
+- **canary SKIP 语义**：无 key → healthcheck `raise NotImplementedError`→`crawler canary` 显示 SKIP（复用现有 `NotImplementedError`→skip 语义，零 canary 改动）；s2 无 key 时 enrich 请求路径 `config` 不重试、提示申请 key。在线冒烟按 key 存在性 skip（S2 key 用户申请中，诚实标注）。
+- **不参与 pull 六阶段主流程、无任何 AC 依赖它**（AC-3.5 五刊全史由 crossref 独立完成）。
 
 ### T7 期刊 5 刊 YAML + AC-3.5 端到端（sonnet，`feat/journal-venues`）
 - QJE(0033-5533)/JFE(0304-405X) + 3 刊（catalog economics/finance 表内选，凑齐 5）；`metadata_source: crossref` + fulltext_source 留 Phase 4；`timeline`/`enumerate` 零爬取全史；篇数与 `paper_count_claimed` 差异逐刊解释入验收记录；五源在线冒烟批量 committed（`tests/online/test_<src>_smoke.py` ×5）。
