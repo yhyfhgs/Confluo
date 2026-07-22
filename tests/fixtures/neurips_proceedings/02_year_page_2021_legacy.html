@@ -6,10 +6,9 @@ synthetic subset that reuses one REAL measured value from the site survey and ad
 clearly-fake filler entries so enumerate_issue() has more than one paper to parse:
 
   - hash 000c076c390a4c357313fca29e390ece is REAL (site-survey SS5/SS9, the paper linked from a real
-    2021 OpenReview forum id). Its TITLE here is a SYNTHETIC placeholder -- the survey
-    budget ran out before the real title was captured for this sample. This exact
-    (hash, title, track) triple mirrors adapter.py's _CANARIES[0] verbatim; a T5 online
-    smoke test should replace both this file's title and _CANARIES[0].title together.
+    2021 OpenReview forum id) and its TITLE is now the REAL captured value (T5 online
+    smoke, verbatim normalized). This exact (hash, title, track) triple mirrors adapter.py's
+    _CANARIES[0]; the two must be edited together (test_neurips_proceedings_fixtures cross-checks).
   - the other two hashes (0bad.../feed...) are openly-synthetic filler using recognizable
     repeating hex patterns, not real site data.
 -->
@@ -21,7 +20,7 @@ clearly-fake filler entries so enumerate_issue() has more than one paper to pars
      for which hash is real vs synthetic. -->
 <html><body>
 <ul class="paper-list">
-    <li class="" data-track="none"><div class="paper-content"><a title="paper title" href="/paper_files/paper/2021/hash/000c076c390a4c357313fca29e390ece-Abstract.html">SYNTHETIC placeholder canary title pending T5 real-value replacement (2021)</a><span class="paper-authors">Canary Author</span></div></li>
+    <li class="" data-track="none"><div class="paper-content"><a title="paper title" href="/paper_files/paper/2021/hash/000c076c390a4c357313fca29e390ece-Abstract.html">Beyond Value-Function Gaps: Improved Instance-Dependent Regret Bounds for Episodic Reinforcement Learning</a><span class="paper-authors">Canary Author</span></div></li>
     <li class="" data-track="none"><div class="paper-content"><a title="paper title" href="/paper_files/paper/2021/hash/0bad0bad0bad0bad0bad0bad0bad0bad-Abstract.html">Filler Paper A for the 2021 Legacy Year Page Fixture</a><span class="paper-authors">Filler Author A</span></div></li>
     <li class="" data-track="none"><div class="paper-content"><a title="paper title" href="/paper_files/paper/2021/hash/feedfeedfeedfeedfeedfeedfeedfeed-Abstract.html">Filler Paper B for the 2021 Legacy Year Page Fixture</a><span class="paper-authors">Filler Author B</span></div></li>
 </ul>

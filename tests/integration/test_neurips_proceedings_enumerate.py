@@ -98,7 +98,10 @@ def test_enumerate_upserts_all_2021_legacy_papers_with_fields(repo: Repo) -> Non
     }
 
     papers = {str(p["title"]): p for p in repo.list_papers(_VENUE_ID)}
-    canary = papers["SYNTHETIC placeholder canary title pending T5 real-value replacement (2021)"]
+    canary = papers[
+        "Beyond Value-Function Gaps: Improved Instance-Dependent Regret Bounds for "
+        "Episodic Reinforcement Learning"
+    ]
     assert canary["year"] == 2021
     meta = json.loads(str(canary["meta_json"]))
     assert meta == {"track": "none", "asset_suffix": ""}
@@ -114,13 +117,8 @@ def test_enumerate_upserts_all_2022_modern_papers_with_mixed_tracks(repo: Repo) 
 
     assert harvested == 4  # design §3.2 计数断言：本 fixture 4 篇（2 conference + 2 D&B）
     papers = {str(p["title"]): p for p in repo.list_papers(_VENUE_ID)}
-    conf_canary_title = (
-        "SYNTHETIC placeholder canary title pending T5 real-value replacement (2022 conference)"
-    )
-    db_canary_title = (
-        "SYNTHETIC placeholder canary title pending T5 real-value replacement "
-        "(2022 datasets_and_benchmarks)"
-    )
+    conf_canary_title = "Non-deep Networks"
+    db_canary_title = "Long Range Graph Benchmark"
     conf_meta = json.loads(str(papers[conf_canary_title]["meta_json"]))
     db_meta = json.loads(str(papers[db_canary_title]["meta_json"]))
     assert conf_meta == {"track": "conference", "asset_suffix": "-Conference"}

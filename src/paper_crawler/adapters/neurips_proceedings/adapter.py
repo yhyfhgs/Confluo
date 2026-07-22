@@ -105,35 +105,33 @@ class _HealthCanary:
     track: str
 
 
-# ⚠ 2021 hash 为真实值（docs/research/site-survey/neurips-proceedings.md §5/§9 [LIVE]
-# 实测，32-hex 逐字复用）；title 未被勘察记录全文（预算内未抓取该样本的标题正文），
-# 故为合成占位——**实现期义务**：T5 在线冒烟核验后须用实测标题替换（arxiv canary
-# 「⚠ 合成占位需真实替换」同款纪律，见 arxiv/adapter.py `_CANARIES` 模块docstring）。
-# 2022 两条 hash/title 因勘察预算耗尽（仅留 6 位截断 hash，无完整值可信复用）而
-# **全部合成**，故意使用一望即知的占位十六进制模式（`deadbeef`/`facefeed` 重复）而
-# 非貌似真实的随机哈希，避免未来维护者误把占位当真实数据长期沉淀。
+# 三条 canary 全为 [LIVE] 实测真值——title 为 `parse_year_page` 规整化后的逐字标题
+# （healthcheck 直接等值比对），hash 为站点 32-hex 原样。2021 取自 T5 在线冒烟捕获
+# （site-survey §5/§9 [LIVE]，hash + 标题正文）；2022 conference/D&B 取自 2026-07-22
+# openreview 在线补验会话对 `proceedings.neurips.cc/paper_files/paper/2022` 的实跑解析
+# （该页 2834 篇 = 2671 conference + 163 datasets_and_benchmarks，与 site-survey §2 一致）。
+# fixtures 02/03 内嵌同一三元组（tests/unit/test_neurips_proceedings_fixtures 交叉校验），
+# 改动须与两个 fixture 同步（design §6 "样本 hash/title 取自 fixture ②③"）。
 _CANARIES: tuple[_HealthCanary, ...] = (
     _HealthCanary(
         year=2021,
         hash="000c076c390a4c357313fca29e390ece",
-        title="SYNTHETIC placeholder canary title pending T5 real-value replacement (2021)",
+        title=(
+            "Beyond Value-Function Gaps: Improved Instance-Dependent Regret Bounds for "
+            "Episodic Reinforcement Learning"
+        ),
         track="none",
     ),
     _HealthCanary(
         year=2022,
-        hash="deadbeefdeadbeefdeadbeefdeadbeef",
-        title=(
-            "SYNTHETIC placeholder canary title pending T5 real-value replacement (2022 conference)"
-        ),
+        hash="2d52879ef2ba487445ca2e143b104c3b",
+        title="Non-deep Networks",
         track="conference",
     ),
     _HealthCanary(
         year=2022,
-        hash="facefeedfacefeedfacefeedfacefeed",
-        title=(
-            "SYNTHETIC placeholder canary title pending T5 real-value replacement "
-            "(2022 datasets_and_benchmarks)"
-        ),
+        hash="8c3c666820ea055a77726d66fc7d447f",
+        title="Long Range Graph Benchmark",
         track="datasets_and_benchmarks",
     ),
 )

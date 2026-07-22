@@ -11,9 +11,9 @@
   （legacy 后缀边界左侧空串，验双 era 解析器不退化）；顺带打印 real 2021 canary
   （hash 000c076c… 的真实 title+track，供 adapter `_CANARIES` 占位替换，非强制）；
 - 单篇 PDF 首 chunk（1 请求，现代 `-Paper{infix}.pdf`）：`%PDF` 魔数（捕获自 2023）；
-- healthcheck（2 请求，2021 legacy + 2022 modern 两页）：断言两届年页可达且解析过下限
-  （**canary 仍为合成占位** deadbeef/facefeed → `healthy=False` 属既有债，冒烟不据此
-  判失败，见 adapter `_CANARIES` 注记）。
+- healthcheck（2 请求，2021 legacy + 2022 modern 两页）：断言两届年页可达、解析过下限
+  且 `healthy=True`（三条 canary 均为 [LIVE] 2026-07-22 实测真值，见 adapter `_CANARIES`；
+  2022 conference/D&B 于 openreview 在线补验会话捕获替换，2021 早前 T5 捕获）。
 
 ≈ 共 5 请求 ≤ 5。真实执行结果归档 scratchpad/online-smoke-batch-run.txt。
 """
@@ -87,9 +87,9 @@ def test_enumerate_2021_legacy_form_parses(
 ) -> None:
     """1 请求：2021 legacy 年页解出非空 + 首条 `asset_suffix==''`（legacy 后缀边界左侧）。
 
-    顺带打印 real 2021 canary（hash 000c076c…）的真实 title+track，供 adapter
-    `_CANARIES` 的合成占位替换（非强制——2022 两条 canary hash 亦为合成，仅替换 2021
-    不足以让 healthcheck 转 healthy）。
+    顺带打印 real 2021 canary（hash 000c076c…）的真实 title+track（该值已并入 adapter
+    `_CANARIES[0]`；2022 conference/D&B 两条亦已于 openreview 补验会话捕获替换，
+    healthcheck 现 healthy=True）。
     """
     adapter = NeuripsProceedingsAdapter(http=neurips_client)
     venue = make_neurips_venue()
@@ -133,11 +133,11 @@ def test_fetch_single_pdf_first_chunk_is_pdf(
 def test_healthcheck_both_year_pages_reachable(
     neurips_client: HttpClient, real_request_budget: RealRequestBudget
 ) -> None:
-    """2 请求：healthcheck GET 2021 legacy + 2022 modern 两页，断言可达且解析过下限。
+    """2 请求：healthcheck GET 2021 legacy + 2022 modern 两页，断言 `healthy=True`。
 
-    canary 仍为合成占位（`_CANARIES` 的 deadbeef/facefeed）→ `healthy=False` 属既有债，
-    非站点/解析问题；冒烟只验两届年页可达并解析过下限（healthcheck 先过 fetch+floor
-    才进入 canary 比对），不据 `healthy` 判失败。
+    三条 canary 均为 [LIVE] 2026-07-22 实测真值（`_CANARIES`），故 healthcheck 过
+    fetch+floor 后 canary 比对（规整化 title + track 双字段）亦全过 → healthy=True
+    （此前合成占位致 healthy=False 的既有债已收官）。
     """
     adapter = NeuripsProceedingsAdapter(http=neurips_client)
     real_request_budget.spend(2)  # healthcheck 内部固定 GET 2021 + 2022 两页
@@ -147,7 +147,5 @@ def test_healthcheck_both_year_pages_reachable(
         f"neurips 年页不可达/解析失败: {report.detail!r}"
     )
     assert "floor" not in report.detail, f"neurips 年页解析低于下限: {report.detail!r}"
-    # 走到 canary 比对（或直接 healthy）即证明两页 fetch+floor 均过 → 站点解析路径通。
-    assert report.healthy or "canary" in report.detail, (
-        f"healthcheck 未进入 canary 比对阶段（疑似 fetch/floor 早退）: {report.detail!r}"
-    )
+    # canary 现为实测真值 → 全链应 healthy=True（三条 title+track 双字段命中）。
+    assert report.healthy, f"healthcheck 应 healthy（3 条实测 canary 命中）: {report.detail!r}"
