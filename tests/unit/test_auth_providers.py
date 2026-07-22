@@ -717,3 +717,12 @@ def test_ezproxy_default_login_flow_is_lazy_browser_seam(
     provider = EZProxyProvider(EZPROXY_PROFILE, store, clock=FakeClock())  # login_flow 缺省
     provider.ensure_session(interactive=True)
     assert calls == ["https://login.myuniv.edu/login?url="]
+
+
+def test_ezproxy_rewrite_uppercase_host_normalized(ezproxy: EZProxyProvider) -> None:
+    """审查 NIT-1：大写 host 归一小写后重写（urlsplit.hostname 语义显式锁定）。"""
+    rewritten = ezproxy.rewrite_url("HTTPS://WWW.ScienceDirect.COM/science/Article/pii/X")
+    assert rewritten == (
+        "https://www-sciencedirect-com.login-myuniv-edu.ezproxy/science/Article/pii/X"
+    )  # host 归一小写；路径大小写保留
+    assert ezproxy.rewrite_url(rewritten) == rewritten  # 归一后幂等仍成立

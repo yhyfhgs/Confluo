@@ -199,8 +199,13 @@ def test_delete_state_removes_meta_sidecar_too(store: CredentialStore) -> None:
 
 
 def test_filekey_downgrade_warns_exactly_once_per_process(
-    store: CredentialStore, home: Path, capsys: pytest.CaptureFixture[str]
+    store: CredentialStore, home: Path, tmp_path: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
+    from paper_crawler.obslog import setup_logging
+
+    # 重建 obslog handler（绑定当前捕获流，隔离前序测试的陈旧 handler；console 调到
+    # ERROR 静音 WARNING 的 console 副本）——stderr 里只剩降级警告的**显式 print** 一份。
+    setup_logging(tmp_path / "logs-once", console_level="ERROR")
     store.write_state("ref_a", b"one")
     CredentialStore(home).write_state("ref_b", b"two")  # 第二实例：同进程不再警告
     err = capsys.readouterr().err
@@ -795,3 +800,13 @@ def test_keyring_entry_dead_backend_falls_to_config(
     fake.entries[("paper-crawler", "elsevier_apikey")] = "never-read"
     install_fake_keyring(monkeypatch, fake)
     assert store.read_key("elsevier_apikey") == "cfg"  # 死后端条目不读 → config 委派
+
+
+def test_load_profiles_toml_syntax_error_wrapped_config(store: CredentialStore) -> None:
+    """TOML 语法损坏 → CrawlerError(CONFIG) 含完整路径（审查 MINOR-1 底座）。"""
+    write_profiles(store, "[providers.broken\nkind = ???")
+    with pytest.raises(CrawlerError) as excinfo:
+        store.load_profiles()
+    assert excinfo.value.error_class is ErrorClass.CONFIG
+    assert str(store.profiles_path) in str(excinfo.value)
+    assert excinfo.value.detail == str(store.profiles_path)

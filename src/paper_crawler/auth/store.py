@@ -548,12 +548,23 @@ class CredentialStore:
     # -- profiles 装载（§2.3 冻结签名 + §3.4 schema） ---------------------------
 
     def load_profiles(self) -> dict[str, ProviderProfile]:
-        """解析 `auth/profiles.toml`（严格 schema；文件缺失 → 空表=未配置任何 provider）。"""
+        """解析 `auth/profiles.toml`（严格 schema；文件缺失 → 空表=未配置任何 provider）。
+
+        TOML 语法损坏 → `CrawlerError(CONFIG)`（含完整文件路径指引）——与 schema 类
+        错误同走受控异常，CLI 面（login/status/logout）得以 clean-error 呈现（审查 MINOR-1）。
+        """
         path = self.profiles_path
         if not path.is_file():
             return {}
-        with path.open("rb") as handle:
-            doc = tomllib.load(handle)
+        try:
+            with path.open("rb") as handle:
+                doc = tomllib.load(handle)
+        except tomllib.TOMLDecodeError as exc:
+            raise CrawlerError(
+                ErrorClass.CONFIG,
+                f"profiles.toml 解析失败（{path}）：{exc}",
+                detail=str(path),
+            ) from exc
         unknown_top = sorted(set(doc) - {"schema_version", "providers"})
         if unknown_top:
             raise CrawlerError(

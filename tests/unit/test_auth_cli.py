@@ -373,3 +373,33 @@ def test_login_cookie_probe_network_error_exit_1(
     result = runner.invoke(app, ["auth", "login", "oup@campus", "--home", str(home)])
     assert result.exit_code == 1, all_output(result)
     assert "probe failed" in all_output(result)
+
+
+# ---------------------------------------------------------------------------
+# 审查 MINOR-1：status 对损坏 profiles.toml 走 clean-error（exit 2，无裸 traceback）
+# ---------------------------------------------------------------------------
+
+
+def test_status_corrupt_profiles_toml_syntax_exit_2_clean_error(home: Path) -> None:
+    """TOML 语法损坏 → exit 2 + 无 traceback + 错误信息含完整文件路径指引。"""
+    write_profiles(home, "[providers.broken\nkind = ???")  # 非法 TOML
+    result = runner.invoke(app, ["auth", "status", "--home", str(home)])
+    assert result.exit_code == 2, all_output(result)
+    output = all_output(result)
+    assert "Traceback" not in output  # clean-error 惯例（无 Rich 裸栈）
+    assert result.exception is None or isinstance(result.exception, SystemExit)
+    assert str(home / "auth" / "profiles.toml") in output  # 完整路径指引
+    assert "错误" in output
+
+
+def test_status_invalid_profiles_schema_exit_2_clean_error(home: Path) -> None:
+    """schema 非法（未知键）→ exit 2 + 无 traceback + 指引含 profiles.toml。"""
+    write_profiles(
+        home, '[providers.x]\nkind = "api_key"\nplatform = "p"\nkey_ref = "k"\nmystery = 1\n'
+    )
+    result = runner.invoke(app, ["auth", "status", "--home", str(home)])
+    assert result.exit_code == 2, all_output(result)
+    output = all_output(result)
+    assert "Traceback" not in output
+    assert "profiles.toml" in output
+    assert "mystery" in output  # 指向具体非法键

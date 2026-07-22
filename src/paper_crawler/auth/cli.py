@@ -8,7 +8,8 @@
 - `login`：0 成功；2 用法/配置错（provider 未知、key 缺失、未装 `[auth-browser]`——
   均属"配置后重来"类，`AuthRequired` 一律归此）；1 探测失败（探针不 OK / 网络失败 /
   `Challenged`——如实上报不重试）。
-- `status`：恒 0（只读呈现非对账判据，同 `oa-report` 口径；不触发真实探测）。
+- `status`：正常路径（含空配置）恒 0（只读呈现非对账判据，同 `oa-report` 口径；
+  不触发真实探测）；配置损坏（profiles.toml 非法）→ 2（审查 MINOR-1）。
 - `logout`：0 成功（含"本就无残留"幂等）；2 provider 未知。
 
 auth 命令不需要 DB/pipeline——不走 `_env` 全装配，只 `Config.load` + `setup_logging`
@@ -103,9 +104,13 @@ def auth_login(
 @auth_app.command("status")
 def auth_status(home: _HomeOpt = None, verbose: _VerboseOpt = False) -> None:
     """provider 状态表（§4.2）：只读——读 meta sidecar 与本地 key 存在性，
-    **不触发真实探测**（不消耗配额/不触风控）。退出码恒 0。"""
-    manager = _build_manager(home, verbose)
-    rows = manager.status_rows()
+    **不触发真实探测**（不消耗配额/不触风控）。退出码：正常路径（含空配置）恒 0；
+    配置损坏（profiles.toml 语法/schema 非法等）→ 2（审查 MINOR-1，与 login/logout 口径一致）。"""
+    try:
+        manager = _build_manager(home, verbose)
+        rows = manager.status_rows()
+    except CrawlerError as exc:
+        _fail(exc, code=2)  # 配置损坏属用法/配置错（clean-error，无裸 traceback）
     if not rows:
         typer.echo(f"（无 provider 配置：{manager.store.profiles_path}）")
         raise typer.Exit(code=0)
