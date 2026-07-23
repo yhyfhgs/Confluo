@@ -218,6 +218,43 @@ def test_parse_facet_years_skips_non_integer_buckets() -> None:
     assert year_counts == {2024: 46}
 
 
+# --- facet 年计数 date-field 参数化（Phase 5 T1，nber.md §3.1）-------------------------------
+
+
+def test_parse_facet_years_created_field() -> None:
+    """date-field=created：读 `facets.created`（★评审 MAJOR 联动点——ssrn created facet 非空）。"""
+    year_counts, total = parse.parse_facet_years(fixture_bytes("13_facet_created.json"), "created")
+    assert year_counts == {2024: 210417, 2025: 251908, 2026: 152340}
+    assert total == 1414774
+
+
+def test_parse_facet_years_default_published_empty_on_created_only_fixture() -> None:
+    """created-only fixture 用默认 published 解析 → 空 year_counts（证 field 键切换真实生效，
+
+    非恒读 published）；total-results 与 facet 键无关，照常读出。
+    """
+    year_counts, total = parse.parse_facet_years(fixture_bytes("13_facet_created.json"))
+    assert year_counts == {}
+    assert total == 1414774
+
+
+def test_parse_facet_years_explicit_published_equals_default() -> None:
+    """显式 field='published' 与默认调用等价（既有 by-ISSN 调用方零改保证）。"""
+    fx = fixture_bytes("05_facet_published.json")
+    default_counts, _ = parse.parse_facet_years(fx)
+    explicit_counts, _ = parse.parse_facet_years(fx, "published")
+    assert default_counts == explicit_counts == {2022: 41, 2023: 44, 2024: 46}
+
+
+def test_parse_facet_years_unknown_field_is_empty() -> None:
+    """未知 date-field（facet 无该键）→ 空 year_counts（防御，同缺 facets 口径），total 照读。"""
+    year_counts, total = parse.parse_facet_years(
+        fixture_bytes("05_facet_published.json"), "created"
+    )
+    assert year_counts == {}
+    assert total == 6655
+
+
 # --- 单条 healthcheck title -----------------------------------------------------------------
 
 

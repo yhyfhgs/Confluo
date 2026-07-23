@@ -235,10 +235,11 @@ def make_crossref_venue(**quirks_overrides: object) -> VenueSpec:
 
     id/names 借用真实 QJE 身份（与 crossref adapter 自身单测 `tests/unit/
     test_crossref_adapter.py` 的本地 `_venue()` 同一识别号，便于跨文件对照），
-    `identifiers.issn` 是 `adapter._issn_of` 的唯一输入（D-015：期刊+crossref 必填，
-    lint 已保证）——契约 handler 不校验请求里的实际 ISSN 值，故该值本身不需要与任何
-    fixture 内容对应，只需形态合法。`quirks_overrides` 目前无消费方（crossref 不读
-    quirks），保留形参只为与其余 `make_*_venue` 签名一致。
+    `identifiers.issn` 是 `adapter._enum_key_of` 的 issn 分支输入（D-015：期刊+crossref
+    必填，lint 已保证）——契约 handler 不校验请求里的实际 ISSN 值，故该值本身不需要与任何
+    fixture 内容对应，只需形态合法。`quirks_overrides` 落入 `quirks`：默认无键 = date-field
+    轴取默认 `published`（既有 by-ISSN 契约零改）；Phase 5 T1 两轴扩展后 crossref 读
+    `quirks.crossref_date_field`，如需 created 轴可传 `crossref_date_field="created"`。
     """
     quirks: dict[str, object] = dict(quirks_overrides)
     return VenueSpec(

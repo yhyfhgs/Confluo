@@ -111,19 +111,22 @@ def parse_works_page(data: bytes) -> CrossrefWorksPage:
 # --- 公开 API：facet 年计数（discover 时间轴）------------------------------------------------
 
 
-def parse_facet_years(data: bytes) -> tuple[dict[int, int], int | None]:
-    """解析 `rows=0&facet=published:*` 响应 → (year→count, total-results)。
+def parse_facet_years(data: bytes, field: str = "published") -> tuple[dict[int, int], int | None]:
+    """解析 `rows=0&facet={field}:*` 响应 → (year→count, total-results)。
 
-    `message.facets.published.values` = {year_str: count}。非整数年/计数键静默跳过
-    （防御畸形）。total-results 为整刊全史计数（paper_count_claimed 兜底）。
+    `field` = date-field 轴（`published`〔默认，出版年〕 | `created`〔登记年，ssrn 消费〕，
+    nber.md §3.1）——读 `message.facets.{field}.values` = {year_str: count}。默认 `published`
+    保持既有 by-ISSN 调用方**零改**（不传 field 即出版年轴）。非整数年/计数键静默跳过
+    （防御畸形）；facet 键缺失（含未知 field）→ 空 year_counts。total-results 为整刊/整前缀
+    全史计数（paper_count_claimed 兜底）。
     """
     message = _message(data)
     total = _int_or_none(message.get("total-results"))
     year_counts: dict[int, int] = {}
 
     facets = message.get("facets")
-    published = facets.get("published") if isinstance(facets, dict) else None
-    values = published.get("values") if isinstance(published, dict) else None
+    bucket = facets.get(field) if isinstance(facets, dict) else None
+    values = bucket.get("values") if isinstance(bucket, dict) else None
     if isinstance(values, dict):
         for raw_year, raw_count in values.items():
             year = _int_or_none(raw_year)

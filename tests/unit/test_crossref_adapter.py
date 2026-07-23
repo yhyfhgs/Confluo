@@ -14,7 +14,12 @@ import httpx
 import pytest
 
 from helpers.crossref_fixtures import fixture_bytes, http_fixture
-from paper_crawler.adapters.crossref.adapter import CrossrefAdapter, _default_user_agent
+from paper_crawler.adapters.crossref.adapter import (
+    CrossrefAdapter,
+    _date_field_of,
+    _default_user_agent,
+    _enum_key_of,
+)
 from paper_crawler.errors import CrawlerError, ErrorClass
 from paper_crawler.http import HttpClient
 from paper_crawler.types import IssueRef, VenueSpec
@@ -322,6 +327,219 @@ def test_default_user_agent_uses_env(monkeypatch: pytest.MonkeyPatch) -> None:
 def test_default_user_agent_placeholder_when_env_unset(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.delenv("PAPER_CRAWLER_CONTACT_EMAIL", raising=False)
     assert ".invalid" in _default_user_agent()
+
+
+# --- 两轴参数化：enum-key（issn XOR prefix）+ date-field（published|created）（Phase 5 T1）----
+
+
+def _prefix_venue(
+    prefix: str = "10.3386",
+    venue_id: str = "nber",
+    *,
+    date_field: str | None = None,
+) -> VenueSpec:
+    """构造前缀模式 venue（identifiers.crossref_prefix + 可选 quirks.crossref_date_field）。"""
+    quirks: dict[str, object] = {}
+    if date_field is not None:
+        quirks["crossref_date_field"] = date_field
+    return VenueSpec(
+        id=venue_id,
+        kind="preprint_channel",
+        names={"full": "NBER Working Papers", "aliases": ["NBER"]},
+        field=["econ"],
+        identifiers={"crossref_prefix": prefix},
+        metadata_source="crossref",
+        fulltext_source="mock_platform",
+        quirks=quirks,
+    )
+
+
+def _both_keys_venue() -> VenueSpec:
+    return VenueSpec(
+        id="ambiguous",
+        kind="journal",
+        names={"full": "Ambiguous"},
+        field=["econ"],
+        identifiers={"issn": ["0033-5533"], "crossref_prefix": "10.3386"},
+        metadata_source="crossref",
+        fulltext_source="mock_platform",
+    )
+
+
+# -- enum-key XOR 校验（_enum_key_of 直测）--
+
+
+def test_enum_key_issn_only() -> None:
+    assert _enum_key_of(_venue(issn="0033-5533")) == ("issn", "0033-5533")
+
+
+def test_enum_key_prefix_only() -> None:
+    assert _enum_key_of(_prefix_venue(prefix="10.3386")) == ("prefix", "10.3386")
+
+
+def test_enum_key_both_present_raises_config() -> None:
+    """issn + crossref_prefix 同现（歧义）→ CONFIG 响亮（XOR 校验）。"""
+    with pytest.raises(CrawlerError) as exc:
+        _enum_key_of(_both_keys_venue())
+    assert exc.value.error_class is ErrorClass.CONFIG
+    assert "XOR" in str(exc.value)
+
+
+def test_enum_key_neither_present_raises_config() -> None:
+    """issn 与 crossref_prefix 都缺（无枚举键）→ CONFIG 响亮。"""
+    venue = VenueSpec(
+        id="no_key",
+        kind="journal",
+        names={"full": "No Key"},
+        field=["econ"],
+        identifiers={},
+        metadata_source="crossref",
+        fulltext_source="mock_platform",
+    )
+    with pytest.raises(CrawlerError) as exc:
+        _enum_key_of(venue)
+    assert exc.value.error_class is ErrorClass.CONFIG
+
+
+def test_enum_key_malformed_issn_no_prefix_raises_config() -> None:
+    """畸形 issn（空 list）+ 无 prefix → 视作都缺 → CONFIG（畸形 issn 非有效枚举键）。"""
+    venue = VenueSpec(
+        id="bad_issn",
+        kind="journal",
+        names={"full": "Bad ISSN"},
+        field=["econ"],
+        identifiers={"issn": []},
+        metadata_source="crossref",
+        fulltext_source="mock_platform",
+    )
+    with pytest.raises(CrawlerError) as exc:
+        _enum_key_of(venue)
+    assert exc.value.error_class is ErrorClass.CONFIG
+
+
+# -- date-field（_date_field_of 直测）--
+
+
+def test_date_field_defaults_published() -> None:
+    assert _date_field_of(_venue()) == "published"
+
+
+def test_date_field_created_from_quirk() -> None:
+    assert _date_field_of(_prefix_venue(prefix="10.2139", date_field="created")) == "created"
+
+
+def test_date_field_explicit_published_from_quirk() -> None:
+    assert _date_field_of(_prefix_venue(date_field="published")) == "published"
+
+
+def test_date_field_invalid_raises_config() -> None:
+    """未知 date-field 值 → CONFIG 响亮（防拼写错 / 非法轴）。"""
+    with pytest.raises(CrawlerError) as exc:
+        _date_field_of(_prefix_venue(date_field="modified"))
+    assert exc.value.error_class is ErrorClass.CONFIG
+
+
+# -- prefix URL 构造（facet + works，两轴分派）--
+
+
+def test_prefix_facet_url_shape_published() -> None:
+    """nber = prefix 10.3386 + published：/prefixes/10.3386/works，facet=published:*。"""
+    captured: list[httpx.URL] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        captured.append(request.url)
+        return _resp(fixture_bytes("05_facet_published.json"))
+
+    list(_adapter(handler).discover_timeline(_prefix_venue(prefix="10.3386")))
+    url = captured[0]
+    assert url.path == "/prefixes/10.3386/works"
+    assert url.params.get("facet") == "published:*"
+
+
+def test_prefix_facet_url_shape_created() -> None:
+    """ssrn = prefix 10.2139 + created：/prefixes/10.2139/works，facet=created:*。"""
+    captured: list[httpx.URL] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        captured.append(request.url)
+        return _resp(fixture_bytes("13_facet_created.json"))
+
+    list(
+        _adapter(handler).discover_timeline(
+            _prefix_venue(prefix="10.2139", venue_id="ssrn", date_field="created")
+        )
+    )
+    url = captured[0]
+    assert url.path == "/prefixes/10.2139/works"
+    assert url.params.get("facet") == "created:*"
+
+
+def test_prefix_works_url_created_filter() -> None:
+    """created 轴：filter from-created-date/until-created-date；基址 /prefixes/。"""
+    captured: list[httpx.URL] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        captured.append(request.url)
+        return _resp(fixture_bytes("02_works_empty.json"))
+
+    list(
+        _adapter(handler).enumerate_issue(
+            _prefix_venue(prefix="10.2139", venue_id="ssrn", date_field="created"),
+            IssueRef(venue_id="ssrn", year=2024),
+        )
+    )
+    url = captured[0]
+    assert url.path == "/prefixes/10.2139/works"
+    assert url.params.get("filter") == "from-created-date:2024-01-01,until-created-date:2024-12-31"
+    assert url.params.get("cursor") == "*"
+
+
+def test_prefix_works_url_published_filter() -> None:
+    """prefix + published（nber）：works filter=from-pub-date（pub 缩写），基址 /prefixes/。"""
+    captured: list[httpx.URL] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        captured.append(request.url)
+        return _resp(fixture_bytes("02_works_empty.json"))
+
+    list(
+        _adapter(handler).enumerate_issue(
+            _prefix_venue(prefix="10.3386"), IssueRef(venue_id="nber", year=2022)
+        )
+    )
+    url = captured[0]
+    assert url.path == "/prefixes/10.3386/works"
+    assert url.params.get("filter") == "from-pub-date:2022-01-01,until-pub-date:2022-12-31"
+
+
+# -- prefix 发现 / 枚举 完整流 --
+
+
+def test_prefix_discover_created_yields_year_issue_refs() -> None:
+    issues = list(
+        _adapter(lambda r: _resp(fixture_bytes("13_facet_created.json"))).discover_timeline(
+            _prefix_venue(prefix="10.2139", venue_id="ssrn", date_field="created")
+        )
+    )
+    assert [i.year for i in issues] == [2024, 2025, 2026]
+    assert [i.paper_count_claimed for i in issues] == [210417, 251908, 152340]
+    assert all(i.venue_id == "ssrn" for i in issues)
+
+
+def test_prefix_enumerate_yields_stubs_to_paper_stub_unchanged() -> None:
+    responses = iter(["14_works_prefix.json", "02_works_empty.json"])
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        return _resp(fixture_bytes(next(responses)))
+
+    stubs = list(
+        _adapter(handler).enumerate_issue(
+            _prefix_venue(prefix="10.3386"), IssueRef(venue_id="nber", year=2022)
+        )
+    )
+    assert [s.identifiers[0][1] for s in stubs] == ["10.3386/w30000", "10.3386/w30001"]
+    # to_paper_stub 零改：identifiers 仍仅 (doi,)（第二 identifier 增补属 T4 消费侧，非本卡）。
+    assert all(s.identifiers == (("doi", s.identifiers[0][1]),) for s in stubs)
 
 
 # --- lookup（grab 单篇元数据；Phase 4 T5 引入，T8 补直接单测）-----------------------------------
