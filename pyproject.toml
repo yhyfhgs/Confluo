@@ -25,8 +25,9 @@ auth = ["cryptography>=42", "keyring>=24"]          # 凭证库：AES-GCM + 主�
 auth-browser = ["playwright>=1.40"]                 # 首登 headed / 浏览器上下文下载（§9）
 
 # 内置 adapter 通过 entry point 组注册（design/02 §4）。第三方 pip 包声明同名组即可被发现。
-# 全部 16 个内置 adapter 均走 entry point——Phase 3/4 stub 已全部退役（crossref P3-T3、
-# elsevier_sd P4-T3 由包内占位 stub 转真实 entry point，stubs.py 已删）。
+# 全部内置 adapter 均走 entry point——Phase 3/4 stub 已全部退役（crossref P3-T3、
+# elsevier_sd P4-T3 由包内占位 stub 转真实 entry point，stubs.py 已删）；Phase 5 增
+# nber（+ 并行 ssrn/aea/econsoc，controller union 合并后计数刷新）。
 [project.entry-points."paper_crawler.adapters"]
 mock_platform = "paper_crawler.adapters.mock_platform:MockPlatformAdapter"
 arxiv = "paper_crawler.adapters.arxiv.adapter:ArxivAdapter"
@@ -48,6 +49,9 @@ oup_silverchair = "paper_crawler.adapters.oup_silverchair.adapter:OupSilverchair
 # T6：enrich 通道（capabilities 空集，无 ENUMERATE/SEARCH/FETCH/RESOLVE，不参与 pull）。
 openalex = "paper_crawler.adapters.openalex.adapter:OpenAlexAdapter"
 s2 = "paper_crawler.adapters.s2.adapter:S2Adapter"
+# Phase 5 T3：NBER Working Papers（open_access；RESOLVE|FETCH，enumerate 走 crossref prefix
+# 10.3386，>18 月离线开放窗全文，<18 月软门 no_entitlement 不绕过，D-014/nber.md §3）。
+nber = "paper_crawler.adapters.nber.adapter:NberAdapter"
 
 [dependency-groups]
 dev = [
