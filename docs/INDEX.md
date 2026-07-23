@@ -21,7 +21,7 @@
 |---|---|---|---|
 | [../README.md](../README.md) | 项目总览 | approved | 2026-07-21 |
 | [../AGENTS.md](../AGENTS.md) | AI/LLM 协作者工作规范 | approved | 2026-07-21 |
-| [GLOSSARY.md](GLOSSARY.md) | 术语表（全库速查） | review | 2026-07-21 |
+| [GLOSSARY.md](GLOSSARY.md) | 术语表（全库速查） | review | 2026-07-22 |
 
 ## plan/ — 计划与决策
 
@@ -60,19 +60,19 @@
 | [design/adapters/arxiv.md](design/adapters/arxiv.md) | arXiv | implemented | 2026-07-22 |
 | [design/adapters/ssrn.md](design/adapters/ssrn.md) | SSRN | review | 2026-07-20 |
 | [design/adapters/openreview.md](design/adapters/openreview.md) | OpenReview | implemented | 2026-07-22 |
-| [design/adapters/pmlr.md](design/adapters/pmlr.md) | PMLR | implemented | 2026-07-22 |
-| [design/adapters/cvf.md](design/adapters/cvf.md) | CVF Open Access | implemented | 2026-07-22 |
-| [design/adapters/acl-anthology.md](design/adapters/acl-anthology.md) | ACL Anthology | implemented | 2026-07-22 |
+| [design/adapters/pmlr.md](design/adapters/pmlr.md) | PMLR | implemented | 2026-07-23 |
+| [design/adapters/cvf.md](design/adapters/cvf.md) | CVF Open Access | implemented | 2026-07-23 |
+| [design/adapters/acl-anthology.md](design/adapters/acl-anthology.md) | ACL Anthology | implemented | 2026-07-23 |
 | [design/adapters/neurips-proceedings.md](design/adapters/neurips-proceedings.md) | NeurIPS Proceedings | implemented | 2026-07-22 |
-| [design/adapters/aaai-ojs.md](design/adapters/aaai-ojs.md) | AAAI OJS | implemented | 2026-07-23 |
+| [design/adapters/aaai-ojs.md](design/adapters/aaai-ojs.md) | AAAI OJS | implemented | 2026-07-24 |
 | [design/adapters/acm-dl.md](design/adapters/acm-dl.md) | ACM Digital Library（D-020：Phase 2 出列；D-024：Phase 4 重评维持出列，全文改道 unpaywall OA-fallback） | review | 2026-07-23 |
 | [design/adapters/ieee-xplore.md](design/adapters/ieee-xplore.md) | IEEE Xplore | review | 2026-07-20 |
 | [design/adapters/aggregators.md](design/adapters/aggregators.md) | 聚合元数据源（6 合册） | implemented | 2026-07-23 |
 | [design/adapters/elsevier-sd.md](design/adapters/elsevier-sd.md) | Elsevier ScienceDirect（实现级，P4-W0/T3） | implemented | 2026-07-23 |
 | [design/adapters/wiley.md](design/adapters/wiley.md) | Wiley Online Library（实现级，P4-W0，D-024 纳入） | implemented | 2026-07-23 |
 | [design/adapters/oup-silverchair.md](design/adapters/oup-silverchair.md) | OUP（Silverchair）（实现级，P4-W0/T4） | implemented | 2026-07-23 |
-| [design/adapters/uchicago.md](design/adapters/uchicago.md) | UChicago Press | review | 2026-07-20 |
-| [design/adapters/informs.md](design/adapters/informs.md) | INFORMS PubsOnline | review | 2026-07-20 |
+| [design/adapters/uchicago.md](design/adapters/uchicago.md) | UChicago Press | review | 2026-07-21 |
+| [design/adapters/informs.md](design/adapters/informs.md) | INFORMS PubsOnline | review | 2026-07-21 |
 
 ## catalog/ — venue 清单
 
@@ -92,7 +92,7 @@
 | 路径 | 标题 | status | updated |
 |---|---|---|---|
 | [testing/test-plan.md](testing/test-plan.md) | 测试计划与测试类型（T1–T6） | approved | 2026-07-21 |
-| [testing/acceptance-criteria.md](testing/acceptance-criteria.md) | 验收标准总表（AC-0…AC-8） | approved | 2026-07-20 |
+| [testing/acceptance-criteria.md](testing/acceptance-criteria.md) | 验收标准总表（AC-0…AC-8） | approved | 2026-07-21 |
 | testing/records/ | 测试执行留痕（目录，随执行追加） | — | — |
 | [testing/records/2026-07-21-phase1-acceptance.md](testing/records/2026-07-21-phase1-acceptance.md) | Phase 1 验收记录（AC-1 全过） | — | 2026-07-21 |
 | [testing/records/2026-07-22-arxiv-acceptance.md](testing/records/2026-07-22-arxiv-acceptance.md) | arXiv 验收记录（AC-2.3 双层 PASS） | — | 2026-07-22 |
@@ -122,10 +122,10 @@
 | [research/site-survey/acl-anthology.md](research/site-survey/acl-anthology.md) | 勘察：ACL Anthology（GitHub bulk/Findings/许可二分） | approved | 2026-07-22 |
 | [research/site-survey/neurips-proceedings.md](research/site-survey/neurips-proceedings.md) | 勘察：NeurIPS Proceedings（格式边界/hash id） | approved | 2026-07-22 |
 | [research/site-survey/aaai-ojs.md](research/site-survey/aaai-ojs.md) | 勘察：AAAI OJS（OAI-PMH 主路径/分页/覆盖边界） | approved | 2026-07-23 |
-| [research/site-survey/metadata-apis.md](research/site-survey/metadata-apis.md) | 勘察：Crossref/OpenAlex/S2 | approved | 2026-07-20 |
+| [research/site-survey/metadata-apis.md](research/site-survey/metadata-apis.md) | 勘察：Crossref/OpenAlex/S2 | approved | 2026-07-22 |
 | [research/site-survey/cs-ai-conferences.md](research/site-survey/cs-ai-conferences.md) | 勘察：CS/AI 顶会渠道 | approved | 2026-07-20 |
 | [research/site-survey/econ-fin-preprints.md](research/site-survey/econ-fin-preprints.md) | 勘察：SSRN/RePEc/NBER/CEPR | approved | 2026-07-20 |
-| [research/site-survey/aggregators-unpaywall-dblp-core.md](research/site-survey/aggregators-unpaywall-dblp-core.md) | 勘察：Unpaywall/DBLP/CORE/Scholar | approved | 2026-07-20 |
+| [research/site-survey/aggregators-unpaywall-dblp-core.md](research/site-survey/aggregators-unpaywall-dblp-core.md) | 勘察：Unpaywall/DBLP/CORE/Scholar | approved | 2026-07-22 |
 | [research/site-survey/ai-journals-preprints-verification.md](research/site-survey/ai-journals-preprints-verification.md) | 核验：AI 期刊+预印本分类 | approved | 2026-07-20 |
 | [research/site-survey/publisher-platforms-econfin.md](research/site-survey/publisher-platforms-econfin.md) | 勘察：Econ/Fin 六出版社平台 | approved | 2026-07-20 |
 | [research/site-survey/publisher-platforms-cs.md](research/site-survey/publisher-platforms-cs.md) | 勘察：IEEE/AEA/SIAM/MIT Press | approved | 2026-07-20 |
