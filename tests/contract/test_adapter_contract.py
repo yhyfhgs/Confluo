@@ -22,10 +22,15 @@ resolve(sample) 产 ≥1 个 AssetPlan"）**结构性不相容**——不为它�
 `_contract_case` 的兜底 skip 分支）。aea 自身 resolve_assets 两分支（raise
 no_entitlement / 返回空列表）由 `tests/unit/test_aea_adapter.py` 直接覆盖。**Phase 5
 T6**：`econsoc` 全四位 case 走 TE 全链（open_access，无 auth 门控样本注入），不新增
-skip。当前契约 skip 合计 **25**：openalex/s2/aea 各 4（无契可契，原因分述如上）+
+skip。**Phase 5 T4**：`ssrn` 登记 DISCOVER|ENUMERATE|RESOLVE（无 FETCH，元数据主路径
+零 SSRN 站点接触，D-029）——resolve 契约特化：`_LANDING_ONLY_RESOLVE` 登记 ssrn，
+`test_resolve_yields_nonempty_asset_plans` 对其断言恒返回空列表（非 skip，是契约对
+"landing-only vs 产 asset"两类 RESOLVE 的正确分层表述，AC-5.1a）；fetch 因无该能力
+skip（+1）。当前契约 skip 合计 **26**：openalex/s2/aea 各 4（无契可契，原因分述如上）+
 crossref/dblp 各 2（无 RESOLVE/FETCH）+ unpaywall 3（仅 RESOLVE）+ elsevier_sd 2 +
-oup_silverchair 2（各自无 DISCOVER/ENUMERATE）+ wiley 2 = 25（实跑 120 passed / 25
-skipped——Phase 5 T6 econsoc 全四位 case 走 TE 全链，+8 passed 无新增 skip）。
+oup_silverchair 2（各自无 DISCOVER/ENUMERATE）+ wiley 2 + ssrn 1（无 FETCH）= 26（实跑
+127 passed / 26 skipped——econsoc 全四位 case 走 TE 全链 +8 passed 无新增 skip，ssrn
++7 passed / +1 skipped）。
 
 契约的 enumerate 计数口径按能力分层：声明了权威计数（`IssueRef.paper_count_claimed`）
 的 adapter（mock）严格等值；未声明的（arxiv 月度桶、dblp 会议届——预印本/会议无权威
