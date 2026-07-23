@@ -276,6 +276,28 @@ def make_wiley_venue(**quirks_overrides: object) -> VenueSpec:
     )
 
 
+def make_oup_venue(**quirks_overrides: object) -> VenueSpec:
+    """构造 oup_silverchair 契约/集成测试用的 `journal` venue（不依赖 `venues/` 目录文件）。
+
+    借用真实 QJE 身份（id='qje'，ISSN 0033-5533）：metadata_source=crossref（元数据主干
+    分离，D-005）、fulltext_source=oup_silverchair、auth.level=institutional（匹配 adapter
+    `auth_requirement`，QJE 收敛后的真实 venue 形态，见 venues/econ/qje.yaml）。adapter 的
+    `resolve_assets` 不读 venue（按 paper 的 DOI 定位落地页），此 venue 仅作契约载体。
+    """
+    quirks: dict[str, object] = dict(quirks_overrides)
+    return VenueSpec(
+        id="qje",
+        kind="journal",
+        names={"full": "The Quarterly Journal of Economics", "aliases": ["QJE"]},
+        field=["econ"],
+        identifiers={"issn": ["0033-5533"]},
+        metadata_source="crossref",
+        fulltext_source="oup_silverchair",
+        auth={"level": "institutional", "provider_hint": "oup_silverchair"},
+        quirks=quirks,
+    )
+
+
 def make_neurips_venue(**quirks_overrides: object) -> VenueSpec:
     """构造 neurips_proceedings 契约/集成测试用的 `conference` venue（不依赖 `venues/` 目录）。
 
@@ -357,6 +379,7 @@ __all__ = [
     "make_elsevier_venue",
     "make_mock_venue",
     "make_openreview_venue",
+    "make_oup_venue",
     "make_pmlr_venue",
     "make_wiley_venue",
     "DEFAULT_NEURIPS_QUIRKS",

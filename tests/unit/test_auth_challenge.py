@@ -205,6 +205,14 @@ def test_non_utf8_body_does_not_crash_detector() -> None:
     assert classify(status=200, body=b"\xff\xfe\x00 binary junk") is ClassifyResult.OK
 
 
+def test_status_404_alone_is_not_login_redirect_is_ok() -> None:
+    # T1a 审查 MINOR-2 反例：LOGIN_REDIRECT 的状态集恰为 {302}——404（及其余非 302 状态）
+    # 不被误判为登录跳转。判定器本身不特判 404（4xx/5xx 非页面态由上游 HttpClient 冻结
+    # 错误映射先行拦截，404→GONE，不进本判定器，见模块 docstring）；纯特征视角下，
+    # 无任何特征命中的 404 兜底为 OK。
+    assert classify(status=404, final_url=ARTICLE_URL, body=PLAIN_PAGE) is ClassifyResult.OK
+
+
 # ---------------------------------------------------------------------------
 # 枚举面（§11 逐字四值）
 # ---------------------------------------------------------------------------

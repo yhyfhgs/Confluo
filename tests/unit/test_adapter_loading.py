@@ -38,6 +38,7 @@ EXPECTED_ADAPTER_IDS = {
     "wiley",  # Phase 4 T-wiley（auth_gated；RESOLVE|FETCH，TDM API + token 门控）
     "openalex",  # T6
     "s2",  # T6
+    "oup_silverchair",  # Phase 4 T4（auth_gated，RESOLVE|FETCH）
 }
 VALID_FAMILIES = {"open_access", "auth_gated", "aggregator"}
 

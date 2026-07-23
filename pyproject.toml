@@ -42,6 +42,8 @@ dblp = "paper_crawler.adapters.dblp.adapter:DblpAdapter"
 wiley = "paper_crawler.adapters.wiley.adapter:WileyAdapter"
 # Phase 4 T3：elsevier_sd（auth_gated/官方 API 档；RESOLVE|FETCH，enumerate 走 crossref，D-005）。
 elsevier_sd = "paper_crawler.adapters.elsevier_sd.adapter:ElsevierScienceDirectAdapter"
+# Phase 4 T4：OUP Silverchair 平台（auth_gated，RESOLVE|FETCH；QJE 等经济金融顶刊全文取回）。
+oup_silverchair = "paper_crawler.adapters.oup_silverchair.adapter:OupSilverchairAdapter"
 # T6：enrich 通道（capabilities 空集，无 ENUMERATE/SEARCH/FETCH/RESOLVE，不参与 pull）。
 openalex = "paper_crawler.adapters.openalex.adapter:OpenAlexAdapter"
 s2 = "paper_crawler.adapters.s2.adapter:S2Adapter"

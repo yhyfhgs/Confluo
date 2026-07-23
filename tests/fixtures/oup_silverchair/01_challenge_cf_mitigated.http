@@ -1,0 +1,24 @@
+# fixture ①/四件套 · 风控挑战页（ClassifyResult.CHALLENGE）
+# 出处等级：[LIVE-DERIVED] —— 依 R0 [LIVE 2026-07-23] 直测记录构造（无真实凭证/个人信息）。
+#   publisher-platforms-p4-recheck.md O2：匿名 GET /qje/article/141/3/2205/8662148
+#   → 403 `cf-mitigated: challenge`，"Just a moment…" 5604B，含 `challenge-platform`/
+#   Enable JavaScript。头名/值与文案结构逐字对齐实测；body 为最小复刻（非 5604B 全量，
+#   仅保留判定器所需的 title/challenge-platform 脚本/Enable JavaScript 特征）。
+# 判定依据：cf-mitigated:challenge 头（精确相等）→ CHALLENGE；body 亦含 "Just a moment"
+#   与 /cdn-cgi/challenge-platform/ 冗余特征。挑战即 BLOCKED、绝不对抗（AC-0.2/4.6）。
+HTTP-STATUS: 403
+X-FINAL-URL: https://academic.oup.com/qje/article/141/3/2205/8662148
+cf-mitigated: challenge
+content-type: text/html; charset=UTF-8
+server: cloudflare
+
+<!DOCTYPE html>
+<html lang="en-US"><head><title>Just a moment...</title>
+<meta http-equiv="Content-Type" content="text/html; charset=UTF-8"/>
+<meta name="robots" content="noindex,nofollow"/></head>
+<body>
+<div class="main-wrapper"><div class="main-content">
+<noscript><div class="h2"><span>Enable JavaScript and cookies to continue</span></div></noscript>
+</div></div>
+<script src="/cdn-cgi/challenge-platform/h/b/orchestrate/chl_page/v1?ray=synthetic"></script>
+</body></html>
