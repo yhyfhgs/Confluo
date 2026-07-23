@@ -64,8 +64,8 @@ updated: 2026-07-24
 
   | DOI code | venue id | 刊 |
   |---|---|---|
-  | `aer` / `aer.p{n}` | `aer` | American Economic Review（`aer.p*` = P&P，见 §7 注） |
-  | `pandp` | `aer`（历史特刊） | AEA Papers & Proceedings |
+  | `aer` | `aer` | American Economic Review |
+  | `aer.p*` / `pandp.*` | （暂缓，§7 A-3） | AEA Papers & Proceedings — pnp 形态识别、venue 本 Phase 不落 |
   | `aeri` | `aeri` | AER: Insights |
   | `mac` | `aej_macro` | AEJ: Macroeconomics |
   | `app` | `aej_applied` | AEJ: Applied Economics |
@@ -161,10 +161,12 @@ updated: 2026-07-24
 | `jel` | Journal of Economic Literature | 0022-0515 | T2 | none（免费） | crossref | aea（deferred/OA） |
 | `jep` | Journal of Economic Perspectives | 0895-3309 | T2 | none（gold OA） | crossref | aea（deferred/OA） |
 
+- **⚠ ISSN 出处分级**：上表 8 ISSN 中唯 **AER(`0002-8282`)/JEP(`0895-3309`) 经勘察 [LIVE 2026-07-24] 实证**（crossref 枚举实跑）；
+  其余 6（aeri/aej_macro/aej_micro/aej_applied/aej_policy/jel）**仅 catalog [DOC] 来源**——**实现期在线冒烟负逐一核实义务**（UPDATE_GOLDEN 纪律，沿 D-019 锚点先例）。
 - 字段设计（YAML 属实现期交付，本文只给字段）：`kind: journal`；`field: [econ]`；`identifiers.issn: [<上表>]`；`metadata_source: crossref`；
   `fulltext_source: aea`；`auth.level`（上表，`provider_hint: aea` 备用）；`quirks: {ai_bot_sensitive: true, doi_forms: [submission, vol_issue_page, pnp]}`；`status: active`。
-- **P&P 注**：AEA Papers & Proceedings（`aer.p*`/`pandp.*`）不设第 9 venue——路由归 `aer`（issue-type 标 papers_and_proceedings）；
-  **开放题 A-3：pandp 独立 venue vs 折入 aer 由 controller 定**（catalog 未单列，本文取折入以守 8 venue）。
+- **P&P 注（A-3 裁决）**：AEA Papers & Proceedings（`aer.p*`/`pandp.*` 形态）**独立 venue 暂缓**——不入本 Phase 8 刊清单（年刊特刊、
+  勘察未覆盖、非主线）；DOI 解析器仍容 pnp 形态（不崩），其 venue 归属留将来。
 
 ## 8. Fixtures 与测试（出处分级）
 
@@ -195,7 +197,7 @@ updated: 2026-07-24
   **开放题 A-4**：实现期须在干净网络 + 浏览器上下文复测 pubs 真实可达性（区分"站点 CF 判罚"与"环境 TLS 障碍"）。
 - **OA-fallback 对 AEA 实质产出 ≈ 0**（§3.4 反直觉）：订阅刊 unpaywall closed + OA 刊 gold 副本落 CF 域——实现期**不应把 unpaywall 当 AEA 全文主路**；
   订阅版全文的现实兜底是跨源 WP（NBER/SSRN，另 DOI，D-007 合并），非 unpaywall。
-- **A-3 pandp venue 归属**（折入 aer vs 独立第 9 venue）待 controller 定。
+- **A-3 pandp venue 归属**：**裁决=独立 venue 暂缓**（不入本 Phase 8 刊清单；年刊特刊、勘察未覆盖、非主线）——解析器容 pnp 形态、venue 留将来（§7）。
 - **勘察事实无内部冲突**：aea.md [LIVE 2026-07-24] 与 catalog 一致（除命名写法 A-2）；env-TLS-障碍 vs 站点-CF-判罚 勘察已严格甄别、不构成事实冲突。
 
 ## 11. 修订记录
