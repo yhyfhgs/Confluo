@@ -28,6 +28,10 @@ updated: 2026-07-24
   （本 Phase 无 stateless 全文请求；browser-fetch 通道落地时另议其桶/域声明）。
 - **AuthProvider**：**无**（本 Phase）。订阅刊 auth 预判 = D-006 `CookieSession`（Playwright 机构首登→storage_state 复用）**留将来**，
   venue YAML 先声明 `auth.level` 备用，不接 AuthProvider。
+  **⚠ 层次澄清（venue 前瞻声明 vs adapter 本期实态）**：订阅刊 venue YAML 的 `auth.level: institutional` 是**刊物真实访问级的前瞻声明**
+  （备 D-006 落地）；本期 **adapter `auth_requirement = none`**（RESOLVE-only、无认证 FETCH）。二者不矛盾、**不触 lint**——`registry.py:234`
+  仅当 venue `auth.level` **低于** fulltext adapter 要求时报错（`none` adapter 零门槛、`institutional` venue 高于零门槛天然通过）；
+  D-006 落地时把 adapter `auth_requirement` 升 institutional 与 venue 对齐。
 - **服务 venue**：**8 刊**（§7 命名清单）——`aer`/`aeri`/`aej_macro`/`aej_micro`/`aej_applied`/`aej_policy`/`jel`/`jep`；P&P 见 §7 注。
 - **`resolve_offline = True`**：resolve = DOI 形态解析 + venue OA-class 静态分类（零网络，D-022 免限速闸）。
 
@@ -205,5 +209,6 @@ updated: 2026-07-24
 | # | 日期 | 修订 | 依据 |
 |---|---|---|---|
 | 1 | 2026-07-24 | 初稿（实现级，status draft）：crossref 标准 ISSN 枚举（含摘要，无需 prefix 扩展）+ DOI 双形态容错解析器 + code→venue 8 刊路由 + capabilities 论证（RESOLVE offline 有 / FETCH deferred 无）+ 全文 deferred/BLOCKED（pubs CF challenge，连 JEP OA 亦然的反直觉发现）+ 跨源 WP 兜底（D-007，非 unpaywall）+ browser-fetch 通道交叉引用（不重评）+ 8 venue 命名冲突按 catalog 裁决 + challenge-BLOCKED 边界（沿 wiley）+ 测试/fixture + 验收关联建议 | [research/site-survey/aea.md](../../research/site-survey/aea.md) [LIVE 2026-07-24] + catalog/economics-journals.md + crossref/unpaywall adapter + wiley.md/elsevier-sd.md 模板 + D-006/D-007 |
+| 2 | 2026-07-24 | **W0 双评审修订轮**（Approve-with-fixes）：③ §7 补注 **ISSN 出处分级**（唯 AER/JEP [LIVE] 实证、余 6 仅 catalog [DOC]，实现期在线冒烟负核实）+ **A-3 裁决** pandp 独立 venue 暂缓（不入 8 刊清单，同步 §3.2 路由表/§10 风险条）；④ §1 **auth 层次澄清**（venue `auth.level: institutional` 前瞻声明 vs adapter 本期 `auth_requirement=none`；不触 registry.py:234 lint——仅 venue 低于 adapter 要求时报错） | controller W0 回派 + registry.py:234 实证 |
 
 Co-Authored-By: Claude Fable 5 <noreply@anthropic.com>
