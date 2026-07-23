@@ -48,6 +48,9 @@ oup_silverchair = "paper_crawler.adapters.oup_silverchair.adapter:OupSilverchair
 # T6：enrich 通道（capabilities 空集，无 ENUMERATE/SEARCH/FETCH/RESOLVE，不参与 pull）。
 openalex = "paper_crawler.adapters.openalex.adapter:OpenAlexAdapter"
 s2 = "paper_crawler.adapters.s2.adapter:S2Adapter"
+# Phase 5 T4：ssrn（open_access；DISCOVER 纯生成年桶 + ENUMERATE 委 crossref prefix 10.2139
+# + created 后处理增补 (ssrn) id + RESOLVE landing-only；无 FETCH，元数据主路径零 SSRN 接触，D-029）。
+ssrn = "paper_crawler.adapters.ssrn.adapter:SsrnAdapter"
 
 [dependency-groups]
 dev = [
