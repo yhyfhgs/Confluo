@@ -167,7 +167,7 @@ updated: 2026-07-24
 
 ## 10. 裁决记录
 
-### 10.1 D-029 决策草案（聚合主路径确立 + 模式 B 降级；修订 D-011 定位）——供 controller 追加为新 ADR，**本稿不改 decision-log.md 本身**
+### 10.1 D-029 决策草案（聚合主路径确立 + 模式 B 降级；修订 D-011 定位）——供 controller 追加为新 ADR，**本稿不改 decision-log.md 本身**（已正式化 → decision-log D-029，2026-07-24）
 
 > 以下为草案文本，措辞对齐 ADR 格式，待 controller 采纳后落 decision-log。
 

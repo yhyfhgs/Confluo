@@ -174,7 +174,7 @@ ECMA(ECTA) 的 `10.3982` DOI 跨三个托管年代，**fulltext 分三段**：
 
 > 本节两条为**草案成型文本**（格式仿 [decision-log.md](../../plan/decision-log.md) D-020/D-024），**不改 decision-log.md 本身**——待主 agent/controller 采纳后由其分配正式 D-NNN 号并录入。编号 D-027/D-028 为**建议占位**（decision-log 当前最新为 D-026，单调递增）。
 
-### D-027 草案 · repec Phase 5 出列（降级为 enrich 通道候选，挂 Phase 6 DSL）
+### D-027 草案 · repec Phase 5 出列（降级为 enrich 通道候选，挂 Phase 6 DSL）（已正式化 → decision-log D-027，2026-07-24）
 
 - 状态：**proposed（草案）** · 日期：2026-07-24 · 依据：[research/site-survey/repec.md](../../research/site-survey/repec.md)（[LIVE] 2026-07-24 R0c，13 请求）
 - **背景**：Phase 5 兄弟源勘察含 RePEc 生态（ideas/econpapers.repec.org）。R0c 实测判定 RePEc = **分布式书目元数据聚合器、非全文源**（条目=元数据+摘要+链出到源；NBER 条目 [LIVE] 全文链回 nber.org、RePEc 不自托管）。定位落 [aggregators.md](aggregators.md) 谱系里 **openalex/s2 那一档（enrich/补充），非 crossref/dblp（ENUMERATE 主干）**。
@@ -189,7 +189,7 @@ ECMA(ECTA) 的 `10.3982` DOI 跨三个托管年代，**fulltext 分三段**：
 - **触发条件（未来纳入）**：项目 venue 清单扩张到"非 DOI 经济学 WP series 长尾"时，以 bulk ReDIF/OAI enrich 通道实现（实现前 live 复核 OAI endpoint 活性与 FTP 结构）。
 - **[PENDING·实现期]**（不阻塞本裁决）：OAI-PMH endpoint live 活性与 flaky 程度；非 DOI WP 长尾规模量级；CitEc API live 形态/配额；JEL 历史覆盖率（近年 WP 有、1989 无，enrich 价值随年代衰减）。
 
-### D-028 草案 · ECMA 年代分段路由原则（10.3982 非全前缀路由 → wiley 侧移除该前缀键）
+### D-028 草案 · ECMA 年代分段路由原则（10.3982 非全前缀路由 → wiley 侧移除该前缀键）（已正式化 → decision-log D-028，2026-07-24）
 
 - 状态：**proposed（草案）** · 日期：2026-07-24 · 依据：[research/site-survey/econometric-society.md](../../research/site-survey/econometric-society.md)（[LIVE] 2026-07-24 R0c，26 请求）
 - **背景**：既有 wiley.md §1/§2 与 `wiley/parse.py` 把 `10.3982` 列为 wiley 的 enumerate/resolve 路由前缀（`_WILEY_DOI_PREFIXES` 含 `10.3982/`、`is_wiley_doi` 裸前缀甄别）。R0c 实测证伪：`prefixes/10.3982` → owner=**The Econometric Society**（crossref member 2359），**ECMA/TE/QE 三刊共用此前缀、仅 DOI 后缀（ECTA/TE/QE）区分**——裸前缀 `10.3982→wiley` 会把 TE/QE（econsoc OA）**误路由到 wiley**。且 ECMA 已**前向迁移**：新刊自营 econometricsociety.org（2026 DOI 实测 200 + CC BY 4.0）、过刊留 Wiley（2015 DOI→doi.wiley.com 403 CF）、pre-DOI 留 JSTOR。

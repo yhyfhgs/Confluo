@@ -98,6 +98,7 @@ updated: 2026-07-24
 - **背景**：Econ/Fin 领域 SSRN 地位等同 arXiv 之于 CS，但 SSRN 无官方 API、有 Cloudflare 防护、下载路径含一次性 token。
 - **决策**：SSRN 独立 adapter，归 open_access 模块但声明 `auth_level: free_account_preferred`；枚举走其 eLibrary 浏览页与 RSS；下载用 Playwright 上下文（复用匿名或免费账号 session）；限速默认 1 req/5s，日配额上限可配；被 Cloudflare 挑战即 BLOCKED 转人工。
 - **理由**：SSRN 是 Fin/Econ working paper 不可替代的源，值得为其承担浏览器自动化成本；保守限速换长期可用。
+- **2026-07-24 修订（依据 D-029）**：双模式重定——模式 A 聚合元数据升主路径、模式 B 浏览器全文降 opt-in 并 defer Phase 6（依据 R0a 勘察 [LIVE 2026-07-24]：SSRN 站点 CF 门双向证据 + crossref 10.2139=1.41M DOI 聚合侧完整可读；W0 双评审通过）。
 
 ## D-012 会议历年网址漂移：VenueEra 表 + DBLP 为历史主干 + 年度探测任务
 
@@ -235,3 +236,45 @@ updated: 2026-07-24
 - **决策**：同一文件后缀通配词（如 `*.xml`）在不同路径前缀下的 robots 读法不同——判读以最长匹配路径前缀的 Allow/Disallow 为准；官方文档明示的 API/dump 通道（如 dblp XML API、`dblp.xml.gz`）不因后缀通配歧义而误伤；per-record 导出路径 `/rec/xml` 属 Disallow 禁区维持零请求。本原则为后续新源遇到 robots 通配歧义时的可援引先例（AC-0.5"例外需 ADR"精神的延伸）。
 - **依据**：标准 robots.txt 语义为「最长匹配路径前缀优先」（更具体的规则覆盖更泛的规则）；dblp 站点实测正是该语义的一个实例——`Allow: /db、/pid、/pers、/rec、/xml` 是前缀级粗粒度许可，`Disallow: /search、/search/publ、/rec/{xml,bib,ris,nt,rdf}、/db/indices、/cgi-bin、//` 是更深前缀的具体禁区：`/rec` 前缀本身 `Allow`，但 `/rec/xml`（及同级 `/rec/{bib,ris,nt,rdf}`）落在更深的 `Disallow` 规则之下故禁止访问；`/xml`（dump 前缀）与 `/db/**/*.xml`（卷目录前缀）均不落在 `/rec/` 之下，不受该 `Disallow` 影响，维持 `Allow`。三处既有论证按此原则交叉引用（不搬移原文）：①[aggregators.md §3「DBLP robots 红线（D1，高优先）」](../design/adapters/aggregators.md)——站点级 Allow/Disallow 清单原文与"能力面结论"（capabilities 不含 SEARCH）；②[dblp/adapter.py 模块 docstring「合规红线（AC-0.5…）」](../../src/paper_crawler/adapters/dblp/adapter.py)——代码侧承诺"全部请求构造只落在两类允许区路径"（`/db/conf/{acr}/` 索引页与 `/db/conf/{acr}/{slug}.xml` 卷 XML），不出现 `/rec`、`/search` 路径构造；③D-021 决策 1——首次把该 robots 实测从"FAQ 建议"升级为"robots 强约束"、定限速 `≥4s/req`。
 - **影响**：后续新源 adapter 遇到"同一后缀词在不同路径前缀下给出相反 robots 判定"的同类歧义时，可直接援引本条「最长匹配路径前缀优先」原则判读，无需每次重新论证是否构成 AC-0.5 例外；不改变 dblp adapter 现有实现（`/rec/xml`/`/search` 本就从未被访问构造，本条是把既有正确行为背后的判读依据显式化，非行为变更）。
+
+## D-027 RePEc Phase 5 出列：降级为 enrich 通道候选（挂 Phase 6 DSL 富化评估）
+
+- 状态：accepted · 日期：2026-07-24 · 依据：[research/site-survey/repec.md](../research/site-survey/repec.md)（[LIVE] 2026-07-24 R0c，13 请求）
+- **背景**：Phase 5 兄弟源勘察含 RePEc 生态（ideas/econpapers.repec.org）。R0c 实测判定 RePEc = **分布式书目元数据聚合器、非全文源**（条目=元数据+摘要+链出到源；NBER 条目 [LIVE] 全文链回 nber.org、RePEc 不自托管）。定位落 [aggregators.md](../design/adapters/aggregators.md) 谱系里 **openalex/s2 那一档（enrich/补充），非 crossref/dblp（ENUMERATE 主干）**。
+- **决策**：**Phase 5 不建独立 `repec` pull adapter**；降级为**可选 enrich 通道候选**，独家增值项挂 **Phase 6 订阅 DSL 富化**评估。
+- **理由**（三点）：
+  1. **DOI 化系列与 crossref/openalex 重叠增量≈0**（repec.md §5 [LIVE]）：NBER 前缀 10.3386 归 NBER、在 crossref；同 WP 在 openalex（`W4323309095`，`ids={openalex,doi}`，无 repec 键、按 DOI 去重）。凡 DOI 化内容经既有主干即全覆盖。本项目 Phase 5 目标（SSRN/NBER/AEA/Econometric Society）多为 DOI 化或有专源。
+  2. **门控与维护成本**（repec.md §3 [LIVE]）：RePEc API **email 门控**（致信取 access code、无搜索、非批量、保留限流权）；OAI-PMH 官方**自注"sometimes flaky"**；官方强烈不建议爬 HTML（隐私红线"Email addresses are released under no circumstances"）。取用须走 bulk（FTP/Rsync/OAI ReDIF）、零 HTML 爬——建设/维护成本高而主干价值冗余。
+  3. **独家增值属 enrich 性质**（repec.md §5④⑤ [LIVE]）：① **JEL 分类**（`nbr:nberwo:35506`→D1/J13/J15，crossref/openalex/nber.org **三路皆缺**，经济学检索核心维度，Phase 6 DSL 高价值过滤键）；② **wp↔published 版本关联**（`nbr:nberwo:3210`→"Published in" Oxford Economic Papers，服务 D-007，crossref/openalex 无此策展）；③ 非 DOI 的 WP 长尾（2250+ 机构 archive）。三者均 **enrich 性质、非全文/非目标刊 ENUMERATE 主干** → 挂 **Phase 6** 评估。
+- **定位建议（若未来纳入）**：`role: aggregator-enrich`（沿 aggregators.md openalex/s2 机制）——**capabilities 不声明 ENUMERATE/SEARCH/FETCH**；duck-typed `enrich_batch(dois)->list[PaperStub]` + `crawler enrich --source repec` 驱动；产 `(repec, handle)` identifier（`RePEc:{archive}:{series}:{id}`，仅 RePEc 内唯一、**非跨源合并锚点**——跨源仍靠 DOI）+ JEL/versions/citec 入 `meta`；**字段级优先级低位、只补不覆盖**（补 crossref/openalex 空缺）；收割走 bulk ReDIF/OAI，零 HTML。
+- **附带事实**（repec.md §6 [LIVE]）：兄弟源 **NBER/CEPR 在 RePEc**（经 RePEc 取其书目与直建 nber adapter / CEPR 元数据面**重复建设**）；**SSRN 不在 RePEc**（Elsevier 商业源，442KB archives 全表无"ssrn"——SSRN 覆盖只能靠 `ssrn` 专源，RePEc 补不了）→ 进一步削弱独立 adapter 必要性。handle↔DOI **无内建映射**（NBER 条目页不显 DOI，须外部 crossref join）。
+- **影响**：development-plan Phase 5 `repec` 由"adapter"注记为**"enrich 通道候选（R0c：主枚举/全文与 crossref/openalex 高度重叠→降级；独家增值＝JEL + wp↔published 版本关联，挂 Phase 6 DSL）"**；catalog 若有 repec 行→`role: aggregator-enrich`/`fulltext: none(links out)`/`enrich_fields: [jel, versions, citec]`。**建议排序：SSRN/NBER 专源优先落地 > RePEc enrich（挂 Phase 6）**。**触发条件（未来纳入）**：项目 venue 清单扩张到"非 DOI 经济学 WP series 长尾"时，以 bulk ReDIF/OAI enrich 通道实现（实现前 live 复核 OAI endpoint 活性与 FTP 结构）。
+- **落款**：W0 双评审（A/B 独立实例）2026-07-24 通过，详见 [econsoc.md §9](../design/adapters/econsoc.md)。
+
+## D-028 ECMA（Econometrica）年代分段路由：10.3982 归 Econometric Society，裸前缀路由 wiley 作废
+
+- 状态：accepted · 日期：2026-07-24 · 依据：[research/site-survey/econometric-society.md](../research/site-survey/econometric-society.md)（[LIVE] 2026-07-24 R0c，26 请求）
+- **背景**：既有 wiley.md §1/§2 与 `wiley/parse.py` 把 `10.3982` 列为 wiley 的 enumerate/resolve 路由前缀（`_WILEY_DOI_PREFIXES` 含 `10.3982/`、`is_wiley_doi` 裸前缀甄别）。R0c 实测证伪：`prefixes/10.3982` → owner=**The Econometric Society**（crossref member 2359），**ECMA/TE/QE 三刊共用此前缀、仅 DOI 后缀（ECTA/TE/QE）区分**——裸前缀 `10.3982→wiley` 会把 TE/QE（econsoc OA）**误路由到 wiley**。且 ECMA 已**前向迁移**：新刊自营 econometricsociety.org（2026 DOI 实测 200 + CC BY 4.0）、过刊留 Wiley（2015 DOI→doi.wiley.com 403 CF）、pre-DOI 留 JSTOR。
+- **决策**：
+  1. **`10.3982` 前缀归 Econometric Society，非 Wiley；裸前缀路由作废**。正确路由键 = **venue(ISSN) + DOI 后缀（`ECTA` vs `TE`/`QE`）+ 年代/域名**，绝非裸前缀。
+  2. **ECMA fulltext 段路由**（`fulltext_source: econsoc` 单值）：当前段→`econsoc`（OA，econometricsociety.org 自营）；过刊段（doi.wiley.com，~2010–切换点）与 pre-DOI 段（10.2307/JSTOR，<2010）经域名路由判定后**非本 adapter 覆盖 → `no_entitlement`/skip**（Phase 5；跨 adapter 交 wiley 的 handoff 显式 defer）。**TE/QE 全程 econsoc（OA）不分段**。
+  3. **分段判定法取方向 a（运行时 per-DOI 域名判归属）**：resolve 时以 DOI 实际落地域名（`doi.org` HEAD `-L` 实时终点，权威）判归属——`econometricsociety.org`=econsoc、`doi.wiley.com`=过刊段（`no_entitlement`/skip，wiley handoff defer）、`jstor`=界外；crossref `resource.primary.URL` 域名作 pre-filter 提示（**但有陈旧风险**：QE crossref link 仍留遗留 Wiley link——权威信号取实时落地非 crossref 登记）。方向 b（年份粗分）作快速 pre-filter、边界年实现期二分核实。
+- **wiley 侧联动修正范围**：
+  - **文档**：wiley.md §1/§2 **移除** `10.3982` 路由键（wiley 侧不持该前缀知识，ECMA 过刊归属改由 econsoc 域名路由）+ ECMA 前向迁移注记（2026-07-24，依据 R0c）；frontmatter `updated` → 2026-07-24（随本次三合并生效）。
+  - **代码（实现期卡，本次只报告不改）**：`src/paper_crawler/adapters/wiley/parse.py` **`_WILEY_DOI_PREFIXES` 移除 `10.3982/`**（仅留 10.1111/10.1002）——W0 评审 B 实证 `is_wiley_doi(doi:str)` 单入参无域名/年代信息、无法判过刊段，**取移除非收窄**；ECMA 过刊→wiley 归属由 econsoc 域名路由（方向 a）承担、wiley 侧不持 10.3982。`wiley/adapter.py`+`wiley/__init__.py` docstring 同步。**联动 test**：`tests/unit/test_wiley_parse.py:21,32` 断言 `is_wiley_doi("10.3982/…") is True` 随移除**同卡翻转**（移入非 Wiley 组）。**实现顺序**：`parse.py` 移除 + `ecma/te/qe` venue YAML 落地**同一实现卡**（`is_wiley_doi` 现**零 runtime 调用=休眠**，落地前无活风险）。**venues/ 无 10.3982 硬编码**（grep 空、无 ecma/te/qe YAML）。
+- **理由**：R0c [LIVE] 实测 = 前缀所有权（Econometric Society）+ 三刊共用 + ECMA 前向迁移三事实叠加，裸前缀路由在 TE/QE 上系统性误路由、在当前 ECMA 上系统性漏取（Wiley TDM 对自营新 DOI 大概率 no_entitlement）。
+- **影响**：catalog `ecma` 行 `fulltext_source: econsoc`（单值）+ 域名路由分段（当前 OA / 过刊·pre-DOI 段 no_entitlement/skip），`enumerate` 仍 crossref；wiley.md 修正（随本次三合并生效）；wiley `parse.py` 移除 10.3982 + `test_wiley_parse.py` 断言翻转（实现期同卡）；econsoc.md §3.3 承载 ECMA 分段主设计。`economics-journals.md` catalog TE/QE 平台注记更新为"econsoc（OJS@econtheory.org/ojs + 合并前端 econometricsociety.org；qeconomics.org 证书过期停用）"。**[UNRESOLVED]（不阻塞）**：① 当前 ECMA 是否全刊 OA（实现期 HEAD 判）；② Wiley→自营切换日（方向 a 不依赖）。
+- **落款**：W0 双评审（A/B 独立实例）2026-07-24 通过，详见 [econsoc.md §9](../design/adapters/econsoc.md)。
+
+## D-029 SSRN 定位修订：聚合元数据主路径确立 + 浏览器全文降 opt-in（修订 D-011 定位）
+
+- 状态：accepted · 日期：2026-07-24 · 依据：[research/site-survey/ssrn.md](../research/site-survey/ssrn.md)（[LIVE 2026-07-24] R0a）+ [design/adapters/ssrn.md](../design/adapters/ssrn.md)
+- **背景**：D-011（2026-07-20）设想「eLibrary 浏览页 + RSS 枚举 + 浏览器下载」双模式、`auth_level: free_account_preferred`。R0a 勘察（2026-07-24）实测颠覆三点：① SSRN 全库经 Crossref 前缀 10.2139（1.41M DOI）+ OpenAlex（1.63M）完整可读，枚举/元数据/增量 watch 聚合 API 即可闭环、零 SSRN 接触；② 匿名 HTTP 直连 SSRN 不可行（2026-07-20 Cloudflare 挑战 + 2026-07-24 环境 TLS 阻断，双独立证据）；③ 全文无第三方旁路（unpaywall 对 SSRN 仅 landing）。
+- **决策**（修订 D-011，收窄双模式定位，不 supersede）：
+  1. **模式 A（聚合元数据）升主路径**：Crossref 前缀 10.2139 枚举主干 + OpenAlex 交叉核对/补摘要；`auth_level=none`；SSRN 站点本体零请求。
+  2. **模式 B（浏览器全文）降 opt-in 低配额**：唯一全文路径但穿 Cloudflare 门，按最严红线 opt-in/用户发起单篇、非批量非默认；实现 defer 评估（ssrn.md §11 案 B，controller 已终裁）。
+  3. **元数据与全文能力解耦**（D-005 同款）：元数据能力不依赖 SSRN 站点连通性。
+  4. **venue 建模**：单一 `ssrn` venue（前缀全库）+ econ/fin 主题近似过滤，非 per-FEN 独立 venue（聚合源无子网过滤维度，对照 arxiv 差异，ssrn.md §3）。
+- **理由**：browser fetch 通道（ssrn 模式 B / aea 全文域 pubs Cloudflare / wiley deferred 页面兜底三处共需）评估两案：案 A（Phase 5 落地最小件）在线验收因**本机环境对 CF 前置域 TLS 层阻断**而大概率不可行（curl/httpx [LIVE] 实测，浏览器上下文 [推断] 同源本机代理同样受阻）；案 B（defer 至 Phase 6 横切件）离线逻辑（challenge 判定/BLOCKED/预算护栏）可全覆盖、defer 全文不丢元数据价值、与 aea/wiley 两消费方一并做横切件设计避免逐 adapter 重复。**controller 已正式采纳案 B**。
+- **影响**：ssrn.md 实现级详设据此；AC-5.1 分层改写（元数据 CI 可判 / 全文 opt-in，ssrn.md §8）；development-plan Phase 5 DoD「按 FEN 子网…下载」相应收窄为「近 7 天新 WP 元数据 + econ/fin 近似过滤」；browser fetch 横切件（案 B）Phase 6 与 aea pubs CF / wiley deferred 页面兜底一并设计。
+- **落款**：W0 双评审（A/B 独立实例）2026-07-24 通过，详见 [ssrn.md §10.1](../design/adapters/ssrn.md)。
