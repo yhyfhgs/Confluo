@@ -165,4 +165,82 @@ updated: 2026-07-24
 - **风险**：crossref 计费/政策演变（aggregators §10 已备降级路径）；openalex 信用制（预算护栏）；**SSRN=Elsevier 风控随时收紧**——**元数据层零 SSRN 接触故天然免疫**，仅模式 B 受影响（canary 对模式 B 周检、连续 CHALLENGED 时 catalog 标降级）；crossref 前缀枚举腐化（canary 比对 healthcheck 固定 DOI title，沿 crossref 先例）。
 - **healthcheck**：元数据层 = `GET api.crossref.org/works/10.2139/ssrn.4056799` 比对规整化 `title[0]`（固定已知存在 DOI，[LIVE] 200，真值 [PENDING] 实现期 UPDATE_GOLDEN 捕获）；模式 B = 无 session 时 `NotImplementedError`→canary SKIP（沿 auth_gated 先例）。
 
-<!-- SECTION-5-9-END -->
+## 10. 裁决记录
+
+### 10.1 D-011 修订注记草案（供 controller 追加为新 ADR / D-011 amendment；**本稿不改 decision-log.md 本身**）
+
+> 以下为草案文本，措辞对齐 ADR 格式，待 controller 采纳后落 decision-log。
+
+```
+## D-0NN SSRN 定位修订：聚合元数据主路径 + 浏览器全文降 opt-in（修订 D-011）
+- 状态：proposed · 依据：research/site-survey/ssrn.md [LIVE 2026-07-24] R0a + design/adapters/ssrn.md
+- 背景：D-011（2026-07-20）设想「eLibrary 浏览页 + RSS 枚举 + 浏览器下载」双模式、auth_level
+  free_account_preferred。R0a 勘察（2026-07-24）实测颠覆三点：① SSRN 全库经 Crossref 前缀 10.2139
+  （1.41M DOI）+ OpenAlex（1.63M）完整可读，枚举/元数据/增量 watch 聚合 API 即可闭环、零 SSRN 接触；
+  ② 匿名 HTTP 直连 SSRN 不可行（2026-07-20 Cloudflare 挑战 + 2026-07-24 环境 TLS 阻断，双独立证据）；
+  ③ 全文无第三方旁路（unpaywall 对 SSRN 仅 landing）。
+- 决策（修订 D-011，收窄双模式定位，不 supersede）：
+  1. 模式 A（聚合元数据）升主路径：Crossref 前缀 10.2139 枚举主干 + OpenAlex 交叉核对/补摘要；
+     auth_level=none；SSRN 站点本体零请求。
+  2. 模式 B（浏览器全文）降 opt-in 低配额：唯一全文路径但穿 Cloudflare 门，按最严红线 opt-in/
+     用户发起单篇、非批量非默认；实现 defer 评估（ssrn.md §11，controller 终裁案 B）。
+  3. 元数据与全文能力解耦（D-005 同款）：元数据能力不依赖 SSRN 站点连通性。
+  4. venue 建模：单一 ssrn venue（前缀全库）+ econ/fin 主题近似过滤，非 per-FEN 独立 venue
+     （聚合源无子网过滤维度，对照 arxiv 差异，ssrn.md §3）。
+- 影响：ssrn.md 实现级详设据此；AC-5.1 分层改写（元数据 CI 可判 / 全文 opt-in，ssrn.md §8）；
+  development-plan Phase 5 DoD「按 FEN 子网…下载」相应收窄为「近 7 天新 WP 元数据 + econ/fin 近似过滤」。
+```
+
+### 10.2 本稿设计裁决点小结（供双评审 / controller）
+
+| # | 裁决点 | 建议案 | 依据 |
+|---|---|---|---|
+| 1 | capabilities 集合（Phase 5） | `{DISCOVER, ENUMERATE, RESOLVE(landing-only)}`；`FETCH` 随 §11 终裁 | §4.1；controller 预裁决 #1/#2 |
+| 2 | venue 建模 | 单一 `ssrn` venue + econ/fin 主题近似过滤（非 per-FEN venue） | §3；对照 arxiv category-venue 差异 |
+| 3 | 枚举接缝 | `ssrn` adapter **自持**前缀+created-date 枚举，复用 `crossref.parse` + `HttpClient`；**不改 implemented crossref 冻结件** | §4.2；**提请评审确认**（避免污染 crossref 按-ISSN 语义） |
+| 4 | 全文能力 | 元数据层 landing-only；全文 defer（§11 案 B） | §4.4；勘察 §5 无旁路 |
+| 5 | AC-5 分层 | AC-5.1a（元数据 CI）/ AC-5.1b（全文 opt-in，defer） | §8；controller 预裁决 #5 |
+| 6 | 覆盖率量化 | OpenAlex census 代理采样法 + 90% 阈值 + 缺口候补阶梯 | §9.1；controller 预裁决 #3 |
+
+### 10.3 修订记录
+
+| # | 日期 | 修订 | 依据 |
+|---|---|---|---|
+| 1 | 2026-07-20 | 初稿（D-011 双模式 survey 级，status review，owner fable5） | econ-fin-preprints.md [LIVE] 2026-07-20 |
+| 2 | 2026-07-24 | **重写至实现级**（status draft，owner D1）：模式 A 升主路径（crossref 前缀枚举 + openalex enrich，零 SSRN 接触）/ 模式 B 降 opt-in；单 venue + 主题近似过滤 venue 建模；capabilities 集合论证；AC-5 分层草案；DOI 覆盖率量化任务；browser fetch 两案评估。**旧稿浏览器枚举路线作废** | R0a [LIVE 2026-07-24] + controller 预裁决 |
+
+## 11. 横切件专章：browser fetch 通道两案评估（评审后 controller 终裁）
+
+**三处共需**：ssrn 模式 B（全文）/ aea 全文域（pubs Cloudflare）/ wiley deferred 页面兜底（wiley.md §3.2）。故本通道宜作**横切件**统一设计，非 SSRN 单独 bolt-on。
+
+### 11.1 案 A：Phase 5 落地最小件（单 DOI 手动触发 `grab --browser`）
+
+- **形态**：`crawler grab --ssrn <id> --browser`（或 `grab --doi <ssrn DOI> --browser`）——**单篇、用户显式发起**，非批量、非 watch 默认。
+- **复用面（Phase 4 基建已在）**：`auth/browser.py`（惰性 Playwright，persistent context，storage_state 导出，A-M7 一次性 profile 目录 `try/finally` 清理，auth-framework §10）+ `ChallengeDetector`（challenge.py，§11 特征库）+ 预算护栏（日配额 §8.3、challenge 冷却 24h §8.4）+ `[auth-browser]` extra（已声明，§10）。
+- **模块边界 / 新增面**：① `ssrn.capabilities` 追加 `FETCH`；② `resolve_assets` 追加 volatile `Delivery.cfm` 计划（`url_strategy=render_page`、标易失、**resolve/fetch 必须同浏览器上下文同批**）；③ CLI `grab` 追加 `--browser` flag；④ pipeline fetch 识别 browser-plan → 派 `auth/browser.py` 同 context 点击下载（`expect_download`）→ `%PDF` 校验落盘。**净新增 ≈ 一 fetch 分支 + 一 resolve 计划类型 + 一 CLI flag**（无新子系统）。
+- **测试策略（离线 mock 层）**：browser.py **假 seam** 单测（注入预置 storage_state + mock download，auth-framework §9/§10 先例）；`ChallengeDetector` challenge fixture → `Challenged`→BLOCKED（离线可判）；resolve/fetch 同批约束 + token 易失单测。真实浏览器取回 = `PC_BROWSER_TESTS` 手动门 + runbook（**不进 CI**）。
+- **工作量估计**：**中等**——基建已在 Phase 4，增量 = ssrn FETCH 分支 + volatile 计划 + CLI flag + 离线 seam 单测 ≈ 2–3 张 T-卡；但**在线验收在本环境不可行**（见 §11.3）。
+
+### 11.2 案 B：deferred 至 Phase 6，SSRN 本 Phase 纯聚合元数据
+
+- SSRN Phase 5 = `{DISCOVER, ENUMERATE, RESOLVE(landing-only)}`；全文经 pipeline **unpaywall OA-fallback 既有管线**（§4.4）。**命中率按勘察低预期如实标注**：SSRN 的 unpaywall 为 landing-only（`url_for_pdf=None`）⇒ **PDF 命中 ≈ 0**（元数据 + landing 链接为主，少数 econ WP 经 Phase 5 同批 repec/nber OA 副本替代）。
+- browser fetch 横切件在 **Phase 6** 与 aea pubs CF / wiley deferred 页面兜底**一并设计**（三消费方共用一次横切件，非逐 adapter 重复）。
+
+### 11.3 关键评估维度
+
+- **本机环境对 CF 前置域 TLS 层阻断（R0a [LIVE] 实测）——浏览器上下文同样被阻断**：本机强制走代理 `127.0.0.1:6152`（fake-IP DNS），对**所有 Cloudflare 前置域**在 TLS 握手 reset。Playwright 浏览器上下文的网络出口 = **同一本机代理** ⇒ **案 A 在线验收（真实 `Delivery.cfm` 取回）在本环境不可行——连 happy path 都无法验一次**。
+- **离线可验证边界**：案 A 逻辑（challenge 判定 / BLOCKED / 同批约束 / 预算护栏）可经假 seam + fixture **离线全覆盖**；但「真穿 Cloudflare 取回 PDF」**永不可离线验**，且红线下遇挑战即 BLOCKED（不自动过）⇒ **即便非阻断环境**，诚实验收 = 用户已 CF-cleared 的浏览器 session 下取回，本质**用户参与 runbook、非 CI**。
+- **D-011 承诺与 R4 缓解兑现度**：案 A 兑现「设计 + 最小实现」；案 B 兑现「设计」（本 §11 + auth-framework §9/§10 基建已在），defer「实现」至可验证环境 + 横切件统一。两案的 R4 缓解（SSRN 无 API→浏览器自动化 + 严限速）**设计层等价兑现**，差异仅在「是否本 Phase 落实现代码」。
+
+### 11.4 推荐与理由（controller 终裁）
+
+**推荐：案 B（defer 至 Phase 6 横切件）。**
+
+1. **环境 TLS 阻断 CF 前置域（含浏览器上下文）⇒ 案 A 在线验收本环境不可行**——shipping 无法验一次的代码，违项目「勘察先行 / 可验证」纪律（Phase 2 REJECT 教训）。
+2. D-011 修订（controller #1）已降模式 B 为 opt-in 低配额；**defer 实现至 Phase 6 让它与 aea/wiley 两消费方作一次横切件设计**，非 SSRN 单独 bolt-on（DRY + 一致 challenge/预算处置）。
+3. Phase 5 SSRN 元数据价值（crossref spine）零 SSRN 接触、全 CI 可判——**defer 全文不丢价值**。
+4. R4 缓解经「设计浏览器通道」（本 §11 + auth-framework 基建）兑现，「实现落地」待可验证环境 + 横切件 Phase。
+5. 案 A 会引入**无法在线验**的 FETCH 面（volatile `Delivery.cfm` / browser context / opt-in flag / 预算护栏），与勘察先行纪律冲突。
+
+**反方（公平呈现）**：案 A 增量成本适中（browser.py 基建已在 Phase 4）、离线 seam 可覆盖逻辑；若未来主力网络非 CF-阻断，案 A 可较快转在线。但**决定性因素 = 本环境在线验收不可行 + 横切件统一论据** → defer。**本 §11 即该横切件的设计种子**（Phase 6 直接承接）。
+
