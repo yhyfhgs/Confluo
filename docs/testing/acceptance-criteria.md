@@ -2,7 +2,7 @@
 title: 验收标准总表
 status: approved
 owner: fable5
-updated: 2026-07-21
+updated: 2026-07-24
 ---
 
 # 验收标准（Acceptance Criteria）
@@ -57,10 +57,11 @@ updated: 2026-07-21
 
 | ID | 场景 | 通过判据 |
 |---|---|---|
-| AC-5.1 | SSRN 网络增量 | 按 FEN 子网枚举近 7 天清单成功率 ≥95%；全程限速 ≤1 req/5s（FetchLog 审计）；遇 Cloudflare 挑战正确 BLOCKED |
-| AC-5.2 | NBER >18 月开放 | `pull nber --year <当前-2>` 无凭证成功；对 <18 月论文按策略提示配额/订阅（不利用软门绕过——见调研伦理批注） |
-| AC-5.3 | TE/QE 开放刊 | Econometric Society 开放刊全文成功抓取，无需认证 |
-| AC-5.4 | 平台归属正确性 | POM 走 SAGE adapter（非 Wiley/INFORMS）；SODA 走 SIAM（非 ACM）——路由解析正确 |
+| AC-5.1a | SSRN 元数据层增量（聚合 API 主路径，CI 可判） | ①7 收割日回放（含重叠 created 窗 + ~1 日延迟注入）→ abstract_id 清单无重复无遗漏；②econ/fin 主题过滤＝确定性过滤逻辑单测（固定 fixture 输入→期望输出精确断言；原「一致率≥95% vs OpenAlex field 基准」废止——过滤信号本取自 OpenAlex field，自比恒 100% 为空判）；③全程零 SSRN 站点接触（obslog 断言无 `*.ssrn.com` 请求）；限速审计经 obslog jsonl（聚合 API 请求不入 FetchLog） |
+| AC-5.1b | SSRN 全文层（模式 B 浏览器取回，opt-in，非 CI） | 遇 Cloudflare 挑战正确 BLOCKED(challenge)+平台冷却 24h（离线 challenge fixture 可判）；真实取回落盘＝用户参与 runbook（须换非阻断网络）；限速 ≤1 req/5s（仅模式 B 触 `*.ssrn.com` 时，FetchLog 审计）。**Phase 5 defer 至 Phase 6 横切件统一设计**（D-029 案 B；本 Phase 不声明 FETCH 能力，不阻塞离线 DoD） |
+| AC-5.2 | NBER >18 月开放 | `pull nber --year <当前-2>`（>18 月区）无凭证成功：prefix enumerate 该年 + resolve 直链 + fetch PDF 魔数合格（离线 fixture 回放 PASS + 在线冒烟 1 篇实证，D-018 分层）；<18 月抽样 → resolve 判 no_entitlement（非 integrity）、报告提示订阅、且 resolve 本身零网络（无软门请求发出，不利用软门绕过——见调研伦理批注）；通用 adapter DoD：resolve/fetch/enumerate 逻辑单测 + fixture 回放 + www/back 双域限速假时钟断言全 PASS |
+| AC-5.3 | TE/QE 开放刊 | OJS-OAI 枚举 + galley 全文成功抓取，无需认证：①`timeline {te,qe}` 覆盖 volume_map 全区间；②`pull {te,qe} --year <Y> --limit N` 落盘 N 个 `%PDF` 文件 >10KB、DB↔文件对账一致；D-019 锚点：TE/QE crossref-by-ISSN 计数各 ≥1 行（对账编辑部记录差额，如实注明差额成因，不阻塞） |
+| AC-5.4 | 平台归属正确性 | POM 走 SAGE adapter（非 Wiley/INFORMS）；SODA 走 SIAM（非 ACM）——路由解析正确（Phase 4 既有判据，未变更）。**Phase 5 新增**：aea 8 刊 DOI code→venue 路由正确（P&P 归位暂缓、不入 8 刊清单）；ECMA 域名三段路由正确（当前段自营域→galley 取回 / 过刊段 Wiley 域→no_entitlement 零网络 / pre-DOI 段 JSTOR 域→零 asset 零网络，且当前段 404 终态诚实改判 no_entitlement 而非 GONE、TE/QE 404 仍判 GONE 不误判）；wiley 10.3982 前缀移除后不再误路由 ECMA/TE/QE 至 wiley（D-028）。aea 元数据/enumerate/DOI 解析无专属 AC-5.x，按通用 adapter DoD（fixture 回放 + 单测全 PASS）+ 本条路由类比收口 |
 
 ## AC-6 · 订阅与搜索（Phase 6）
 
@@ -112,7 +113,7 @@ updated: 2026-07-21
 | FR-06 开放源下载 | AC-2.2, AC-2.5, AC-2.6, AC-5.2, AC-5.3 | 含 bulk 优先与 ACM OA 场景 |
 | FR-07 认证源下载 | AC-4.1 | 全平台 runbook 逐个执行 |
 | FR-08 会话管理 | AC-4.2, AC-4.5, AC-1.5 | 过期检测 / 登出无残留 / BLOCKED-resume |
-| FR-09 礼貌爬取 | AC-1.4, AC-4.4, AC-5.1, AC-0.5 | 限速审计 / 日配额 / robots |
+| FR-09 礼貌爬取 | AC-1.4, AC-4.4, AC-5.1a, AC-5.1b, AC-0.5 | 限速审计 / 日配额 / robots |
 | FR-10 断点续爬 | AC-1.3, AC-3.3 | kill-9 幂等 / verify 对账 |
 | FR-11 元数据入库与合并 | AC-3.1, AC-3.2, AC-3.4 | 强合并 / 弱信号候审 / 顺序无关 |
 | FR-12 文件管理 | AC-1.1, AC-3.3 | DB↔文件双向对账 |
