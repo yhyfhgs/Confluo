@@ -1,6 +1,6 @@
 ---
 title: 配置分层与敏感边界规范
-status: approved
+status: implemented
 owner: fable5
 updated: 2026-07-23
 ---

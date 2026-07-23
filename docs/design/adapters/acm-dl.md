@@ -2,12 +2,14 @@
 title: Adapter 设计 · ACM Digital Library
 status: review
 owner: fable5
-updated: 2026-07-22
+updated: 2026-07-23
 ---
 
 # Adapter · `acm_dl`
 
 > **D-020（2026-07-22）：本 adapter 自动全文抓取 Phase 2 出列、Phase 4 重评**——LIVE 勘察（[research/site-survey/acm-dl.md](../../research/site-survey/acm-dl.md)）实测 OA 后仍有 Cloudflare 挑战门 + ToS 禁自动下载条款，红线（AC-0.2/0.5）优先。本文档维持 review、不按新标准重写；Phase 4 重评时依届时事实全文重写。以下为 Phase 0 原稿。
+>
+> **Phase 4 重评（2026-07-23）：证据未变，维持出列，全文改道 unpaywall OA-fallback**——D-024（[decision-log.md](../../plan/decision-log.md) D-024）依 R0 [LIVE 2026-07-23] 增量复核裁决：出列两依据均未变（Cloudflare 挑战门持续；ToS 明文禁 scripts/spiders 自动下载 + metadata harvest 原文未松）。全文获取改道 pipeline `no_entitlement → unpaywall` OA-fallback 通道（auth-framework.md §8.1，T5 已落码）；元数据维持 crossref+dblp（Phase 3 聚合层，不碰 dl.acm.org）。本文档仍维持 `review`、不重写；browser-fetcher 有限实现留待其落地后再评。
 
 
 ## 1. 定位

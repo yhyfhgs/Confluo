@@ -1,6 +1,6 @@
 ---
 title: Adapter 设计 · OUP（Silverchair 平台，实现级）
-status: approved
+status: implemented
 owner: fable5
 updated: 2026-07-23
 ---

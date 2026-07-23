@@ -322,3 +322,29 @@ def test_default_user_agent_uses_env(monkeypatch: pytest.MonkeyPatch) -> None:
 def test_default_user_agent_placeholder_when_env_unset(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.delenv("PAPER_CRAWLER_CONTACT_EMAIL", raising=False)
     assert ".invalid" in _default_user_agent()
+
+
+# --- lookup（grab 单篇元数据；Phase 4 T5 引入，T8 补直接单测）-----------------------------------
+
+
+def test_lookup_success_returns_paper_stub() -> None:
+    """`GET /works/{doi}` 命中 → `PaperStub`（title/doi/year 正确映射）。"""
+    adapter = _adapter(lambda _req: _resp(fixture_bytes("06_works_healthcheck.json")))
+    stub = adapter.lookup("10.1038/nature14539")
+    assert stub is not None
+    assert stub.title == "Deep learning"
+    assert ("doi", "10.1038/nature14539") in stub.identifiers
+    assert stub.year == 2015
+
+
+def test_lookup_404_gone_returns_none() -> None:
+    """404（DOI 未收录）→ GONE → `None`（正常空结果，非异常；同 unpaywall 口径）。"""
+    adapter = _adapter(lambda _req: _resp(b'{"message":"Resource not found."}', status=404))
+    assert adapter.lookup("10.9999/nonexistent") is None
+
+
+def test_lookup_missing_title_returns_none() -> None:
+    """work 缺 title（无强合并锚点）→ `None`（不造无锚点 stub）。"""
+    body = b'{"status":"ok","message-type":"work","message":{"DOI":"10.1/x"}}'
+    adapter = _adapter(lambda _req: _resp(body))
+    assert adapter.lookup("10.1/x") is None

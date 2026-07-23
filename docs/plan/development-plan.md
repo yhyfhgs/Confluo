@@ -2,7 +2,7 @@
 title: 开发计划（Phase 0–7）
 status: approved
 owner: fable5
-updated: 2026-07-21
+updated: 2026-07-23
 ---
 
 # 开发计划
@@ -18,7 +18,7 @@ updated: 2026-07-21
 | 1 | 核心框架 | plugin registry、数据模型与 DB、pipeline 骨架、CLI 骨架、日志 | 0 | done |
 | 2 | Open-Access MVP | arXiv + OpenReview + PMLR + CVF + ACL Anthology + NeurIPS + AAAI + ACM adapters | 1 | done |
 | 3 | 聚合元数据层 | Crossref/OpenAlex/DBLP/S2/Unpaywall 客户端与 metadata spine | 1 | **done** |
-| 4 | 认证框架 + 出版社 adapters | AuthProvider 四实现；Elsevier/Wiley/OUP/UChicago/INFORMS/IEEE/ACM/AAAI | 1,3 | planned |
+| 4 | 认证框架 + 出版社 adapters | AuthProvider 四实现；Elsevier/Wiley/OUP/UChicago/INFORMS/IEEE/ACM/AAAI | 1,3 | **done** |
 | 5 | SSRN 与特殊源 | SSRN、NBER、AEA、Econometric Society、RePEc adapters | 2,4 | planned |
 | 6 | 订阅与搜索 | topic/tag 订阅 DSL、增量 watch、dry-run、日报 | 2,3 | planned |
 | 7 | 全文抽取与库增强 | GROBID 集成、全文索引、preprint↔正式版关联审核工具 | 2–5 | planned |
