@@ -89,7 +89,7 @@ updated: 2026-07-24
 - **订阅刊**（`aer`/`aeri`/`aej_*`）→ **不产平台 AssetPlan、标 `no_entitlement`**（无机构订阅 + 全文域 CF 挡）→ pipeline 转 OA-fallback
   （unpaywall；覆盖低，多数无 OA → 跨源 WP 兜底，见 §3.4）。auth 预判 D-006 CookieSession **留将来**，本 Phase resolve 不产订阅计划。
 - **OA 刊**（`jep`/`jel`）→ 全文经 `pubs.aeaweb.org/doi/pdfplus/{DOI}`，但该域 CF challenge（§3.4）→ **同样不产可 stateless-fetch 的计划**，
-  标 **deferred(browser-fetch)**（记规范全文 URL 作 BLOCKED 观测，供 browser 通道落地时消费）。→ 亦转 OA-fallback（unpaywall gold，但见 §3.4 反直觉）。
+  标 **deferred(browser-fetch)**（记规范全文 URL 作 BLOCKED 观测，供 browser 通道落地时消费）。→ 亦转 OA-fallback（unpaywall gold，但见 §3.4 反直觉）。（2026-07-24 审查 MINOR① controller 裁定：jep/jel 返回空计划不派生 OA-fallback——§3.4 已证 OA-fallback 对 10.1257 产出≈0，此路径无实际损失，本句按现实校准废止。）
 - **deferred 全文 URL 记录**：resolve 可产一条 `AssetPlan(kind=PDF, url=pubs.../doi/pdfplus/{DOI}, url_strategy=BROWSER,
   auth_needed=INSTITUTIONAL|NONE, state=deferred)` 作**文档化占位**（本 Phase 不 fetch）——★接缝 A-1：`url_strategy=BROWSER`/`state=deferred`
   是否入冻结件由 browser-fetch 通道详设（D1）统一定，本文只交叉引用、**不新增冻结件**。
