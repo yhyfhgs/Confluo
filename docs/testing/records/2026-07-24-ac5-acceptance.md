@@ -1,6 +1,6 @@
 ---
 title: AC-5 离线端到端汇总验收记录 — ssrn/nber/aea/econsoc 四 adapter（Phase 5 离线口径）
-status: draft
+status: approved
 owner: t7
 updated: 2026-07-24
 ---
@@ -197,3 +197,4 @@ AC-5.1a（ssrn 元数据层三判据）、AC-5.2（nber >18 月）、AC-5.3（ec
 
 - **T7 初判（2026-07-24）**：AC-5.1a/5.2/5.3/5.4 离线判据在 `chore/ac5-acceptance` 隔离 worktree 内实跑全部 PASS（§1 逐条 + §3 台账）；AC-5.1b 如实标注 defer Phase 6、不计入 PASS/FAIL；全量门禁独立复现 3056 passed/28 skipped/EXIT=0；§2 在线依赖项分层不预支结论。**判定：待 controller 终验**（不自置 approved）。
 - **待办**：controller 亲验载体计数复现 + `acceptance-criteria.md` AC-5 节 diff 复核 + §2 清单确认无遗漏后，方可转 `status: approved`。
+- 判定：达成（controller 终验 2026-07-24 —— AC-5.1a 三判据于 main@5111fc0 亲跑 3 passed 复现；AC-5.2/5.3/5.4 判据载体与实跑台账逐条核对通过；AC-5.1b N/A defer Phase 6 与 POM/SODA 既有缺口标注处理均予确认）
