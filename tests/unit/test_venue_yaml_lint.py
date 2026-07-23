@@ -52,6 +52,9 @@ _NON_ARXIV_VENUE_IDS = {
     "jet",
     "jpubeco",
     "jbf",
+    # Phase 5 T4：SSRN（聚合元数据主路径，站点零接触，D-029）——metadata/fulltext 均 ssrn adapter
+    # （enumerate 内部委 crossref prefix 10.2139 + created 后处理，非独立 crossref metadata_source）。
+    "ssrn",
 }
 
 
