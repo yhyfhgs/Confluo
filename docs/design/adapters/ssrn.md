@@ -61,7 +61,7 @@ updated: 2026-07-24
 
 | 能力 | 元数据层（Phase 5 committed） | 论证 |
 |---|---|---|
-| `DISCOVER` | ✅ | 预印本无"期"概念 → 按 (created 年 [/月/周]) 生成**虚拟时间桶** Issue（沿 arxiv.md §3 月度桶先例），**零 SSRN 接触**；桶计数 = crossref facet。 |
+| `DISCOVER` | ✅ | 预印本无"期"概念 → 按 created 年生成**虚拟时间桶** Issue（沿 arxiv.md §3 月度桶先例），**零 SSRN 接触**；**纯生成零网络**（`paper_count_claimed=None`，规模锚移交 M1 census——真实 Crossref `facet=created:*` 返 HTTP 400，发现①仲裁令，§4.3）。 |
 | `ENUMERATE` | ✅ | crossref `filter=prefix:10.2139` + created-date 窗 + cursor（§4.2）；产 `identifier(ssrn)` + `identifier(doi)` 的 PaperStub 流。 |
 | `RESOLVE` | ✅（landing-only） | 零网络 landing URL 构造（`resolve_offline=True`）；PDF 交 pipeline unpaywall OA-fallback（§8.1）——SSRN 无第三方 PDF 旁路，默认无可下载 PDF asset（§4.4）。 |
 | `FETCH` | ❌（模式 B 条件能力） | 全文唯一路径 = 浏览器 Delivery.cfm（Cloudflare 门）；Phase 5 默认不声明，§11 案 B 推荐 defer Phase 6 横切件。 |
@@ -79,7 +79,10 @@ updated: 2026-07-24
 
 ### 4.3 `discover_timeline(venue, since)`（DISCOVER）
 
-- **零网络虚拟桶**：经**扩展 `CrossrefAdapter`（date-field=`created`）** `GET .../works?filter=prefix:10.2139&rows=0&facet=created:*`（1 请求）→ 按 created 年 facet 产逐年 `IssueRef`（`paper_count_claimed`=该年计数）。**注**：`parse.py:114 parse_facet_years` 现硬绑 `facets.published`，`facet=created` 属 §4.2 同一扩展轴（date-field）——**discover 亦不走"零改 crossref"**。`label='YYYY'`、`year=YYYY`、`volume=NULL`（沿 arxiv 月度桶字段分解，幂等键 (venue, year)）。watch 语境下细化到月/周桶（`from/until-created-date` 边界）。`since` = 可选 created 年下界（勘察回溯 68 年桶，含脏未来年 **2077/2103/2104** → 上界按"今日"截断、下界默认合理起点如 1990，脏年不产桶）。
+> **controller 发现①仲裁令（2026-07-24，优先于本节原文）**：T1 在线实测真实 Crossref `GET /prefixes/10.2139/works?facet=created:*` 返 **HTTP 400 `facet-not-available`**（`created` 非该路由合法 facet；合法含 `published`、不含 `created`）——活体哨兵 `tests/online/test_crossref_prefix_smoke.py::test_prefix_created_facet_ssrn`（XFAIL）。故本节**原 facet 方案（1 请求 created facet 产年桶）不可实现**，仲裁改**纯生成零网络年桶**（下）。**`enumerate`/watch 的 `from/until-created-date` filter 不受影响**（filter≠facet，勘察 §2 [LIVE] 已证有效）。
+
+- **纯生成零网络年桶（现行方案）**：`discover_timeline` **纯本地生成** 1990..今年 逐年 `IssueRef`——**零请求、零 facet 依赖**（arxiv 月度桶纯生成同构，arxiv.md §3）。上界"今年"经**注入 clock** 取（沿 `TaskQueue.__init__(clock=)` / `pipeline.runner` 先例，保可测性——**不硬调 `date.today()`**）；下界默认 **1990**，`since` = 可选 created 年下界（取前 4 位、早于 1990 起点则钳到 1990）。字段：`label='YYYY'`、`year=YYYY`、`volume=NULL`、`number=NULL`、`pub_date=NULL`、`paper_count_claimed=None`（沿 arxiv 月度桶字段分解，幂等键 **(venue, year)** 不变）。**规模锚（每年计数）职责移交 M1 census**（OpenAlex source 代理，§9.1）——纯生成无权威计数、恒 `None`。**脏未来年天然不产**：纯生成连续区间 `[1990, 今年]` + 上界截断，故旧 facet 方案里的脏未来年（**2077/2103/2104**）根本不出现（无 facet 数据可污染）。watch 语境的增量新鲜度由 `enumerate` 的 `from/until-created-date` **filter** 窗表达（§4.2），非 discover。
+- ~~**原方案（作废，存证）**：经扩展 `CrossrefAdapter`（date-field=`created`）`GET .../works?filter=prefix:10.2139&rows=0&facet=created:*`（1 请求）→ 按 created 年 facet 产逐年 `IssueRef`（`paper_count_claimed`=该年计数）；`parse.parse_facet_years` 泛化按 date-field 取 `facets.{field}`。~~ **T1 实测 `created` 非 Crossref 合法 facet（HTTP 400，[LIVE 2026-07-24]），改纯生成**（见上仲裁令 + §10.3 修订记录 #4）。`CrossrefAdapter` 的 created-facet 代码（T1 落地）仍为防御性泛化件、离线单测覆盖，但**对真实 Crossref 不可用**，ssrn discover 不消费之。
 
 ### 4.4 `resolve_assets(venue, paper, session)`（RESOLVE，landing-only 零网络）
 
@@ -209,6 +212,7 @@ updated: 2026-07-24
 | 1 | 2026-07-20 | 初稿（D-011 双模式 survey 级，status review，owner fable5） | econ-fin-preprints.md [LIVE] 2026-07-20 |
 | 2 | 2026-07-24 | **重写至实现级**（status draft，owner D1）：模式 A 升主路径（crossref 前缀枚举 + openalex enrich，零 SSRN 接触）/ 模式 B 降 opt-in；单 venue + 主题近似过滤 venue 建模；capabilities 集合论证；AC-5 分层草案；DOI 覆盖率量化任务；browser fetch 两案评估。**旧稿浏览器枚举路线作废** | R0a [LIVE 2026-07-24] + controller 预裁决 |
 | 3 | 2026-07-24 | W0 双评审（A/B 独立实例，2026-07-24）Approve-with-fixes → 修订轮闭合 → controller approved | controller W0 收口 |
+| 4 | 2026-07-24 | **§4.3 DISCOVER 改纯生成零网络年桶**（controller 发现①仲裁令，T4 实现随卡联动）：T1 在线实测真实 Crossref `facet=created:*` 返 **HTTP 400**（`created` 非合法 facet，活体哨兵 XFAIL），原「1 请求 created facet 产年桶」**不可实现** → 纯本地生成 1990..今年（clock 注入上界，`paper_count_claimed=None`，规模锚移交 M1 census）；`enumerate` 的 `from/until-created-date` **filter** 不受影响。§4.1 DISCOVER 行「桶计数」联动改 `None`；联动 nber.md §3.1 facet 限定注记 | T1 [LIVE 2026-07-24] 冒烟实证 + controller 发现①仲裁 |
 
 ## 11. 横切件专章：browser fetch 通道两案评估（评审后 controller 终裁）
 

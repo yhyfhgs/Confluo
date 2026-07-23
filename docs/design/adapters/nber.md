@@ -62,6 +62,12 @@ NBER **无 ISSN**，现 `discover_timeline`/`enumerate_issue` 硬走 `/journals/
   - `created`（ssrn 消费，登记年轴）：facet `created:*` / filter `from-created-date,until-created-date` / 解析 `facets.created`。
   - **⚠ 评审实证（参数化必须覆盖）**：`parse.parse_facet_years`（parse.py:114-125）**硬绑 `message.facets.published`**——须泛化为
     按 date-field 取 `facets.{field}`，否则 ssrn 的 `created` facet 解析恒空（评审据此判 MAJOR 联动）。
+  - **⚠ [LIVE 2026-07-24] T1 实测限定（发现①仲裁令）**：**facet 仅 `published` 轴可用**——真实 Crossref 对
+    `/prefixes/{prefix}/works?facet=created:*` 返 **HTTP 400 `facet-not-available`**（`created` 非合法 facet，活体哨兵
+    `tests/online/test_crossref_prefix_smoke.py::test_prefix_created_facet_ssrn` XFAIL）。故 `created` 轴的 **facet 路径**
+    （discover）不可实现：其消费方 ssrn 的 `discover` **不依赖 facet**、改**纯生成零网络年桶**（ssrn.md §4.3）。**`created` 轴的
+    filter 路径（`from/until-created-date`，enumerate）不受此限**（filter≠facet，[LIVE] 已证有效）；nber 走 `published` 轴、
+    facet 正常可用。上方两轴表的 `created` 行 facet 子项**仅离线单测/防御性泛化有效，对真实 Crossref 不可用**。
 - **逐字复用面（两轴之外零改）**：`discover_timeline`→`parse.parse_facet_years`（泛化后）逐年 `IssueRef`（`paper_count_claimed`=该年计数）；
   `enumerate_issue`→`(key, year)` 日期窗 + `cursor=*` 深翻 → `parse.parse_works_page`（**cursor 契约、`(doi)` 去重、首页空判 parse
   原样复用**，adapter.py:181-223）。
