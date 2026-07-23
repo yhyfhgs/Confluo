@@ -101,6 +101,26 @@ def test_resolve_assets_subscription_venue_raises_no_entitlement() -> None:
     assert "10.1257/aer.20230344" in str(excinfo.value)
 
 
+def test_resolve_assets_subscription_paywall_is_never_classified_as_integrity(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """T5 卡"测试要点"逐字：订阅刊 text/html 挡板→`no_entitlement`（非 `integrity`）。
+
+    `resolve_assets` 本身零网络（`resolve_offline=True`），从不实际发起会真正返回
+    text/html 挡板的请求——本用例断言的是该 html 挡板事实在本 adapter 里的**离线
+    等价物**：订阅刊分类恒落 `NO_ENTITLEMENT`，绝不会误落 `INTEGRITY`（那类错误只可能
+    源自实际 fetch 校验失败，而 aea 本 Phase 从不 fetch，见 `fetch_asset` 未声明能力）。
+    实际 200 text/html 挡板的现场证据见 venues/econ/aer.yaml notes +
+    tests/fixtures/aea/04_landing_citation_meta.html 头注（site-survey §4 附录请求 #7）。
+    """
+    monkeypatch.setattr("paper_crawler.adapters.aea.adapter.log_event", lambda *a, **kw: None)
+    adapter = AeaAdapter()
+    with pytest.raises(CrawlerError) as excinfo:
+        adapter.resolve_assets(_subscription_venue(), _paper_with_doi("10.1257/aer.20230344"))
+    assert excinfo.value.error_class is not ErrorClass.INTEGRITY
+    assert excinfo.value.error_class is ErrorClass.NO_ENTITLEMENT
+
+
 @pytest.mark.parametrize(
     ("venue_id", "issn"),
     [
