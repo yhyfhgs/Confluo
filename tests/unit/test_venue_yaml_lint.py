@@ -61,6 +61,10 @@ _NON_ARXIV_VENUE_IDS = {
     "aej_policy",
     "jel",
     "jep",
+    # Phase 5 T6 Econometric Society 三刊（econsoc；TE/QE OJS OAI，ECMA crossref+域名分段，D-028）。
+    "ecma",
+    "te",
+    "qe",
 }
 
 
@@ -227,6 +231,31 @@ def test_aea_code_to_venue_routing_table_matches_shipped_venues() -> None:
     assert CODE_TO_VENUE["app"] == "aej_applied"
     assert CODE_TO_VENUE["mic"] == "aej_micro"
     assert CODE_TO_VENUE["pol"] == "aej_policy"
+
+
+def test_econsoc_venues_route_correctly(adapters: dict[str, SourceAdapter]) -> None:
+    """econsoc 三刊路由（D-028/econsoc.md §3.5）：TE/QE 自持 OJS OAI（metadata=fulltext=econsoc
+    + ojs_code/oai_base/volume_map quirks）；ECMA crossref-枚举 + econsoc 分段 fulltext（真分离，
+    crossref 为 aggregator——lint 通过）。"""
+    reg = VenueRegistry(adapters)
+    assert reg.load_dirs([REPO_VENUES_DIR]) == []
+    assert reg.lint() == []
+    for venue_id in ("te", "qe"):
+        spec = reg.get(venue_id)
+        assert spec.kind == "journal"
+        assert spec.metadata_source == "econsoc"
+        assert spec.fulltext_source == "econsoc"
+        assert spec.quirks["ojs_code"] == venue_id
+        assert spec.quirks["oai_base"] == "https://econtheory.org/ojs"
+        assert isinstance(spec.quirks["volume_map"], dict) and spec.quirks["volume_map"]
+    ecma = reg.get("ecma")
+    assert ecma.kind == "journal"
+    assert ecma.metadata_source == "crossref"  # 无 OAI 端点 → crossref by-ISSN（D-005）
+    assert ecma.fulltext_source == "econsoc"  # 域名分段路由（§3.3；单值 fulltext_adapter）
+    assert ecma.auth.level.value == "none"
+    # 三刊 route() 可解析（metadata/fulltext adapter 均已注册）。
+    for venue_id in ("ecma", "te", "qe"):
+        assert reg.route(venue_id).venue.id == venue_id
 
 
 @pytest.mark.parametrize("venue_id", sorted(_NON_ARXIV_VENUE_IDS))

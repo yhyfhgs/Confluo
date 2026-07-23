@@ -345,6 +345,62 @@ def make_elsevier_venue(**quirks_overrides: object) -> VenueSpec:
     )
 
 
+# econsoc（Econometric Society 三刊）契约/集成测试用 venue（不依赖 `venues/` 目录文件；同
+# pmlr/aaai 先例的解耦考量）。TE/QE 是 OJS OAI-PMH 自枚举刊——quirks 含 `ojs_code`（OAI 端点 +
+# DOI 后缀刊别）、`oai_base`、`volume_map`（收窄到一历史年 2006/v1 + 一当前年 2024/v20=max，
+# 覆盖 econsoc.md §4 全量收割 / 当前刊固定回看窗双枚举路径 + dc:date 年 partition）。ECMA 是
+# crossref-枚举刊（metadata_source=crossref，无 OJS quirks；fulltext 经 econsoc 域名分段路由）。
+DEFAULT_ECONSOC_TEQE_QUIRKS: dict[str, object] = {
+    "oai_base": "https://econtheory.org/ojs",
+    "volume_map": {2006: 1, 2024: 20},
+}
+_ECONSOC_TEQE_NAMES: dict[str, dict[str, object]] = {
+    "te": {"full": "Theoretical Economics", "issn": ["1933-6837", "1555-7561"]},
+    "qe": {"full": "Quantitative Economics", "issn": ["1759-7323", "1759-7331"]},
+}
+
+
+def make_econsoc_teqe_venue(journal: str = "te", **quirks_overrides: object) -> VenueSpec:
+    """构造 econsoc TE/QE 契约/集成测试用的 `journal` venue（自持 OJS OAI-PMH 枚举）。
+
+    `journal`∈{te,qe}——决定 venue id / ISSN / `quirks.ojs_code`（OAI 端点 + DOI 后缀刊别）。
+    默认 quirks：`oai_base`、`volume_map={2006:1, 2024:20}`（2024=max→当前刊回看窗）；
+    `quirks_overrides` 可覆盖（如收窄 volume_map）。metadata_source=fulltext_source=`econsoc`。
+    """
+    info = _ECONSOC_TEQE_NAMES[journal]
+    quirks: dict[str, object] = {"ojs_code": journal, **DEFAULT_ECONSOC_TEQE_QUIRKS}
+    quirks.update(quirks_overrides)
+    return VenueSpec(
+        id=journal,
+        kind="journal",
+        names={"full": str(info["full"]), "aliases": [journal.upper()]},
+        field=["econ"],
+        identifiers={"issn": info["issn"]},
+        metadata_source="econsoc",
+        fulltext_source="econsoc",
+        quirks=quirks,
+    )
+
+
+def make_econsoc_ecma_venue(**quirks_overrides: object) -> VenueSpec:
+    """构造 econsoc ECMA 契约/集成测试用的 `journal` venue（crossref-枚举 + econsoc 分段）。
+
+    ECMA 无 OAI 端点：metadata_source=`crossref`（D-005，按 ISSN 枚举）、fulltext_source=
+    `econsoc`（运行时域名分段路由，§3.3）。econsoc `resolve_assets` 只读 paper 的 doi
+    （+ 可选 meta['primary_url_domain'] 分段信号），故 venue 字段只需形态合法。
+    """
+    return VenueSpec(
+        id="ecma",
+        kind="journal",
+        names={"full": "Econometrica", "aliases": ["ECMA"]},
+        field=["econ"],
+        identifiers={"issn": ["0012-9682", "1468-0262"]},
+        metadata_source="crossref",
+        fulltext_source="econsoc",
+        quirks=dict(quirks_overrides),
+    )
+
+
 class FakeFetchIO:
     """`FetchIO` 协议的测试替身：把 chunks 缓冲进内存并计算 `(bytes_written, sha256)`。
 
@@ -368,11 +424,14 @@ __all__ = [
     "DEFAULT_AAAI_QUIRKS",
     "DEFAULT_ACL_ANTHOLOGY_QUIRKS",
     "DEFAULT_ARXIV_QUIRKS",
+    "DEFAULT_ECONSOC_TEQE_QUIRKS",
     "DEFAULT_MOCK_QUIRKS",
     "DEFAULT_OPENREVIEW_QUIRKS",
     "DEFAULT_PMLR_QUIRKS",
     "FakeFetchIO",
     "make_aaai_venue",
+    "make_econsoc_ecma_venue",
+    "make_econsoc_teqe_venue",
     "make_acl_anthology_venue",
     "make_arxiv_venue",
     "make_crossref_venue",

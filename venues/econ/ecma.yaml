@@ -1,0 +1,32 @@
+# venues/econ/ecma.yaml —— Econometrica（Phase 5 T6；econsoc.md §3.5，D-028）
+#
+# ECMA 无 OAI 端点（ECMA 不在 econtheory OJS 实例上，survey §4）→ metadata_source=crossref
+# （按 ISSN 全史枚举，D-005）；fulltext_source=econsoc（单值——registry 单 fulltext_adapter），
+# 全文经 econsoc 运行时**域名分段路由**（D-028/econsoc.md §3.3 方向 a）：当前段自营
+# econometricsociety.org 匿名 OA 取回；过刊段（doi.wiley.com）Phase 5 no_entitlement/skip
+# （跨 adapter 交 wiley 的 handoff 显式 defer）；pre-DOI 段（10.2307/JSTOR）界外零资产。
+# 前缀 10.3982 为 Econometric Society 自持、三刊共用、仅 DOI 后缀（ECTA vs TE/QE）区分刊
+# ——裸前缀不可判刊/判段（D-028 作废 wiley 侧裸 10.3982 路由键）。
+id: ecma
+kind: journal
+names:
+  full: Econometrica
+  aliases: [ECMA]
+field: [econ]
+tier: T1                       # catalog/economics-journals.md Field Top（计量经济学旗舰）
+identifiers:
+  issn: ["0012-9682", "1468-0262"]   # print / e（survey §1 [LIVE]）；journal 必填（D-015）
+metadata_source: crossref      # ECMA 无 OAI → crossref by-ISSN（D-005）；total 7307（含 pre-DOI）
+fulltext_source: econsoc       # 单值；域名分段路由（§3.3 方向 a）——当前 OA / 过刊·pre-DOI skip
+auth:
+  level: none                  # 当前段匿名 OA（CC BY 4.0 强信号，[UNRESOLVED① 全刊 OA] 在线闭合）
+quirks:
+  ai_bot_sensitive: true       # econometricsociety.org 具名封 ClaudeBot 反 AI（survey §5）→ 保守限速
+status: active
+notes: >-
+  Econometrica（计量经济学旗舰）。枚举经 Crossref 按 ISSN（D-005，10.3982 前缀由 Econometric
+  Society 自持、三刊共用）；全文经 econsoc 域名分段路由（D-028/econsoc.md §3.3）——当前段自营
+  econometricsociety.org 匿名 OA galley；过刊段留 Wiley（doi.wiley.com，Phase 5 no_entitlement/
+  skip，跨 adapter handoff defer）；pre-DOI 段留 JSTOR（10.2307，tier T3 暂缓）。开放许可个人科研
+  只读、不再分发。[PENDING·在线] ① 当前 ECMA 是否全刊 OA（HEAD 当前 galley 判）；② Wiley→自营
+  切换日（方向 a 域名路由不依赖切换日）。

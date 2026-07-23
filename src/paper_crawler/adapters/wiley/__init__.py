@@ -2,8 +2,9 @@
 
 `auth_gated` family，capabilities `RESOLVE | FETCH`——TDM API 优先（`GET api.wiley.com/
 onlinelibrary/tdm/v1/articles/{DOI}` + `Wiley-TDM-Client-Token` 头 → 全文 PDF）。enumerate
-走 crossref（DOI 前缀 `10.1111`/`10.1002`/`10.3982`）。服务金融第一刊 JF、计量第一刊
-Econometrica 等（wiley.md §1）。
+走 crossref（DOI 前缀 `10.1111`/`10.1002`）。服务金融第一刊 JF 等（wiley.md §1）。**ECMA 的
+`10.3982` 已移除路由（D-028）**：该前缀归 Econometric Society、三刊共用，ECMA 过刊
+（doi.wiley.com）归属改由 econsoc 域名分段路由（econsoc.md §3.3）——wiley 侧不持 10.3982。
 
 - `parse`：DOI 前缀路由 / TDM URL 构造 / `%PDF` 轻校验的零网络纯函数。
 - `adapter`：`WileyAdapter`——TDM 客户端（真实 HTTP）+ token 门控 skip（无 token →

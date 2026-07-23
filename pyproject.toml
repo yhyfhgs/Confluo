@@ -51,6 +51,9 @@ s2 = "paper_crawler.adapters.s2.adapter:S2Adapter"
 # Phase 5 T5：aea（auth_gated；RESOLVE-only offline，enumerate 走 crossref D-005；
 # FETCH 本 Phase 不声明——全文域 pubs.aeaweb.org 恒 CF challenge，aea.md §4）。
 aea = "paper_crawler.adapters.aea.adapter:AeaAdapter"
+# Phase 5 T6：econsoc（open_access；Econometric Society 三刊——TE/QE 全链 OJS OAI-PMH，
+# ECMA RESOLVE|FETCH 域名分段路由，enumerate 委 crossref，D-028/econsoc.md）。
+econsoc = "paper_crawler.adapters.econsoc.adapter:EconsocAdapter"
 
 [dependency-groups]
 dev = [

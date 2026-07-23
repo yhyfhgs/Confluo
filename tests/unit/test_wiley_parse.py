@@ -18,7 +18,6 @@ from paper_crawler.adapters.wiley import parse
     [
         "10.1111/jofi.13123",  # Journal of Finance（学会刊 10.1111）
         "10.1002/anie.201915678",  # 商业刊 10.1002
-        "10.3982/ECTA12345",  # Econometrica(ECMA) 10.3982
     ],
 )
 def test_is_wiley_doi_true_for_known_prefixes(doi: str) -> None:
@@ -26,10 +25,10 @@ def test_is_wiley_doi_true_for_known_prefixes(doi: str) -> None:
 
 
 def test_is_wiley_doi_normalizes_url_and_case() -> None:
-    """带 https://doi.org/ 前缀与大小写混写经 normalize_doi 归一后仍正确判定。"""
+    """带 https://doi.org/ 前缀与大小写混写、首尾空白经 normalize_doi 归一后仍正确判定。"""
     assert parse.is_wiley_doi("https://doi.org/10.1111/JOFI.13123") is True
     assert parse.is_wiley_doi("doi:10.1002/Anie.201915678") is True
-    assert parse.is_wiley_doi("  10.3982/ECTA12345  ") is True
+    assert parse.is_wiley_doi("  10.1111/JOFI.13123  ") is True
 
 
 @pytest.mark.parametrize(
@@ -37,6 +36,10 @@ def test_is_wiley_doi_normalizes_url_and_case() -> None:
     [
         "10.1016/j.jfineco.2020.01.001",  # Elsevier（JFE）——非 Wiley
         "10.1257/aer.20191823",  # AEA
+        # 10.3982（Econometric Society 自持、三刊共用）已移出 Wiley 前缀（D-028，R0c 证伪）——
+        # ECMA 过刊归属改由 econsoc 域名分段路由，wiley 侧不持该前缀（同卡断言翻转）。
+        "10.3982/ECTA12345",  # Econometrica(ECMA)——不再是 Wiley 裸前缀面
+        "10.3982/TE6021",  # Theoretical Economics（econsoc OA）——裸前缀曾误路由 wiley
         "10.1234/other",
         "",
         "not-a-doi",

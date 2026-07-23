@@ -1,7 +1,8 @@
 """Wiley Online Library `SourceAdapter` 主体（design/adapters/wiley.md，实现级；D-024）。
 
 **family=`auth_gated`，capabilities=`RESOLVE | FETCH`**（enumerate 走 crossref，DOI 前缀
-`10.1111`/`10.1002`/`10.3982` 由 `parse.is_wiley_doi` 甄别）。推荐档 = **TDM API 优先**
+`10.1111`/`10.1002` 由 `parse.is_wiley_doi` 甄别；**`10.3982` 已移除，D-028**——归 Econometric
+Society 三刊共用、ECMA 过刊改由 econsoc 域名分段路由）。推荐档 = **TDM API 优先**
 （`GET api.wiley.com/onlinelibrary/tdm/v1/articles/{DOI}` + `Wiley-TDM-Client-Token` 头
 → 全文 PDF，wiley.md §2 [LIVE 2026-07-23]）。
 

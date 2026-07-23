@@ -20,10 +20,12 @@ resolve(sample) 产 ≥1 个 AssetPlan"）**结构性不相容**——不为它�
 断言但实际上不代表真实可执行取回路径的样本，故不登记 factory（不同于 openalex/s2
 "无能力可契"的空集合 case；aea 是"有能力但契约形状不适用"，两者殊途同归都落
 `_contract_case` 的兜底 skip 分支）。aea 自身 resolve_assets 两分支（raise
-no_entitlement / 返回空列表）由 `tests/unit/test_aea_adapter.py` 直接覆盖。当前
-契约 skip 合计 **25**：openalex/s2/aea 各 4（无契可契，原因分述如上）+ crossref/dblp
-各 2（无 RESOLVE/FETCH）+ unpaywall 3（仅 RESOLVE）+ elsevier_sd 2 + oup_silverchair 2
-（各自无 DISCOVER/ENUMERATE）+ wiley 2 = 25（实跑 112 passed / 25 skipped）。
+no_entitlement / 返回空列表）由 `tests/unit/test_aea_adapter.py` 直接覆盖。**Phase 5
+T6**：`econsoc` 全四位 case 走 TE 全链（open_access，无 auth 门控样本注入），不新增
+skip。当前契约 skip 合计 **25**：openalex/s2/aea 各 4（无契可契，原因分述如上）+
+crossref/dblp 各 2（无 RESOLVE/FETCH）+ unpaywall 3（仅 RESOLVE）+ elsevier_sd 2 +
+oup_silverchair 2（各自无 DISCOVER/ENUMERATE）+ wiley 2 = 25（实跑 120 passed / 25
+skipped——Phase 5 T6 econsoc 全四位 case 走 TE 全链，+8 passed 无新增 skip）。
 
 契约的 enumerate 计数口径按能力分层：声明了权威计数（`IssueRef.paper_count_claimed`）
 的 adapter（mock）严格等值；未声明的（arxiv 月度桶、dblp 会议届——预印本/会议无权威
@@ -61,6 +63,7 @@ from helpers import (
     make_arxiv_venue,
     make_crossref_venue,
     make_cvf_venue,
+    make_econsoc_teqe_venue,
     make_elsevier_venue,
     make_mock_venue,
     make_neurips_venue,
@@ -73,6 +76,7 @@ from helpers.aaai_fixtures import fixture_bytes as aaai_fixture_bytes
 from helpers.arxiv_fixtures import fixture_bytes
 from helpers.dblp_fixtures import fixture_bytes as dblp_fixture_bytes
 from helpers.dblp_fixtures import make_dblp_venue
+from helpers.econsoc_fixtures import fixture_bytes as econsoc_fixture_bytes
 from helpers.oup_silverchair_fixtures import landing_transport, oup_fixture, static_cookie_supplier
 from helpers.pmlr_fixtures import fixture_bytes as pmlr_fixture_bytes
 from helpers.unpaywall_fixtures import fixture_bytes as unpaywall_fixture_bytes
@@ -83,6 +87,7 @@ from paper_crawler.adapters.arxiv.adapter import ArxivAdapter
 from paper_crawler.adapters.crossref.adapter import CrossrefAdapter
 from paper_crawler.adapters.cvf.adapter import CVFAdapter
 from paper_crawler.adapters.dblp.adapter import DblpAdapter
+from paper_crawler.adapters.econsoc.adapter import EconsocAdapter
 from paper_crawler.adapters.elsevier_sd.adapter import ElsevierScienceDirectAdapter
 from paper_crawler.adapters.neurips_proceedings.adapter import NeuripsProceedingsAdapter
 from paper_crawler.adapters.openreview.adapter import OpenReviewAdapter
@@ -280,6 +285,32 @@ def _neurips_proceedings_case() -> tuple[SourceAdapter, VenueSpec]:
     transport = httpx.MockTransport(_neurips_proceedings_contract_handler)
     client = HttpClient(user_agent=_CONTRACT_UA, transport=transport)
     return NeuripsProceedingsAdapter(http=client), make_neurips_venue()
+
+
+def _econsoc_contract_handler(request: httpx.Request) -> httpx.Response:
+    """econsoc（TE）契约链的 MockTransport：OJS OAI 首页/续页（econtheory.org）→ 合成 fixture；
+    econometricsociety.org 落地页 → galley 链 fixture；galley `/file/*.PDF` → %PDF。
+
+    全链路 discover（volume_map 首个=2006）→ enumerate(OAI, DOI 后缀+dc:date 年过滤)→
+    resolve(GET 落地页抽 galley)→ fetch(%PDF)。TE 是 econsoc 全四位面（ECMA 走 crossref、
+    只 RESOLVE|FETCH，非契约全链 case——用 TE 覆盖 econsoc 契约链）。
+    """
+    if request.url.host == "econtheory.org":  # OJS OAI-PMH
+        if "resumptionToken" in request.url.params:
+            return httpx.Response(
+                200, content=econsoc_fixture_bytes("02_oai_listrecords_page2.xml")
+            )
+        return httpx.Response(200, content=econsoc_fixture_bytes("01_oai_listrecords_page1.xml"))
+    if "/file/" in request.url.path:  # galley PDF（econometricsociety.org/.../file/{file}.PDF）
+        return httpx.Response(200, content=_CONTRACT_PDF)
+    # econometricsociety.org/doi/{DOI} 落地页 → galley 链 fixture。
+    return httpx.Response(200, content=econsoc_fixture_bytes("03_landing_with_galley.html"))
+
+
+def _econsoc_case() -> tuple[SourceAdapter, VenueSpec]:
+    transport = httpx.MockTransport(_econsoc_contract_handler)
+    client = HttpClient(user_agent=_CONTRACT_UA, transport=transport)
+    return EconsocAdapter(http=client), make_econsoc_teqe_venue("te")
 
 
 # crossref 契约链的 MockTransport：facet 年计数（discover） → cursor works 页
@@ -485,6 +516,7 @@ _CONTRACT_CASES: dict[str, Callable[[], tuple[SourceAdapter, VenueSpec]]] = {
     "cvf": _cvf_case,
     "aaai_ojs": _aaai_case,
     "neurips_proceedings": _neurips_proceedings_case,
+    "econsoc": _econsoc_case,
     "crossref": _crossref_case,
     "dblp": _dblp_case,
     "unpaywall": _unpaywall_case,

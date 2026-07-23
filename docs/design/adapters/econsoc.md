@@ -165,6 +165,7 @@ ECMA(ECTA) 的 `10.3982` DOI 跨三个托管年代，**fulltext 分三段**：
 - **[UNRESOLVED① 当前 ECMA 是否全刊 OA]**（survey §3）：最新样本 CC BY 4.0 + 匿名 200 是强信号，但 Econometrica 历史订阅制、学会自营后可能 diamond/subscribe-to-open，单篇 license 不足断全刊。**实现期 HEAD 一篇当前 ECMA galley 判匿名可下否**（T5 冒烟闭合）；若非全刊 OA→当前 ECMA 走 no_entitlement + OA fallback（§6）。**不阻塞 TE/QE 主路径**（TE/QE OA 已 [LIVE] 确认）。
 - **[UNRESOLVED② Wiley→自营切换日]**（survey §2）：方向 a（域名判归属）**不依赖切换日**故此项不阻塞路由；仅方向 b pre-filter 需边界年，实现期 doi.org HEAD 二分核实。
 - **[UNRESOLVED③ TE 656 vs crossref 735 差额]**（survey §4）：编辑部记录/DOI 粒度差，实现期对账；不阻塞——DOI 后缀过滤 + `identifier('doi')` 去重使两源差额自然收敛。
+- **[UNRESOLVED④ ECMA 过刊运行期终态验证]**（T6 审查 F1 移交，2026-07-24）：生产 resolve 中 crossref 无 `primary_url_domain` 信号 → ECMA 过刊 DOI 恒乐观归当前段 → GET econometricsociety.org 自营域。**实现期已加固**：仅 ecma 当前段落地 404/410 从 `GONE` 改归 `no_entitlement`（存在但此路径不可取、触发 OA-fallback、不污染合并引擎存在性判断；F1）。**待在线闭合**：econometricsociety.org 对过刊 DOI 的真实响应实测（究竟 404 / 302→Wiley / 其它）+ 评估 doi.org HEAD `-L` 权威域名检查是否 wire 进生产 resolve（当前仅在线冒烟核对、生产靠乐观默认+F1 兜底）——**ECMA 投产前闭合**。不阻塞 TE/QE 主路径。
 - **qeconomics.org TLS 证书过期**（survey §5 [LIVE]）：**adapter 绝不直连该域、绝不关校验绕过**；QE 一切经 OAI（econtheory.org/ojs/index.php/qe）+ crossref + econometricsociety.org 落地。风险节明记：若 QE 独立域证书长期不修，QE 路径完全不受影响（不依赖该域）。
 - **CF 策略/反 AI 收紧**：econometricsociety.org 具名封 ClaudeBot、当前对 stateless PaperCrawler UA 无挑战——若未来对 `*` 组加挑战，canary 首触即 BLOCKED + catalog 降级为仅元数据（crossref）。canary 周检。
 - **前向迁移持续**（学会可能继续把 Wiley 过刊迁自营）：方向 a 域名路由自动跟随，无需改 config；方向 b 会静默误路由——**再证方向 a 优越**。
