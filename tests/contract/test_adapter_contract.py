@@ -57,6 +57,7 @@ from helpers import (
     make_openreview_venue,
     make_oup_venue,
     make_pmlr_venue,
+    make_ssrn_venue,
     make_wiley_venue,
 )
 from helpers.aaai_fixtures import fixture_bytes as aaai_fixture_bytes
@@ -78,6 +79,7 @@ from paper_crawler.adapters.neurips_proceedings.adapter import NeuripsProceeding
 from paper_crawler.adapters.openreview.adapter import OpenReviewAdapter
 from paper_crawler.adapters.oup_silverchair.adapter import OupSilverchairAdapter
 from paper_crawler.adapters.pmlr.adapter import PmlrAdapter
+from paper_crawler.adapters.ssrn.adapter import SsrnAdapter
 from paper_crawler.adapters.unpaywall.adapter import UnpaywallAdapter
 from paper_crawler.adapters.wiley.adapter import TDM_TOKEN_HEADER, WileyAdapter
 from paper_crawler.errors import CapabilityNotSupported
@@ -305,6 +307,32 @@ def _crossref_case() -> tuple[SourceAdapter, VenueSpec]:
     return CrossrefAdapter(http=client), make_crossref_venue()
 
 
+# ssrn 契约链的 MockTransport：discover=纯生成（零网络，不触 handler）；enumerate 委内部
+# CrossrefAdapter（prefix 10.2139 + created）→ 单页 ssrn works（合法 `ssrn.` 中缀 DOI，
+# next-cursor:null 单请求终止）→ 后处理增补 (ssrn) id。ssrn 不声明权威计数（纯生成年桶
+# paper_count_claimed=None），故 enumerate 契约走"至少产出"分支（非严格等值，同 arxiv/dblp）。
+# **resolve=landing-only 返 []**（§4.4），由 `_LANDING_ONLY_RESOLVE` 特化断言（非"产 ≥1 plan"）。
+_SSRN_CONTRACT_WORKS = (
+    b'{"status":"ok","message-type":"work-list","message":{'
+    b'"total-results":1,"next-cursor":null,"items-per-page":1,"items":[{'
+    b'"DOI":"10.2139/ssrn.4056799","title":["A Contract SSRN Working Paper"],'
+    b'"type":"posted-content","author":[{"given":"Contract","family":"Author"}],'
+    b'"issued":{"date-parts":[[2024,1]]}}]}}'
+)
+
+
+def _ssrn_contract_handler(request: httpx.Request) -> httpx.Response:
+    return httpx.Response(200, content=_SSRN_CONTRACT_WORKS)
+
+
+def _ssrn_case() -> tuple[SourceAdapter, VenueSpec]:
+    transport = httpx.MockTransport(_ssrn_contract_handler)
+    client = HttpClient(user_agent=_CONTRACT_UA, transport=transport)
+    # 固定 clock（discover 纯生成上界确定性，不随墙钟年份漂移）。
+    adapter = SsrnAdapter(http=client, clock=lambda: datetime(2026, 7, 24, tzinfo=UTC))
+    return adapter, make_ssrn_venue()
+
+
 def _dblp_contract_handler(request: httpx.Request) -> httpx.Response:
     """dblp 契约链的 MockTransport：conf 索引页（discover） → 卷 XML（enumerate）。
 
@@ -473,6 +501,7 @@ _CONTRACT_CASES: dict[str, Callable[[], tuple[SourceAdapter, VenueSpec]]] = {
     "aaai_ojs": _aaai_case,
     "neurips_proceedings": _neurips_proceedings_case,
     "crossref": _crossref_case,
+    "ssrn": _ssrn_case,
     "dblp": _dblp_case,
     "unpaywall": _unpaywall_case,
     "wiley": _wiley_case,
@@ -569,6 +598,13 @@ def test_enumerate_first_issue_yields_papers_with_identifiers(adapter_id: str) -
         assert len(paper.identifiers) >= 1
 
 
+# landing-only RESOLVE adapter（声明 RESOLVE 但 resolve 恒**不产可下载 asset**）：ssrn 元数据层
+# 产 landing 引用作观测、PDF 交 pipeline unpaywall OA-fallback（§4.4 净效果 PDF 命中≈0）——与
+# 其余 RESOLVE adapter（产 ≥1 pdf plan）相反，故单列断言 resolve 返 []（landing-only 红线行为，
+# AC-5.1a）。此非放宽契约：是契约对"landing-only vs 产 asset"两类 RESOLVE 的正确分层表述。
+_LANDING_ONLY_RESOLVE: frozenset[str] = frozenset({"ssrn"})
+
+
 def test_resolve_yields_nonempty_asset_plans(adapter_id: str) -> None:
     adapter, venue = _contract_case(adapter_id)
     if Capability.RESOLVE not in adapter.capabilities:
@@ -577,6 +613,10 @@ def test_resolve_yields_nonempty_asset_plans(adapter_id: str) -> None:
     paper = _sample_paper_for(adapter_id, adapter, venue)
     plans = adapter.resolve_assets(venue, paper, session=_session_for(adapter_id))
 
+    if adapter_id in _LANDING_ONLY_RESOLVE:
+        # landing-only（ssrn §4.4）：resolve 不产可下载 asset（PDF 交 OA-fallback）→ 恒空。
+        assert plans == []
+        return
     assert plans
     assert all(isinstance(plan, AssetPlan) for plan in plans)
 
