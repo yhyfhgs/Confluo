@@ -52,7 +52,7 @@ _NON_ARXIV_VENUE_IDS = {
     "jet",
     "jpubeco",
     "jbf",
-    # Phase 5 T6 Econometric Society 三刊（econsoc；TE/QE 自持 OJS OAI，ECMA crossref+域名分段，D-028）。
+    # Phase 5 T6 Econometric Society 三刊（econsoc；TE/QE OJS OAI，ECMA crossref+域名分段，D-028）。
     "ecma",
     "te",
     "qe",

@@ -55,6 +55,7 @@ from paper_crawler.adapters.econsoc.parse import EcmaSegment
 from paper_crawler.auth.challenge import ChallengeDetector, ClassifyResult
 from paper_crawler.errors import Challenged, CrawlerError, ErrorClass
 from paper_crawler.http import HttpClient
+from paper_crawler.obslog import log_event
 from paper_crawler.types import (
     AssetKind,
     AssetPlan,
@@ -211,6 +212,16 @@ class EconsocAdapter(AdapterBase):
         client = self._client()
         while True:
             page = parse.parse_oai_page(client.get_bytes(url))
+            if page.skipped_tombstones:
+                # 墓碑可观测（design §4）：venue/刊别/年/跳过数落 obslog debug 事件。
+                log_event(
+                    "DEBUG",
+                    "oai tombstones skipped",
+                    venue=venue.id,
+                    stage="enumerate",
+                    bucket=issue.label,
+                    skipped_tombstones=page.skipped_tombstones,
+                )
             for record in page.records:
                 # membership = DOI 后缀刊别（防御，端点已单刊）；partition = dc:date 年（§4）。
                 if record.journal != code:

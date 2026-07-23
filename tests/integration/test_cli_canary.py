@@ -114,6 +114,7 @@ def test_canary_without_filter_checks_all_registered_adapters(
     from paper_crawler.adapters.crossref.adapter import CrossrefAdapter
     from paper_crawler.adapters.cvf.adapter import CVFAdapter
     from paper_crawler.adapters.dblp.adapter import DblpAdapter
+    from paper_crawler.adapters.econsoc.adapter import EconsocAdapter
     from paper_crawler.adapters.neurips_proceedings.adapter import NeuripsProceedingsAdapter
     from paper_crawler.adapters.openreview.adapter import OpenReviewAdapter
     from paper_crawler.adapters.pmlr.adapter import PmlrAdapter
@@ -132,6 +133,9 @@ def test_canary_without_filter_checks_all_registered_adapters(
     monkeypatch.setattr(CVFAdapter, "healthcheck", _fake_healthy)
     monkeypatch.setattr(AaaiOjsAdapter, "healthcheck", _fake_healthy)
     monkeypatch.setattr(NeuripsProceedingsAdapter, "healthcheck", _fake_healthy)
+    # econsoc（Phase 5 T6）healthcheck 发真实 TE OAI Identify 请求（同 aaai_ojs OAI 探针）→
+    # 离线须猴补丁，否则 socket 护栏拦截 → unhealthy → 退出码 1。
+    monkeypatch.setattr(EconsocAdapter, "healthcheck", _fake_healthy)
     monkeypatch.setattr(DblpAdapter, "healthcheck", _fake_healthy)
     monkeypatch.setattr(MockPlatformAdapter, "healthcheck", _fake_healthy)
     monkeypatch.setattr(UnpaywallAdapter, "healthcheck", _fake_healthy)
@@ -161,6 +165,7 @@ def test_canary_without_filter_checks_all_registered_adapters(
         "wiley",  # T-wiley auth_gated 无 token → SKIP 行
         "openalex",  # T6（SKIP 行——无 key）
         "s2",  # T6（SKIP 行——无 key）
+        "econsoc",  # Phase 5 T6（open_access；healthcheck 猴补丁为 healthy，同 aaai_ojs）
     ):
         assert adapter_id in result.output
 
