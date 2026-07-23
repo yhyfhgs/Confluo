@@ -33,7 +33,7 @@
 | [plan/phase3-implementation-plan.md](plan/phase3-implementation-plan.md) | Phase 3 实施计划（聚合元数据层：五源 adapter + 合并引擎任务切分） | approved | 2026-07-22 |
 | [plan/phase4-implementation-plan.md](plan/phase4-implementation-plan.md) | Phase 4 实施计划（认证框架 + 出版社 adapters 任务切分） | approved | 2026-07-23 |
 | [plan/progress.md](plan/progress.md) | 项目进度跟踪 | approved | 2026-07-23 |
-| [plan/decision-log.md](plan/decision-log.md) | 架构决策记录（D-001…D-025） | approved | 2026-07-23 |
+| [plan/decision-log.md](plan/decision-log.md) | 架构决策记录（D-001…D-025） | approved | 2026-07-24 |
 
 ## design/ — 核心设计（00–09）
 
@@ -45,11 +45,11 @@
 | [design/03-open-access-module.md](design/03-open-access-module.md) | Open-Access 获取模块 | approved | 2026-07-20 |
 | [design/04-auth-gated-module.md](design/04-auth-gated-module.md) | Auth-Gated 获取模块 | implemented | 2026-07-23 |
 | [design/05-pipeline.md](design/05-pipeline.md) | 六阶段 Pipeline 与任务系统 | implemented | 2026-07-21 |
-| [design/06-data-model.md](design/06-data-model.md) | 数据模型与入库设计 | implemented | 2026-07-21 |
+| [design/06-data-model.md](design/06-data-model.md) | 数据模型与入库设计 | implemented | 2026-07-24 |
 | [design/07-auth-session.md](design/07-auth-session.md) | 认证与会话管理 | implemented | 2026-07-23 |
 | [design/08-venue-tracking.md](design/08-venue-tracking.md) | Venue 时间轴与年度追踪 | approved | 2026-07-20 |
 | [design/09-search-filter.md](design/09-search-filter.md) | 主题订阅与精确搜索 | approved | 2026-07-20 |
-| [design/auth-framework.md](design/auth-framework.md) | 认证框架实现级详设（07/04 的实现级扩展：四 Provider + 凭证库 + CLI + pipeline 接缝） | implemented | 2026-07-23 |
+| [design/auth-framework.md](design/auth-framework.md) | 认证框架实现级详设（07/04 的实现级扩展：四 Provider + 凭证库 + CLI + pipeline 接缝） | implemented | 2026-07-24 |
 | [design/10-config-layout.md](design/10-config-layout.md) | 配置归集与分层规范（D-025：config/ 文件夹 + 加载链 + 敏感键护栏） | implemented | 2026-07-23 |
 
 ## design/adapters/ — 平台 adapter 详设
@@ -63,7 +63,7 @@
 | [design/adapters/pmlr.md](design/adapters/pmlr.md) | PMLR | implemented | 2026-07-23 |
 | [design/adapters/cvf.md](design/adapters/cvf.md) | CVF Open Access | implemented | 2026-07-23 |
 | [design/adapters/acl-anthology.md](design/adapters/acl-anthology.md) | ACL Anthology | implemented | 2026-07-23 |
-| [design/adapters/neurips-proceedings.md](design/adapters/neurips-proceedings.md) | NeurIPS Proceedings | implemented | 2026-07-22 |
+| [design/adapters/neurips-proceedings.md](design/adapters/neurips-proceedings.md) | NeurIPS Proceedings | implemented | 2026-07-24 |
 | [design/adapters/aaai-ojs.md](design/adapters/aaai-ojs.md) | AAAI OJS | implemented | 2026-07-24 |
 | [design/adapters/acm-dl.md](design/adapters/acm-dl.md) | ACM Digital Library（D-020：Phase 2 出列；D-024：Phase 4 重评维持出列，全文改道 unpaywall OA-fallback） | review | 2026-07-23 |
 | [design/adapters/ieee-xplore.md](design/adapters/ieee-xplore.md) | IEEE Xplore | review | 2026-07-20 |
@@ -100,6 +100,7 @@
 | [testing/records/2026-07-23-ac35-acceptance.md](testing/records/2026-07-23-ac35-acceptance.md) | AC-3.5 验收记录（五刊零爬取枚举，在线实跑 PASS 建议·待 controller 终签） | — | 2026-07-23 |
 | [testing/records/2026-07-23-phase3-acceptance.md](testing/records/2026-07-23-phase3-acceptance.md) | Phase 3 验收汇总记录（AC-3/AC-0/DoD 最终签署：达成） | approved | 2026-07-23 |
 | [testing/records/2026-07-23-ac4-acceptance.md](testing/records/2026-07-23-ac4-acceptance.md) | AC-4 离线端到端验收汇总记录（AC-4.2~4.6 离线 DoD 达成，T7a draft；AC-4.1 真实凭证归 T7b） | approved | 2026-07-23 |
+| [testing/records/2026-07-24-ac3-acceptance.md](testing/records/2026-07-24-ac3-acceptance.md) | AC-3.1~3.4 独立汇总验收记录（数据模型与合并引擎，Phase 3 判据补记收口） | approved | 2026-07-24 |
 | [testing/records/canary/README.md](testing/records/canary/README.md) | Canary 健康矩阵记录目录（`crawler canary --record` 落盘，按日覆盖） | approved | 2026-07-22 |
 
 ## process/ — 流程规范
@@ -120,11 +121,14 @@
 | [research/site-survey/pmlr.md](research/site-survey/pmlr.md) | 勘察：PMLR（双托管/bibkey/卷结构） | approved | 2026-07-22 |
 | [research/site-survey/cvf.md](research/site-survey/cvf.md) | 勘察：CVF Open Access（列表形态/双代路径） | approved | 2026-07-22 |
 | [research/site-survey/acl-anthology.md](research/site-survey/acl-anthology.md) | 勘察：ACL Anthology（GitHub bulk/Findings/许可二分） | approved | 2026-07-22 |
-| [research/site-survey/neurips-proceedings.md](research/site-survey/neurips-proceedings.md) | 勘察：NeurIPS Proceedings（格式边界/hash id） | approved | 2026-07-22 |
-| [research/site-survey/aaai-ojs.md](research/site-survey/aaai-ojs.md) | 勘察：AAAI OJS（OAI-PMH 主路径/分页/覆盖边界） | approved | 2026-07-23 |
+| [research/site-survey/neurips-proceedings.md](research/site-survey/neurips-proceedings.md) | 勘察：NeurIPS Proceedings（格式边界/hash id） | approved | 2026-07-24 |
+| [research/site-survey/aaai-ojs.md](research/site-survey/aaai-ojs.md) | 勘察：AAAI OJS（OAI-PMH 主路径/分页/覆盖边界） | approved | 2026-07-24 |
 | [research/site-survey/metadata-apis.md](research/site-survey/metadata-apis.md) | 勘察：Crossref/OpenAlex/S2 | approved | 2026-07-22 |
 | [research/site-survey/cs-ai-conferences.md](research/site-survey/cs-ai-conferences.md) | 勘察：CS/AI 顶会渠道 | approved | 2026-07-20 |
 | [research/site-survey/econ-fin-preprints.md](research/site-survey/econ-fin-preprints.md) | 勘察：SSRN/RePEc/NBER/CEPR | approved | 2026-07-20 |
+| [research/site-survey/ssrn.md](research/site-survey/ssrn.md) | 勘察：SSRN（聚合主路径/CF 门界定） | draft | 2026-07-24 |
+| [research/site-survey/nber.md](research/site-survey/nber.md) | 勘察：NBER（crossref 主干/开放全文窗） | draft | 2026-07-24 |
+| [research/site-survey/aea.md](research/site-survey/aea.md) | 勘察：AEA（crossref 元数据/订阅墙边界） | draft | 2026-07-24 |
 | [research/site-survey/aggregators-unpaywall-dblp-core.md](research/site-survey/aggregators-unpaywall-dblp-core.md) | 勘察：Unpaywall/DBLP/CORE/Scholar | approved | 2026-07-22 |
 | [research/site-survey/ai-journals-preprints-verification.md](research/site-survey/ai-journals-preprints-verification.md) | 核验：AI 期刊+预印本分类 | approved | 2026-07-20 |
 | [research/site-survey/publisher-platforms-econfin.md](research/site-survey/publisher-platforms-econfin.md) | 勘察：Econ/Fin 六出版社平台 | approved | 2026-07-20 |
