@@ -62,7 +62,7 @@ def series_letter(series_id: str) -> str:
 
 
 def pdf_url(series_id: str) -> str:
-    """全文 PDF 直链（确定性构造，nber.md §3.2）：`{base}/system/files/working_papers/{sid}/{sid}.pdf`。"""
+    """全文 PDF 直链（确定性构造，§3.2）：`{base}/system/files/working_papers/{sid}/{sid}.pdf`。"""
     return f"{_FULLTEXT_BASE}{_PDF_PATH_TMPL.format(sid=series_id)}"
 
 
@@ -153,7 +153,7 @@ def parse_rss_items(data: bytes) -> tuple[RssItem, ...]:
     逐 `<item>` 取 `title`/`description`/`guid`——guid 反解 DOI；无 guid series 段
     （反解失败）→ 跳过该 item（无稳定身份不产 stub，同 crossref「无 DOI 跳过」口径）。
     畸形 XML → `PARSE`（响亮停机）。**定位**：新鲜度/watch 通道，**非全量枚举**（全量恒走
-    §3.1 crossref prefix）；须在 `back.nber.org` 独立桶下发（≥10s，§4，NberAdapter.BACK_RATE_POLICY）。
+    §3.1 crossref prefix）；须在 `back.nber.org` 独立桶下发（≥10s，§4，见 BACK_RATE_POLICY）。
     """
     try:
         root = ET.fromstring(data)

@@ -78,7 +78,7 @@ _HEALTHCHECK_SERIES = "w30000"
 _HTML_SNIFF = 512
 
 _CONTACT_EMAIL_ENV = "PAPER_CRAWLER_CONTACT_EMAIL"
-# RFC 2606 保留 .invalid：惰性自建（无注入共享 client）时的占位 UA 联系人（同 crossref/arxiv 先例）。
+# RFC 2606 保留 .invalid：惰性自建（无注入 client）时的占位 UA 联系人（同 crossref 先例）。
 _PLACEHOLDER_EMAIL = "anonymous@paper-crawler.invalid"
 
 
@@ -97,7 +97,8 @@ class NberAdapter(AdapterBase):
 
     adapter_id = "nber"
     family: AdapterFamily = "open_access"
-    # §1：RESOLVE|FETCH——enumerate 走 crossref（D-005）；DISCOVER（RSS watch）Phase 6 转主，本 Phase 不点亮。
+    # §1：RESOLVE|FETCH——enumerate 走 crossref（D-005）；RSS watch 的 DISCOVER
+    # Phase 6 转主，本 Phase 不点亮。
     capabilities = Capability.RESOLVE | Capability.FETCH
     # §4：www.nber.org 全文匿名直取——robots 无 Crawl-delay [LIVE 07-24]，保守 1 req/5s。
     default_rate = RatePolicy(
@@ -113,7 +114,7 @@ class NberAdapter(AdapterBase):
     # www2（低号老论文 301 目标）经 domains[1] 别名共享 www 桶（route_for）。back.nber.org
     # **不在此 tuple**（独立桶，§4）。apex nber.org 301→www、不单列。
     domains: tuple[str, ...] = (_WWW_HOST, _WWW2_HOST)
-    # resolve 为纯日期判定 + URL 构造（零网络，D-022 免限速闸）——区别于 elsevier（网络 entitlement 预检）。
+    # resolve 纯日期判定 + URL 构造（零网络，D-022 免限速闸）——非 elsevier 网络 entitlement 预检。
     resolve_offline = True
 
     # ★接缝 N-3：back.nber.org 独立限速桶（RSS/sitemap watch 路径 on-demand register 用；1 req/10s
@@ -124,7 +125,7 @@ class NberAdapter(AdapterBase):
         burst=1,
         source_note=(
             "back.nber.org（RSS/sitemap）独立桶 1 req/10s（=6 rpm）遵 robots Crawl-delay:10 "
-            "[LIVE 2026-07-24]；on-demand register（OA-host 先例），不进 domains（避 alias 陷阱，nber.md §4）"
+            "[LIVE 2026-07-24]；on-demand register（OA-host 先例），不进 domains 避 alias（§4）"
         ),
     )
 
@@ -133,7 +134,7 @@ class NberAdapter(AdapterBase):
         self._http = http
 
     def set_http_client(self, client: HttpClient) -> None:
-        """注入组装好的共享 `HttpClient`（`adapter.HttpClientConsumer` 协议，同 neurips/arxiv 先例）。
+        """注入组装好的共享 `HttpClient`（`adapter.HttpClientConsumer` 协议，同 neurips 先例）。
 
         NBER 无凭证（open_access）——共享 client 即可（无携密头隔离顾虑）。CLI 经 `bind_http_client`
         在装配期注入携 config `[identity].email`（诚实 UA，D-014）+ 共享 limiter 的 client。
@@ -161,7 +162,7 @@ class NberAdapter(AdapterBase):
         doi = _doi_of(paper)
         series_id = parse.series_id_from_doi(doi)
         if series_id is None:
-            # 非 w/t series（少量 book chapter，type≠report）/ 非 nber 前缀 → 不产全文计划（非异常，§3.2 步 1）。
+            # 非 w/t series（book chapter）/ 非 nber 前缀 → 不产全文计划（非异常，§3.2）。
             log_event(
                 "DEBUG",
                 "nber resolve: non-series DOI, no fulltext plan",
@@ -329,7 +330,7 @@ def _read_head(chunks: Iterable[bytes], min_bytes: int) -> bytes:
     finally:
         close = getattr(iterator, "close", None)
         if callable(close):
-            close()  # 提前关流释放连接（httpx 支持部分读后关闭，同 smoke_helpers.stream_first_chunk）
+            close()  # 提前关流释放连接（httpx 支持部分读后关闭，同 smoke_helpers）
     return bytes(head)
 
 

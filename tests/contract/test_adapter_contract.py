@@ -13,7 +13,9 @@ resolve/fetch 契约用 `_RESOLVE_ONLY_SAMPLE_PAPERS` 登记的 QJE DOI 样本 +
 不变）走通全链（注入 cookie supplier + landing_transport 零真实网络）；discover/enumerate
 两测因缺能力 skip（+2）。当前契约 skip 合计 **21**：openalex/s2 空能力集各 4（无契可契）+
 crossref/dblp 各 2（无 RESOLVE/FETCH）+ unpaywall 3（仅 RESOLVE）+ elsevier_sd 2 +
-oup_silverchair 2（各自无 DISCOVER/ENUMERATE）+ wiley 2 = 21（实跑 108 passed / 21 skipped）。
+oup_silverchair 2（各自无 DISCOVER/ENUMERATE）+ wiley 2 = 21。**Phase 5 T3 nber +2**
+（open_access，RESOLVE|FETCH，无 DISCOVER/ENUMERATE→走 crossref prefix，D-005）→ 本支 23；
+并行 T4/T5/T6 各自增量由 controller union 合并后刷新最终 skip 数。
 
 契约的 enumerate 计数口径按能力分层：声明了权威计数（`IssueRef.paper_count_claimed`）
 的 adapter（mock）严格等值；未声明的（arxiv 月度桶、dblp 会议届——预印本/会议无权威
@@ -53,6 +55,7 @@ from helpers import (
     make_cvf_venue,
     make_elsevier_venue,
     make_mock_venue,
+    make_nber_venue,
     make_neurips_venue,
     make_openreview_venue,
     make_oup_venue,
@@ -74,6 +77,7 @@ from paper_crawler.adapters.crossref.adapter import CrossrefAdapter
 from paper_crawler.adapters.cvf.adapter import CVFAdapter
 from paper_crawler.adapters.dblp.adapter import DblpAdapter
 from paper_crawler.adapters.elsevier_sd.adapter import ElsevierScienceDirectAdapter
+from paper_crawler.adapters.nber.adapter import NberAdapter
 from paper_crawler.adapters.neurips_proceedings.adapter import NeuripsProceedingsAdapter
 from paper_crawler.adapters.openreview.adapter import OpenReviewAdapter
 from paper_crawler.adapters.oup_silverchair.adapter import OupSilverchairAdapter
@@ -352,6 +356,22 @@ def _elsevier_case() -> tuple[SourceAdapter, VenueSpec]:
     return adapter, make_elsevier_venue()
 
 
+def _nber_contract_handler(request: httpx.Request) -> httpx.Response:
+    """nber 契约链的 MockTransport：全文 PDF 直取 → %PDF（resolve 零网络，无元数据请求）。
+
+    nber 无 DISCOVER/ENUMERATE（走 crossref prefix，D-005）——样本 paper 经
+    `_RESOLVE_ONLY_SAMPLE_PAPERS` 登记（DOI 10.3386/w{n} + 老 pub_date 2015 → resolve
+    离线判 >18 月开放 → DIRECT PDF 计划）。fetch 直取 → %PDF，使 resolve→fetch 链有产出。
+    """
+    return httpx.Response(200, content=_CONTRACT_PDF)
+
+
+def _nber_case() -> tuple[SourceAdapter, VenueSpec]:
+    transport = httpx.MockTransport(_nber_contract_handler)
+    client = HttpClient(user_agent=_CONTRACT_UA, transport=transport)
+    return NberAdapter(http=client), make_nber_venue()
+
+
 def _oup_silverchair_case() -> tuple[SourceAdapter, VenueSpec]:
     """oup_silverchair 契约链：**首个 auth_gated 契约 case**（RESOLVE|FETCH，无 DISCOVER/
     ENUMERATE——resolve/fetch 契约用 `_RESOLVE_ONLY_SAMPLE_PAPERS` 登记的 QJE DOI 样本 +
@@ -429,6 +449,14 @@ _RESOLVE_ONLY_SAMPLE_PAPERS: dict[str, PaperStub] = {
         title="A Synthetic Placeholder Article",
         identifiers=(("doi", "10.1093/qje/qjae044"),),
     ),
+    # nber open_access（RESOLVE|FETCH，无 DISCOVER/ENUMERATE——走 crossref prefix）：DOI
+    # 10.3386/w{n} + 老 pub_date（2015，恒 >18 月）→ resolve 离线判开放 → DIRECT PDF 计划。
+    "nber": PaperStub(
+        title="Contract Test Paper (NBER Working Paper)",
+        identifiers=(("doi", "10.3386/w20000"),),
+        pub_date="2015-01",
+        year=2015,
+    ),
 }
 
 # auth_gated adapter 的 resolve/fetch 契约需要 session（其余源 session=None，行为不变）。
@@ -478,6 +506,7 @@ _CONTRACT_CASES: dict[str, Callable[[], tuple[SourceAdapter, VenueSpec]]] = {
     "wiley": _wiley_case,
     "elsevier_sd": _elsevier_case,
     "oup_silverchair": _oup_silverchair_case,
+    "nber": _nber_case,  # Phase 5 T3（open_access，RESOLVE|FETCH；无 DISCOVER/ENUMERATE→+2 skip）
 }
 
 ADAPTER_IDS = sorted(load_adapters())

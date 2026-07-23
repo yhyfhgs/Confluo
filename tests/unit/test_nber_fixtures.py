@@ -52,7 +52,7 @@ def test_nber_venue_drives_prefix_published_discover() -> None:
 
 
 def test_nber_venue_drives_prefix_published_enumerate() -> None:
-    """enumerate：(prefix, year) 日期窗 → /prefixes/10.3386/works?filter=from-pub-date → PaperStub。"""
+    """enumerate：(prefix, year) 窗 → /prefixes/10.3386/works?filter=from-pub-date → PaperStub。"""
     capture: list[httpx.Request] = []
     venue = make_nber_venue()
     issue = IssueRef(venue_id="nber", year=2015, label="2015", paper_count_claimed=2)

@@ -114,6 +114,7 @@ def test_canary_without_filter_checks_all_registered_adapters(
     from paper_crawler.adapters.crossref.adapter import CrossrefAdapter
     from paper_crawler.adapters.cvf.adapter import CVFAdapter
     from paper_crawler.adapters.dblp.adapter import DblpAdapter
+    from paper_crawler.adapters.nber.adapter import NberAdapter
     from paper_crawler.adapters.neurips_proceedings.adapter import NeuripsProceedingsAdapter
     from paper_crawler.adapters.openreview.adapter import OpenReviewAdapter
     from paper_crawler.adapters.pmlr.adapter import PmlrAdapter
@@ -135,12 +136,15 @@ def test_canary_without_filter_checks_all_registered_adapters(
     monkeypatch.setattr(DblpAdapter, "healthcheck", _fake_healthy)
     monkeypatch.setattr(MockPlatformAdapter, "healthcheck", _fake_healthy)
     monkeypatch.setattr(UnpaywallAdapter, "healthcheck", _fake_healthy)
+    # Phase 5 T3 nber：healthcheck 发真实请求（w30000 首 chunk %PDF 探测），离线须猴补丁。
+    monkeypatch.setattr(NberAdapter, "healthcheck", _fake_healthy)
 
     result = runner.invoke(app, ["canary", "--home", str(_home(tmp_path))])
 
     assert result.exit_code == 0, result.output
-    # 断言列表须与 test_adapter_loading.py::EXPECTED_ADAPTER_IDS（全部已注册 adapter，
-    # 现 16 个）保持同步——Phase 4 M2b 检查单 #15d 发现本列表此前遗漏了 aaai_ojs/dblp；
+    # 断言列表须与 test_adapter_loading.py::EXPECTED_ADAPTER_IDS（全部已注册 adapter；
+    # Phase 5 T3 增 nber → 17，+ 并行 ssrn/aea/econsoc controller union 后刷新）保持同步——
+    # Phase 4 M2b 检查单 #15d 发现本列表此前遗漏了 aaai_ojs/dblp；
     # Phase 4 T8 controller 收尾又补上 oup_silverchair/wiley（同模式第二次：auth_gated 无
     # 凭证的 healthcheck 天然 raise NotImplementedError→SKIP，同 openalex/s2 无需猴补丁，
     # 但断言列表须验证它们出现在 canary 输出里，否则又是"注册了却没验证"的静默漏测）。
@@ -161,6 +165,7 @@ def test_canary_without_filter_checks_all_registered_adapters(
         "wiley",  # T-wiley auth_gated 无 token → SKIP 行
         "openalex",  # T6（SKIP 行——无 key）
         "s2",  # T6（SKIP 行——无 key）
+        "nber",  # Phase 5 T3（open_access，healthcheck 猴补丁为 healthy）
     ):
         assert adapter_id in result.output
 

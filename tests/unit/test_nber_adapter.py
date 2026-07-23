@@ -31,7 +31,6 @@ from paper_crawler.types import (
     Capability,
     IssueRef,
     PaperStub,
-    RatePolicy,
     UrlStrategy,
 )
 
@@ -123,7 +122,8 @@ def test_resolve_recent_raises_no_entitlement() -> None:
 
 def test_resolve_boundary_exactly_open() -> None:
     """恰满 18 月（2025-01-24 + 18mo == today）→ 开放（产计划，非 gated）。"""
-    plans = _adapter(_never).resolve_assets(make_nber_venue(), _paper("10.3386/w25000", "2025-01-24"))
+    paper = _paper("10.3386/w25000", "2025-01-24")
+    plans = _adapter(_never).resolve_assets(make_nber_venue(), paper)
     assert len(plans) == 1
 
 
@@ -203,8 +203,9 @@ def test_fetch_streams_pdf() -> None:
 def test_fetch_soft_gate_html_maps_no_entitlement_not_integrity() -> None:
     """红线核心守卫：软门返非 PDF（HTML）→ no_entitlement（**非 integrity**）→ OA-fallback。"""
     html = b"<!DOCTYPE html><html><body>Please sign in or subscribe</body></html>"
+    adapter = _adapter(lambda r: httpx.Response(200, content=html))
     with pytest.raises(CrawlerError) as exc:
-        _adapter(lambda r: httpx.Response(200, content=html)).fetch_asset(_pdf_plan(), FakeFetchIO())
+        adapter.fetch_asset(_pdf_plan(), FakeFetchIO())
     assert exc.value.error_class is ErrorClass.NO_ENTITLEMENT
     assert exc.value.error_class is not ErrorClass.INTEGRITY
     assert exc.value.detail == "recent_gated"
@@ -213,8 +214,9 @@ def test_fetch_soft_gate_html_maps_no_entitlement_not_integrity() -> None:
 def test_fetch_soft_gate_synth_fixture_maps_no_entitlement() -> None:
     """[SYNTH] 软门 fixture 回放（<18 月软门无真实抓取，§7）→ no_entitlement。"""
     body = fixture_bytes("03_softgate_synth.html")
+    adapter = _adapter(lambda r: httpx.Response(200, content=body))
     with pytest.raises(CrawlerError) as exc:
-        _adapter(lambda r: httpx.Response(200, content=body)).fetch_asset(_pdf_plan(), FakeFetchIO())
+        adapter.fetch_asset(_pdf_plan(), FakeFetchIO())
     assert exc.value.error_class is ErrorClass.NO_ENTITLEMENT
 
 

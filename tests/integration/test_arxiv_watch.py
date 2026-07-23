@@ -119,6 +119,7 @@ def _make_env(tmp_path: Path, handler: Handler, *, inception: str = "2024-01") -
         "openalex",  # T6
         "s2",  # T6
         "elsevier_sd",  # Phase 4 T3
+        "nber",  # Phase 5 T3（open_access，consumer；注入不参与 arxiv watch——preprint venue only）
     }
     registry = VenueRegistry(adapters)
     assert registry.load_dirs([venues_dir]) == []
