@@ -39,6 +39,7 @@ EXPECTED_ADAPTER_IDS = {
     "openalex",  # T6
     "s2",  # T6
     "oup_silverchair",  # Phase 4 T4（auth_gated，RESOLVE|FETCH）
+    "aea",  # Phase 5 T5（auth_gated，RESOLVE-only offline；enumerate 走 crossref）
 }
 VALID_FAMILIES = {"open_access", "auth_gated", "aggregator"}
 
@@ -197,6 +198,32 @@ def test_neurips_proceedings_attributes(adapters: dict[str, SourceAdapter]) -> N
         "papers.neurips.cc",
         "papers.nips.cc",
     )
+
+
+def test_aea_attributes(adapters: dict[str, SourceAdapter]) -> None:
+    # Phase 5 T5：aea 落地为真实 auth_gated adapter（entry point 注册）。RESOLVE-only
+    # offline——enumerate 走 crossref（D-005）、FETCH 本 Phase 不声明（全文域
+    # pubs.aeaweb.org 恒 CF challenge，aea.md §4 论证；声明恒 BLOCKED 的能力不诚实）。
+    aea = adapters["aea"]
+    assert aea.family == "auth_gated"
+    # `not in` 断言须排在单值 `==` 断言之前——mypy 对 Flag 单值 Literal 窄化后的
+    # `in`/`not in` 支持不佳（同 elsevier_sd 复合位组合 `RESOLVE | FETCH` 无此问题，
+    # 只有单一位 `RESOLVE` 才触发，纯 mypy 顺序敏感性、非语义差异）。
+    assert Capability.DISCOVER not in aea.capabilities
+    assert Capability.ENUMERATE not in aea.capabilities
+    assert Capability.FETCH not in aea.capabilities
+    assert aea.capabilities == Capability.RESOLVE
+    # 本 Phase 无认证实现（D-006 CookieSession 留将来）——adapter 自身零门槛；订阅刊
+    # venue YAML 的 auth.level=institutional 是前瞻声明，不矛盾（aea.md §1）。
+    assert aea.auth_requirement is AuthLevel.NONE
+    assert aea.default_rate.requests_per_minute == 30.0
+    assert "aeaweb.org" in aea.default_rate.source_note  # 出处（非占位 ⚠）
+    assert aea.domains == ("www.aeaweb.org",)
+    # resolve_assets 证明零网络（DOI 形态解析 + venue.auth.level 静态分类）——pipeline
+    # 据此在 resolve 阶段豁免限速闸（adapter.py `resolve_offline` docstring）。`resolve_
+    # offline` 不进 `SourceAdapter` 冻结协议（纯附加标记，adapter.py docstring）——
+    # `getattr` 读取沿 pipeline 消费方的兜底约定，避免对 Protocol 类型断言未声明属性。
+    assert getattr(aea, "resolve_offline", None) is True
 
 
 def test_healthcheck_defaults_healthy(adapters: dict[str, SourceAdapter]) -> None:

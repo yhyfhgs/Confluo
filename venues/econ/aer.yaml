@@ -1,0 +1,32 @@
+# venues/econ/aer.yaml —— American Economic Review（Phase 5 T5；design/adapters/aea.md §7）
+id: aer                       # 全局唯一，小写蛇形
+kind: journal                 # journal | conference | preprint_channel
+names:
+  full: American Economic Review
+  aliases: [AER]
+field: [econ]                 # finance | econ | cs_ai | or_ms
+tier: T1                      # catalog/economics-journals.md AEA 系列
+identifiers:
+  issn: ["0002-8282"]         # 期刊必填（D-015）；ISSN 出处 [LIVE] 2026-07-24 站点勘察实证
+                               # （crossref /journals/0002-8282/works total-results=5643）
+metadata_source: crossref     # discover/enumerate 用（D-005 元数据主干；AEA 100% crossref）
+fulltext_source: aea          # aea adapter：本 Phase 仅 RESOLVE(offline)，FETCH 不声明
+auth:
+  level: institutional        # AER 机构订阅刊——**前瞻声明**（aea.md §1 层次澄清）
+  provider_hint: aea          # D-006 CookieSession 落地时的 profile 路由（本 Phase 未接线）
+quirks:
+  ai_bot_sensitive: true       # robots.txt 点名封 GPTBot/Amazonbot（aea.md §2/site-survey §1）
+  doi_forms: [submission, vol_issue_page, pnp]  # aea.md §7 字段设计；解析器 parse.parse_doi
+status: active                # active | dormant | dead
+notes: >
+  元数据经 Crossref 按 ISSN 枚举全史 DOI 清单（D-005，metadata_source 分离）。DOI 前缀
+  10.1257，双形态：近年 aer.{8 位投稿号}（如 aer.20230344）、早年 aer.{卷}.{期}.{页}
+  （如 aer.106.6.i，页可为罗马数字/front matter）；P&P 短文另呈 aer.p{8 位} 形态（如
+  aer.p20151048），其 venue 归属本 Phase 暂缓（catalog A-3 裁决，不入本 8 刊清单）。
+  全文平台 aea（pubs.aeaweb.org，Atypon + Cloudflare）：站点勘察 [LIVE] 2026-07-24 实证
+  匿名访问 PDF URL 得订阅挡板 HTML（非 integrity）；pubs 域对 stateless 客户端一律
+  cf-mitigated: challenge（D-006 禁对抗）——本 Phase resolve 离线判 no_entitlement，
+  平台 FETCH 待 browser-fetch 通道（D1 详设）+ 机构订阅认证落地。adapter 本期
+  auth_requirement=none（无认证 FETCH），上方 auth.level=institutional 是刊物真实
+  访问级的前瞻声明，二者不矛盾（不触 registry.py:234 lint，仅 venue 低于 adapter
+  要求时报错）。
