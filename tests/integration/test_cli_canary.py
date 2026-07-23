@@ -140,22 +140,25 @@ def test_canary_without_filter_checks_all_registered_adapters(
 
     assert result.exit_code == 0, result.output
     # 断言列表须与 test_adapter_loading.py::EXPECTED_ADAPTER_IDS（全部已注册 adapter，
-    # 现 14 个）保持同步——Phase 4 M2b 检查单 #15d 发现本列表此前遗漏了 aaai_ojs/dblp
-    # 两个 Phase 2/3 落地的真实 adapter（上方猴补丁列表本就正确覆盖了它们的
-    # healthcheck，只是断言列表没跟上，属"打了补丁却没验证"的静默漏测）。
+    # 现 16 个）保持同步——Phase 4 M2b 检查单 #15d 发现本列表此前遗漏了 aaai_ojs/dblp；
+    # Phase 4 T8 controller 收尾又补上 oup_silverchair/wiley（同模式第二次：auth_gated 无
+    # 凭证的 healthcheck 天然 raise NotImplementedError→SKIP，同 openalex/s2 无需猴补丁，
+    # 但断言列表须验证它们出现在 canary 输出里，否则又是"注册了却没验证"的静默漏测）。
     for adapter_id in (
         "mock_platform",
         "arxiv",
         "pmlr",
         "crossref",
         "openreview",
-        "elsevier_sd",
+        "elsevier_sd",  # T3 auth_gated 无 key → SKIP 行
         "acl_anthology",
         "cvf",
         "aaai_ojs",
         "neurips_proceedings",
         "dblp",
         "unpaywall",
+        "oup_silverchair",  # T4 auth_gated 无 session → SKIP 行
+        "wiley",  # T-wiley auth_gated 无 token → SKIP 行
         "openalex",  # T6（SKIP 行——无 key）
         "s2",  # T6（SKIP 行——无 key）
     ):

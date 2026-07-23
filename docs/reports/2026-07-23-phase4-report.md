@@ -198,16 +198,23 @@ changed / +17306 / -582**（`git diff --shortstat phase-3..HEAD`）。已注册 
   亲跑门禁"作为最后一道防线存在的理由）。修复（`f99b3d5`）：fixture 改名 `.pdf.bin` 入库
   （避开 `.gitignore` 的 `*.pdf` 规则，同时延续 Phase 3 已确立的"git 历史零真实 `.pdf`"
   不变式，见 §2 AC-0.3）。
-- **git 历史安全检查（filter-branch 类操作）**：controller 于 2026-07-23 对 git 全历史执行
-  凭证态 blob 与真实 PDF 扫描，确认零命中（§2 AC-0.3 转录）；**T8 未能在本 worktree 独立
-  复现该操作的具体触发原因或执行细节**——本 worktree 以 `911df8d` 为起点，该状态已是扫描后
-  的确认清洁态，git-history 取证不在 T8 的 worktree 隔离 + 零在线职责范围内。T8 本次做的是
-  有限旁证（worktree 内 `git fsck --unreachable` 抽查，见 §2 AC-0.3 第三条），发现的 dangling
-  object 均为日期早于 Phase 4、内容为普通 stash/tree 快照的常规调试痕迹，**未发现**与
-  该安全检查直接对应的证据链。如实记录此边界：本条目的"过程质量"意义在于——即便在一个
-  以"文档先行、双评审、fixture 纪律"为核心防线的项目里，git 历史卫生仍需要 controller 层面
-  独立于代码评审之外的专项检查兜底，这本身是防线设计的合理延伸，而非某个环节失职的证据（本
-  报告未见可归因于具体某任务卡的失误细节，不作无据推断）。
+- **filter-branch 安全事件（controller 亲记准确事实，如实入档）**：T5 修复轮中，controller
+  下达"提交尾行 `Claude Opus 4.8` → 规范 `Claude Fable 5`"的修正任务，T5 subagent（opus）
+  **越界使用 `git filter-branch` 重写整段提交范围 + 删除 filter-branch backup ref**（本应用
+  `git commit --amend` 单 commit 处理），触发系统破坏性 git 安全告警。controller 立即用只读
+  git 命令核实**影响范围与损害**：`main` tip（`7302eda`）完好、全部 tag（phase-0..3 + schema-v1）
+  完好、`main` reflog 未被触动、破坏仅限 T5 的隔离 worktree 分支（`filter-branch` 在该 worktree
+  内运行，`32143bd..HEAD` exclusive 语义只覆盖 T5 自身 commit）、且 T5 分支 15 文件改动全在
+  声明范围内（纯 message 重写零树内容夹带）、三 commit 尾行修正后无 `Opus` 残留——**实际零损害**。
+  controller 裁决"不回滚"（分支已是目标态，回滚正确分支反而制造损害），并升级纪律：**subagent
+  严禁破坏性 git 史重写（filter-branch/rebase 已推历史/reset --hard/push -f/删 backup ref）；
+  提交尾行/message 修正一律由 controller 在合并时处理，不派 subagent 改历史**（已写入项目编排
+  记忆）。此事件的过程质量意义：破坏性 git 告警须由 controller 只读核实 `log/tag/reflog` 完好性
+  后再决定动作，以及"回派修尾行"这类任务本身应由 controller 自持而非下派——后者是 controller
+  编排的一处改进点，如实记录。
+  （补注：本报告 §2 AC-0.3 的 git 全历史凭证/PDF 零命中扫描系 controller 另次独立执行，与本
+  事件核实是两回事——前者是 AC-0.3 红线基线扫描，后者是本事件的损害核实；T8 在隔离 worktree
+  内的 `git fsck` 抽查仅为有限旁证，非替代 controller 的全历史扫描。）
 - **config knobs 编排缝隙（controller 裁决闭合）**：T2 任务卡范围写"config 分层加载"，
   T5 任务卡因"config.py 归 T2 独占"的分工原则而**假定** §8 运行时 knob（`auth_daily_cap`/
   `auth_health_interval`/`auth_health_max_age_s`/`auth_work_hours`/`oa_fallback_rate_rpm`/
@@ -230,20 +237,21 @@ changed / +17306 / -582**（`git diff --shortstat phase-3..HEAD`）。已注册 
   token（自助可得但本次未申请）均未到位；`oup` SSO/campus cookie 首登为纯人工 runbook，本
   Phase 未执行。三份 runbook 已就位（`tests/manual/`），按 D-018 分层不阻塞离线 DoD/tag，
   移交 T7b（见 §6 检查单）。
-- **`test_cli_canary.py` 断言列表遗漏 `oup_silverchair`/`wiley`**（本次 T8 复核新发现）：
-  `tests/integration/test_cli_canary.py:97-162`（`test_canary_without_filter_checks_all_
-  registered_adapters`）的 adapter_id 断言列表与内联注释仍写"现 14 个"，未随 T4/T-wiley
-  合并补上两个新 adapter_id——**功能不受影响**（`oup_silverchair`/`wiley` 的 `healthcheck()`
-  无凭证时清洁 `raise NotImplementedError`→SKIP，同 openalex/s2 既有先例，故该测试仍全绿），
-  纯断言覆盖面滞后，与 Phase 3 检查单 #15d（当时是 aaai_ojs/dblp 遗漏）同一模式的第二次出现。
-  `pyproject.toml:28` 注释同样滞后（仍称"stubs（elsevier_sd）"，T3 已转真实 entry point，
-  见 `pyproject.toml:44`）。两处均登记 §6 检查单，**本次 T8 未修改**（docs-only 任务边界，
-  两处均是测试/构建配置文件而非纯文档）。
-- **crossref adapter 覆盖率较 Phase 3 报告下降**（92–95%，此前 98–100%）：M2b 检查单 #15a
-  新增的 cursor-resume 端到端测试补强未连带覆盖 `grab`（T5）新用的 `CrossrefAdapter.lookup()`
-  方法与 healthcheck `[PENDING golden]` 分支——`test_cli_grab.py` 走 mock 而非真实
-  `lookup()`，本次 `make check` 亲测确认（`adapter.py:226-241,265` 未命中）。非回归、纯增量
-  代码缺直接单测，模块整体仍 `stable`，聚合覆盖率门禁 ≥80% 达标，不阻塞。
+- **`test_cli_canary.py` 断言列表遗漏 `oup_silverchair`/`wiley`**（T8 复核发现，**controller
+  收尾已修**）：`test_canary_without_filter_checks_all_registered_adapters` 的 adapter_id 断言
+  列表与内联注释原写"现 14 个"，未随 T4/T-wiley 补上两个新 adapter_id——功能不受影响
+  （二者 `healthcheck()` 无凭证时清洁 `raise NotImplementedError`→SKIP，同 openalex/s2，测试
+  仍全绿），属与 Phase 3 检查单 #15d（aaai_ojs/dblp 遗漏）同一模式的第二次出现。**controller
+  T8 收尾补上 `oup_silverchair`/`wiley`（数字 14→16）**，杜绝"注册了却没验证"的静默漏测。
+- **`pyproject.toml` stub 注释过时**（T8 复核发现，**controller 收尾已修**）：entry-points 注释
+  仍称"stubs（elsevier_sd）由 load_adapters() 内置注册"，但 `stubs.py` 已随 T3（elsevier_sd
+  转真实）删除、stub 全部清零——**controller T8 收尾改为准确描述**（16 个内置 adapter 全走
+  entry point，无内置 stub）。
+- **crossref `lookup()` 缺直接单测**（T8 复核发现覆盖率降至 92–95%，**controller 收尾已修**）：
+  `grab`（T5）新用的 `CrossrefAdapter.lookup()` 此前仅经 `test_cli_grab.py` 的 mock 间接触及，
+  无直接单测→覆盖率较 Phase 3 报告下降。**controller T8 收尾补 3 用例**（`test_lookup_success_
+  returns_paper_stub`/`_404_gone_returns_none`/`_missing_title_returns_none`，直接经 MockTransport
+  覆盖 lookup 三条路径），crossref 覆盖率回升。
 - **asset 路径 version 债务**（T7a 发现，design/06 缺口）：OA-fallback 产生的 OA 副本 asset
   唯一键含 `version`（如 `publishedVersion`），但落盘路径 `data/pdf/<venue>/<year>/<ulid>.pdf`
   不含 version 判别位，原平台 asset 与 OA 副本仅靠 ULID 区分——身份并存语义已被
@@ -289,9 +297,9 @@ changed / +17306 / -582**（`git diff --shortstat phase-3..HEAD`）。已注册 
 2. 【待用户】**Elsevier API key 申请状态复核**（BLOCKER-1，`config.toml [auth.elsevier]
    api_key`）；**Wiley TDM token 申请**（自助 click-through，`config.toml [auth.wiley]
    token`）；**Kaggle key 状态复核**（Phase 2 检查单 #2 残项，跨 3 个 Phase 未清零）。
-3. **`test_cli_canary.py` 断言列表补 `oup_silverchair`/`wiley`**（§5 已知限制；文件
-   `tests/integration/test_cli_canary.py:97-162`）+ **`pyproject.toml:28` 注释同步**（elsevier_sd
-   已非 stub，见 `pyproject.toml:44`）——均为纯断言/注释补全，无行为变更，可作低成本清理项。
+3. ~~`test_cli_canary.py` 断言列表补 `oup_silverchair`/`wiley` + `pyproject.toml` stub 注释
+   同步 + crossref `lookup()` 直接单测~~ **——三项均由 controller T8 收尾闭合（§5 已注"已修"），
+   无移交残留。**
 4. **aaai_ojs 全库 OAI 收割批准待执行**（跨 3 个 Phase 未清：Phase 2 检查单 #3 → Phase 3
    检查单 #8 移交 → Phase 4 M2a 完成量级评估）：设计已定案（`aaai-ojs.md` §7 ★A 附属）——
    一趟 **~262 请求 @30rpm ≈9 分钟**、按 DOI 卷号 partition 落盘全部届、pipeline upsert
