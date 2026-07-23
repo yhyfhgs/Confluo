@@ -99,6 +99,7 @@
 | [testing/records/2026-07-22-phase2-acceptance.md](testing/records/2026-07-22-phase2-acceptance.md) | Phase 2 验收汇总（AC-2 达成；openreview 在线层待 token） | — | 2026-07-22 |
 | [testing/records/2026-07-23-ac35-acceptance.md](testing/records/2026-07-23-ac35-acceptance.md) | AC-3.5 验收记录（五刊零爬取枚举，在线实跑 PASS 建议·待 controller 终签） | — | 2026-07-23 |
 | [testing/records/2026-07-23-phase3-acceptance.md](testing/records/2026-07-23-phase3-acceptance.md) | Phase 3 验收汇总记录（AC-3/AC-0/DoD 最终签署：达成） | approved | 2026-07-23 |
+| [testing/records/2026-07-23-ac4-acceptance.md](testing/records/2026-07-23-ac4-acceptance.md) | AC-4 离线端到端验收汇总记录（AC-4.2~4.6 离线 DoD 达成，T7a draft；AC-4.1 真实凭证归 T7b） | — | 2026-07-23 |
 | [testing/records/canary/README.md](testing/records/canary/README.md) | Canary 健康矩阵记录目录（`crawler canary --record` 落盘，按日覆盖） | approved | 2026-07-22 |
 
 ## process/ — 流程规范
