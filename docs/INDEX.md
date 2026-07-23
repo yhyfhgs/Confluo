@@ -129,6 +129,8 @@
 | [research/site-survey/ssrn.md](research/site-survey/ssrn.md) | 勘察：SSRN（聚合主路径/CF 门界定） | draft | 2026-07-24 |
 | [research/site-survey/nber.md](research/site-survey/nber.md) | 勘察：NBER（crossref 主干/开放全文窗） | draft | 2026-07-24 |
 | [research/site-survey/aea.md](research/site-survey/aea.md) | 勘察：AEA（crossref 元数据/订阅墙边界） | draft | 2026-07-24 |
+| [research/site-survey/econometric-society.md](research/site-survey/econometric-society.md) | 勘察：Econometric Society 三刊（ECMA 迁移分段/TE-QE OJS-OAI） | draft | 2026-07-24 |
+| [research/site-survey/repec.md](research/site-survey/repec.md) | 勘察：RePEc 生态（enrich 定位/JEL 独家） | draft | 2026-07-24 |
 | [research/site-survey/aggregators-unpaywall-dblp-core.md](research/site-survey/aggregators-unpaywall-dblp-core.md) | 勘察：Unpaywall/DBLP/CORE/Scholar | approved | 2026-07-22 |
 | [research/site-survey/ai-journals-preprints-verification.md](research/site-survey/ai-journals-preprints-verification.md) | 核验：AI 期刊+预印本分类 | approved | 2026-07-20 |
 | [research/site-survey/publisher-platforms-econfin.md](research/site-survey/publisher-platforms-econfin.md) | 勘察：Econ/Fin 六出版社平台 | approved | 2026-07-20 |
