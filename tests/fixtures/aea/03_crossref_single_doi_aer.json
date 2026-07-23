@@ -1,0 +1,23 @@
+{
+  "_grounded": "[LIVE-DERIVED] docs/research/site-survey/aea.md §3 (2026-07-24): GET api.crossref.org/works/10.1257/aer.20230344 -> type=journal-article, container=American Economic Review, title present, abstract present (724 chars), author (given/family split + affiliation), published=2026-07, volume=116, issue=7, page present. This fixture models the SINGLE-work envelope shape (message-type=work, message={...fields directly...}) as distinct from the works-LIST shape in 02_crossref_aer_works_sample.json (message-type=work-list, message.items=[...]) -- both endpoints were exercised in the survey (appendix request #3 for the list form; §3's per-DOI field table for this single form). Title/abstract prose is SYNTHETIC filler (see 02_crossref_aer_works_sample.json's _grounded note for the same caveat) -- never the real copyrighted AER text.",
+  "status": "ok",
+  "message-type": "work",
+  "message-version": "1.0.0",
+  "message": {
+    "DOI": "10.1257/aer.20230344",
+    "type": "journal-article",
+    "title": ["Synthetic Placeholder Title (real AER title not captured by site survey)"],
+    "container-title": ["American Economic Review"],
+    "ISSN": ["0002-8282"],
+    "volume": "116",
+    "issue": "7",
+    "page": "2201-2245",
+    "published": { "date-parts": [[2026, 7]] },
+    "published-print": { "date-parts": [[2026, 7]] },
+    "author": [
+      { "given": "Synthetic", "family": "AuthorOne", "sequence": "first", "affiliation": [{ "name": "Synthetic University" }] },
+      { "given": "Synthetic", "family": "AuthorTwo", "sequence": "additional", "affiliation": [{ "name": "Synthetic Institute" }] }
+    ],
+    "abstract": "<jats:p>This is a length-matched synthetic placeholder abstract standing in for the real American Economic Review abstract observed during the site survey (docs/research/site-survey/aea.md §3, DOI 10.1257/aer.20230344), which recorded only the character count (724) and NOT the verbatim copyrighted text. The placeholder prose below exists purely so that downstream length/shape assertions have something concrete to check against; it carries no factual or economic content and must never be quoted as genuine American Economic Review scholarship in any report, summary, or derivative document produced by this crawler system or any of its test suites now or in the future spanning this repository's full history okay then.</jats:p>"
+  }
+}

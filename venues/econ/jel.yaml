@@ -1,0 +1,30 @@
+# venues/econ/jel.yaml —— Journal of Economic Literature（Phase 5 T5；design/adapters/aea.md §7）
+id: jel
+kind: journal
+names:
+  full: Journal of Economic Literature
+  aliases: [JEL]
+field: [econ]
+tier: T2                      # catalog/economics-journals.md AEA 系列
+identifiers:
+  issn: ["0022-0515"]         # 期刊必填（D-015）；⚠ [DOC] catalog 来源（免费刊，站点
+                               # journals 页列名 "免费" 但未经本次勘察逐一实证 ISSN，
+                               # aea.md §7 出处分级）——实现期在线冒烟核实义务
+metadata_source: crossref
+fulltext_source: aea
+auth:
+  level: none                 # JEL 免费刊（catalog/[DOC]；非订阅）——与 aer/aeri/aej_* 相对
+  provider_hint: aea
+quirks:
+  ai_bot_sensitive: true       # robots.txt 点名封 GPTBot/Amazonbot（aea.md §2/site-survey §1）
+  doi_forms: [submission, vol_issue_page, pnp]  # aea.md §7 字段设计；解析器 parse.parse_doi
+status: active
+notes: >
+  DOI code=jel（10.1257/jel.{suffix}）。季刊，免费全文（无订阅墙），但**全文层
+  pubs.aeaweb.org 仍是 Cloudflare BLOCKED 边界**（aea.md §3.4 反直觉发现——即便
+  jep 的 gold OA 副本亦落同一 CF 域）：本 Phase resolve 离线判定不产可 stateless-fetch
+  的计划，仅记 deferred 全文 URL 观测（供未来 browser-fetch 通道消费），不 raise
+  no_entitlement（无认证问题——auth.level=none 本身已如实反映免费属性，该错误类
+  留给真正的机构订阅场景）。OA-fallback（unpaywall）对本刊实质产出预期同样低
+  （best_oa host 落 CF 域）。ISSN 出处：本文件为 aea.md §7 表中"仅 catalog [DOC]
+  来源"的 6 刊之一，唯 AER/JEP 经站点勘察 [LIVE] 实证。

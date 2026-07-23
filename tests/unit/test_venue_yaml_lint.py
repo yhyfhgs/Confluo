@@ -52,6 +52,15 @@ _NON_ARXIV_VENUE_IDS = {
     "jet",
     "jpubeco",
     "jbf",
+    # Phase 5 T5：aea 8 刊（crossref metadata_source；fulltext_source=aea，RESOLVE-only）。
+    "aer",
+    "aeri",
+    "aej_macro",
+    "aej_micro",
+    "aej_applied",
+    "aej_policy",
+    "jel",
+    "jep",
 }
 
 
@@ -155,6 +164,69 @@ def test_neurips_venue_routes_to_neurips_proceedings_adapter(
     assert spec.auth.level.value == "none"
     assert spec.quirks["first_year"] == 1987
     assert spec.identifiers["dblp_key"] == "conf/nips"
+
+
+_AEA_VENUE_IDS = {
+    "aer",
+    "aeri",
+    "aej_macro",
+    "aej_micro",
+    "aej_applied",
+    "aej_policy",
+    "jel",
+    "jep",
+}
+_AEA_SUBSCRIPTION_VENUE_IDS = {"aer", "aeri", "aej_macro", "aej_micro", "aej_applied", "aej_policy"}
+_AEA_OPEN_VENUE_IDS = {"jel", "jep"}
+
+
+@pytest.mark.parametrize("venue_id", sorted(_AEA_VENUE_IDS))
+def test_aea_venues_route_to_aea_adapter(adapters: dict[str, SourceAdapter], venue_id: str) -> None:
+    """8 刊全部 metadata_source=crossref（D-005）、fulltext_source=aea（aea.md §7）。"""
+    reg = VenueRegistry(adapters)
+    reg.load_dirs([REPO_VENUES_DIR])
+    spec = reg.get(venue_id)
+    assert spec.kind == "journal"
+    assert spec.metadata_source == "crossref"
+    assert spec.fulltext_source == "aea"
+    assert spec.identifiers["issn"]  # D-015 期刊必填，非空
+    assert spec.quirks["doi_forms"] == ["submission", "vol_issue_page", "pnp"]
+    assert spec.quirks["ai_bot_sensitive"] is True
+
+
+def test_aea_subscription_venues_declare_institutional_auth(
+    adapters: dict[str, SourceAdapter],
+) -> None:
+    """订阅 6 刊（aer/aeri/aej_×4）auth.level=institutional——刊物访问级前瞻声明
+    （aea.md §1 层次澄清；不触 registry.py:234，adapter auth_requirement=none 是零门槛
+    下限，任何 venue auth.level 都不会低于它）。
+    """
+    reg = VenueRegistry(adapters)
+    reg.load_dirs([REPO_VENUES_DIR])
+    for venue_id in sorted(_AEA_SUBSCRIPTION_VENUE_IDS):
+        assert reg.get(venue_id).auth.level.value == "institutional", venue_id
+
+
+def test_aea_open_venues_declare_no_auth(adapters: dict[str, SourceAdapter]) -> None:
+    """jel/jep 免费/gold OA 刊——auth.level=none（aea.md §7）。"""
+    reg = VenueRegistry(adapters)
+    reg.load_dirs([REPO_VENUES_DIR])
+    for venue_id in sorted(_AEA_OPEN_VENUE_IDS):
+        assert reg.get(venue_id).auth.level.value == "none", venue_id
+
+
+def test_aea_code_to_venue_routing_table_matches_shipped_venues() -> None:
+    """`parse.CODE_TO_VENUE` 的路由目标恰为本次 shipped 的 8 刊 id 集合（防止路由表
+    与实际注册 venue 静默漂移——8 刊路由正确性是 aea.md §9 建议关联 AC-5.4 的判据）。
+    """
+    from paper_crawler.adapters.aea.parse import CODE_TO_VENUE
+
+    assert set(CODE_TO_VENUE.values()) == _AEA_VENUE_IDS
+    # code≠venue id 的非平凡路由（子刊路由表核心裁决，aea.md §3.2）。
+    assert CODE_TO_VENUE["mac"] == "aej_macro"
+    assert CODE_TO_VENUE["app"] == "aej_applied"
+    assert CODE_TO_VENUE["mic"] == "aej_micro"
+    assert CODE_TO_VENUE["pol"] == "aej_policy"
 
 
 @pytest.mark.parametrize("venue_id", sorted(_NON_ARXIV_VENUE_IDS))

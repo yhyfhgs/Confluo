@@ -1,0 +1,25 @@
+{
+  "_grounded": "[LIVE-DERIVED] docs/research/site-survey/aea.md §5 (2026-07-24): GET api.unpaywall.org/v2/10.1257/aer.20230344 -> closed, 0 OA location (one of 3/3 AER samples all closed in the survey: aer.20230344 near-recent research article, aer.106.6.i front matter, aer.p20151048 P&P short paper). is_oa/oa_status/best_oa_location/oa_locations fields below are grounded in that result (is_oa=false, oa_status=closed, no OA location). Surrounding schema shape (journal_name/publisher/z_authors) is SYNTHETIC, hand-written per the documented Unpaywall v2 response schema, not a literal captured response body (same convention as tests/fixtures/unpaywall/01_normal_gold_fallback.json's _grounded field).",
+  "doi": "10.1257/aer.20230344",
+  "doi_url": "https://doi.org/10.1257/aer.20230344",
+  "title": "Synthetic Placeholder Title (real AER title not captured by site survey)",
+  "genre": "journal-article",
+  "is_paratext": false,
+  "published_date": "2026-07-01",
+  "year": 2026,
+  "journal_name": "American Economic Review",
+  "journal_issns": "0002-8282",
+  "journal_is_oa": false,
+  "journal_is_in_doaj": false,
+  "publisher": "American Economic Association",
+  "is_oa": false,
+  "oa_status": "closed",
+  "has_repository_copy": false,
+  "best_oa_location": null,
+  "first_oa_location": null,
+  "oa_locations": [],
+  "z_authors": [
+    { "given": "Synthetic", "family": "AuthorOne" },
+    { "given": "Synthetic", "family": "AuthorTwo" }
+  ]
+}

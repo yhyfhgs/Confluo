@@ -1,0 +1,28 @@
+# venues/econ/aej_policy.yaml —— American Economic Journal: Economic Policy
+# （Phase 5 T5；design/adapters/aea.md §7）
+id: aej_policy                 # catalog 蛇形命名（A-2 裁决）
+kind: journal
+names:
+  full: "American Economic Journal: Economic Policy"
+  aliases: [AEJ-Policy, "AEJ: Economic Policy"]
+field: [econ]
+tier: T1                      # catalog/economics-journals.md AEA 系列
+identifiers:
+  issn: ["1945-7731"]         # 期刊必填（D-015）；⚠ [DOC] catalog 来源，未经站点勘察逐一
+                               # 实证（aea.md §7 出处分级）——实现期在线冒烟核实义务
+metadata_source: crossref
+fulltext_source: aea
+auth:
+  level: institutional        # 前瞻声明（aea.md §1）
+  provider_hint: aea
+quirks:
+  ai_bot_sensitive: true       # robots.txt 点名封 GPTBot/Amazonbot（aea.md §2/site-survey §1）
+  doi_forms: [submission, vol_issue_page, pnp]  # aea.md §7 字段设计；解析器 parse.parse_doi
+status: active
+notes: >
+  DOI code=pol（10.1257/pol.{suffix}）——code≠venue id（子刊路由表，aea.md §3.2/§7）：
+  DOI 子前缀 pol 路由到本 venue aej_policy。季刊。全文/认证形态同 aer.yaml
+  （pubs.aeaweb.org 全文层 Cloudflare BLOCKED，本 Phase resolve 离线判 no_entitlement，
+  FETCH 待 browser-fetch 通道 + D-006 机构认证）；adapter 本期 auth_requirement=none，
+  此处 auth.level=institutional 为前瞻声明，不触 registry.py:234 lint。ISSN 出处：本
+  文件为 aea.md §7 表中"仅 catalog [DOC] 来源"的 6 刊之一。
