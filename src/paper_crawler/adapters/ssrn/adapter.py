@@ -21,8 +21,8 @@ landing-only 零网络）——**无 FETCH**（模式 B 浏览器全文 defer Ph
 - `resolve_assets`：**landing-only 零网络**（`resolve_offline=True`）——构造 landing 引用作
   观测、**不产 PDF asset**；全文交 pipeline unpaywall OA-fallback（landing-only 净效果 PDF
   命中≈0，§4.4）。
-- `healthcheck`：`GET api.crossref.org/works/{固定 SSRN DOI}` → title 非空探测（§9.2；
-  真值 [PENDING] 留在线冒烟 UPDATE_GOLDEN 捕获）——**非 SSRN 域**。
+- `healthcheck`：`GET api.crossref.org/works/{固定 SSRN DOI}` → title 精确 drift 比对（§9.2；
+  真值 [LIVE 2026-07-24] 双源转正——crossref 冒烟 + openalex 第二源一致）——**非 SSRN 域**。
 
 **限速/UA**：`default_rate` 沿 crossref 既有裁决（5 req/s polite pool，UA 携 mailto，§5）。
 enumerate 的网络经内部 `CrossrefAdapter` 的共享 `HttpClient` 走 pipeline `acquire_and_wait`
@@ -60,10 +60,11 @@ from paper_crawler.types import (
 _DEFAULT_INCEPTION_YEAR = 1990
 
 # healthcheck 固定 SSRN DOI（§9.2，[LIVE 2026-07-24] 200；abstract_id 4056799）。真值
-# （规整化 title[0]）[PENDING]——留在线冒烟 UPDATE_GOLDEN 捕获后转精确 drift 比对；捕获前
-# 作结构性探测（title 非空即健康）。经内部 crossref lookup 走 `api.crossref.org`（非 SSRN 域）。
+# （规整化 title[0]）[LIVE 2026-07-24] 双源捕获（T4 crossref 冒烟 + P5-M1 openalex
+# 第二源确认，title 规整化后逐字一致，UPDATE_GOLDEN 纪律转正，沿 crossref 先例同口径）。
+# 经内部 crossref lookup 走 `api.crossref.org`（非 SSRN 域）。
 _HEALTHCHECK_DOI = "10.2139/ssrn.4056799"
-_HEALTHCHECK_TITLE: str | None = None
+_HEALTHCHECK_TITLE: str | None = "Allocating Scarce Information"
 
 
 class SsrnAdapter(AdapterBase):
@@ -192,12 +193,12 @@ class SsrnAdapter(AdapterBase):
     # -- healthcheck（固定 SSRN DOI 经 crossref lookup；非 SSRN 域）--------------------------
 
     def healthcheck(self, session: SessionHandle | None = None) -> HealthReport:
-        """`GET api.crossref.org/works/{固定 SSRN DOI}` → title 非空探测（§9.2；非 SSRN 域）。
+        """`GET api.crossref.org/works/{固定 SSRN DOI}` → 比对规整化 title[0]（§9.2；非 SSRN 域）。
 
         经内部 crossref `lookup` 打 `api.crossref.org`（**非 `*.ssrn.com`**——元数据层健康
-        探测同样零 SSRN 接触）。真值 [PENDING]（`_HEALTHCHECK_TITLE=None`）：结构性探测——
-        DOI 可解析且 title 非空即健康，detail 附实测供 UPDATE_GOLDEN 捕获；捕获后转精确
-        drift 比对。
+        探测同样零 SSRN 接触）。真值 [LIVE 2026-07-24]（`_HEALTHCHECK_TITLE` 已双源转正，
+        见模块常量注释）：精确 drift 比对——title 与 golden 不等即 unhealthy（canary 腐化
+        哨兵）。`_HEALTHCHECK_TITLE is None` 分支保留为防御性回退（未来若需重置 golden）。
         """
         try:
             stub = self._crossref.lookup(_HEALTHCHECK_DOI)

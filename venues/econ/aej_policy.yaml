@@ -24,5 +24,9 @@ notes: >
   DOI 子前缀 pol 路由到本 venue aej_policy。季刊。全文/认证形态同 aer.yaml
   （pubs.aeaweb.org 全文层 Cloudflare BLOCKED，本 Phase resolve 离线判 no_entitlement，
   FETCH 待 browser-fetch 通道 + D-006 机构认证）；adapter 本期 auth_requirement=none，
-  此处 auth.level=institutional 为前瞻声明，不触 registry.py:234 lint。ISSN 出处：本
-  文件为 aea.md §7 表中"仅 catalog [DOC] 来源"的 6 刊之一。
+  此处 auth.level=institutional 为前瞻声明，不触 registry.py:234 lint。ISSN 出处：
+  [DOC]→[LIVE 2026-07-24]（P5-M1 在线核实，`GET api.crossref.org/journals/1945-7731`
+  →200 + title "American Economic Journal Economic Policy" 吻合，publisher=American
+  Economic Association；⚠ crossref 返回的 ISSN 列表含重复项 `["1945-774X",
+  "1945-774X", "1945-7731"]`——目标 ISSN 确在列，判为 crossref 侧数据小瑕疵，如实
+  记录不掩饰）；原仅 aea.md §7 表中 catalog [DOC] 来源，本次核实后转正。

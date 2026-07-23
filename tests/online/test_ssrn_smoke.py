@@ -14,8 +14,9 @@
   ——后者返 HTTP 400，已由 T1 `test_crossref_prefix_smoke.py::test_prefix_created_facet_ssrn`
   XFAIL 哨兵覆盖，本处不重复；controller 发现①仲裁令据此改 DISCOVER 为纯生成）。
 - **healthcheck 锚点**（固定 SSRN DOI，1 请求）：`SsrnAdapter.healthcheck` 经 crossref lookup
-  打 `api.crossref.org/works/10.2139/ssrn.4056799` → 结构性健康 + 打印实测 title 供
-  UPDATE_GOLDEN 捕获（`_HEALTHCHECK_TITLE` 转正）。**非 SSRN 域**。
+  打 `api.crossref.org/works/10.2139/ssrn.4056799` → title 精确 drift 比对。**非 SSRN 域**。
+  golden 真值 [LIVE 2026-07-24] 已双源转正（本冒烟捕获 title="Allocating Scarce
+  Information" + P5-M1 openalex 第二源确认一致，`_HEALTHCHECK_TITLE` 见 adapter 常量）。
 
 ≈ 共 2 请求 ≤ 5。DISCOVER 纯生成零网络、RESOLVE landing-only 零网络——无 online 面（offline
 全覆盖）。
@@ -112,7 +113,8 @@ def test_healthcheck_anchor_via_crossref_non_ssrn_domain(
 ) -> None:
     """1 请求：healthcheck 锚点固定 SSRN DOI 经 crossref lookup（**api.crossref.org，非 SSRN**）。
 
-    结构性健康（PENDING golden）+ 打印实测 title 供 `_HEALTHCHECK_TITLE` UPDATE_GOLDEN 捕获。
+    golden 真值 [LIVE 2026-07-24] 已双源转正（`_HEALTHCHECK_TITLE="Allocating Scarce
+    Information"`）——本次在线实跑走精确 drift 比对分支（非 PENDING 结构态）。
     """
     real_request_budget.spend(1)
     adapter = SsrnAdapter(http=crossref_client)
