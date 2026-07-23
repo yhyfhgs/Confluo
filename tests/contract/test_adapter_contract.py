@@ -11,9 +11,19 @@ enumerate 走 crossref D-005）补 factory——resolve（entitlement 预检）+
 resolve/fetch 契约用 `_RESOLVE_ONLY_SAMPLE_PAPERS` 登记的 QJE DOI 样本 +
 `_CONTRACT_SESSIONS`/`_session_for` 注入的假 session（其余源 session=None，行为逐字
 不变）走通全链（注入 cookie supplier + landing_transport 零真实网络）；discover/enumerate
-两测因缺能力 skip（+2）。当前契约 skip 合计 **21**：openalex/s2 空能力集各 4（无契可契）+
-crossref/dblp 各 2（无 RESOLVE/FETCH）+ unpaywall 3（仅 RESOLVE）+ elsevier_sd 2 +
-oup_silverchair 2（各自无 DISCOVER/ENUMERATE）+ wiley 2 = 21（实跑 108 passed / 21 skipped）。
+两测因缺能力 skip（+2）。**Phase 5 T5**：`aea` 是 RESOLVE-only offline adapter，但
+`resolve_assets` 按设计**从不返回非空 `AssetPlan` 列表**（订阅刊 raise
+`NO_ENTITLEMENT`、OA 刊返回空列表，两分支均不产平台资产计划——见
+`adapters/aea/adapter.py` 模块 docstring 的"结构性诚实边界"论证），与本文件
+`test_resolve_yields_nonempty_asset_plans` 的通用假设（"declared RESOLVE ⟹
+resolve(sample) 产 ≥1 个 AssetPlan"）**结构性不相容**——不为它伪造一个能通过
+断言但实际上不代表真实可执行取回路径的样本，故不登记 factory（不同于 openalex/s2
+"无能力可契"的空集合 case；aea 是"有能力但契约形状不适用"，两者殊途同归都落
+`_contract_case` 的兜底 skip 分支）。aea 自身 resolve_assets 两分支（raise
+no_entitlement / 返回空列表）由 `tests/unit/test_aea_adapter.py` 直接覆盖。当前
+契约 skip 合计 **25**：openalex/s2/aea 各 4（无契可契，原因分述如上）+ crossref/dblp
+各 2（无 RESOLVE/FETCH）+ unpaywall 3（仅 RESOLVE）+ elsevier_sd 2 + oup_silverchair 2
+（各自无 DISCOVER/ENUMERATE）+ wiley 2 = 25（实跑 112 passed / 25 skipped）。
 
 契约的 enumerate 计数口径按能力分层：声明了权威计数（`IssueRef.paper_count_claimed`）
 的 adapter（mock）严格等值；未声明的（arxiv 月度桶、dblp 会议届——预印本/会议无权威
@@ -460,9 +470,12 @@ def _sample_paper_for(adapter_id: str, adapter: SourceAdapter, venue: VenueSpec)
 
 
 # adapter_id -> (adapter, venue) 工厂。只有此处登记的 adapter 会跑完整能力链路检查；
-# 其余（stub / 空能力集）adapter 一律 pytest.skip——见模块顶部 docstring 的 19-skip
-# 分解。pmlr 无 stub 阶段（不同于 arxiv 曾有 T1-T4 的 stub 过渡期）——直接新增一行
-# 即完整接入契约套件。
+# 其余一律 pytest.skip——见模块顶部 docstring 的 skip 分解。pmlr 无 stub 阶段（不同于
+# arxiv 曾有 T1-T4 的 stub 过渡期）——直接新增一行即完整接入契约套件。
+# **`aea` 刻意不登记**（Phase 5 T5）：不是"缺能力"（它声明了 RESOLVE），而是
+# `resolve_assets` 按设计从不产出非空 `AssetPlan`（模块 docstring 展开）——本契约的
+# `test_resolve_yields_nonempty_asset_plans` 断言对它结构性不适用，登记一个会强行
+# 通过但不代表真实取回路径的 factory 违背"契约反映真实行为"的初衷。
 _CONTRACT_CASES: dict[str, Callable[[], tuple[SourceAdapter, VenueSpec]]] = {
     "mock_platform": _mock_case,
     "arxiv": _arxiv_case,
@@ -498,9 +511,12 @@ def _contract_case(adapter_id: str) -> tuple[SourceAdapter, VenueSpec]:
     if factory is None:
         pytest.skip(
             reason=(
-                "no contract case: openalex/s2 are duck-typed enrich-only "
-                "(capabilities=Capability(0), do not participate in this protocol by "
-                "design, T6) — the only adapters without a full-capability contract case"
+                f"no contract case registered for {adapter_id!r}: either duck-typed "
+                "enrich-only with an empty capability set (openalex/s2, capabilities="
+                "Capability(0), T6 — do not participate in this protocol by design) or "
+                "a declared RESOLVE that structurally never returns a nonempty AssetPlan "
+                "(aea, T5 — see _CONTRACT_CASES module comment); see module docstring for "
+                "the full skip breakdown"
             )
         )
     return factory()
