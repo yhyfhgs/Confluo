@@ -79,11 +79,13 @@ from paper_crawler.adapter import (
     bind_http_client,
     load_adapters,
 )
+from paper_crawler.adapters.crossref.adapter import CrossrefAdapter
 from paper_crawler.adapters.openalex import budget as openalex_budget
 from paper_crawler.adapters.openalex.adapter import OpenAlexAdapter
 from paper_crawler.adapters.unpaywall import report as oa_report
 from paper_crawler.adapters.unpaywall.adapter import UnpaywallAdapter
 from paper_crawler.auth.cli import auth_app
+from paper_crawler.auth.manager import AuthManager
 from paper_crawler.canary import (
     canary_exit_code,
     canary_record_path,
@@ -94,6 +96,7 @@ from paper_crawler.canary import (
 from paper_crawler.config import Config, ConfigLayer, describe_config
 from paper_crawler.errors import CrawlerError, ErrorClass, IllegalTransition
 from paper_crawler.http import HttpClient
+from paper_crawler.ids import normalize_doi
 from paper_crawler.merge import MergeEngine
 from paper_crawler.obslog import log_event, redact, setup_logging
 from paper_crawler.pipeline import PipelineRunner, RunReport, Selector, StageContext
@@ -135,6 +138,9 @@ class CliEnv:
     # openreview 专属 token client（有 token 时构造，绝不复用共享 http——见
     # `_bind_openreview_token_client`）；无 token 时 None（openreview 沿用共享 http）。
     openreview_http: HttpClient | None = None
+    # AuthManager（`auth=True` 装配，pull/grab 用）：auth_gated venue 的 provider/session
+    # 解析入口（§8.2）；无 auth 装配的命令为 None。传入 `PipelineRunner(auth_manager=...)`。
+    auth_manager: AuthManager | None = None
 
 
 def _http_client_factory(config: Config, rate_limiter: RateLimiter | None = None) -> HttpClient:
@@ -188,7 +194,44 @@ def _bind_openreview_token_client(
     return client
 
 
-def _build_env(home: Path | None, verbose: bool, *, dry_run: bool = False) -> CliEnv:
+def _assemble_auth_seam(
+    config: Config,
+    adapters: dict[str, SourceAdapter],
+    ctx: StageContext,
+    http: HttpClient,
+    limiter: RateLimiter,
+) -> AuthManager:
+    """pull/grab 的 auth/OA-fallback 接缝装配（auth-framework §8；纯附加，默认关闭之外的启用点）。
+
+    - OA-fallback（§8.1）：配置 unpaywall adapter（共享 `http` + `Config.identity_email` +
+      主域限速登记）注入 `StageContext.unpaywall_adapter`/`http`，并置 `oa_fallback=True`
+      （no_entitlement 兜底总开关）。
+    - AuthManager（§8.2）：`[auth].active_profile` 从 config 接线（T1b 留的构造参数注入点；
+      config 尚无该键时为 None → platform 单候选自动解析）。auth_gated venue 的健康门/日配额/
+      工作时段窗/挑战冷却均由 runner 经该 manager 驱动。
+    """
+    ua = adapters.get("unpaywall")
+    if isinstance(ua, UnpaywallAdapter):
+        if isinstance(ua, HttpClientConsumer):
+            ua.set_http_client(http)  # 共享 UA + limiter（同桶计费）
+        if isinstance(ua, EmailConsumer):
+            ua.set_email(config.identity_email)  # ?email= 查询参数（aggregators §3）
+        limiter.register(ua.domains[0], ua.default_rate)  # api.unpaywall.org 独立桶
+        ctx.unpaywall_adapter = ua
+    ctx.http = http
+    ctx.oa_fallback = True
+    active_profiles = getattr(config, "auth_active_profile", None)
+    # T4 审查 MINOR-2 预留接线点：OUP（oup_silverchair）CookieSession adapter 尚未合入 main
+    # （T4 worktree），其 cookie-client seam（`set_cookie_supplier` 等）落地时须把**共享
+    # limiter**（`limiter` = 本 `StageContext.limiter` 同一实例）随 cookie-client 一并传入，
+    # 使 cookie 认证态取回与 pipeline per-stage 限速落到同桶（不放宽速率，沿 s2/openreview
+    # 专属 client 携 `rate_limiter=` 先例）。OUP 合入后在此按其 seam 签名补一行注入即可。
+    return AuthManager(config, active_profiles=active_profiles)
+
+
+def _build_env(
+    home: Path | None, verbose: bool, *, dry_run: bool = False, auth: bool = False
+) -> CliEnv:
     config = Config.load(home)
     config.ensure_dirs()
     setup_logging(config.log_dir, console_level="DEBUG" if verbose else "INFO")
@@ -217,11 +260,17 @@ def _build_env(home: Path | None, verbose: bool, *, dry_run: bool = False) -> Cl
         limiter=limiter,
         dry_run=dry_run,
     )
-    return CliEnv(ctx=stage_ctx, http=http, openreview_http=openreview_http)
+    # pull/grab（auth=True）：装配 auth/OA-fallback 接缝（§8；其余命令 auth_manager=None）。
+    auth_manager = _assemble_auth_seam(config, adapters, stage_ctx, http, limiter) if auth else None
+    return CliEnv(
+        ctx=stage_ctx, http=http, openreview_http=openreview_http, auth_manager=auth_manager
+    )
 
 
 @contextlib.contextmanager
-def _env(home: Path | None, verbose: bool, *, dry_run: bool = False) -> Iterator[CliEnv]:
+def _env(
+    home: Path | None, verbose: bool, *, dry_run: bool = False, auth: bool = False
+) -> Iterator[CliEnv]:
     """`_build_env` 的上下文管理器包装：命令结束（正常或 `typer.Exit`）时关闭 DB + http。
 
     CLI 每次调用在真实使用中对应一个独立进程（连接随进程退出自然释放）；
@@ -234,7 +283,7 @@ def _env(home: Path | None, verbose: bool, *, dry_run: bool = False) -> Iterator
     覆盖所有走 `_env` 的命令）。此时尚未开 DB/日志，无资源需清理。
     """
     try:
-        cli_env = _build_env(home, verbose, dry_run=dry_run)
+        cli_env = _build_env(home, verbose, dry_run=dry_run, auth=auth)
     except CrawlerError as exc:
         _echo_error(exc)
         raise typer.Exit(code=2) from exc
@@ -535,8 +584,8 @@ def pull(
         filter_expr=filter_expr,
         limit=limit,
     )
-    with _env(home, verbose, dry_run=dry_run) as env:
-        runner = PipelineRunner(env.ctx)
+    with _env(home, verbose, dry_run=dry_run, auth=True) as env:
+        runner = PipelineRunner(env.ctx, auth_manager=env.auth_manager)
         try:
             report = runner.pull(venue, selector, with_extract=extract, force=force)
         except CrawlerError as exc:
@@ -544,6 +593,125 @@ def pull(
             raise typer.Exit(code=2) from exc
         typer.echo(report.render_markdown())
         exit_code = _report_exit_code(report)
+    raise typer.Exit(code=exit_code)
+
+
+# -- grab -------------------------------------------------------------------
+
+
+def _grab_resolve_venue(env: CliEnv, doi_norm: str, venue: str | None) -> str:
+    """grab 的 venue 判定：显式 `--venue` 优先 > 库内该 DOI 的已绑定 paper 反查。
+
+    二者皆无 → `CrawlerError(CONFIG)`（DOI 前缀→venue 的映射本框架无声明面——VenueSpec
+    无 DOI 前缀字段，退化为要求显式 `--venue`；CLI 捕获转退出码 2）。
+    """
+    if venue is not None:
+        return venue
+    rows = env.ctx.db.query(
+        "SELECT p.venue_id FROM paper p JOIN identifier i ON i.paper_id = p.id "
+        "WHERE i.scheme = 'doi' AND i.value = ? AND p.venue_id IS NOT NULL "
+        "ORDER BY p.venue_id LIMIT 1",
+        (doi_norm,),
+    )
+    if rows:
+        return str(rows[0]["venue_id"])
+    raise CrawlerError(
+        ErrorClass.CONFIG,
+        f"无法从 DOI {doi_norm!r} 确定 venue（库内无该 DOI 的已绑定 paper）——请用 --venue 显式指定",
+    )
+
+
+def _grab_crossref_adapter(env: CliEnv) -> CrossrefAdapter:
+    """带共享 http/限速登记的 crossref adapter（未入库 DOI 的单篇 lookup 用）。
+
+    仿 `_prepare_unpaywall_adapter`：fresh `load_adapters()` + 注入 `env.http`（同 UA/同
+    limiter）+ 主域登记。crossref 未注册 → 用法错退出 2。
+    """
+    adapter = load_adapters().get("crossref")
+    if not isinstance(adapter, CrossrefAdapter):
+        _usage_error("crossref adapter 未注册（无法 lookup 未入库 DOI）")
+    if isinstance(adapter, HttpClientConsumer):
+        adapter.set_http_client(env.http)
+    env.ctx.limiter.register(adapter.domains[0], adapter.default_rate)
+    return adapter
+
+
+def _grab_ensure_paper(env: CliEnv, doi_norm: str, venue_id: str) -> str | None:
+    """确定 grab 目标 paper_id：库内 DOI 反查命中即复用；否则 crossref 单篇 lookup →
+    `MergeEngine.ingest(source='crossref')` 建最小 paper 行。均绑定到 `venue_id`（fetch
+    路由读 paper.venue_id）。crossref 未收录该 DOI → None（业务失败，退出码 1）。"""
+    rows = env.ctx.db.query(
+        "SELECT paper_id FROM identifier WHERE scheme = 'doi' AND value = ? LIMIT 1",
+        (doi_norm,),
+    )
+    if rows:
+        paper_id = str(rows[0]["paper_id"])
+        env.ctx.repo.bind_paper_venue(paper_id, venue_id)
+        return paper_id
+    stub = _grab_crossref_adapter(env).lookup(doi_norm)
+    if stub is None:
+        return None
+    result = MergeEngine(env.ctx.repo).ingest(stub, source="crossref")
+    env.ctx.repo.bind_paper_venue(result.paper_id, venue_id)
+    return result.paper_id
+
+
+def _grab_exit_code(report: RunReport) -> int:
+    """grab 退出码（design/05 Task 口径）：至少一个资产落盘（含 OA 副本）→ 0；否则业务
+    失败 → 1（no_entitlement 无 OA / blocked / gone / failed 皆归 1，grab 无 blocked=3 档）。"""
+    return 0 if report.succeeded > 0 else 1
+
+
+@app.command()
+def grab(
+    doi: Annotated[str | None, typer.Option("--doi", help="要抓取的论文 DOI")] = None,
+    venue: Annotated[
+        str | None, typer.Option("--venue", help="显式指定 venue（优先于库内 DOI 反查）")
+    ] = None,
+    force: Annotated[bool, typer.Option("--force", help="绕过入队新鲜度，强制重跑")] = False,
+    home: HomeOpt = None,
+    verbose: VerboseOpt = False,
+) -> None:
+    """单篇 DOI 全链取回（resolve→fetch，含 no_entitlement→unpaywall OA 兜底）。
+
+    venue 判定：显式 `--venue` 优先 > 库内该 DOI 已绑定 paper 反查。未入库 DOI 先经 crossref
+    单篇 lookup → `MergeEngine.ingest(source='crossref')` 建最小 paper 行并绑定 venue，再走单篇
+    resolve+fetch（复用 pull 全链：auth 健康门/日配额/工作时段窗/OA 兜底全生效）。退出码
+    （design/05 Task 口径）：0=成功（资产落盘）/ 1=业务失败（无资产/blocked/未收录）/ 2=用法·
+    配置错（缺 --doi / 未知 venue / 无法确定 venue）。
+    """
+    if not doi:
+        _usage_error("必须指定 --doi")
+    doi_norm = normalize_doi(doi)
+    if not doi_norm:
+        _usage_error(f"无效 DOI: {doi!r}")
+
+    with _env(home, verbose, auth=True) as env:
+        try:
+            venue_id = _grab_resolve_venue(env, doi_norm, venue)
+        except CrawlerError as exc:
+            _echo_error(exc)
+            raise typer.Exit(code=2) from exc
+        _require_known_venue(env, venue_id)  # 未知 venue → 退出 2
+        env.ctx.repo.upsert_venue(env.ctx.registry.get(venue_id))  # FK 前提：venue 行存在
+
+        try:
+            paper_id = _grab_ensure_paper(env, doi_norm, venue_id)
+        except CrawlerError as exc:
+            _echo_error(exc)
+            raise typer.Exit(code=2) from exc
+        if paper_id is None:
+            typer.echo(f"DOI {doi_norm!r} 未在 crossref 找到元数据，无法建 paper——业务失败。")
+            raise typer.Exit(code=1)
+
+        runner = PipelineRunner(env.ctx, auth_manager=env.auth_manager)
+        try:
+            report = runner.grab(venue_id, paper_id, force=force)
+        except CrawlerError as exc:
+            _echo_error(exc)
+            raise typer.Exit(code=2) from exc
+        typer.echo(report.render_markdown())
+        exit_code = _grab_exit_code(report)
     raise typer.Exit(code=exit_code)
 
 
@@ -1297,6 +1465,8 @@ def _format_config_value(layer: ConfigLayer) -> str:
         return _mask_email(value)
     if isinstance(value, tuple):  # paths.venues_dirs
         return ", ".join(str(entry) for entry in value) if value else "(none)"
+    if isinstance(value, dict):  # auth.active_profile（platform→profile 映射，非敏感）
+        return ", ".join(f"{k}={v}" for k, v in sorted(value.items())) if value else "(none)"
     return redact(str(value))
 
 

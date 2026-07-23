@@ -5,7 +5,7 @@ from pathlib import Path
 
 import pytest
 
-from paper_crawler.config import Config, _find_project_config, describe_config
+from paper_crawler.config import Config, _find_project_config, _to_int, describe_config
 from paper_crawler.errors import CrawlerError, ErrorClass
 
 # 分层加载引入的全部 PAPER_CRAWLER_* env——每个用例前清空，防宿主环境/跨例泄漏干扰断言。
@@ -17,6 +17,11 @@ _PC_ENV_VARS = (
     "PAPER_CRAWLER_ELSEVIER_API_KEY",
     "PAPER_CRAWLER_ELSEVIER_INSTTOKEN",
     "PAPER_CRAWLER_WILEY_TDM_TOKEN",
+    "PAPER_CRAWLER_AUTH_DAILY_CAP",
+    "PAPER_CRAWLER_AUTH_HEALTH_INTERVAL",
+    "PAPER_CRAWLER_AUTH_HEALTH_MAX_AGE_S",
+    "PAPER_CRAWLER_AUTH_WORK_HOURS",
+    "PAPER_CRAWLER_OA_FALLBACK_RATE_RPM",
 )
 
 
@@ -531,3 +536,108 @@ def test_find_project_config_found_at_git_root_level_worktree(tmp_path: Path) ->
     proj = repo / "paper-crawler.toml"
     proj.write_text("[rate]\nscale = 0.2\n", encoding="utf-8")
     assert _find_project_config(sub) == proj
+
+
+# ---------------------------------------------------------------------------
+# auth-framework §8 pipeline knobs（daily_cap/health_interval/health_max_age_s/
+# work_hours/oa_fallback_rate_rpm/active_profile）：默认 / home / env / describe。
+# ---------------------------------------------------------------------------
+
+
+def test_auth_knobs_default_when_unset(tmp_path: Path) -> None:
+    """无 config.toml + 无 env → 默认值（与 runner/stages getattr 兜底逐一相同）。"""
+    cfg = Config.load(home=tmp_path)
+    assert cfg.auth_daily_cap == 200
+    assert cfg.auth_health_interval == 20
+    assert cfg.auth_health_max_age_s == 900
+    assert cfg.auth_work_hours == "8-23"
+    assert cfg.oa_fallback_rate_rpm == 30
+    assert cfg.auth_active_profile is None
+
+
+def test_auth_knobs_from_home_config_toml(tmp_path: Path) -> None:
+    home = tmp_path / "home"
+    home.mkdir()
+    (home / "config.toml").write_text(
+        "[auth]\n"
+        "daily_cap = 50\n"
+        "health_interval = 5\n"
+        "health_max_age_s = 120\n"
+        'work_hours = "9-18"\n'
+        "[oa_fallback]\n"
+        "rate_rpm = 12\n",
+        encoding="utf-8",
+    )
+    cfg = Config.load(home=home)
+    assert cfg.auth_daily_cap == 50
+    assert cfg.auth_health_interval == 5
+    assert cfg.auth_health_max_age_s == 120
+    assert cfg.auth_work_hours == "9-18"
+    assert cfg.oa_fallback_rate_rpm == 12
+
+
+def test_auth_knobs_env_overrides_home(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    home = tmp_path / "home"
+    home.mkdir()
+    (home / "config.toml").write_text("[auth]\ndaily_cap = 50\n", encoding="utf-8")
+    monkeypatch.setenv("PAPER_CRAWLER_AUTH_DAILY_CAP", "7")
+    monkeypatch.setenv("PAPER_CRAWLER_OA_FALLBACK_RATE_RPM", "3")
+    cfg = Config.load(home=home)
+    assert cfg.auth_daily_cap == 7  # env > home
+    assert cfg.oa_fallback_rate_rpm == 3
+
+
+def test_active_profile_mapping_from_toml(tmp_path: Path) -> None:
+    home = tmp_path / "home"
+    home.mkdir()
+    (home / "config.toml").write_text(
+        '[auth]\nactive_profile = { oup_silverchair = "oup@campus", elsevier_sd = "elsevier" }\n',
+        encoding="utf-8",
+    )
+    cfg = Config.load(home=home)
+    assert cfg.auth_active_profile == {"oup_silverchair": "oup@campus", "elsevier_sd": "elsevier"}
+
+
+def test_auth_knobs_in_describe_config_with_source(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """config show 来源层追踪含这 6 项（env/home/default）。"""
+    home = tmp_path / "home"
+    home.mkdir()
+    (home / "config.toml").write_text("[auth]\nhealth_interval = 9\n", encoding="utf-8")
+    monkeypatch.setenv("PAPER_CRAWLER_AUTH_DAILY_CAP", "7")
+    rows = {r.key: r for r in describe_config(home)}
+    assert rows["auth.daily_cap"].value == 7 and rows["auth.daily_cap"].source == "env"
+    assert rows["auth.health_interval"].value == 9
+    assert rows["auth.health_interval"].source == "home"
+    assert rows["auth.work_hours"].value == "8-23" and rows["auth.work_hours"].source == "default"
+    assert rows["oa_fallback.rate_rpm"].value == 30
+    assert "auth.active_profile" in rows  # 映射项也纳入追踪
+    assert not rows["auth.daily_cap"].sensitive  # 均非敏感（config show 不脱敏，护栏不拦）
+    assert not rows["auth.active_profile"].sensitive
+
+
+def test_auth_knobs_not_flagged_sensitive_in_project_config(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """auth §8 knobs 非敏感——可入项目级 ./paper-crawler.toml，不触发敏感键护栏拒启动。"""
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    (repo / ".git").mkdir()
+    (repo / "paper-crawler.toml").write_text(
+        '[auth]\ndaily_cap = 42\nwork_hours = "10-20"\n', encoding="utf-8"
+    )
+    monkeypatch.chdir(repo)
+    cfg = Config.load(home=tmp_path / "home")  # 不抛护栏 CONFIG
+    assert cfg.auth_daily_cap == 42 and cfg.auth_work_hours == "10-20"
+
+
+def test_to_int_accepts_numeric_forms_rejects_bool_and_type() -> None:
+    """int knob 解析：int/float/数字串 → int；bool 与非数值类型 → TypeError（畸形 config 响亮）。"""
+    assert _to_int(200) == 200
+    assert _to_int(900.0) == 900
+    assert _to_int("30") == 30
+    with pytest.raises(TypeError):
+        _to_int(True)  # bool 显式拒绝（避免 True→1）
+    with pytest.raises(TypeError):
+        _to_int([1])  # 非 int/float/str 类型

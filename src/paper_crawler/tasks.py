@@ -24,7 +24,12 @@ from paper_crawler.errors import RETRY_TABLE, ErrorClass, IllegalTransition, Ret
 from paper_crawler.storage.db import Database
 from paper_crawler.types import new_ulid
 
-TaskKind = Literal["pull", "discover", "enumerate", "resolve", "fetch", "extract", "ingest"]
+# `oa_fallback` = auth-framework §8.1 的第七 handler（no_entitlement 的 unpaywall OA 兜底
+# 派生任务；纯附加，默认关闭——仅当 `StageContext.oa_fallback` 开启且 paper 有 doi 时由
+# `runner._route_error` 的 NO_ENTITLEMENT 分支派生。既有六阶段语义零改动）。
+TaskKind = Literal[
+    "pull", "discover", "enumerate", "resolve", "fetch", "extract", "ingest", "oa_fallback"
+]
 TaskState = Literal["PENDING", "RUNNING", "DONE", "FAILED", "BLOCKED"]
 
 # 全部合法状态（供 5×5 转移矩阵测试枚举）。
@@ -67,6 +72,8 @@ FRESHNESS_TTL: dict[str, timedelta | None] = {
     "extract": None,
     "ingest": timedelta(0),
     "pull": timedelta(0),
+    # oa_fallback 产物（planned OA asset）永久有效——曾 DONE 即 fresh_skip（同 resolve 语义）。
+    "oa_fallback": None,
 }
 
 

@@ -644,6 +644,18 @@ class Repo:
             (ingest_state, utcnow_iso(), paper_id),
         )
 
+    def bind_paper_venue(self, paper_id: str, venue_id: str) -> None:
+        """把**尚未绑定 venue** 的 paper 绑定到 venue_id（`grab` 单篇路径）。
+
+        `MergeEngine.ingest`（crossref 等 aggregator 路径）建的 paper venue_id=NULL；grab 须
+        绑定后 fetch 才可经 asset→paper→venue_id 路由到目标平台 adapter。`WHERE venue_id IS
+        NULL` 保证幂等且**不改写既有归属**（保守——反查命中的已绑定 paper 不动）。
+        """
+        self.db.execute(
+            "UPDATE paper SET venue_id = ?, updated_at = ? WHERE id = ? AND venue_id IS NULL",
+            (venue_id, utcnow_iso(), paper_id),
+        )
+
     # -- asset ---------------------------------------------------------------
 
     def plan_asset(self, paper_id: str, plan: AssetPlan, source_adapter: str) -> str:
@@ -841,6 +853,22 @@ class Repo:
                 "SELECT * FROM fetch_log WHERE domain = ? ORDER BY ts, id", (domain,)
             )
         return self.db.query("SELECT * FROM fetch_log ORDER BY ts, id")
+
+    def count_fetch_today(self, domain: str) -> int:
+        """某 domain **当日（UTC）fetch 尝试篇次**（auth-framework §8.3；AC-4.4 日配额对账）。
+
+        口径统一为"fetch 尝试篇次"：fetch 阶段每次尝试落一行 fetch_log（design/05 §7），
+        **成败均计**（失败行 error_class 非空同样计入，故不加 error_class 过滤）；resolve
+        页请求不写 fetch_log、天然不计。`ts` 是 fetch_log 实名列，`DATE(ts)=DATE('now')`
+        经索引 `idx_fetch_log_domain_ts` 支撑（`ts` 存 UTC ISO8601，SQLite DATE() 归一到
+        UTC 日）。OA-fallback direct fetch 落第三方 OA host 域、非 auth 平台 domain，按本
+        查询天然不占 auth 平台配额（§8.1 限速隔离的对账侧印证）。
+        """
+        rows = self.db.query(
+            "SELECT COUNT(*) AS n FROM fetch_log WHERE domain = ? AND DATE(ts) = DATE('now')",
+            (domain,),
+        )
+        return int(rows[0]["n"])
 
     # -- 对账 ----------------------------------------------------------------
 

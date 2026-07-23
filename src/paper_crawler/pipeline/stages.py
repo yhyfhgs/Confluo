@@ -45,9 +45,9 @@ import json
 import sqlite3
 import time
 from collections.abc import Callable
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any, Literal
+from typing import TYPE_CHECKING, Any, Literal
 from urllib.parse import urlsplit
 
 from paper_crawler.config import Config
@@ -60,7 +60,22 @@ from paper_crawler.registry import Route, VenueRegistry
 from paper_crawler.storage.db import Database
 from paper_crawler.storage.repo import FetchLogRow, Repo
 from paper_crawler.tasks import TaskQueue
-from paper_crawler.types import AssetKind, AssetPlan, IssueRef, PaperStub, utcnow_iso
+from paper_crawler.types import (
+    AssetKind,
+    AssetPlan,
+    IssueRef,
+    PaperStub,
+    RatePolicy,
+    SessionHandle,
+    UrlStrategy,
+    utcnow_iso,
+)
+
+if TYPE_CHECKING:
+    # 冻结面类型精度（spec §8）——`from __future__ import annotations` 使注解惰性，仅供
+    # mypy 解析，运行时不 import（避免 pipeline→adapter/http 的运行时依赖）。
+    from paper_crawler.adapters.unpaywall.adapter import UnpaywallAdapter
+    from paper_crawler.http import HttpClient
 
 # ---------------------------------------------------------------------------
 # 接口冻结件 §2.7：Selector / StageContext
@@ -103,6 +118,21 @@ class StageContext:
     limiter: RateLimiter
     sleeper: Callable[[float], None] = time.sleep
     dry_run: bool = False
+    # ---- Phase 4 auth 接缝（auth-framework §8；纯附加/默认关闭 → Phase 1-3 venue 零回归）----
+    # OA-fallback 总开关（§8.1）：no_entitlement 兜底是否派生 oa_fallback 任务。默认 False =
+    # 关闭；CLI 的 pull/grab 装配期置 True（连带注入下面三槽）。既有直建 StageContext 的测试
+    # 与命令保持默认 False → 行为逐字不变（回归锁定安全网）。
+    oa_fallback: bool = False
+    # unpaywall adapter 实例（§8.1 接线点 B `_stage_oa_fallback` 消费）；None = 未装配 → 静默跳过。
+    unpaywall_adapter: UnpaywallAdapter | None = None
+    # 共享 HttpClient（§8.1 接线点 C `_fetch_oa_direct` 的通用 direct stream 复用；离线路径为
+    # None → OA direct fetch 静默跳过）。
+    http: HttpClient | None = None
+    # auth_gated venue 的活跃 SessionHandle 注入通道（venue_id → session）：**runner 独占写**
+    # （健康门建立/refresh 后落此表，§8.2），resolve/fetch 阶段只读消费——传给 adapter 冻结
+    # 协议里自 Phase 1 即存在的 `session` 形参。默认空 → Phase 1-3 venue 恒读到 None（session=
+    # None，与既有逐字一致）。
+    auth_sessions: dict[str, SessionHandle] = field(default_factory=dict)
 
 
 StageOutcome = Literal["done", "skipped"]
@@ -379,7 +409,10 @@ def _stage_resolve(ctx: StageContext, task: sqlite3.Row, report: RunReport) -> S
     if not getattr(adapter, "resolve_offline", False):
         acquire_and_wait(ctx, domain)
 
-    plans = adapter.resolve_assets(route.venue, _paper_stub(ctx, paper), session=None)
+    # auth_gated venue：runner 健康门建立的 session 经 ctx.auth_sessions 注入（§8.2）；
+    # 非 auth_gated / 未装配 auth 时恒 None（Phase 1-3 逐字不变）。
+    session = ctx.auth_sessions.get(venue_id)
+    plans = adapter.resolve_assets(route.venue, _paper_stub(ctx, paper), session=session)
     for plan in plans:
         ctx.repo.plan_asset(paper_id, plan, adapter.adapter_id)
     if str(paper["ingest_state"]) == "metadata_only":
@@ -410,6 +443,11 @@ def _stage_fetch(ctx: StageContext, task: sqlite3.Row, report: RunReport) -> Sta
     asset = ctx.repo.get_asset(asset_id)
     if asset is None:
         raise CrawlerError(ErrorClass.CONFIG, f"fetch references missing asset {asset_id!r}")
+    # OA-fallback direct 分支（§8.1 接线点 C）：unpaywall 兜底 asset 走通用 direct 取回，
+    # **不 re-resolve、不派发 route.fulltext_adapter**（auth 平台）——OA 公共库无凭证直取。
+    # 提前于 route 解析，OA host（第三方域）与 auth 平台域天然隔离（限速/日配额互不占用）。
+    if str(asset["source_adapter"]) == "unpaywall":
+        return _fetch_oa_direct(ctx, task, asset)
     paper = _paper_row(ctx, str(asset["paper_id"]))
     venue_id = str(paper["venue_id"])
 
@@ -428,8 +466,11 @@ def _stage_fetch(ctx: StageContext, task: sqlite3.Row, report: RunReport) -> Sta
     adapter = route.fulltext_adapter
     domain = adapter.domains[0]
 
+    # auth_gated venue：runner 健康门建立/refresh 的 session 经 ctx.auth_sessions 注入
+    # （§8.2；re-resolve 与 fetch 同用一个 session）；非 auth_gated 恒 None（逐字不变）。
+    session = ctx.auth_sessions.get(venue_id)
     # T7c 裁决：现场 re-resolve 取新 plan，同步 asset 行后按新 plan 执行（勿复用旧 url）。
-    plans = adapter.resolve_assets(route.venue, _paper_stub(ctx, paper), session=None)
+    plans = adapter.resolve_assets(route.venue, _paper_stub(ctx, paper), session=session)
     plan = _match_plan(plans, asset)
     ctx.repo.refresh_asset_plan(asset_id, url=plan.url, auth_needed=plan.auth_needed.value)
 
@@ -438,7 +479,7 @@ def _stage_fetch(ctx: StageContext, task: sqlite3.Row, report: RunReport) -> Sta
     io = PartFileIO(ctx.config.data_dir / "tmp", asset_id)
     started = time.monotonic()
     try:
-        result = adapter.fetch_asset(plan, io, session=None)
+        result = adapter.fetch_asset(plan, io, session=session)
         if not result.ok:
             raise CrawlerError(
                 result.error_class or ErrorClass.TRANSIENT,
@@ -496,6 +537,177 @@ def _stage_fetch(ctx: StageContext, task: sqlite3.Row, report: RunReport) -> Sta
         stage="fetch",
         domain=domain,
         url=plan.url,
+    )
+    return "done"
+
+
+# OA 第三方 host 保守默认限速（=1 req/2s）；`Config.oa_fallback_rate_rpm` 可覆盖（§8.1）。
+_OA_FALLBACK_DEFAULT_RPM = 30
+
+
+def _fetch_oa_direct(ctx: StageContext, task: sqlite3.Row, asset: sqlite3.Row) -> StageOutcome:
+    """OA-fallback 兜底 asset 的**通用 direct 取回**（§8.1 接线点 C）。
+
+    **不经 route.fulltext_adapter**（auth 平台无 session 即 AuthRequired）：unpaywall 的 OA
+    副本是第三方公共库 PDF 直链，用共享 `HttpClient` 无凭证流式取回。复用 fetch 主路径的三件
+    强制原语——`PartFileIO` 原子写 / `validate_pdf_magic` 魔数校验 / `finalize_fetch` 组合
+    事务记账（一个不绕过）。OA host 保守限速桶自动注册（`Config.oa_fallback_rate_rpm` 默认
+    30 rpm；`register` 幂等取最保守），与 auth 平台域天然隔离（日配额只数 auth 平台域，§8.3）。
+    """
+    asset_id = str(asset["id"])
+    # §5.3 幂等跳过（与 `_stage_fetch` 主路径一致）：OA 副本已 fetched 且文件校验合格 → 跳过，
+    # 不因 --force/再入队真实重下（OA 分支先于主路径的 fetched 判定，故此处独立复制该检查）。
+    if str(asset["state"]) == "fetched" and fetched_file_ok(asset):
+        log_event("INFO", "skipped", stage="fetch", asset_id=asset_id)
+        return "skipped"
+    http = ctx.http
+    if http is None:
+        # 未注入共享 client（离线路径/未装配）→ 静默跳过，不误报失败。
+        log_event(
+            "INFO", "oa direct fetch skipped (no http client)", stage="fetch", asset_id=asset_id
+        )
+        return "skipped"
+    task_id = str(task["id"])
+    url = str(asset["url"])
+    host = urlsplit(url).hostname or urlsplit(url).netloc or url
+    paper = _paper_row(ctx, str(asset["paper_id"]))
+    venue_id = str(paper["venue_id"])
+
+    rpm = float(getattr(ctx.config, "oa_fallback_rate_rpm", _OA_FALLBACK_DEFAULT_RPM))
+    ctx.limiter.register(
+        host,
+        RatePolicy(
+            requests_per_minute=rpm,
+            burst=1,
+            source_note="OA-fallback direct fetch 保守默认 [Config.oa_fallback_rate_rpm]",
+        ),
+    )
+    wait = acquire_and_wait(ctx, host)
+    rate_wait_ms = round(wait * 1000)
+
+    io = PartFileIO(ctx.config.data_dir / "tmp", asset_id)
+    started = time.monotonic()
+    try:
+        bytes_written, sha256_hex = io.write_stream(http.stream(url))
+        if bytes_written <= 0:
+            raise CrawlerError(ErrorClass.INTEGRITY, "empty OA download (0 bytes)")
+        if not validate_pdf_magic(io.part_path):
+            raise CrawlerError(ErrorClass.INTEGRITY, "OA copy lacks %PDF- magic")
+        # OA 副本恒 pdf（身份 (paper,pdf,<oa版>)）；落位复用主路径 `_asset_final_path`。
+        # ★已知限制（Phase 4 债务，MINOR-2）：`_asset_final_path` 的 pdf 落位路径
+        # `data/pdf/{venue}/{year}/{paper}.pdf` **不含 version**（design/06 §4 布局）——故本 OA
+        # 副本（version=oa 串）与日后同 paper 的平台 pdf（version=None）**共享同一文件路径**，
+        # 后取回者覆盖前者、且 asset 行 sha 与磁盘可不一致（verify 潜在冲突）。当前 OA 兜底仅在
+        # 平台无权（no_entitlement，无平台 pdf 落盘）时触发，路径实际空闲、无冲突；design/06
+        # 层的 version 化落位缺口记入 Phase 4 债务档（T8 报告）。
+        final_path = _asset_final_path(
+            ctx.config, venue_id, paper, AssetPlan(kind=AssetKind.PDF, url=url)
+        )
+    except Exception as exc:
+        elapsed_ms = round((time.monotonic() - started) * 1000)
+        io.abort()
+        error_class = exc.error_class if isinstance(exc, CrawlerError) else ErrorClass.TRANSIENT
+        ctx.repo.add_fetch_log(
+            asset_id=asset_id,
+            task_id=task_id,
+            domain=host,
+            url=url,
+            http_status=None,
+            bytes_=0,
+            elapsed_ms=elapsed_ms,
+            rate_wait_ms=rate_wait_ms,
+            error_class=error_class.value,
+        )
+        raise
+    elapsed_ms = round((time.monotonic() - started) * 1000)
+
+    io.commit(final_path)
+    ctx.repo.finalize_fetch(
+        asset_id,
+        file_path=str(final_path),
+        bytes_=bytes_written,
+        sha256=sha256_hex,
+        fetch_log_row=FetchLogRow(
+            task_id=task_id,
+            domain=host,
+            url=url,
+            http_status=None,
+            bytes_=bytes_written,
+            elapsed_ms=elapsed_ms,
+            rate_wait_ms=rate_wait_ms,
+            error_class=None,
+        ),
+    )
+    log_event(
+        "INFO",
+        f"oa direct fetched {bytes_written} bytes",
+        task_id=task_id,
+        venue=venue_id,
+        stage="fetch",
+        domain=host,
+        url=url,
+    )
+    return "done"
+
+
+def _stage_oa_fallback(ctx: StageContext, task: sqlite3.Row, report: RunReport) -> StageOutcome:
+    """第七 handler oa_fallback：no_entitlement 的 unpaywall OA 兜底（§8.1 接线点 B）。
+
+    UnpaywallRecord→AssetPlan 规格化经 unpaywall adapter 自身的 `resolve_assets`（复用其
+    select_pdf_location + 精确版本串 + landing-only 观测的既有逻辑；A-M4：绝不直传 lookup()
+    的 record 当 AssetPlan）。产 OA pdf 直链 → `plan_asset(source_adapter='unpaywall')`（独立
+    身份 (paper,pdf,<oa版>)，与原平台 asset (paper,pdf,None) 并存不覆盖）→ enqueue 一个 fetch
+    子任务（→ 接线点 C `_fetch_oa_direct`）。无 unpaywall 装配 / DOI 未收录 / 无 PDF 直链 →
+    done（landing-only 不下载，AC-4.3"若存在"）。
+    """
+    params = _params(task)
+    doi = str(params["doi"])
+    paper_id = str(params["paper"])
+    task_id = str(task["id"])
+    ua = ctx.unpaywall_adapter
+    if ua is None:
+        log_event(
+            "INFO",
+            "oa_fallback skipped (no unpaywall adapter)",
+            task_id=task_id,
+            stage="oa_fallback",
+        )
+        return "skipped"
+
+    venue_id = _task_venue(task)
+    venue = ctx.registry.get(venue_id)
+    paper = _paper_row(ctx, paper_id)
+    stub = _paper_stub(ctx, paper)
+
+    # unpaywall API 域独立桶（api.unpaywall.org，5 req/s）——与 auth 平台域/OA host 皆隔离。
+    ctx.limiter.register(ua.domains[0], ua.default_rate)
+    acquire_and_wait(ctx, ua.domains[0])
+    plans = ua.resolve_assets(venue, stub)  # 规格化 AssetPlan 列表（DOI 未收录/无直链 → 空）
+    oa_plan = next(
+        (p for p in plans if p.kind is AssetKind.PDF and p.url_strategy is UrlStrategy.DIRECT),
+        None,
+    )
+    if oa_plan is None:
+        log_event(
+            "INFO",
+            "oa_fallback: no OA pdf direct link (landing-only or not indexed)",
+            task_id=task_id,
+            venue=venue_id,
+            stage="oa_fallback",
+            doi=doi,
+        )
+        return "done"
+
+    new_asset_id = ctx.repo.plan_asset(paper_id, oa_plan, "unpaywall")
+    parent_id = str(task["parent_id"]) if task["parent_id"] is not None else None
+    ctx.queue.enqueue("fetch", venue_id, {"asset": new_asset_id}, parent_id=parent_id)
+    log_event(
+        "INFO",
+        f"oa_fallback: OA asset planned + fetch enqueued (version={oa_plan.version})",
+        task_id=task_id,
+        venue=venue_id,
+        stage="oa_fallback",
+        doi=doi,
     )
     return "done"
 
@@ -568,6 +780,7 @@ _STAGE_HANDLERS: dict[str, Callable[[StageContext, sqlite3.Row, RunReport], Stag
     "enumerate": _stage_enumerate,
     "resolve": _stage_resolve,
     "fetch": _stage_fetch,
+    "oa_fallback": _stage_oa_fallback,  # 第七 handler（§8.1；默认关闭，仅 oa_fallback 派生）
     "extract": _stage_extract,
     "ingest": _stage_ingest,
 }

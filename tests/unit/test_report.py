@@ -74,6 +74,23 @@ def test_render_markdown_counts_table_shows_all_four_numbers() -> None:
     assert "跳过" in md
 
 
+def test_no_entitlement_row_shown_only_when_nonzero() -> None:
+    """auth-framework §8.5：no_entitlement 独立计数——仅在 >0 时加一行（不污染零值报告）。"""
+    zero = _report(succeeded=1).render_markdown()
+    assert "无订阅权限" not in zero  # 默认 0：整行省略
+
+    with_ne = _report(succeeded=1, no_entitlement=3).render_markdown()
+    assert "| 无订阅权限 | 3 |" in with_ne
+
+
+def test_no_entitlement_field_defaults_zero_and_survives_save_roundtrip(tmp_path: Path) -> None:
+    """字段默认 0（既有构造点零改动）；落盘 history.jsonl 后可原样读回。"""
+    assert _report().no_entitlement == 0
+    _report(no_entitlement=2).save(tmp_path)
+    line = (tmp_path / "history.jsonl").read_text(encoding="utf-8").strip()
+    assert json.loads(line)["no_entitlement"] == 2
+
+
 # ---------------------------------------------------------------------------
 # render_markdown：dry-run 预览行的两形态
 # ---------------------------------------------------------------------------

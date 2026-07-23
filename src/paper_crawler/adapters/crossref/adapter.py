@@ -221,6 +221,25 @@ class CrossrefAdapter(AdapterBase):
                 return  # 终止：items 空（深翻到底）或无续页游标
             cursor = page.next_cursor
 
+    # -- lookup（单篇 DOI → PaperStub；grab 命令用）----------------------------------------
+
+    def lookup(self, doi: str) -> PaperStub | None:
+        """`GET /works/{doi}` → `PaperStub`（`grab` 命令的单篇元数据 lookup）。
+
+        404（DOI 未收录）归一为 `None`（正常空结果，非异常——同 unpaywall `lookup` 的
+        GONE→None 口径）；缺 title/DOI 亦 `None`（无强合并锚点/无稳定身份不造 stub）。其余
+        错误状态（4xx→config / 5xx→transient / 畸形 JSON→parse）经 `HttpClient`/`parse`
+        原样 raise。返回的 stub 交 `MergeEngine.ingest(source='crossref')` 建最小 paper 行。
+        """
+        try:
+            data = self._client().get_bytes(self._work_url(doi))
+        except CrawlerError as exc:
+            if exc.error_class is ErrorClass.GONE:
+                return None
+            raise
+        record = parse.parse_single_work(data)
+        return parse.to_paper_stub(record) if record is not None else None
+
     # -- healthcheck（固定 DOI title 比对）--------------------------------------------------
 
     def healthcheck(self, session: SessionHandle | None = None) -> HealthReport:

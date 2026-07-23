@@ -40,6 +40,9 @@ class RunReport:
     failed: int = 0
     blocked: int = 0
     skipped: int = 0
+    # 无订阅权限的独立终态（auth-framework §8.5）：预期内、**不计失败率**——单列一行，
+    # 与 failed/blocked/skipped 并列（AC-4.3；OA-fallback 另行呈现落盘的 OA 副本）。
+    no_entitlement: int = 0
     planned_downloads: int = 0
     planned_bytes: int = 0
     # 每项形如 {"task_id": ..., "stage": ..., "error_class": ..., "msg": ...}。
@@ -68,6 +71,9 @@ class RunReport:
             f"| 阻塞 | {self.blocked} |",
             f"| 跳过 | {self.skipped} |",
         ]
+        # no_entitlement 独立呈现（§8.5）：仅在发生时加一行，不污染既有零值报告的渲染。
+        if self.no_entitlement > 0:
+            lines.append(f"| 无订阅权限 | {self.no_entitlement} |")
 
         if self.planned_downloads > 0 or self.planned_bytes > 0:
             mb = self.planned_bytes / _BYTES_PER_MB
