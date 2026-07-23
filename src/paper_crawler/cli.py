@@ -1465,6 +1465,8 @@ def _format_config_value(layer: ConfigLayer) -> str:
         return _mask_email(value)
     if isinstance(value, tuple):  # paths.venues_dirs
         return ", ".join(str(entry) for entry in value) if value else "(none)"
+    if isinstance(value, dict):  # auth.active_profile（platform→profile 映射，非敏感）
+        return ", ".join(f"{k}={v}" for k, v in sorted(value.items())) if value else "(none)"
     return redact(str(value))
 
 

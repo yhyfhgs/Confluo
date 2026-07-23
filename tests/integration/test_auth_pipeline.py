@@ -202,12 +202,15 @@ def _setup(
     n_papers: int = 1,
     seed_fetch_logs: int = 0,
     id_scheme: str = "doi",
+    config_extra: str = "",
     overrides: dict[str, object] | None = None,
 ) -> SimpleNamespace:
     home = tmp_path / "home"
     venues = home / "venues"
     venues.mkdir(parents=True)
-    (home / "config.toml").write_text('[paths]\nvenues_dirs = ["venues"]\n', encoding="utf-8")
+    (home / "config.toml").write_text(
+        '[paths]\nvenues_dirs = ["venues"]\n' + config_extra, encoding="utf-8"
+    )
     (venues / f"{_VENUE}.yaml").write_text(
         yaml.safe_dump(
             {
@@ -438,8 +441,27 @@ def test_daily_quota_reached_blocks(tmp_path: Path) -> None:
 
 
 def test_default_daily_cap_is_200() -> None:
-    """默认日配额 = 200（auth-framework §8.3 / 04 §4）。"""
+    """默认日配额 = 200（auth-framework §8.3 / 04 §4；= runner getattr 兜底常量）。"""
     assert _DEFAULT_AUTH_DAILY_CAP == 200
+
+
+def test_runner_reads_real_config_field_not_getattr_default(tmp_path: Path) -> None:
+    """对照测试（controller 令）：Config 有真实字段（config.toml [auth].daily_cap=3）时，runner
+    读到真实值 3 而非 getattr 兜底默认 200——达 3 即 BLOCKED（若走默认 200 则不会阻塞）。"""
+    auth_mock = _AuthGatedMock(fetch_mode="ok")
+    env = _setup(
+        tmp_path,
+        auth_mock=auth_mock,
+        n_papers=1,
+        seed_fetch_logs=3,
+        config_extra="[auth]\ndaily_cap = 3\n",  # 经 Config.load 落真实字段，非 object.__setattr__
+    )
+    assert env.config.auth_daily_cap == 3  # 真实字段（非 getattr 默认 200）
+    _enqueue_fetches(env)
+    report = _runner(env, provider=_ok_provider(), clock=_OK_CLOCK()).drain()
+
+    assert report.blocked == 1 and report.succeeded == 0  # 达真实 cap=3 → BLOCKED
+    assert auth_mock.fetch_calls == 0
 
 
 # -- §8.4 challenge → BLOCKED(challenge) + 平台冷却 24h ------------------------

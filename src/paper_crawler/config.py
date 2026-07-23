@@ -56,6 +56,15 @@ def _to_float(raw: object) -> float:
     raise TypeError(f"expected a number, got {type(raw).__name__}")
 
 
+def _to_int(raw: object) -> int:
+    """toml 数值（int/float/str）→ int（auth-framework §8 整数 knob）。`bool` 显式拒绝。"""
+    if isinstance(raw, bool):
+        raise TypeError("expected an integer for a knob field, got bool")
+    if isinstance(raw, int | float | str):
+        return int(float(raw))  # "900"/"900.0"/900.0 → 900（whole-second/count 语义）
+    raise TypeError(f"expected an integer, got {type(raw).__name__}")
+
+
 # --- 分层解析核心（Config.load 与 describe_config 共享，防两条路径漂移）------------------------
 
 
@@ -217,6 +226,50 @@ _FIELD_SPECS: tuple[_FieldSpec, ...] = (
     _FieldSpec(
         "openalex.daily_budget_usd", ("openalex",), "daily_budget_usd", "float", default=0.50
     ),
+    # auth-framework §8 pipeline knobs（非敏感数值/字符串；default 与 runner/stages getattr
+    # 兜底逐一相同，补字段后行为零变化——runner 消费侧不改）。
+    _FieldSpec(
+        "auth.daily_cap",
+        ("auth",),
+        "daily_cap",
+        "int",
+        env="PAPER_CRAWLER_AUTH_DAILY_CAP",
+        default=200,
+    ),
+    _FieldSpec(
+        "auth.health_interval",
+        ("auth",),
+        "health_interval",
+        "int",
+        env="PAPER_CRAWLER_AUTH_HEALTH_INTERVAL",
+        default=20,
+    ),
+    _FieldSpec(
+        "auth.health_max_age_s",
+        ("auth",),
+        "health_max_age_s",
+        "int",
+        env="PAPER_CRAWLER_AUTH_HEALTH_MAX_AGE_S",
+        default=900,
+    ),
+    _FieldSpec(
+        "auth.work_hours",
+        ("auth",),
+        "work_hours",
+        "str",
+        env="PAPER_CRAWLER_AUTH_WORK_HOURS",
+        default="8-23",
+    ),
+    _FieldSpec(
+        "oa_fallback.rate_rpm",
+        ("oa_fallback",),
+        "rate_rpm",
+        "int",
+        env="PAPER_CRAWLER_OA_FALLBACK_RATE_RPM",
+        default=30,
+    ),
+    # active_profile：platform→profile 映射（§3.4；无 env，config-home/项目级 TOML 表）。
+    _FieldSpec("auth.active_profile", ("auth",), "active_profile", "mapping", default=None),
 )
 
 
@@ -250,7 +303,27 @@ def _resolve_field(
             raw = _lookup_toml(doc, spec.table, spec.leaf)
             if isinstance(raw, str) and raw.strip():
                 return _Resolved(raw.strip(), source)
-        return _Resolved(None, "default")
+        # spec.default（既有凭证/email 类恒 None，逐字不变；work_hours 类有非 None 默认）。
+        return _Resolved(spec.default, "default")
+
+    if spec.kind == "int":
+        if spec.env:
+            env_value = os.environ.get(spec.env, "").strip()
+            if env_value:
+                return _Resolved(_to_int(env_value), "env")
+        for doc, source in ((project_doc, "project"), (home_doc, "home")):
+            raw = _lookup_toml(doc, spec.table, spec.leaf)
+            if raw is not None:
+                return _Resolved(_to_int(raw), source)
+        return _Resolved(spec.default, "default")
+
+    if spec.kind == "mapping":
+        # active_profile 类 TOML 表 → dict[str,str]（无 env——映射不走环境变量，§8）。
+        for doc, source in ((project_doc, "project"), (home_doc, "home")):
+            raw = _lookup_toml(doc, spec.table, spec.leaf)
+            if isinstance(raw, dict):
+                return _Resolved({str(k): str(v) for k, v in raw.items()}, source)
+        return _Resolved(spec.default, "default")
 
     if spec.kind == "float":
         for doc, source in ((project_doc, "project"), (home_doc, "home")):
@@ -340,6 +413,16 @@ class Config:
     # OpenAlex 每日 credit 预算上限（美元；aggregators.md §4 伪代码）：保守默认 0.50
     # （≈ 无 key 5000 credits 的一半量级）。非凭证，可入日志/报告。
     openalex_daily_budget_usd: float = 0.50
+    # Phase 4 auth-framework §8 pipeline 运行时 knobs（非敏感，可入日志/报告 + 项目级 config）。
+    # 默认值与 pipeline/{runner,stages}.py 的 getattr 兜底逐一相同——补真实字段后 runner 直接
+    # 读到本值（getattr 兜底降级为防御纵深，仅 Config 缺字段时触发）。
+    auth_daily_cap: int = 200  # §8.3 日配额（fetch 尝试篇次）
+    auth_health_interval: int = 20  # §8.2 每 N 篇强制 healthcheck
+    auth_health_max_age_s: int = 900  # §8.2 健康门老化（15 min）
+    auth_work_hours: str = "8-23"  # §8.6 本地工作时段窗（""/"0-24" 关闭）
+    oa_fallback_rate_rpm: int = 30  # §8.1 OA 第三方 host 保守限速
+    # §3.4 AuthProvider 运行时选择：platform id → profiles.toml 键（`--profile` 可临时覆盖）。
+    auth_active_profile: dict[str, str] | None = None
 
     @classmethod
     def load(cls, home: Path | None = None) -> "Config":
@@ -358,6 +441,15 @@ class Config:
             value = resolved[key].value
             assert isinstance(value, int | float)  # 解析器保证 float 类字段恒有值
             return float(value)
+
+        def _int(key: str) -> int:
+            value = resolved[key].value
+            assert isinstance(value, int) and not isinstance(value, bool)  # int 类恒有值
+            return value
+
+        def _mapping(key: str) -> dict[str, str] | None:
+            value = resolved[key].value
+            return dict(value) if isinstance(value, dict) else None
 
         data_dir = resolved["paths.data_dir"].value
         assert isinstance(data_dir, Path)
@@ -381,6 +473,12 @@ class Config:
             elsevier_insttoken=_str("auth.elsevier.insttoken"),
             wiley_tdm_token=_str("auth.wiley.token"),
             openalex_daily_budget_usd=_float("openalex.daily_budget_usd"),
+            auth_daily_cap=_int("auth.daily_cap"),
+            auth_health_interval=_int("auth.health_interval"),
+            auth_health_max_age_s=_int("auth.health_max_age_s"),
+            auth_work_hours=_str("auth.work_hours") or "8-23",
+            oa_fallback_rate_rpm=_int("oa_fallback.rate_rpm"),
+            auth_active_profile=_mapping("auth.active_profile"),
         )
 
     def ensure_dirs(self) -> None:

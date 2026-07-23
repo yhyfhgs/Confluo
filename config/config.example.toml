@@ -62,3 +62,14 @@ token = ""        # Wiley-TDM-Client-Token（UUID 形态）；env PAPER_CRAWLER_
 [auth]
 # active_profile = { oup_silverchair = "oup@campus", elsevier_sd = "elsevier" }
 # CLI `--profile` 可临时覆盖（在校用直连 / 离校切 elsevier@ezproxy，无需改 VenueSpec）。
+
+# -- auth-framework §8 pipeline 运行时 knobs（非敏感，可入项目级；env PAPER_CRAWLER_* 覆盖）--
+# 占位=默认值；仅 auth_gated venue 生效（open_access/aggregator 不受约束）。
+# daily_cap = 200          # §8.3 日配额（auth 平台域当日 fetch 尝试篇次上限）；env _AUTH_DAILY_CAP
+# health_interval = 20     # §8.2 每 N 篇强制 healthcheck（过期检测，防 401 轰炸）；env _AUTH_HEALTH_INTERVAL
+# health_max_age_s = 900   # §8.2 健康门老化上限（秒，15min）；env _AUTH_HEALTH_MAX_AGE_S
+# work_hours = "8-23"      # §8.6 本地工作时段窗（起含-止不含）；"0-24" 关闭全天放行；env _AUTH_WORK_HOURS
+
+# == OA-fallback（no_entitlement 的 unpaywall 兜底 direct 取回；非凭证）========================
+[oa_fallback]
+# rate_rpm = 30            # §8.1 OA 第三方 host 保守限速（req/min，=1 req/2s）；env PAPER_CRAWLER_OA_FALLBACK_RATE_RPM
