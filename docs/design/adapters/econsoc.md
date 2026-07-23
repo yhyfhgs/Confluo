@@ -38,7 +38,7 @@ updated: 2026-07-24
 | DOI 形态 | `10.3982/{ECTA\|TE\|QE}{n}`（如 `ecta23709`/`te6021`/`qe2297`）；**前缀学会自持、三刊共用，仅 DOI 后缀区分刊** | §1 |
 | 全文 galley | 当前落地 `econometricsociety.org/doi/{DOI}` →302→ `/publications/{journal-slug}/{yyyy}/{mm}/{dd}/{title-slug}`，页标 "Open Access"，含 galley 链 `/publications/.../file/{file}.PDF`；**TE galley HEAD [LIVE] 200 application/pdf accept-ranges**（匿名 OA 确认，Range 支持） | §4 |
 | galley 不可构造 | `{file}`/`{slug}` 非 DOI 可推导 → **resolve 须 GET 落地页抽 galley 链**（§4，`resolve_offline=False`，异于 aaai_ojs 零网络 resolve） | §4 |
-| robots | `econometricsociety.org`：`*` 仅禁 `/admin//ckeditor//temp/`、**具名封 `ClaudeBot`/GPTBot/… `Disallow: /`**（反 AI）；`econtheory.org` 极宽松（仅禁 dotbot、无 AI 封禁）；`qeconomics.org` **TLS 证书过期**（curl 60，停用不直连） | §5 |
+| robots | `econometricsociety.org`：`*` 仅禁 `/admin/ /ckeditor/ /temp/`、**具名封 `ClaudeBot`/GPTBot/… `Disallow: /`**（反 AI）；`econtheory.org` 极宽松（仅禁 dotbot、无 AI 封禁）；`qeconomics.org` **TLS 证书过期**（curl 60，停用不直连） | §5 |
 | license | TE/QE CC BY-NC 4.0；**ECMA CC BY 4.0**（OA 强信号，[UNRESOLVED① 全刊 OA 未终证]，§8） | §1/§3 |
 
 ## 3. 覆盖边界与 venue 分段建模（★核心裁决）
@@ -61,7 +61,7 @@ TE/QE 有两条独立可用枚举通道，需定主/辅：
 
 | | **方案 α（建议）：TE/QE econsoc 自持 OAI 枚举** | 方案 β：三刊全 crossref-by-ISSN |
 |---|---|---|
-| te/qe `metadata_source` | `econsoc`（OAI-PMH，复用 aaai_ojs 收割机） | `crossref`（系统同构，D-005 期刊主干） |
+| te/qe `metadata_source` | `econsoc`（OAI-PMH，复用 `_oai.py` 信封核） | `crossref`（系统同构，D-005 期刊主干） |
 | 一趟收获 | DOI + 摘要(`dc:description`) + rights + 期号，**单次收割齐全** | DOI + 有限元数据（crossref 摘要稀疏） |
 | OAI 角色 | 主枚举 | 降为二级核对 / D-019 锚点校验 |
 | crossref 角色 | 交叉核对（656 vs 735 对账 [UNRESOLVED③]） | 主枚举 |
@@ -95,6 +95,18 @@ ECMA(ECTA) 的 `10.3982` DOI 跨三个托管年代，**fulltext 分三段**：
 - **与 R3/D-007 关系**：本源 DOI 产 identifier 不违反 R3（R3 针对指向他源版本的跨源线索）；ECMA 过刊 Wiley 版与当前自营版**同一 DOI**（前向迁移不改 DOI）→ 天然同一性（非 preprint_of）。JF/SSRN 先行版（不同 DOI/id）经 D-007 `preprint_of` 关联，不自动合并。
 - **meta**（`str→str`）：`('pdf_url', <galley 落地 URL 或 OJS article/view URL>)`（resolve 输入）、`('landing_url', econometricsociety.org/doi/{DOI})`、可选 `('ojs_article_id', …)`（TE/QE）、`('primary_url_domain', …)`（ECMA 分段路由信号，§3.3）。摘要/作者走 PaperStub 一级字段。
 
+### 3.5 venue YAML 字段设计（3 venue；YAML 属实现期交付，本文只给字段——仿 aea.md §7 / nber.md §6）
+
+| venue id | 刊 | kind | ISSN（print / e） | tier | metadata_source | fulltext_source | auth.level |
+|---|---|---|---|---|---|---|---|
+| `ecma` | Econometrica | journal | 0012-9682 / 1468-0262 | T1 | `crossref` | `econsoc` | none |
+| `te` | Theoretical Economics | journal | 1933-6837 / 1555-7561 | T1 | `econsoc` | `econsoc` | none |
+| `qe` | Quantitative Economics | journal | 1759-7323 / 1759-7331 | T1 | `econsoc` | `econsoc` | none |
+
+- **共通字段**：`field: [econ]`；`status: active`；`names.{full, aliases:[ECMA|TE|QE]}`；建议置 `venues/econ/{ecma,te,qe}.yaml`（沿既有 econ 惯例）。
+- **quirks**：TE/QE `{ojs_code: te|qe, oai_base: "https://econtheory.org/ojs", volume_map: {year→volume}}`（OAI 自枚举，§4）；ECMA `{ai_bot_sensitive: true}`（econometricsociety.org 反 AI，§5）——**分段路由无需 quirks**（方向 a 运行时域名判定，§3.3；`fulltext_source` 单值 `econsoc`）。
+- **lint 兼容结论**（D-015 + `tests/unit/test_venue_yaml_lint.py`）：三 venue **均 `kind: journal` 且 ISSN 齐全** → 天然满足"journal 必填 issn" lint，**无需 preprint_channel/prefix-枚举 的 issn 豁免**（对比 nber.md §6：NBER `preprint_channel` + `crossref_prefix` 枚举须 issn 豁免——econsoc 三刊不涉）；`metadata_source`∈{`crossref`,`econsoc`}、`fulltext_source: econsoc` 均为已注册 adapter（econsoc 本 adapter + crossref 聚合），路由 lint 通过；`auth.level: none` 满足开放源等级校验。
+
 ## 4. 各阶段实现方案
 
 - **discover_timeline**：
@@ -116,7 +128,7 @@ ECMA(ECTA) 的 `10.3982` DOI 跨三个托管年代，**fulltext 分三段**：
 | `econometricsociety.org`（landing + galley fetch） | **≥3s/req 下限（controller 预置）；起步建议 5s + 抖动、并发 1、日配额**；连续 CF 挑战即 **BLOCKED** | CF 前置 + **具名封 ClaudeBot 反 AI**（survey §5，CEPR 先例同构）→ 宁慢勿封；survey §6.1 建议 5s 起步对齐 ssrn(D-011) 纪律 |
 | `crossref`（ECMA 枚举） | 系统默认（aggregators polite pool ≥1s） | 委 crossref adapter，非 econsoc 自持桶 |
 
-- **robots 合规**：econometricsociety.org 具名封 ClaudeBot 等（`Disallow: /`），**PaperCrawler UA 不含 ClaudeBot token → 落 `*` 组**，`/doi/`+`/publications/`（OA 全文路径）字面允许、`*` 仅禁 `/admin//ckeditor//temp/`（与本 adapter 路径无交集）。**但学会明确反 AI 爬** → 保守限速 + 诚实 UA + canary 监挑战，**降级信号交 controller 裁决**（连续 challenge → catalog 降级为仅元数据 via crossref，不硬对抗，AC-0.2）。
+- **robots 合规**：econometricsociety.org 具名封 ClaudeBot 等（`Disallow: /`），**PaperCrawler UA 不含 ClaudeBot token → 落 `*` 组**，`/doi/`+`/publications/`（OA 全文路径）字面允许、`*` 仅禁 `/admin/ /ckeditor/ /temp/`（与本 adapter 路径无交集）。**但学会明确反 AI 爬** → 保守限速 + 诚实 UA + canary 监挑战，**降级信号交 controller 裁决**（连续 challenge → catalog 降级为仅元数据 via crossref，不硬对抗，AC-0.2）。
 - **速率口径冲突记录**：controller 预置 ≥3s vs survey §6.1 ≥5s 起步——取 **≥3s 为硬下限、5s+抖动为起步建议值**（CF+反 AI 姿态偏保守），实测 429/challenge 后按纪律调。
 - **绝不依赖的域**：`qeconomics.org`（TLS 证书过期，survey §5，`-k` 仅勘察诊断、adapter 不关校验绕过）；`doi.wiley.com` stateless（403 CF → BLOCKED 停手，过刊段合规正道是 wiley TDM token）。
 - **版权/ToS 姿态**：开放许可（CC BY/BY-NC）个人科研只读、不再分发；不申请任何 token（当前段匿名 OA 足够；过刊段 token 归 wiley adapter）。
@@ -141,7 +153,7 @@ ECMA(ECTA) 的 `10.3982` DOI 跨三个托管年代，**fulltext 分三段**：
 
 ## 7. Fixtures 与测试
 
-- **T1 单元**（网络解耦）：DOI 后缀解析/归一矩阵（`{ecta|te|qe}{n}` 抽刊别+小写化+非法拒绝）；oai_dc 体层解析器（若复用 aaai 共享核则测过滤谓词差异）；OAI 信封层（复用 aaai 共享核测例）；ECMA 分段路由判定（域名→adapter，方向 a：econometricsociety.org/doi.wiley.com/jstor 三态 + crossref link 陈旧 caveat）；volume_map→IssueRef（TE/QE，含 `since` 收窄、界外年拒绝）；galley 链抽取（落地 HTML→`/publications/.../file/{file}.PDF`）。
+- **T1 单元**（网络解耦）：DOI 后缀解析/归一矩阵（`{ecta|te|qe}{n}` 抽刊别+小写化+非法拒绝）；oai_dc 体层薄解析器（**自写**，测 `title/creator*/description/date/identifier→DOI/rights` 抽取 + DOI 后缀过滤谓词）；OAI 信封层复用 `_oai.py`（`test_oai_envelope.py` 已守门，econsoc 仅测自身 `record_parser` 回调接线）；ECMA 分段路由判定（域名→adapter，方向 a：econometricsociety.org/doi.wiley.com/jstor 三态 + crossref link 陈旧 caveat）；volume_map→IssueRef（TE/QE，含 `since` 收窄、界外年拒绝）；galley 链抽取（落地 HTML→`/publications/.../file/{file}.PDF`）。
 - **T3 fixture（覆盖 §6 error_class）**：①TE OAI `ListRecords` oai_dc 正常页（`resumptionToken`、多 `dc:creator`、CC BY-NC `dc:rights`）②续页（token 消费到无）③`noRecordsMatch`→非错误 ④`badResumptionToken`→transient ⑤`badArgument`→config ⑥`idDoesNotExist`→gone ⑦econometricsociety.org 落地页正常（含 galley 链）⑧CF 挑战页 HTML→challenge/BLOCKED ⑨galley url 回 HTML→gone ⑩ECMA crossref works 记录（`resource.primary.URL` 三域名样本，分段路由）⑪畸形 XML→parse。**录制物为公开元数据，剔请求头/cookie**。
 - **T4 集成（MockTransport 全链路）**：TE/QE discover→enumerate(OAI)→resolve(landing→galley)→fetch，DOI 后缀过滤计数断言；ECMA enumerate(crossref)→分段路由(域名)→resolve 断言（econsoc/wiley/界外三分流计数）；当前段重复 enumerate 无重复无遗漏（`identifier('doi')` 去重）。
 - **T5 在线冒烟（≤10 请求）**：TE `Identify` 1 + TE OAI 首页 1 + resumptionToken 续页 1 + TE 单篇 landing→galley→PDF fetch 1 + 当前 ECMA galley HEAD OA 判定 1（闭 [UNRESOLVED①]）+ ECMA 过刊 DOI doi.org HEAD 域名核对 1（闭 [UNRESOLVED②] 抽样）+ robots 复核 1；`MAX_REAL_REQUESTS` 设限。
