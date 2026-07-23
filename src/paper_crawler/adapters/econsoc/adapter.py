@@ -222,13 +222,29 @@ class EconsocAdapter(AdapterBase):
                     bucket=issue.label,
                     skipped_tombstones=page.skipped_tombstones,
                 )
+            skipped_missing_date = 0
             for record in page.records:
                 # membership = DOI 后缀刊别（防御，端点已单刊）；partition = dc:date 年（§4）。
                 if record.journal != code:
                     continue
-                if _record_year(record) != year:
+                record_year = _record_year(record)
+                if record_year is None:
+                    # F2（审查可观测性）：本刊记录但 dc:date 缺失/畸形——年 partition 无法归年、
+                    # 静默丢弃会漏；计数可观测（对齐墓碑先例），**不误归任何年**（保持丢弃）。
+                    skipped_missing_date += 1
+                    continue
+                if record_year != year:
                     continue
                 yield parse.to_paper_stub(record)
+            if skipped_missing_date:
+                log_event(
+                    "DEBUG",
+                    "oai records skipped for missing/malformed dc:date",
+                    venue=venue.id,
+                    stage="enumerate",
+                    bucket=issue.label,
+                    skipped_missing_date=skipped_missing_date,
+                )
             if page.resumption_token is None:
                 return
             url = _oai_resume_url(oai_base, page.resumption_token)
@@ -246,10 +262,17 @@ class EconsocAdapter(AdapterBase):
         统一路径。TE/QE 恒当前段（不分段）。**统一路径**：`GET econometricsociety.org/doi/{DOI}`
         → 抽 galley 链 → PDF `AssetPlan`；CF 质询 body → `Challenged`；无 galley（撤稿/合并/非 OA）
         → 0 资产（非阻塞，ECMA 非全刊 OA 的 no_entitlement 判定归 [UNRESOLVED①] 在线闭合）。
+
+        **F1（审查终态诚实化）**：ECMA 当前段乐观路由的过刊 DOI（crossref 无 primary_url_domain
+        信号 → 恒乐观归 CURRENT），若 econsoc 自营域对其返 404/410（文章实存 Wiley 过刊库、econsoc
+        不托管）→ 现行 `GONE`=「记录消失」误终态。**仅 ecma DOI 的当前段分支**改归 `NO_ENTITLEMENT`
+        （语义="存在但此路径不可取"，触发既有 OA-fallback、不污染合并引擎存在性判断）；TE/QE 的
+        404 保持 GONE（econtheory 自持 OJS 对自己记录有权威）。
         """
         doi = _doi_of(paper)
+        is_ecma = parse.journal_of_doi(doi) == "ecma"
         # ECMA-family（modern 10.3982/ecta ∪ pre-DOI 10.2307）→ 分段路由；TE/QE 不分段（§3.3）。
-        if parse.journal_of_doi(doi) == "ecma" or parse.is_pre_doi(doi):
+        if is_ecma or parse.is_pre_doi(doi):
             segment = parse.classify_ecma_segment(doi, landing_domain=_primary_domain(paper))
             if segment is EcmaSegment.BACKFILE:
                 raise CrawlerError(
@@ -261,7 +284,26 @@ class EconsocAdapter(AdapterBase):
             if segment is EcmaSegment.PRE_DOI:
                 return []  # JSTOR pre-DOI（10.2307）界外零资产，非错误（§6）
         landing = _landing_url(doi)
-        data = self._client().get_bytes(landing)
+        try:
+            data = self._client().get_bytes(landing)
+        except CrawlerError as exc:
+            # F1：仅 ecma 当前段 GONE（404/410）→no_entitlement（过刊实存 Wiley、此路径不可取）。
+            if is_ecma and exc.error_class is ErrorClass.GONE:
+                log_event(
+                    "DEBUG",
+                    "ecma current-segment landing 404/410 remapped GONE->no_entitlement",
+                    venue=venue.id,
+                    stage="resolve",
+                    doi=doi,
+                    ecma_current_404_as_ne=1,
+                )
+                raise CrawlerError(
+                    ErrorClass.NO_ENTITLEMENT,
+                    f"econsoc: ECMA {doi} 当前段自营域不托管（{exc.error_class.value}，疑过刊留 "
+                    "Wiley）→ no_entitlement（存在但不可取，触发 OA-fallback；审查 F1/D-028）",
+                    detail="ecma-current-not-hosted",
+                ) from exc
+            raise
         _guard_challenge(data, landing)
         galley = parse.extract_galley_url(data, base_url=landing)
         if galley is None:

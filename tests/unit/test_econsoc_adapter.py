@@ -154,6 +154,48 @@ def test_enumerate_qe_endpoint_membership_filter() -> None:
     assert {dict(p.identifiers)["doi"] for p in papers} == {"10.3982/qe2297"}
 
 
+# --- F2：dc:date 缺失/畸形记录的年 partition 可观测（审查修复）--------------------------------
+
+_MISSING_DATE_PAGE = (
+    b'<?xml version="1.0"?><OAI-PMH '
+    b'xmlns="http://www.openarchives.org/OAI/2.0/" '
+    b'xmlns:oai_dc="http://www.openarchives.org/OAI/2.0/oai_dc/" '
+    b'xmlns:dc="http://purl.org/dc/elements/1.1/"><ListRecords>'
+    # ① 有 dc:date（2024）的 TE 记录 → 归 2024。
+    b"<record><header><identifier>oai:x:1</identifier></header><metadata><oai_dc:dc>"
+    b"<dc:title>Dated TE Record</dc:title><dc:date>2024-05-02</dc:date>"
+    b"<dc:identifier>https://econtheory.org/ojs/index.php/te/article/view/6021</dc:identifier>"
+    b"<dc:identifier>10.3982/TE6021</dc:identifier></oai_dc:dc></metadata></record>"
+    # ② 缺 dc:date 的 TE 记录 → 无法归年（skipped_missing_date），不误归 2024。
+    b"<record><header><identifier>oai:x:2</identifier></header><metadata><oai_dc:dc>"
+    b"<dc:title>Undated TE Record</dc:title>"
+    b"<dc:identifier>https://econtheory.org/ojs/index.php/te/article/view/6099</dc:identifier>"
+    b"<dc:identifier>10.3982/TE6099</dc:identifier></oai_dc:dc></metadata></record>"
+    b"<resumptionToken/></ListRecords></OAI-PMH>"
+)
+
+
+def test_enumerate_missing_dc_date_counted_and_dropped(monkeypatch: pytest.MonkeyPatch) -> None:
+    events: list[dict[str, object]] = []
+    monkeypatch.setattr(
+        "paper_crawler.adapters.econsoc.adapter.log_event",
+        lambda level, msg, **kw: events.append({"msg": msg, **kw}),
+    )
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(200, content=_MISSING_DATE_PAGE)
+
+    papers = list(
+        _adapter(handler).enumerate_issue(make_econsoc_teqe_venue("te"), _te_issue(2024, "20"))
+    )
+    # 缺 date 记录不误归 2024（被丢弃）；有 date 的 2024 记录保留。
+    assert {dict(p.identifiers)["doi"] for p in papers} == {"10.3982/te6021"}
+    # 可观测：skipped_missing_date 计数经 obslog 暴露（对齐墓碑先例）。
+    missing = [e for e in events if str(e["msg"]).startswith("oai records skipped for missing")]
+    assert len(missing) == 1
+    assert missing[0]["skipped_missing_date"] == 1
+
+
 # --- resolve（TE/QE 落地页抽 galley）---------------------------------------------------------
 
 
@@ -250,6 +292,43 @@ def test_resolve_ecma_pre_doi_jstor_is_zero_assets() -> None:
     plans = _adapter(handler).resolve_assets(make_econsoc_ecma_venue(), _stub("10.2307/1912227"))
     assert plans == []
     assert calls == []
+
+
+# --- F1：ECMA 当前段落地 404/410 终态诚实化（GONE→no_entitlement，审查修复）--------------------
+
+
+def test_resolve_ecma_current_404_remapped_to_no_entitlement(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # crossref 无 primary_url_domain → ecma 过刊 DOI 恒乐观归 CURRENT → GET 自营域 404（过刊实存
+    # Wiley、econsoc 不托管）→ 现行 GONE=误终态；仅 ecma 改归 no_entitlement（触发 OA-fallback）。
+    events: list[dict[str, object]] = []
+    monkeypatch.setattr(
+        "paper_crawler.adapters.econsoc.adapter.log_event",
+        lambda level, msg, **kw: events.append({"msg": msg, **kw}),
+    )
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(404, content=b"not found on self-hosted current segment")
+
+    with pytest.raises(CrawlerError) as exc:
+        _adapter(handler).resolve_assets(make_econsoc_ecma_venue(), _stub("10.3982/ecta12058"))
+    assert exc.value.error_class is ErrorClass.NO_ENTITLEMENT
+    assert exc.value.detail == "ecma-current-not-hosted"
+    # 可观测：ecma_current_404_as_ne 计数经 obslog 暴露。
+    remaps = [e for e in events if "remapped GONE->no_entitlement" in str(e["msg"])]
+    assert len(remaps) == 1
+    assert remaps[0]["ecma_current_404_as_ne"] == 1
+
+
+def test_resolve_te_landing_404_stays_gone() -> None:
+    # te/qe 的 404 保持 GONE（econtheory 自持 OJS 对自己记录有权威性）——F1 仅作用于 ecma。
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(404, content=b"withdrawn")
+
+    with pytest.raises(CrawlerError) as exc:
+        _adapter(handler).resolve_assets(make_econsoc_teqe_venue("te"), _stub("10.3982/te6021"))
+    assert exc.value.error_class is ErrorClass.GONE
 
 
 # --- fetch（%PDF 透传 / HTML CF 质询→CHALLENGE / HTML 撤稿→GONE）------------------------------
