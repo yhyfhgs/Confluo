@@ -2,7 +2,7 @@
 title: 架构决策记录（ADR）
 status: approved
 owner: fable5
-updated: 2026-07-23
+updated: 2026-07-24
 ---
 
 # 架构决策记录（Decision Log / ADR）
@@ -227,3 +227,11 @@ updated: 2026-07-23
   5. **敏感凭证物理隔离于仓库（AC-0.3）为不变式**，写入规范总纲。
 - **归属**：**T2 扩容**——T2 更名"平台地基件：config 分层加载 + HttpClient status_code + canary 凭证注入"，实现档 **sonnet→opus**；`config/` 三文件 + `config.py` 加载链改造 + `crawler config show` 归 T2 Files。config.py 全部改动 T2 独占（T1a/T1b 零触）。
 - **影响**：新建 `docs/design/10-config-layout.md`（status draft，纳入 W0 复审范围）；plan §4 T2 卡扩容、§6 模型表 T2 sonnet→opus；INDEX 登记新文档（合并时 controller）。既有 config.py 加载优先级（显式 home > `$PAPER_CRAWLER_HOME` > `~/.paper-crawler`）保持，项目级 `./paper-crawler.toml` 为**新增非敏感层**，纯附加不破坏既有家目录 config。
+
+## D-026 dblp robots 路径级读法：同后缀通配词按最长匹配前缀判定（ADR 化）
+
+- 状态：accepted · 日期：2026-07-24
+- **背景**：dblp.org `/robots.txt`（[LIVE] 2026-07-22，D-021 增量复核首次实测）对同一 `xml` 后缀词在不同路径前缀下给出相反判定——顶层 `Allow: /xml`（`/xml/dblp.xml.gz` 全量 dump 所在前缀）、`Allow: /db`（含 `/db/conf/**/*.xml` per-conference 卷目录，dblp adapter 主枚举路径）与更深的 `Disallow: /rec/{xml,bib,ris,nt,rdf}`（per-record 导出路径；`/rec` 本身落在粗粒度 `Allow` 清单内，但 `/rec/xml` 被更深规则单独禁掉）并存。三类路径的区分此前散落三处独立论证——[aggregators.md §3「DBLP robots 红线」](../design/adapters/aggregators.md)、[dblp/adapter.py 模块顶部合规红线注释](../../src/paper_crawler/adapters/dblp/adapter.py)、D-021 决策 1——但均未提炼出一条可复用的一般性判读原则；[2026-07-23-phase4-report.md §6 开工检查单 #6](../reports/2026-07-23-phase4-report.md) 登记此项待办（"建议后续新源遇到类似 robots 通配歧义时，本条可作为该类判断的可援引先例，登记为独立小节或新 ADR"）。
+- **决策**：同一文件后缀通配词（如 `*.xml`）在不同路径前缀下的 robots 读法不同——判读以最长匹配路径前缀的 Allow/Disallow 为准；官方文档明示的 API/dump 通道（如 dblp XML API、`dblp.xml.gz`）不因后缀通配歧义而误伤；per-record 导出路径 `/rec/xml` 属 Disallow 禁区维持零请求。本原则为后续新源遇到 robots 通配歧义时的可援引先例（AC-0.5"例外需 ADR"精神的延伸）。
+- **依据**：标准 robots.txt 语义为「最长匹配路径前缀优先」（更具体的规则覆盖更泛的规则）；dblp 站点实测正是该语义的一个实例——`Allow: /db、/pid、/pers、/rec、/xml` 是前缀级粗粒度许可，`Disallow: /search、/search/publ、/rec/{xml,bib,ris,nt,rdf}、/db/indices、/cgi-bin、//` 是更深前缀的具体禁区：`/rec` 前缀本身 `Allow`，但 `/rec/xml`（及同级 `/rec/{bib,ris,nt,rdf}`）落在更深的 `Disallow` 规则之下故禁止访问；`/xml`（dump 前缀）与 `/db/**/*.xml`（卷目录前缀）均不落在 `/rec/` 之下，不受该 `Disallow` 影响，维持 `Allow`。三处既有论证按此原则交叉引用（不搬移原文）：①[aggregators.md §3「DBLP robots 红线（D1，高优先）」](../design/adapters/aggregators.md)——站点级 Allow/Disallow 清单原文与"能力面结论"（capabilities 不含 SEARCH）；②[dblp/adapter.py 模块 docstring「合规红线（AC-0.5…）」](../../src/paper_crawler/adapters/dblp/adapter.py)——代码侧承诺"全部请求构造只落在两类允许区路径"（`/db/conf/{acr}/` 索引页与 `/db/conf/{acr}/{slug}.xml` 卷 XML），不出现 `/rec`、`/search` 路径构造；③D-021 决策 1——首次把该 robots 实测从"FAQ 建议"升级为"robots 强约束"、定限速 `≥4s/req`。
+- **影响**：后续新源 adapter 遇到"同一后缀词在不同路径前缀下给出相反 robots 判定"的同类歧义时，可直接援引本条「最长匹配路径前缀优先」原则判读，无需每次重新论证是否构成 AC-0.5 例外；不改变 dblp adapter 现有实现（`/rec/xml`/`/search` 本就从未被访问构造，本条是把既有正确行为背后的判读依据显式化，非行为变更）。

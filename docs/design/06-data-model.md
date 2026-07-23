@@ -2,7 +2,7 @@
 title: 数据模型与入库设计
 status: implemented
 owner: fable5
-updated: 2026-07-21
+updated: 2026-07-24
 ---
 
 # 06 · 数据模型与入库设计
@@ -190,3 +190,9 @@ data/
   - AC-3.1 同一论文经 arXiv 与 Crossref 两路注入后库内一条 paper、两个 identifier；
   - AC-3.2 标题改名的 WP↔刊发版不被自动合并且出现在候审队列；
   - AC-3.3 `verify` 能检出人为制造的三类不一致（丢文件/孤儿文件/哈希不符）并给出正确修复建议。
+
+## 8. 修订记录
+
+| # | 日期 | 修订 | 依据 |
+|---|---|---|---|
+| 1 | 2026-07-24 | **开放修订议题登记（非设计变更）**：`asset` 表落盘路径布局（§4 `data/pdf/{venue_id}/{year}/{paper_ulid}.pdf`）不含 `version`（§2 `asset.version`，如 `publishedVersion`）判别位——OA-fallback 产生的 OA 副本 asset 与原平台 asset（`version=None`）仅靠内部 ULID 区分，版本身份并存但路径本身不可读出版本语义；该并存不覆盖行为已被 `test_no_entitlement_triggers_oa_fallback_direct_fetch` 验证，但设计文档层面此前未显式承认此路径布局缺口。本条**仅登记议题**，不改 §2/§4 既有设计；是否需在路径中纳入 version 判别位留待后续修订评估。 | Phase 4 T7a 发现；[2026-07-23-phase4-report.md §5「asset 路径 version 债务」](../reports/2026-07-23-phase4-report.md) + [AC-4 离线汇总记录 §5「asset 路径 version 债务（→ T8 / design 修订）」](../testing/records/2026-07-23-ac4-acceptance.md)；phase4-report §6 开工检查单 #1② 移交 |
