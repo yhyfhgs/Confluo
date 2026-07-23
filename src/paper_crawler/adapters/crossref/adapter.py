@@ -306,9 +306,7 @@ class CrossrefAdapter(AdapterBase):
         params = {"rows": "0", "facet": f"{field}:*"}
         return f"{_API_ROOT}/{_base_path(mode, key)}/works?{urlencode(params)}"
 
-    def _works_url(
-        self, mode: str, key: str, field: str, frm: str, until: str, cursor: str
-    ) -> str:
+    def _works_url(self, mode: str, key: str, field: str, frm: str, until: str, cursor: str) -> str:
         date_name = _DATE_FIELD_FILTER[field]
         params = {
             "filter": f"from-{date_name}-date:{frm},until-{date_name}-date:{until}",

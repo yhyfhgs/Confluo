@@ -1,0 +1,31 @@
+{
+  "_synthetic": "SYNTHETIC (Phase 5 T1). Shape per Crossref REST /prefixes/{prefix}/works [DOCS]; DOIs [LIVE]-grounded to NBER prefix 10.3386 form 10.3386/w{n}, type=report, no abstract, subject:[] (nber.md §2). Titles/authors constructed. Page: 2 valid records + next-cursor. Proves prefix enumerate drives the identical parse path as by-ISSN (per-record pub_date still maps published-print/online/issued; date-field axis only moves the window filter + facet, not to_paper_stub).",
+  "status": "ok",
+  "message-type": "work-list",
+  "message": {
+    "total-results": 2,
+    "next-cursor": "AoJ4sample4prefix4cursor",
+    "items-per-page": 20,
+    "items": [
+      {
+        "DOI": "10.3386/w30000",
+        "title": ["Monetary Policy and the Term Structure of Interest Rates"],
+        "author": [
+          {"given": "Jane", "family": "Economist", "sequence": "first"},
+          {"given": "John", "family": "Researcher", "sequence": "additional"}
+        ],
+        "type": "report",
+        "published-online": {"date-parts": [[2022, 5]]},
+        "issued": {"date-parts": [[2022, 5]]},
+        "subject": []
+      },
+      {
+        "DOI": "10.3386/w30001",
+        "title": ["Fiscal Multipliers in Deep Recessions"],
+        "author": [{"given": "Ada", "family": "Keynes", "sequence": "first"}],
+        "type": "report",
+        "issued": {"date-parts": [[2022, 6]]}
+      }
+    ]
+  }
+}

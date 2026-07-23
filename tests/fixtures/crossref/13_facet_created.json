@@ -1,0 +1,20 @@
+{
+  "_synthetic": "SYNTHETIC (Phase 5 T1). discover facet response for the date-field=created axis: rows=0&facet=created:* -> message.facets.created.values (created-year -> count) + total-results. Shape per Crossref REST [DOCS]; counts [LIVE]-grounded to SSRN prefix 10.2139 (ssrn.md §2: total ~1.41M, 2024~210K, 2025~250K, 2026(to Jul)~152K). Buckets truncated to a sample. NOTE: intentionally carries ONLY facets.created (no facets.published) to prove the date-field key switch is real (default published parse of this fixture must be empty).",
+  "status": "ok",
+  "message-type": "work-list",
+  "message": {
+    "facets": {
+      "created": {
+        "value-count": 3,
+        "values": {
+          "2024": 210417,
+          "2025": 251908,
+          "2026": 152340
+        }
+      }
+    },
+    "total-results": 1414774,
+    "items-per-page": 0,
+    "items": []
+  }
+}
