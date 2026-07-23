@@ -1,6 +1,6 @@
 ---
 title: Adapter 设计 · Econometric Society（econsoc，实现级）
-status: approved
+status: implemented
 owner: D3
 updated: 2026-07-24
 ---

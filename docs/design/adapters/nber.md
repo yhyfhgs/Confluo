@@ -1,6 +1,6 @@
 ---
 title: Adapter 设计 · NBER Working Papers（实现级）
-status: approved
+status: implemented
 owner: D2
 updated: 2026-07-24
 ---

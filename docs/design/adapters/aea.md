@@ -1,6 +1,6 @@
 ---
 title: Adapter 设计 · AEA（AER + AEJ 四系 + AER:Insights + JEL/JEP，实现级）
-status: approved
+status: implemented
 owner: D2
 updated: 2026-07-24
 ---

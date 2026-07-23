@@ -1,6 +1,6 @@
 ---
 title: Adapter 设计 · SSRN（实现级 · 聚合元数据主路径）
-status: approved
+status: implemented
 owner: D1
 updated: 2026-07-24
 ---

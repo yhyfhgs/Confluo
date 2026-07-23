@@ -2,7 +2,7 @@
 title: 经济学期刊清单
 status: approved
 owner: fable5
-updated: 2026-07-20
+updated: 2026-07-24
 ---
 
 # 经济学期刊
@@ -13,13 +13,13 @@ updated: 2026-07-20
 
 | id | 名称 | 平台/fulltext | ISSN ⚠核验 | DOI 前缀 | auth | 备注 |
 |---|---|---|---|---|---|---|
-| aer | American Economic Review | `aea` | 0002-8282 | 10.1257 | institutional | AEA 自营；AER: Insights 另刊 |
-| ecma | Econometrica | `wiley` | 0012-9682 | 10.3982 | institutional | Econometric Society，Wiley 出版 |
+| aer | American Economic Review | `aea`（supported_since: phase-5） | 0002-8282 | 10.1257 | institutional | AEA 自营；AER: Insights 另刊 |
+| ecma | Econometrica | `wiley`（supported_since: phase-5） | 0012-9682 | 10.3982 | institutional | Econometric Society，Wiley 出版 |
 | jpe | Journal of Political Economy | `uchicago` | 0022-3808 | 10.1086 | institutional | UChicago Press |
 | qje | Quarterly Journal of Economics | `oup_silverchair` | 0033-5533 | 10.1093 | institutional | OUP |
 | restud | Review of Economic Studies | `oup_silverchair` | 0034-6527 | 10.1093 | institutional | OUP（RES 学会） |
 
-## AEA 系列（`aea` adapter，DOI 10.1257）
+## AEA 系列（`aea` adapter，DOI 10.1257，supported_since: phase-5）
 
 | id | 名称 | tier | ISSN ⚠ | 备注 |
 |---|---|---|---|---|
@@ -49,7 +49,7 @@ updated: 2026-07-20
 | jhr | Journal of Human Resources | `uwpress`(⚠平台核) | 0022-166X | 10.3368 | institutional |
 | rand | RAND Journal of Economics | `wiley` | 0741-6261 | 10.1111 | institutional |
 
-## 开放获取 / 学会刊（`econsoc` adapter，无需认证）
+## 开放获取 / 学会刊（`econsoc` adapter，无需认证，supported_since: phase-5）
 
 | id | 名称 | tier | 平台 | ISSN ⚠ | 备注 |
 |---|---|---|---|---|---|

@@ -2,7 +2,7 @@
 title: 预印本/工作论文平台清单与订阅范围
 status: review
 owner: fable5
-updated: 2026-07-20
+updated: 2026-07-24
 ---
 
 # 预印本 / 工作论文平台
@@ -27,7 +27,7 @@ updated: 2026-07-20
 
 > cs.* 全集 40 个子分类清单在核验报告中留档；白名单外分类不建 VenueSpec（防过载），用户可随时按 FR-01 增补。
 
-## 2. SSRN（`ssrn` adapter，T1，Econ/Fin 主源，D-011）
+## 2. SSRN（`ssrn` adapter，T1，Econ/Fin 主源，D-011；supported_since: phase-5）
 
 - 组织：Network → 主题 eJournal（**非嵌套子网**）[VERIFIED]；
 - 本项目默认范围：**FEN**（Financial Economics Network，~30 eJournals：Asset Pricing、Corporate Finance、Market Microstructure、Derivatives、Behavioral Finance、Cryptocurrency…）、**ERN**（Economics Research Network：Econometrics、Development、Behavioral…）；
@@ -43,7 +43,7 @@ updated: 2026-07-20
 - **NEP 邮件列表分类**（订阅 DSL 的 program 维度参照，[VERIFIED] 活跃代码）：nep-fmk（金融市场）· nep-ban（银行）· nep-cba（央行）· nep-cfn（公司金融）· nep-ifn（国际金融）· nep-mst（微观结构）· nep-ecm（计量）· nep-cmp（计算经济）· nep-ain（AI）· nep-isf；
   ⚠ 勘误：`nep-fin` **2006-10 已停更**，勿作为活跃源引用（由 nep-fmk 等接续）。
 
-## 4. NBER（`nber` adapter，T1）
+## 4. NBER（`nber` adapter，T1；supported_since: phase-5）
 
 - 编号：`w{n}`（历史 h/t 前缀已停用）[VERIFIED]；landing `nber.org/papers/w{n}`；
 - **19 个官方 Program**；本项目相关 program 代码 [VERIFIED]：`AP`（Asset Pricing）· `CF`（Corporate Finance）· `EFG`（Fluctuations & Growth）· `IFM`（Intl Finance & Macro）· `ME`（Monetary）；⚠ PE 缩写存两义（Public/Political Economy）未核验，实现期以官网筛选器确认；
