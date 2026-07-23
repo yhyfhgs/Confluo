@@ -148,6 +148,24 @@ def parse_single_work_title(data: bytes) -> str:
     return title
 
 
+def parse_single_work(data: bytes) -> CrossrefRecord | None:
+    """解析 `/works/{doi}` 单条响应为 `CrossrefRecord`；缺 title 或 DOI → `None`。
+
+    `grab` 命令的单篇 lookup 用（与列表页 `parse_works_page` 共用 `_to_record` 字段映射，
+    只是 `/works/{doi}` 的 `message` 本身即 work 对象、非 items 列表）。缺 title/doi →
+    None（同列表页"跳过无标题/无 DOI 记录"的口径：无强合并锚点或无稳定身份不造 stub）。
+    JSON 语法错误 / 顶层缺 `message` 仍经 `_message` 抛 `PARSE`（畸形响应响亮停机）。
+    """
+    message = _message(data)
+    title = _first_title(message.get("title"))
+    if title is None:
+        return None
+    doi = _extract_doi(message.get("DOI"))
+    if not doi:
+        return None
+    return _to_record(message, title=title, doi=doi)
+
+
 # --- PaperStub 转换 --------------------------------------------------------------------------
 
 
@@ -304,6 +322,7 @@ __all__ = [
     "CrossrefRecord",
     "CrossrefWorksPage",
     "parse_facet_years",
+    "parse_single_work",
     "parse_single_work_title",
     "parse_works_page",
     "to_paper_stub",
