@@ -1,6 +1,6 @@
 ---
 title: Adapter 设计 · NBER Working Papers（实现级）
-status: draft
+status: approved
 owner: D2
 updated: 2026-07-24
 ---
@@ -196,5 +196,6 @@ register/alias` 单调收紧取 min。故若把 `back.nber.org` 放进 `domains`
 |---|---|---|---|
 | 1 | 2026-07-24 | 初稿（实现级，status draft）：crossref prefix 模式扩展（enumerate 主干）+ 零网络 resolve（18 月离线窗谓词）+ www/back 双域分桶（back 独立桶避 alias 陷阱）+ 软门 `no_entitlement` 双守卫（红线不绕过）+ RSS watch 通道 + venue 字段设计 + AC-5.2 载体 + JEL/`t`-path 开放题 | [research/site-survey/nber.md](../../research/site-survey/nber.md) [LIVE 2026-07-24] + crossref/unpaywall adapter + auth-framework §8 + elsevier-sd.md 模板 |
 | 2 | 2026-07-24 | **W0 双评审修订轮**（Approve-with-fixes）：§3.1 升格为**全谱参数化枚举扩展规范出处**（★N-1 裁决=YES：crossref 升通用 prefix 枚举源；两轴 enum-key〔issn XOR prefix〕+ date-field〔published\|created，评审实证 parse.py:114 硬绑 published 须泛化〕；消费方 nber〔published〕/ssrn〔created〕）；§6/§9 **N-4 收口**（现码零变更：registry `_lint_issn` 仅 journal 必填 issn、preprint_channel 豁免、identifiers 自由 dict——arxiv 31 venue 实证）+ JEL 缺口相碰号改 N-5 | controller W0 回派（双评审收敛）+ registry.py/types.py/parse.py 实证 |
+| 3 | 2026-07-24 | W0 双评审（A/B 独立实例，2026-07-24）Approve-with-fixes → 修订轮闭合 → controller approved | controller W0 收口 |
 
 Co-Authored-By: Claude Fable 5 <noreply@anthropic.com>

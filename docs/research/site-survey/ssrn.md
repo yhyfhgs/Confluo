@@ -1,6 +1,6 @@
 ---
 title: 站点勘察：SSRN（Elsevier/Cloudflare 高危站 · 聚合 API 优先）
-status: draft
+status: approved
 owner: R0a
 updated: 2026-07-24
 ---

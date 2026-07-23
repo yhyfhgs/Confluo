@@ -1,6 +1,6 @@
 ---
 title: Adapter 设计 · SSRN（实现级 · 聚合元数据主路径）
-status: draft
+status: approved
 owner: D1
 updated: 2026-07-24
 ---
@@ -208,6 +208,7 @@ updated: 2026-07-24
 |---|---|---|---|
 | 1 | 2026-07-20 | 初稿（D-011 双模式 survey 级，status review，owner fable5） | econ-fin-preprints.md [LIVE] 2026-07-20 |
 | 2 | 2026-07-24 | **重写至实现级**（status draft，owner D1）：模式 A 升主路径（crossref 前缀枚举 + openalex enrich，零 SSRN 接触）/ 模式 B 降 opt-in；单 venue + 主题近似过滤 venue 建模；capabilities 集合论证；AC-5 分层草案；DOI 覆盖率量化任务；browser fetch 两案评估。**旧稿浏览器枚举路线作废** | R0a [LIVE 2026-07-24] + controller 预裁决 |
+| 3 | 2026-07-24 | W0 双评审（A/B 独立实例，2026-07-24）Approve-with-fixes → 修订轮闭合 → controller approved | controller W0 收口 |
 
 ## 11. 横切件专章：browser fetch 通道两案评估（评审后 controller 终裁）
 

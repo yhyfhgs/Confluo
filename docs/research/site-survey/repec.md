@@ -1,6 +1,6 @@
 ---
 title: 勘察：RePEc 生态（IDEAS/EconPapers）——角色定位与 adapter 优先级裁决输入
-status: review
+status: approved
 owner: fable5
 updated: 2026-07-24
 ---

@@ -1,6 +1,6 @@
 ---
 title: 勘察：Econometric Society 三刊（ECMA/TE/QE）——平台迁移实测与 adapter 路线
-status: review
+status: approved
 owner: fable5
 updated: 2026-07-24
 ---

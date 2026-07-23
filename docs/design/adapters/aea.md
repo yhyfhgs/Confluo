@@ -1,6 +1,6 @@
 ---
 title: Adapter 设计 · AEA（AER + AEJ 四系 + AER:Insights + JEL/JEP，实现级）
-status: draft
+status: approved
 owner: D2
 updated: 2026-07-24
 ---
@@ -210,5 +210,6 @@ updated: 2026-07-24
 |---|---|---|---|
 | 1 | 2026-07-24 | 初稿（实现级，status draft）：crossref 标准 ISSN 枚举（含摘要，无需 prefix 扩展）+ DOI 双形态容错解析器 + code→venue 8 刊路由 + capabilities 论证（RESOLVE offline 有 / FETCH deferred 无）+ 全文 deferred/BLOCKED（pubs CF challenge，连 JEP OA 亦然的反直觉发现）+ 跨源 WP 兜底（D-007，非 unpaywall）+ browser-fetch 通道交叉引用（不重评）+ 8 venue 命名冲突按 catalog 裁决 + challenge-BLOCKED 边界（沿 wiley）+ 测试/fixture + 验收关联建议 | [research/site-survey/aea.md](../../research/site-survey/aea.md) [LIVE 2026-07-24] + catalog/economics-journals.md + crossref/unpaywall adapter + wiley.md/elsevier-sd.md 模板 + D-006/D-007 |
 | 2 | 2026-07-24 | **W0 双评审修订轮**（Approve-with-fixes）：③ §7 补注 **ISSN 出处分级**（唯 AER/JEP [LIVE] 实证、余 6 仅 catalog [DOC]，实现期在线冒烟负核实）+ **A-3 裁决** pandp 独立 venue 暂缓（不入 8 刊清单，同步 §3.2 路由表/§10 风险条）；④ §1 **auth 层次澄清**（venue `auth.level: institutional` 前瞻声明 vs adapter 本期 `auth_requirement=none`；不触 registry.py:234 lint——仅 venue 低于 adapter 要求时报错） | controller W0 回派 + registry.py:234 实证 |
+| 3 | 2026-07-24 | W0 双评审（A/B 独立实例，2026-07-24）Approve-with-fixes → 修订轮闭合 → controller approved | controller W0 收口 |
 
 Co-Authored-By: Claude Fable 5 <noreply@anthropic.com>

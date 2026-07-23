@@ -1,6 +1,6 @@
 ---
 title: Adapter 设计 · Econometric Society（econsoc，实现级）
-status: draft
+status: approved
 owner: D3
 updated: 2026-07-24
 ---
@@ -203,3 +203,9 @@ ECMA(ECTA) 的 `10.3982` DOI 跨三个托管年代，**fulltext 分三段**：
 - **理由**：R0c [LIVE] 实测 = 前缀所有权（Econometric Society）+ 三刊共用 + ECMA 前向迁移三事实叠加，裸前缀路由在 TE/QE 上系统性误路由、在当前 ECMA 上系统性漏取（Wiley TDM 对自营新 DOI 大概率 no_entitlement）。
 - **影响**：catalog `ecma` 行 `fulltext_source: econsoc`（单值）+ 域名路由分段（当前 OA / 过刊·pre-DOI 段 no_entitlement/skip），`enumerate` 仍 crossref；wiley.md 修正（本次已落）；wiley `parse.py` 移除 10.3982 + `test_wiley_parse.py` 断言翻转（实现期同卡）；econsoc.md §3.3 承载 ECMA 分段主设计。`economics-journals.md` catalog TE/QE 平台注记更新为"econsoc（OJS@econtheory.org/ojs + 合并前端 econometricsociety.org；qeconomics.org 证书过期停用）"。
 - **[UNRESOLVED]**（不阻塞）：① 当前 ECMA 是否全刊 OA（§8 [UNRESOLVED①]，实现期 HEAD 判）；② Wiley→自营切换日（§8 [UNRESOLVED②]，方向 a 不依赖）。
+
+## 10. 修订记录
+
+| # | 日期 | 修订 | 依据 |
+|---|---|---|---|
+| 1 | 2026-07-24 | W0 双评审（A/B 独立实例，2026-07-24）Approve-with-fixes → 修订轮闭合 → controller approved | controller W0 收口 |
