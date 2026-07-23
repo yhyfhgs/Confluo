@@ -18,7 +18,7 @@ updated: 2026-07-24
 ## 1. 定位
 
 - **family**：`auth_gated`（推荐档：**TDM API 优先**，页面 cookie 兜底——第 1→2 档，design/04 §3）。
-- **capabilities**：`RESOLVE | FETCH`——enumerate 走 crossref（DOI 前缀 10.1111 / 10.1002）。**`10.3982` 非全前缀路由键**（2026-07-24 修正）：该前缀为 Econometric Society 自持、ECMA/TE/QE 三刊共用（crossref member 2359），wiley **仅覆盖 ECMA 过刊段** DOI 区间（分段见 [econsoc.md](econsoc.md) §3.3 / D-028 草案）；TE/QE 及**当前** ECMA 走 `econsoc`（裸 `10.3982→wiley` 会误路由 TE/QE、漏取自营新 ECMA）。domains：`api.wiley.com`（TDM 主干；页面兜底 `onlinelibrary.wiley.com`）。
+- **capabilities**：`RESOLVE | FETCH`——enumerate 走 crossref（DOI 前缀 **10.1111 / 10.1002**；`10.3982` **已移除**，2026-07-24 修正）。**`10.3982` 不再由 wiley 持有**：该前缀 Econometric Society 自持、ECMA/TE/QE 三刊共用（crossref member 2359），裸 `10.3982→wiley` 会误路由 TE/QE、漏取自营新 ECMA；ECMA 过刊（doi.wiley.com）→wiley 的归属判定改由 **econsoc 运行时域名路由（方向 a）** 承担（见 [econsoc.md](econsoc.md) §3.3 / D-028 草案），**wiley 侧不再持有 `10.3982` 路由知识**。domains：`api.wiley.com`（TDM 主干；页面兜底 `onlinelibrary.wiley.com`）。
 - **AuthProvider**：`ApiKeyProvider`（kind=`api_key`，backend=`bearer_token`）；token `[auth.wiley].token`（UUID），
   走 Config-slot（auth-framework §3.4 两级凭证模型①，不触 cryptography）。
 - **服务 venue**：JF、Econometrica(ECMA)、RAND Journal、International Economic Review、Mathematical Finance、
@@ -36,7 +36,7 @@ updated: 2026-07-24
   即使持 token，对非订阅内容仍 403（`no_entitlement`）。现状：config/env **无 Wiley token**。
 - **反爬 / robots（[LIVE] 07-20）**：`onlinelibrary.wiley.com` Cloudflare 通用质询（403）；robots 宽松（AI 点名仅
   GPTBot/Google-Extended，孤立 `Crawl-delay: 1` 作用域含糊、保守遵守）；无 TDMRep。**TDM API host `api.wiley.com` 是合规正道**。
-- **ECMA 平台迁移修正（2026-07-24，依据 [econometric-society.md](../../research/site-survey/econometric-society.md) R0c [LIVE 2026-07-24]）**：Econometric Society 拥有 `10.3982` 前缀（三刊共用）；ECMA 已**前向切换**——新刊自营 `econometricsociety.org`（CC BY 4.0，走 `econsoc`）、**仅过刊段（~2010–切换点）留 Wiley**（doi.wiley.com，本 adapter 的**唯一有效覆盖面**）、pre-DOI 段（10.2307）在 JSTOR。R0c 实测：2015 DOI `10.3982/ECTA12058`→doi.wiley.com（TDM link 佐证过刊仍 Wiley）、2026 DOI `10.3982/ECTA23709`→econometricsociety.org 自营 200。故 wiley 对 ECMA 是"部分且正在失效"（PARTIAL & DECLINING），继续把新 ECMA 交 wiley 会 no_entitlement 漏取——路由收窄为"ECMA 且落 Wiley 过刊区间"，分段判定见 econsoc.md §3.3 / D-028 草案。TE/QE 全开放走 `econsoc`（Phase 5）；JF 常有 SSRN 先行版 → ingest 的 `preprint_of` 高频场景（D-007）。
+- **ECMA 平台迁移修正（2026-07-24，依据 [econometric-society.md](../../research/site-survey/econometric-society.md) R0c [LIVE 2026-07-24]）**：Econometric Society 拥有 `10.3982` 前缀（三刊共用）；ECMA 已**前向切换**——新刊自营 `econometricsociety.org`（CC BY 4.0，走 `econsoc`）、**仅过刊段（~2010–切换点）留 Wiley**（doi.wiley.com，本 adapter 的**唯一有效覆盖面**）、pre-DOI 段（10.2307）在 JSTOR。R0c 实测：2015 DOI `10.3982/ECTA12058`→doi.wiley.com（TDM link 佐证过刊仍 Wiley）、2026 DOI `10.3982/ECTA23709`→econometricsociety.org 自营 200。故 wiley 对 ECMA 是"部分且正在失效"（PARTIAL & DECLINING），继续把新 ECMA 交 wiley 会 no_entitlement 漏取——**wiley 侧移除 `10.3982` 路由键**（`_WILEY_DOI_PREFIXES` 仅留 10.1111/10.1002；`is_wiley_doi(doi:str)` 单入参无域名/年代信息、无法判"过刊段"，故取移除非收窄），ECMA 过刊归属改由 econsoc 运行时域名路由（方向 a）判定，分段主设计见 econsoc.md §3.3 / D-028 草案。TE/QE 全开放走 `econsoc`（Phase 5）；JF 常有 SSRN 先行版 → ingest 的 `preprint_of` 高频场景（D-007）。
 
 ## 3. 各阶段实现方案（字段级）
 
@@ -91,7 +91,7 @@ updated: 2026-07-24
 
 ## 6. Fixtures 与测试（token 门控 skip 策略）
 
-- **T-wiley 单元**：DOI 前缀路由（10.1111/10.1002 → 同 adapter；**10.3982 收窄——实现期 `parse.py` 联动后仅 ECMA 过刊段命中，见 §1/§2 迁移修正 + econsoc.md D-028 草案**）；TDM 响应/错误码判定表；双窗口限速器映射
+- **T-wiley 单元**：DOI 前缀路由（10.1111/10.1002 → 同 adapter；**`10.3982` 已从 `_WILEY_DOI_PREFIXES` 移除**——`is_wiley_doi(doi:str)` 单入参无域名/年代信息、无法判"过刊段"，故移除非收窄。**联动**：`tests/unit/test_wiley_parse.py:21,32` 锁死 `is_wiley_doi("10.3982/…") is True` 断言须随移除**同卡翻转**（10.3982 移入非 Wiley 组）；**实现顺序**＝`parse.py` 移除 + `ecma/te/qe` venue YAML 落地**同一实现卡**（`is_wiley_doi` 现零 runtime 调用属**休眠**，落地前无活风险）；见 §1/§2 + econsoc.md D-028 草案）；TDM 响应/错误码判定表；双窗口限速器映射
   （`RatePolicy(6,burst=3)` 的 acquire 序列断言：3 连发 wait=0，第 4 wait≈10s——假时钟精确断言，沿 ratelimit 单测先例）。
 - **T-wiley fixture**：① TDM 成功响应（截断脱敏 token）② 401/403/429 三态 ③ 页面 auth 四件套（cookie 兜底档）。
 - **T-wiley 在线冒烟**（`tests/online/test_wiley_smoke.py`，`-m online`）：**token 门控**——无 token → pytest `skipif`
@@ -113,4 +113,4 @@ updated: 2026-07-24
 | 1 | 2026-07-21 | 初稿（survey 级，status review） | publisher-platforms-econfin.md [LIVE] |
 | 2 | 2026-07-23 | **扩写至实现级 + 纳入本 Phase（D-024）**（status draft）：TDM 客户端规格（httpx + `Wiley-TDM-Client-Token`）+ **双窗口限速表达方案**（结论：单桶 rpm=6/burst=3 可表达，起步 rpm=5/burst=3 保守，无需扩展 ratelimit.py 冻结件；未来多窗口选项记录）+ `[auth.wiley].token` Config-slot + token 门控 skip 策略 + R0 升级活验（端点/头/速率 GitHub 二手确证、token 自助+订阅约束） | [R0 复核 §3](../../research/site-survey/publisher-platforms-p4-recheck.md) [LIVE 2026-07-23] + auth-framework.md + ratelimit.py |
 | 3 | 2026-07-23 | **双评审修订轮**：§4 补日配额口径 **"fetch 尝试篇次"**（A-M5，与 auth-framework §8.3 统一）；no_entitlement 不计 failures（§8.5） | 评审 A A-M5 |
-| 4 | 2026-07-24 | **10.3982 路由键联动修正**（econsoc 详设 D3b）：§1/§2 去除裸 `10.3982→wiley` 全前缀路由，改为"仅 ECMA 过刊段"+ ECMA 前向迁移注记；§6 单测 10.3982 收窄前向引用。**分段主设计见 econsoc.md §3.3 / D-028 草案**；`src/.../wiley/parse.py` `_WILEY_DOI_PREFIXES` 收窄留实现期卡（本次未改码） | [econometric-society.md](../../research/site-survey/econometric-society.md) R0c [LIVE 2026-07-24] |
+| 4 | 2026-07-24 | **10.3982 路由键联动修正 → 移除**（econsoc 详设 D3b；W0 评审 B 实证 `is_wiley_doi(doi:str)` 单入参无法判过刊段、"收窄"不可实现 → controller 终裁移除）：§1/§2 从 `_WILEY_DOI_PREFIXES` 移除 `10.3982`（仅留 10.1111/10.1002）+ ECMA 前向迁移注记；§6 点名 `test_wiley_parse.py:21,32` 断言随移除同卡翻转。ECMA 过刊归属改由 econsoc 域名路由（方向 a）。**分段主设计见 econsoc.md §3.3 / D-028 草案**；`parse.py` 移除 + venue YAML 落地同卡（`is_wiley_doi` 休眠零 runtime 调用），本次未改码 | [econometric-society.md](../../research/site-survey/econometric-society.md) R0c [LIVE 2026-07-24] |
