@@ -155,3 +155,37 @@ ECMA(ECTA) 的 `10.3982` DOI 跨三个托管年代，**fulltext 分三段**：
 - **CF 策略/反 AI 收紧**：econometricsociety.org 具名封 ClaudeBot、当前对 stateless PaperCrawler UA 无挑战——若未来对 `*` 组加挑战，canary 首触即 BLOCKED + catalog 降级为仅元数据（crossref）。canary 周检。
 - **前向迁移持续**（学会可能继续把 Wiley 过刊迁自营）：方向 a 域名路由自动跟随，无需改 config；方向 b 会静默误路由——**再证方向 a 优越**。
 - **OJS/前端平台升级改 URL/schema**：fixture+canary 覆盖；oai_dc 标准协议较 HTML 稳；galley 链抽取选择器（`/publications/.../file/*.PDF`）是 HTML 依赖面、canary 监。
+
+## 9. 裁决记录（决策草案 · 待 controller 并入 decision-log）
+
+> 本节两条为**草案成型文本**（格式仿 [decision-log.md](../../plan/decision-log.md) D-020/D-024），**不改 decision-log.md 本身**——待主 agent/controller 采纳后由其分配正式 D-NNN 号并录入。编号 D-027/D-028 为**建议占位**（decision-log 当前最新为 D-026，单调递增）。
+
+### D-027 草案 · repec Phase 5 出列（降级为 enrich 通道候选，挂 Phase 6 DSL）
+
+- 状态：**proposed（草案）** · 日期：2026-07-24 · 依据：[research/site-survey/repec.md](../../research/site-survey/repec.md)（[LIVE] 2026-07-24 R0c，13 请求）
+- **背景**：Phase 5 兄弟源勘察含 RePEc 生态（ideas/econpapers.repec.org）。R0c 实测判定 RePEc = **分布式书目元数据聚合器、非全文源**（条目=元数据+摘要+链出到源；NBER 条目 [LIVE] 全文链回 nber.org、RePEc 不自托管）。定位落 [aggregators.md](aggregators.md) 谱系里 **openalex/s2 那一档（enrich/补充），非 crossref/dblp（ENUMERATE 主干）**。
+- **决策**：**Phase 5 不建独立 `repec` pull adapter**；降级为**可选 enrich 通道候选**，独家增值项挂 **Phase 6 订阅 DSL 富化**评估。
+- **理由（三点）**：
+  1. **DOI 化系列与 crossref/openalex 重叠增量≈0**（repec.md §5 [LIVE]）：NBER 前缀 10.3386 归 NBER、在 crossref；同 WP 在 openalex（`W4323309095`，`ids={openalex,doi}`，无 repec 键、按 DOI 去重）。凡 DOI 化内容经既有主干即全覆盖。本项目 Phase 5 目标（SSRN/NBER/AEA/Econometric Society）多为 DOI 化或有专源。
+  2. **门控与维护成本**（repec.md §3 [LIVE]）：RePEc API **email 门控**（致信取 access code、无搜索、非批量、保留限流权）；OAI-PMH 官方**自注 "sometimes flaky"**；官方强烈不建议爬 HTML（隐私红线"Email addresses are released under no circumstances"）。取用须走 bulk（FTP/Rsync/OAI ReDIF）、零 HTML 爬——建设/维护成本高而主干价值冗余。
+  3. **独家增值属 enrich 性质**（repec.md §5④⑤ [LIVE]）：① **JEL 分类**（`nbr:nberwo:35506`→D1/J13/J15，crossref/openalex/nber.org **三路皆缺**，经济学检索核心维度、Phase 6 DSL 高价值过滤键）；② **wp↔published 版本关联**（`nbr:nberwo:3210`→"Published in" Oxford Economic Papers，服务 D-007，crossref/openalex 无此策展）；③ 非 DOI 的 WP 长尾（2250+ 机构 archive）。三者均 **enrich 性质、非全文/非目标刊 ENUMERATE 主干** → 挂 **Phase 6** 评估。
+- **定位建议（若未来纳入）**：`role: aggregator-enrich`（沿 aggregators.md openalex/s2 机制，§5.3）——**capabilities 不声明 ENUMERATE/SEARCH/FETCH**；duck-typed `enrich_batch(dois)->list[PaperStub]` + `crawler enrich --source repec` 驱动；产 `(repec, handle)` identifier（`RePEc:{archive}:{series}:{id}`，仅 RePEc 内唯一、**非跨源合并锚点**——跨源仍靠 DOI）+ JEL/versions/citec 入 `meta`；**字段级优先级低位、只补不覆盖**（补 crossref/openalex 空缺）；收割走 bulk ReDIF/OAI，零 HTML。
+- **附带事实**（repec.md §6 [LIVE]）：兄弟源 **NBER/CEPR 在 RePEc**（经 RePEc 取其书目与直建 nber adapter / CEPR 元数据面**重复建设**）；**SSRN 不在 RePEc**（Elsevier 商业源、442KB archives 全表无 "ssrn"——SSRN 覆盖只能靠 `ssrn` 专源，RePEc 补不了）→ 进一步削弱独立 adapter 必要性。handle↔DOI **无内建映射**（NBER 条目页不显 DOI，须外部 crossref join）。
+- **影响**：development-plan Phase 5 `repec` 由"adapter"注记为 **"enrich 通道候选（R0c：主枚举/全文与 crossref/openalex 高度重叠→降级；独家增值＝JEL + wp↔published 版本关联，挂 Phase 6 DSL）"**；catalog 若有 repec 行→`role: aggregator-enrich`/`fulltext: none(links out)`/`enrich_fields: [jel, versions, citec]`。**建议排序：SSRN/NBER 专源优先落地 > RePEc enrich（挂 Phase 6）**。
+- **触发条件（未来纳入）**：项目 venue 清单扩张到"非 DOI 经济学 WP series 长尾"时，以 bulk ReDIF/OAI enrich 通道实现（实现前 live 复核 OAI endpoint 活性与 FTP 结构）。
+- **[PENDING·实现期]**（不阻塞本裁决）：OAI-PMH endpoint live 活性与 flaky 程度；非 DOI WP 长尾规模量级；CitEc API live 形态/配额；JEL 历史覆盖率（近年 WP 有、1989 无，enrich 价值随年代衰减）。
+
+### D-028 草案 · ECMA 年代分段路由原则（10.3982 非全前缀路由 → wiley 侧联动修正）
+
+- 状态：**proposed（草案）** · 日期：2026-07-24 · 依据：[research/site-survey/econometric-society.md](../../research/site-survey/econometric-society.md)（[LIVE] 2026-07-24 R0c，26 请求）
+- **背景**：既有 wiley.md §1/§2 与 `wiley/parse.py` 把 `10.3982` 列为 wiley 的 enumerate/resolve 路由前缀（`_WILEY_DOI_PREFIXES` 含 `10.3982/`、`is_wiley_doi` 裸前缀甄别）。R0c 实测证伪：`prefixes/10.3982` → owner=**The Econometric Society**（crossref member 2359），**ECMA/TE/QE 三刊共用此前缀、仅 DOI 后缀（ECTA/TE/QE）区分**——裸前缀 `10.3982→wiley` 会把 TE/QE（econsoc OA）**误路由到 wiley**。且 ECMA 已**前向迁移**：新刊自营 econometricsociety.org（2026 DOI 实测 200 + CC BY 4.0）、过刊留 Wiley（2015 DOI→doi.wiley.com 403 CF）、pre-DOI 留 JSTOR。
+- **决策**：
+  1. **`10.3982` 前缀归 Econometric Society，非 Wiley；裸前缀路由作废**。正确路由键 = **venue(ISSN) + DOI 后缀（`ECTA` vs `TE`/`QE`）+ 年代/域名**，绝非裸前缀。
+  2. **ECMA fulltext 三段路由**：当前段→`econsoc`（OA，econometricsociety.org 自营）；过刊段→`wiley`（token 档，doi.wiley.com，~2010–切换点）；pre-DOI 段（10.2307/JSTOR，<2010）→**界外**（tier T3 暂缓）。**TE/QE 全程 econsoc（OA）不分段**。
+  3. **分段判定法取方向 a（运行时 per-DOI 域名判归属）**：resolve 时以 DOI 实际落地域名（`doi.org` HEAD `-L` 实时终点，权威）判归属——`econometricsociety.org`=econsoc、`doi.wiley.com`=wiley、`jstor`=界外；crossref `resource.primary.URL` 域名作 pre-filter 提示（**但有陈旧风险**：QE crossref link 仍留遗留 Wiley link——权威信号取实时落地非 crossref 登记）。方向 b（年份粗分）作快速 pre-filter、边界年 [UNRESOLVED] 实现期二分核实。论证详见 §3.3（resolve 本网络绑定→域名判归属边际零成本；自校正随前向迁移；避开未定切换日）。
+- **wiley 侧联动修正范围**（本次 D3b 段③已改文档层，src 层留实现期）：
+  - **文档**：wiley.md §1/§2 去除裸 `10.3982` 路由键、改注"仅 ECMA 过刊段 DOI 区间（分段见 econsoc.md §3.3/本草案），非全前缀路由"+ 迁移注记（2026-07-24，依据 R0c）；frontmatter `updated` → 2026-07-24（**本次段③已落**）。
+  - **代码（实现期卡，本次只报告不改）**：`src/paper_crawler/adapters/wiley/parse.py` `_WILEY_DOI_PREFIXES` 收窄——`10.3982/` **不能裸前缀命中**；`is_wiley_doi` 需加"DOI 后缀=ECTA + 域名/年代=过刊段"复合判别（避免吞掉 TE/QE 与当前 ECMA）。`wiley/adapter.py`+`wiley/__init__.py` docstring 同步。**venues/ 无 10.3982 硬编码**（grep 空、无 ecma/te/qe YAML）。
+- **理由**：R0c [LIVE] 实测 = 前缀所有权（Econometric Society）+ 三刊共用 + ECMA 前向迁移三事实叠加，裸前缀路由在 TE/QE 上系统性误路由、在当前 ECMA 上系统性漏取（Wiley TDM 对自营新 DOI 大概率 no_entitlement）。
+- **影响**：catalog `ecma` 行 `fulltext_source` 年代分段（econsoc 当前/wiley 过刊/jstor pre-DOI），`enumerate` 仍 crossref；wiley.md 修正（段③已落）；wiley `parse.py` 收窄（实现期）；econsoc.md §3.3 承载 ECMA 分段主设计。`economics-journals.md` catalog TE/QE 平台注记更新为"econsoc（OJS@econtheory.org/ojs + 合并前端 econometricsociety.org；qeconomics.org 证书过期停用）"。
+- **[UNRESOLVED]**（不阻塞）：① 当前 ECMA 是否全刊 OA（§8 [UNRESOLVED①]，实现期 HEAD 判）；② Wiley→自营切换日（§8 [UNRESOLVED②]，方向 a 不依赖）。
