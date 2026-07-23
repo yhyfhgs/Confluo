@@ -5,7 +5,7 @@
 可插拔的"插"）。key = adapter_id。
 """
 
-from collections.abc import Iterable, Mapping, Sequence
+from collections.abc import Callable, Iterable, Mapping, Sequence
 from importlib import metadata
 from typing import Literal, Protocol, runtime_checkable
 
@@ -28,6 +28,11 @@ from paper_crawler.types import (
 ADAPTER_ENTRY_POINT_GROUP = "paper_crawler.adapters"
 
 AdapterFamily = Literal["open_access", "auth_gated", "aggregator"]
+
+# cookie 供给函数：auth_gated cookie 档 adapter（如 oup_silverchair）经此把活跃
+# `SessionHandle` 换成 cookie name→value 映射。CLI 在 auth 装配期注入一个懒解析闭包
+# （见 `CookieSupplierConsumer` / `bind_cookie_supplier` / cli._cookie_supplier_for）。
+CookieSupplier = Callable[[SessionHandle], Mapping[str, str]]
 
 
 @runtime_checkable
@@ -148,6 +153,26 @@ class ApiKeyConsumer(Protocol):
 
 
 @runtime_checkable
+class CookieSupplierConsumer(Protocol):
+    """真实 adapter 声明"可注入 cookie 供给函数"的可选协议（duck-typed，沿
+    `HttpClientConsumer` 先例；auth_gated cookie 档引入，oup_silverchair 首个实现）。
+
+    `load_adapters()` 经 entry point 无参实例化 adapter（`_cookie_supplier=None`），无法
+    在构造期注入依赖；实现本协议的 cookie 档 adapter 暴露 `set_cookie_supplier`，供 CLI
+    在 auth 装配期经 `bind_cookie_supplier` 注入一个**懒解析**闭包——闭包捕获 `AuthManager`，
+    真实 fetch 时才按 `session.provider_id` 解析对应 provider → `load_cookies` 解密
+    storage_state → cookie 表（装配期不触发；无凭证配置时不解析、不抛）。
+
+    与 `HttpClientConsumer` 不同：注入的是**cookie 供给函数**而非已装配 client——cookie
+    必须挂在 adapter 内部的**携密专属 client**（凭证隔离红线），绝不复用共享 `HttpClient`
+    （否则随他站请求外泄）；本协议只把"给 session 返 cookie 表"的能力交给 adapter，专属
+    client 的构造与域限定归 adapter 自身。
+    """
+
+    def set_cookie_supplier(self, supplier: CookieSupplier) -> None: ...
+
+
+@runtime_checkable
 class EnrichmentSource(Protocol):
     """补充层富化源的 duck-typed 可选接口（**立于 SourceAdapter 冻结协议之外**，非五
     方法之一；plan §2-5 冻结契约，T6 openalex/s2 引入，沿 `HttpClientConsumer` 先例：
@@ -174,6 +199,23 @@ def bind_http_client(adapters: Mapping[str, SourceAdapter], client: HttpClient) 
     for adapter_id, adapter in adapters.items():
         if isinstance(adapter, HttpClientConsumer):
             adapter.set_http_client(client)
+            injected.append(adapter_id)
+    return injected
+
+
+def bind_cookie_supplier(
+    adapters: Mapping[str, SourceAdapter], supplier: CookieSupplier
+) -> list[str]:
+    """把 cookie 供给函数注入所有实现 `CookieSupplierConsumer` 的 adapter；返回被注入 id 列表。
+
+    不实现该协议的 adapter（无 cookie 档需求者）静默跳过——沿 `bind_http_client` 先例，对
+    未来 cookie 档 adapter 通用（不硬编码 oup 单例）。`supplier` 为懒解析闭包：装配期只注入
+    不调用，真实 fetch 时才解析 provider（见 `CookieSupplierConsumer` docstring）。
+    """
+    injected: list[str] = []
+    for adapter_id, adapter in adapters.items():
+        if isinstance(adapter, CookieSupplierConsumer):
+            adapter.set_cookie_supplier(supplier)
             injected.append(adapter_id)
     return injected
 

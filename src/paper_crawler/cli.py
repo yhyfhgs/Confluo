@@ -63,7 +63,7 @@ from __future__ import annotations
 import contextlib
 import datetime as dt
 import sqlite3
-from collections.abc import Iterator
+from collections.abc import Iterator, Mapping
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Annotated, NoReturn
@@ -72,10 +72,12 @@ import typer
 
 from paper_crawler.adapter import (
     ApiKeyConsumer,
+    CookieSupplier,
     EmailConsumer,
     EnrichmentSource,
     HttpClientConsumer,
     SourceAdapter,
+    bind_cookie_supplier,
     bind_http_client,
     load_adapters,
 )
@@ -105,6 +107,7 @@ from paper_crawler.registry import VenueRegistry
 from paper_crawler.storage.db import Database
 from paper_crawler.storage.repo import Repo
 from paper_crawler.tasks import TASK_STATES, TaskQueue
+from paper_crawler.types import SessionHandle
 from paper_crawler.useragent import build_user_agent
 from paper_crawler.verify import VerifyIssue, verify_store
 
@@ -194,6 +197,33 @@ def _bind_openreview_token_client(
     return client
 
 
+def _cookie_supplier_for(manager: AuthManager) -> CookieSupplier:
+    """构造 OUP（及未来 cookie 档 adapter）的**懒解析** cookie 供给闭包（auth-framework §8.2）。
+
+    闭包捕获 `manager`；仅当**真实 fetch** 触达 adapter 的 `_cookies_for(session)` 时才被调用
+    ——据 `session.provider_id`（runner `ensure_session(provider.provider_id)` 建立该 session
+    的 provider 键）经 `AuthManager.resolve` 拿到对应 provider → `load_cookies` 解密
+    storage_state → httpx cookie jar → `dict`。故装配期不触发（无 session 即不调用）：离线
+    pull（无 auth_gated venue 命中 fetch）与无凭证配置时装配期零解析、不抛 CONFIG。
+
+    provider 无 `load_cookies`（cookie 档 venue 却映射到 api_key 等非 cookie provider）→ 响亮
+    CONFIG（装配/路由缺陷）。cookie 隔离由 adapter 内部专属携密 client 承担，本闭包只返 cookie 表。
+    """
+
+    def _supply(session: SessionHandle) -> Mapping[str, str]:
+        provider = manager.resolve(session.provider_id)
+        load_cookies = getattr(provider, "load_cookies", None)
+        if load_cookies is None:
+            raise CrawlerError(
+                ErrorClass.CONFIG,
+                f"auth provider {session.provider_id!r} 无 load_cookies（cookie 档 venue 须映射 "
+                "cookie_session/sso_flow profile）",
+            )
+        return dict(load_cookies(session))
+
+    return _supply
+
+
 def _assemble_auth_seam(
     config: Config,
     adapters: dict[str, SourceAdapter],
@@ -221,12 +251,15 @@ def _assemble_auth_seam(
     ctx.http = http
     ctx.oa_fallback = True
     active_profiles = getattr(config, "auth_active_profile", None)
-    # T4 审查 MINOR-2 预留接线点：OUP（oup_silverchair）CookieSession adapter 尚未合入 main
-    # （T4 worktree），其 cookie-client seam（`set_cookie_supplier` 等）落地时须把**共享
-    # limiter**（`limiter` = 本 `StageContext.limiter` 同一实例）随 cookie-client 一并传入，
-    # 使 cookie 认证态取回与 pipeline per-stage 限速落到同桶（不放宽速率，沿 s2/openreview
-    # 专属 client 携 `rate_limiter=` 先例）。OUP 合入后在此按其 seam 签名补一行注入即可。
-    return AuthManager(config, active_profiles=active_profiles)
+    manager = AuthManager(config, active_profiles=active_profiles)
+    # OUP（oup_silverchair，已合入 main 且在此装配）及未来 cookie 档 adapter 的 cookie 供给：把
+    # 懒解析闭包注入所有 duck-typed `CookieSupplierConsumer`（`set_cookie_supplier`）。闭包捕获
+    # 上面的 `manager`，仅真实 fetch 时才按 session.provider_id 解析 provider→load_cookies（装配
+    # 期不触发、无凭证配置不抛，见 `_cookie_supplier_for`）。限速不在此层：OUP fetch 由 pipeline
+    # per-stage `acquire_and_wait` 依 default_rate 逐阶段兜住（stages.py `_stage_fetch`）；cookie
+    # 只挂 adapter 内部专属携密 client（凭证隔离红线，绝不复用共享 http/limiter）。
+    bind_cookie_supplier(adapters, _cookie_supplier_for(manager))
+    return manager
 
 
 def _build_env(
