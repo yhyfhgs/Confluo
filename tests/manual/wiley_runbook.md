@@ -38,6 +38,7 @@
 
 1. **选一个已知可取回的 DOI**。理想选**开放获取**的 Wiley 文章（只需 token 连通、不依赖机构订阅），
    或你确有订阅权限的 JF（`10.1111/jofi.*`）/ Econometrica（`10.3982/ECTA*`）单篇。
+   > **注（D-028，2026-07-24）**：`10.3982` 前缀已归 Econometric Society（`econsoc` adapter），wiley 侧不再持该前缀路由；此处 Econometrica 例仍技术有效——因 Wiley 继续托管其**过刊段**（约 2010–迁移点，`doi.wiley.com`）——但当前新刊已迁自营 `econometricsociety.org`、经 wiley 不可取，请选一篇确认落在过刊段的 ECTA DOI（或改用 JF 例更省心）。
 2. 把该 DOI 核准进两处 [PENDING token-verify] 占位（当前为同源占位 `10.1111/jofi.13123`）：
    - `src/paper_crawler/adapters/wiley/adapter.py` 的 `_HEALTHCHECK_DOI`
    - `tests/online/test_wiley_smoke.py` 的 `_SMOKE_DOI`（默认引用前者）

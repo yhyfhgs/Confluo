@@ -213,5 +213,3 @@ updated: 2026-07-24
 | 2 | 2026-07-24 | **W0 双评审修订轮**（Approve-with-fixes）：③ §7 补注 **ISSN 出处分级**（唯 AER/JEP [LIVE] 实证、余 6 仅 catalog [DOC]，实现期在线冒烟负核实）+ **A-3 裁决** pandp 独立 venue 暂缓（不入 8 刊清单，同步 §3.2 路由表/§10 风险条）；④ §1 **auth 层次澄清**（venue `auth.level: institutional` 前瞻声明 vs adapter 本期 `auth_requirement=none`；不触 registry.py:234 lint——仅 venue 低于 adapter 要求时报错） | controller W0 回派 + registry.py:234 实证 |
 | 3 | 2026-07-24 | W0 双评审（A/B 独立实例，2026-07-24）Approve-with-fixes → 修订轮闭合 → controller approved | controller W0 收口 |
 | 4 | 2026-07-24 | **P5-M1 在线核实**：§7 ISSN 出处分级更新——`aej_macro`/`aej_micro`/`aej_applied`/`aej_policy` 经 `api.crossref.org/journals/{issn}` 逐刊核实（200 + title 吻合，4 请求）[DOC]→[LIVE 2026-07-24] 转正（对应 venues/econ/*.yaml notes 同步）；余 `aeri`/`jel` 仍 [DOC]（T5 遗留缺口的另一半，`test_aea_smoke.py` 断言已写未跑，非本批次范围） | P5-M1 crossref journals API [LIVE 2026-07-24]（本 T5 遗留缺口收口批次） |
-
-Co-Authored-By: Claude Fable 5 <noreply@anthropic.com>
