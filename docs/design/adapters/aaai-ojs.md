@@ -2,7 +2,7 @@
 title: Adapter 设计 · AAAI OJS
 status: implemented
 owner: fable5
-updated: 2026-07-22
+updated: 2026-07-23
 ---
 
 # Adapter · `aaai_ojs`
@@ -38,10 +38,10 @@ updated: 2026-07-22
 
 ## 3. 覆盖边界与"届↔OJS issue"建模（★ 核心裁决）
 
-### 3.1 覆盖边界：锚定 2019+，更早届界外
+### 3.1 覆盖边界：`volume_map` 注册 2019+；OJS 实例实测覆盖 2010+（扩容待裁决，见 §10 ★F）
 
 - OAI `Identify.earliestDatestamp = 2020-06-02`（[LIVE]）**不可信为"最早收录年份"**：`datestamp` 是记录入库/修改时间（样本 2021-09-12），非发表日期（同记录 `dc:date=2019-07-21`，Vol.33/AAAI-19）——**已确认下界 = 2019（Vol.33）**，上界 = 当前 2026（Vol.40）。
-- About 页"first published in 1980"是 AAAI proceedings **系列**史，**不等于** `ojs.aaai.org` 这个 OJS 实例把 1980–2018 也迁上来了（`[UNRESOLVED]`，survey §6）。**本 adapter 覆盖范围下界写作 2019 年附近（实现期精确核实）；更早届为界外**，由其他数据源/adapter 负责（旧稿提及 `aaai.org/Library` 静态归档，未勘察），对齐 D-012（DBLP `conf/aaai` 为历史主干 + VenueEra + Wayback 死链兜底）。catalog 口径同步注记此边界。
+- About 页"first published in 1980"是 AAAI proceedings **系列**史，**不等于** `ojs.aaai.org` 这个 OJS 实例把 1980–2018 也迁上来了。**[UNRESOLVED 部分闭合，LIVE 2026-07-23]**：全库 OAI 收割（research/site-survey/aaai-ojs.md §11.3）实测直接取回 **Vol.24–32（2010–2018，9 个届，5049 条活记录）**，`Vol=年份−1986` 公式验证到 Vol.24=2010 无缺口——**"2019 是下界"已被证伪**；已确认下界前移至 **2010（Vol.24）**，`Vol.24` 以下（1980s–2009）未被 100% 穷尽排除（收割止于 89.3%，未及验证是否存在更小卷号），但间接证据（跨度近全量的已扫窗口内无 Vol.24 以下出现、线性关系连续 17 届无异常）倾向支持 Vol.24/2010 即本 OJS 实例真实下界。**本 adapter 当前 `venues/cs_ai/aaai.yaml` 的 `volume_map` 仍只登记 2019–2026（8 个届）——是否扩容纳入 2010–2018 是覆盖范围的架构决策，留待主 agent 裁决（§10）**，本次实测只如实记录发现、不擅自扩容；扩容前，2010–2018 仍按现状经 D-012（DBLP `conf/aaai` 为历史主干 + VenueEra + Wayback 死链兜底）路径处理。
 - **实现期精确核实法（省请求）**：OAI 全量收割后按 `dc:date` 取最小值 —— 比翻 HTML archive（Next-only 无跳页、翻到最早耗大量请求）省得多（survey §6）。
 
 ### 3.2 Issue 建模：★A 届/年聚合 vs OJS issue（方案对比 + 建议）
@@ -89,7 +89,7 @@ updated: 2026-07-22
   - **空态**：OAI `noRecordsMatch` = **非错误**（空记录序列正常完成——arxiv 先例，parse.py 已落地）；空届/空卷同理。
   - **墓碑**：`deletedRecord=persistent`（[LIVE]），`<header status="deleted">` 记录跳过并计数 → obslog debug（arxiv `OaiListPage.skipped_tombstones` 先例，复用）。
   - **⚠ set 过滤不可靠**：`ListSets` 列出 386 个 set（`AAAI:{year}-{trackId}` 或 slug 如 `AAAI:IAAI-DEP`），但 `set=AAAI:2023-11` 单独查返回 `noRecordsMatch`（survey §5.2）——**不假设 ListSets 里的名字都能拿来单独过滤**；实现期若要用 set，先 `ListIdentifiers` 探测某已知 setSpec 是否真的挂记录（⚠ 实现期复核）。
-  - **⚠ IAAI/EAAI 归属**：全库 26185 条含 AAAI 主会 + IAAI + EAAI + symposium；`dc:source` 形如 "…AAAI-19, IAAI-19, EAAI-20…"。主会 venue 是否排除 IAAI/EAAI、它们是否占独立 issue 号，`[UNRESOLVED]`（survey §2.3/§10）——实现期按 `dc:source`/DOI 卷号精确统计并在 §7 锚点表定口径。
+  - **IAAI/EAAI 归属**：全库 26185 条含 AAAI 主会 + IAAI + EAAI + symposium；`dc:source` 形如 "…AAAI-19, IAAI-19, EAAI-20…"。**`[UNRESOLVED] 已闭合，LIVE 2026-07-23`**（research/site-survey/aaai-ojs.md §11.4，17 个届 `dc:source` issue 描述穷尽枚举）：IAAI/EAAI **确实占用独立于主赛道的 issue 号**，但编排方式随时代 4 次演变——①2010–2014（Vol.24–28）三分体制：No.1=AAAI/No.2=IAAI/No.3=EAAI 各自独立；②2015–2017（Vol.29–31）二分体制：仅 No.2=IAAI 独立，EAAI 并入 No.1；③2018–2019（Vol.32–33）归并体制：全部并入同一 issue 号，个体记录不可由 issue 号区分；④2020–2025（Vol.34–39，现行）多 Track + 尾部合并 issue：主赛道拆 10–25 个"Technical Tracks N"，末尾追加 1 个专属 issue 打包 IAAI+EAAI+Special+Student（尾号逐年后移，Vol.39→No.28）。**主会 venue 当前不排除 IAAI/EAAI**（enumerate_issue 的 DOI-卷号过滤本就不区分 track，两者天然随卷号一并收割入库）——若未来要单独排除/标注，需在 §3.3 `meta` 新增 track 归属字段（识别信号：`dc:source` issue 描述文本含 "IAAI"/"EAAI"子串，比 OAI `<header><setSpec>` 更可靠——已实测 576 条 issue 描述含 IAAI/EAAI 但 setSpec 未打标签的反例）。
 - **resolve_assets**（零网络）：读 `paper.meta['pdf_url']`（enumerate 从 `dc:relation` 捕获的 galley view URL）→ 路径 `/view/`→`/download/` 直接构造 download 终态 URL（survey §4：view 302→download，预换可省一跳）→ 单个 `AssetPlan(kind=pdf, url_strategy=direct, auth_needed=none, version=None)`。landing = `article/view/{articleId}`（不物化为 asset，与 arxiv 一致）。**⚠ 多 galley 消歧（复审后修订——resolve 保持真零网络）**：个别文章挂第二 galley（Video/Poster/Slides），oai_dc `dc:relation` 无类型标注——取首个 relation（通常为 PDF）+ 记录级 `dc:format=application/pdf` 佐证；**消歧失败的偶发非 PDF 由 pipeline `%PDF` 魔数校验拦截 → `integrity` 路由（fails-safe，不牵连批次）**。详情页 `citation_pdf_url` 仅作 fixture 对账参考，**不作运行时兜底**（否则违反 resolve 零网络断言——pmlr-B3 同款教训）。实现期核验 relation 顺序（⚠）。
 - **fetch_asset**（流式）：`HttpClient.stream` → `io.write_stream`；`%PDF` 权威校验归 pipeline（冻结分工）。**adapter 职责**：把"PDF url 却回了 HTML 页"嗅探为 `GONE`——覆盖两态：撤稿/不存在，以及**未发布 issue/galley 的 302→`/login` 落地页**（survey §9，见 §6）。复用 arxiv `_gone_guarded_stream` 的 HTML 首字节嗅探模式。
 - **healthcheck**：OAI `Identify` 200（存活基线，匿名、零 token）+ **3 条 GetRecord canary**（§7）比对规整化 `dc:title` + DOI-卷号双字段。REST API 不参与（匿名 403 非健康信号）。
@@ -139,7 +139,7 @@ updated: 2026-07-22
 - **OAI datestamp≠发表日期**（§4 ⚠ 关键点）：是"届不可日期窗化"的根因——枚举窗口/路由策略随 ★A 一并定；canary 监控 `Identify` 存活与 oai_dc 结构。
 - **单届拆分粒度逐年逐 venue 可变**（AAAI 48 issue vs ICWSM 1 issue/年，最新届才拆）：方案 B 把"No.M"降为 per-paper meta 已规避硬编码风险；姊妹 venue 复用本 adapter 时各自 volume_map。
 - **OJS 平台升级改 URL/schema**：fixture + canary 覆盖；oai_dc 是标准协议，较 HTML 选择器稳。
-- **覆盖下界与早年归属**（§3.1 `[UNRESOLVED]`）：实现期 OAI 全量 `dc:date` 取最小值精确核实；早于实测下界的届经 D-012（DBLP/Wayback）另行处理，不纳入本 adapter。
+- **覆盖下界与早年归属**（§3.1，`[LIVE 2026-07-23]` 已核实下界＝2010/Vol.24，非 2019）：全库收割已取代"取最小值精确核实"的原计划——直接实测 `dc:date` 最小值为 2010-07-03（Vol.24）。`volume_map` 是否扩容纳入 2010–2018 待主 agent 裁决（§10）；裁决前，这些届仍经 D-012（DBLP/Wayback）另行处理，不纳入本 adapter 运行时覆盖。
 - **REST API 若未来开放**：本期排除（匿名 403）；如 AAAI 放开匿名 REST，重评是否作为 OAI 的补充清单源（届时走接口仲裁）。
 - **★C OAI 信封泛化的回归风险**：若采纳共享核，arxiv 现有 T4 为守门；未采纳则承认 ~50 行重复，标注待合并。
 
@@ -153,3 +153,34 @@ updated: 2026-07-22
 | ★C OAI 信封层 | **泛化为共享核**（如 adapters/_oai.py：错误码表/墓碑/resumptionToken/信封遍历参数化；arxiv parse.py 改薄封装）。约束：独立重构 commit 先行、arxiv 全量测试守门零回归 | 信封层 100% 同构勘察证实；复制 50 行的漂移风险大于受控重构 |
 | ★D 登录跳转 | **`no_entitlement`**（否决 gone） | "存在但不可匿名取"语义上是权限门非消失；保留 design/05 的 OA fallback 升级路径；主路径 OAI 不遇此态，兜底行罕见 |
 | ★E 验收口径 | **通用 DoD + D-019 锚点表**，不设专属 AC-2.x | 与 neurips/pmlr 同类；acceptance-criteria 不因单 adapter 扩条目 |
+
+## 10. 全库收割实测发现与待裁决事项（2026-07-23，独立预算线任务）
+
+> Phase 2 检查单 #3 → Phase 3 报告 §6 检查单 #8（跨 3 Phase 清账）。234/262 页（89.3%，
+> 22352 条活记录）全库 OAI 收割，方法与完整台账见
+> [research/site-survey/aaai-ojs.md §11](../../research/site-survey/aaai-ojs.md#11-全库收割统计-live-2026-07-23)。
+> §3.1/§4 的 `[UNRESOLVED]` 标注已按下表结论就地更新；本节汇总**需要主 agent 裁决的架构性
+> 后续事项**（本次任务授权范围＝统计与文档，不含裁决本身，AGENTS.md §7）。
+
+**★F 覆盖下界扩容（待裁决）**：实测确认 `ojs.aaai.org` 本 OJS 实例上 **Vol.24–32（2010–2018，
+9 个届，5049 条活记录）与 Vol.33–40 同构可收割**（同一 OAI 端点、同一 DOI 形态
+`10.1609/aaai.v{V}i{I}.{id}`、同一 `Vol=年份−1986` 线性关系）。若裁定纳入：
+- `venues/cs_ai/aaai.yaml` 的 `quirks.volume_map` 需从 8 项扩至 17 项（新增
+  `2010: 24 … 2018: 32`）；
+- `tests/fixtures/aaai/dblp-aaai-anchor.json` 需新增对应 9 行（`dblp_slug` 形如
+  `conf/aaai/aaai2010`）；
+- D-012（DBLP 历史主干 + Wayback 死链兜底）覆盖范围相应收窄；
+- 早期 5 个届（Vol.24–28）的 issue 结构（§4 体制①，固定 3-issue：AAAI/IAAI/EAAI 各一）比
+  近年更简单规整，`resolve_assets`/`enumerate_issue` 现有实现**无需改动**即兼容（DOI-卷号
+  过滤与 pdf_url 构造逻辑与年代无关）。
+- 若不裁定纳入：现状（volume_map 仅 2019–2026）继续有效，本节发现仅作为 catalog/README 层
+  面"该 adapter 技术上可扩展至 2010+"的记录，不产生代码/config 变更义务。
+
+**★G IAAI/EAAI track 标注（待裁决，优先级较低）**：§4 结论已确认 IAAI/EAAI 在 14/17 个届
+占独立 issue 号，可靠识别信号是 `dc:source` issue 描述文本（非 `setSpec`）。若未来产品需求
+要求区分/过滤/单独标注 track 归属（现状：不区分，全部随卷号收割），需在 §3.3 `meta` 新增字段
+（如 `('track', 'iaai'|'eaai'|'main')`，从 `dc:source` 正则抽取）并补测试；本次不产生此实现，
+仅记录信号来源供未来实现参考。
+
+**规模注记**：AAAI-26/Vol.40 本身仍在扫描中途（No.1–24/预期 48+），其活记录数 2136 是**下限
+非终值**；补完预算 ≤30 请求（§11.5）。

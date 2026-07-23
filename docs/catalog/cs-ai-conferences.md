@@ -2,7 +2,7 @@
 title: CS/AI 顶会清单
 status: approved
 owner: fable5
-updated: 2026-07-22
+updated: 2026-07-23
 ---
 
 # CS/AI 顶会
@@ -46,7 +46,7 @@ updated: 2026-07-22
 
 | id | 名称 | tier | 平台/adapter | DBLP key | 备注 |
 |---|---|---|---|---|---|
-| aaai | AAAI | T1 | aaai_ojs（supported_since: phase-2）（OJS 实例覆盖 2019+，更早届界外——D-012 走 DBLP+era） | conf/aaai | 勘误 2026-07-22：archive 为 25 issue/页 Next 翻页（"只显最新届"证伪）；主路径 OAI-PMH（[LIVE] site-survey/aaai-ojs） |
+| aaai | AAAI | T1 | aaai_ojs（supported_since: phase-2）（volume_map **已注册** 2019+，更早届经 D-012 走 DBLP+era） | conf/aaai | 全库收割 [LIVE 2026-07-23]：实测确认 OJS 实例上 2010–2018（Vol.24–32）同构可收割，**是否扩容 volume_map 待裁决**（design/adapters/aaai-ojs.md §10 ★F）；IAAI/EAAI 独立 issue 归属已闭合（同 §4） |
 | ijcai | IJCAI | T1 | ijcai(专用) | conf/ijcai | 主域稳定；2017+ 自出版 |
 
 ## 数据挖掘 / IR / Web（ACM 系，`acm_dl`，**2026 起全 OA** D-013）

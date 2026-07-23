@@ -2,7 +2,7 @@
 title: 平台 → Adapter 映射总表
 status: approved
 owner: fable5
-updated: 2026-07-20
+updated: 2026-07-23
 ---
 
 # 平台 → Adapter 映射总表
@@ -21,7 +21,7 @@ updated: 2026-07-20
 | `cvf` | openaccess.thecvf.com | CVPR、ICCV、WACV | 目录页（静态） | 无 | 2013+ |
 | `acl_anthology` | aclanthology.org + GitHub | ACL、EMNLP、NAACL、COLING、EACL | **GitHub 数据仓库 bulk** | 无 | Anthology ID |
 | `neurips_proceedings` | proceedings.neurips.cc | NeurIPS 正式 | 年页（静态） | 无 | 1987+ |
-| `aaai_ojs` | ojs.aaai.org | AAAI、AIES | OJS（OAI-PMH?） | 无 | archive 默认只显最新届 ⚠ |
+| `aaai_ojs` | ojs.aaai.org | AAAI、AIES | OJS，主路径 **OAI-PMH**（`ListRecords`+`resumptionToken`；REST API 匿名 403 不可用） | 无 | 2019+ 已注册（volume_map），2010–2018 同构可收割待裁决扩容——见 design/adapters/aaai-ojs.md §10 |
 | `acm_dl` | dl.acm.org | KDD、WWW、WSDM、CIKM、SIGIR、RecSys、STOC、SOSP、EC、SIGMOD | DOI 结构 | — | **2026 起全面 OA（D-013）** |
 | `lipics` | drops.dagstuhl.de | ITCS(2017+) | 卷页 + DOI 10.4230 | 无 | OA |
 | `usenix` | usenix.org | OSDI、NSDI | 会话页（静态） | 无 | 全 OA |
