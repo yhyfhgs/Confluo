@@ -48,6 +48,9 @@ oup_silverchair = "paper_crawler.adapters.oup_silverchair.adapter:OupSilverchair
 # T6：enrich 通道（capabilities 空集，无 ENUMERATE/SEARCH/FETCH/RESOLVE，不参与 pull）。
 openalex = "paper_crawler.adapters.openalex.adapter:OpenAlexAdapter"
 s2 = "paper_crawler.adapters.s2.adapter:S2Adapter"
+# Phase 5 T5：aea（auth_gated；RESOLVE-only offline，enumerate 走 crossref D-005；
+# FETCH 本 Phase 不声明——全文域 pubs.aeaweb.org 恒 CF challenge，aea.md §4）。
+aea = "paper_crawler.adapters.aea.adapter:AeaAdapter"
 
 [dependency-groups]
 dev = [
