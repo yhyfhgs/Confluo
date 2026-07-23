@@ -1,6 +1,6 @@
 ---
 title: 认证与会话管理
-status: approved
+status: implemented
 owner: fable5
 updated: 2026-07-23
 ---

@@ -1,8 +1,8 @@
 ---
 title: Auth-Gated 获取模块
-status: approved
+status: implemented
 owner: fable5
-updated: 2026-07-20
+updated: 2026-07-23
 ---
 
 # 04 · Auth-Gated 获取模块

@@ -1,6 +1,6 @@
 ---
 title: 认证框架实现级详设（AuthProvider 四实现 + 凭证库 + CLI + pipeline 接缝）
-status: approved
+status: implemented
 owner: fable5
 updated: 2026-07-23
 ---
