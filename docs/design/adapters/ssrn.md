@@ -162,6 +162,16 @@ updated: 2026-07-24
 - **候补路径评估条件（缺口过大时，阶梯）**：(a) OpenAlex 补枚举无-DOI works（但 openalex 已**收回 ENUMERATE**，aggregators §1，且信用计费——需重评能力面）；(b) RePEc/NBER 交叉（Phase 5 同批，econ WP 书目）；(c) 有限度 SSRN 浏览页 census——**触 Cloudflare，须专门 BLOCKED 处置**，红线下降级/可选。默认不启用。
 - **固有天花板（如实标注）**：本法测「crossref 相对 openalex」覆盖，**非**「crossref 相对 SSRN 真实全库」——后者需 SSRN census（无合规路径）。OpenAlex 自身对 SSRN 的覆盖上界未知，是量化的天花板，记开放问题。
 
+**census 实测记录 [LIVE 2026-07-24]**（P5-M1 在线执行，独立脚本 httpx，非 CI）：
+
+- **方法**：`GET api.openalex.org/works`，`filter=primary_location.source.id:S4210172589` + `sample=1000&seed=42`（OpenAlex 原生随机采样，一举锁定 1000 条固定样本）+ `per-page=200&page=1..5`（5 页翻完整个样本）+ `select=id,doi`（精简载荷）+ `mailto=yhyfhgs@gmail.com`；UA `PaperCrawler/0.1.0 (personal research; mailto:yhyfhgs@gmail.com)`。**`sample`+分页组合验证有效**（未触发退化分支）：5 页全 200 OK、每页 `meta.count=1000` 与请求量吻合、1000 条 `id` 去重后仍为 1000（无重复、无缺漏）——`seed=42` 下确定性覆盖，可复现。
+- **样本量**：N=1000（达标 §9.1 细化目标"N≈1000"）。
+- **DOI 非空率**：869/1000 = **86.9%**（本法定义的 crossref DOI 存在率代理下界）。补充细分（非本判定指标，供参考）：869 条非空 DOI 中 5 条（0.58%）前缀非 `10.2139`（`10.5897`×2/`10.13140`×1/`10.5281`×2——OpenAlex source 收录了少量非-SSRN-DOI 记录，佐证 §4.2 `skipped_non_ssrn` 护栏设计的必要性）；严格 `10.2139` 前缀非空率 = 864/1000 = 86.4%，与主指标差异 0.5pp，不影响判定。
+- **判定**（§9.1 阈值 90%）：**86.9% < 90% → 触发候补阶梯记录**（本次仅记录触发，按红线不执行候补路径评估/实现）。首阶粗估 87%（1.41M/1.63M 全量比）与本次随机采样实测 86.9% 高度吻合，交叉验证粗估合理。
+- **候补路径触发记录**（§9.1 阶梯，按序列出、均未执行）：(a) OpenAlex 补枚举无-DOI works——该能力已收回 ENUMERATE（aggregators §1）+ 信用计费，需重评能力面；(b) RePEc/NBER 交叉核对（Phase 5 同批 adapter 书目）；(c) 有限度 SSRN 浏览页 census——触 Cloudflare 门，红线下降级/可选，默认不启用。**优先级与执行时点留待 controller / 后续任务卡定夺**，本次不评估、不实现，仅完成"触发"侧的忠实记录（按 §9.1 判据要求）。
+- **请求台账**：本项共 7 请求（2 次前置连通性/`sample`+分页形态探测 + 5 次正式采样页 page=1..5），均 200 OK、零 429/5xx、`api.openalex.org` 单域、串行间隔 ≥1.2s。原始响应（5 页 JSON + 汇总统计）存 scratchpad，不入 git。
+- **固有天花板复述**：本次实测口径同 §9.1 原定义——测「OpenAlex 收录 works 中 DOI 挂载率」，非「crossref 相对 SSRN 真实全库」；OpenAlex 自身对 SSRN 覆盖上界未知仍是开放问题，不因本次实测而消解。
+
 ### 9.2 其他风险与开放问题
 
 - **开放问题**（勘察 §8 清单，标注触发层）：① 重取 SSRN `robots.txt` 全文（Disallow 面 + crawl-delay 复核）——**仅模式 B 前置**，元数据层不触；② SSRN RSS/sitemap 作 crossref 外新鲜度源——今日不可验证；③ DOI 覆盖率量化（§9.1）；④ FEN network→聚合过滤映射（§3 子网近似）；⑤ crossref `journal-article` vs `posted-content` 语义差异是否可利用；⑥ 换非-CF-阻断网络对 SSRN 挑战门真实复测（确认 2026-07-20 结论现状）——**模式 B 前置**。
