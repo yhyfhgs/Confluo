@@ -91,4 +91,78 @@ updated: 2026-07-24
 
 - 走既有 `enrich_batch` 通道（aggregators §5.3）+ `crawler enrich --source openalex`：按 DOI 批查 OpenAlex source S4210172589 → 补 `abstract`（crossref 侧 ~70% 缺）、`primary_topic.field`（§3 子网近似过滤依据）、`open_access` 交叉核对。**受 credit 预算熔断**（`meta.cost_usd` 实时核销，aggregators §4）。openalex 位阶低于 crossref（字段级"补缺不覆盖"，§6 优先级表），不推翻 crossref 既有值。
 
-<!-- SECTION-1-4-END -->
+## 5. 限速与预算表（每行带出处）
+
+| 域 / 通道 | 默认策略 | 出处 | 标注 |
+|---|---|---|---|
+| `api.crossref.org`（枚举主干） | 静态 **5 req/s 上限** + 429→`rate_limited` 退避（读 Retry-After 入 detail）；UA 携 `mailto` polite pool | 沿 crossref 既有裁决（`X-Rate-Limit-Limit:10/1s`，留余量） | [LIVE] 07-22（aggregators §5.1） |
+| `api.openalex.org`（enrich） | **每日 credit 预算 + `meta.cost_usd` 实时核销**熔断 | 2026-02 计费制 | [LIVE]/[DOCS]（aggregators §4） |
+| `api.unpaywall.org`（OA-fallback） | 5 req/s 且日总量 < 100k；email 走查询参数（obslog 已脱敏） | 官方 | [DOCS]（aggregators §5.5） |
+| `*.ssrn.com`（**仅模式 B**） | **1 req/5s（= robots crawl-delay 5s）+ 2–5s 抖动 → 有效 5–10s**；并发 1；日配额（默认 100/日，可配）；challenge→BLOCKED+冷却 24h | robots `crawl-delay:5s` | [PRIOR-LIVE] 07-20 |
+
+- **元数据主路径预算 = 零 SSRN 请求**（controller 预裁决 #1）。上表 `*.ssrn.com` 行**仅模式 B 落地后生效**，Phase 5 默认不接触。
+- **UA**：`PaperCrawler/<ver> (personal research; mailto:<user>)`（D-014，全程恒定、绝不伪装浏览器）；`default_rate` 带 `source_note`（`types.RatePolicy` 强制）。
+- **日配额口径 = "fetch 尝试篇次"**（auth-framework §8.3，三处一字不差）：元数据层**无 fetch 阶段**（RESOLVE landing-only、无平台 PDF asset）→ **不占任何日配额**；OA-fallback direct fetch 落**第三方 OA host 桶**（§8.1，不占 SSRN 配额）。模式 B 的 `Delivery.cfm` 取回才计 `papers.ssrn.com` 域配额。
+- **限速审计证据源**：元数据层聚合 API 请求**不入 FetchLog**（design/05 §7 口径：metadata 侧请求证据 = obslog jsonl 逐请求事件）；FetchLog 仅在模式 B fetch 或 OA-fallback direct 取回时落行。
+
+## 6. Challenge 与 BLOCKED 边界（失败模式映射）
+
+**核心不变式：元数据主路径零 SSRN 接触 ⇒ 元数据层永不触发 Cloudflare 挑战。Challenge/BLOCKED 边界只存在于模式 B。**
+
+### 6.1 元数据层失败模式（对齐 HttpClient 冻结错误类 + `status_code`，design/05 §4）
+
+沿 aggregators 逐字（crossref/openalex/unpaywall 三源错误映射，§5.1/5.3/5.5）：429/触顶→`rate_limited`（读 Retry-After）；4xx（filter/前缀语法）→`config`（响亮停机不重试）；5xx / 连接错→`transient`（退避 3 次）；cursor 过期→`transient`（窗口重建 `cursor=*`）；`total>0` 但 items 空→`parse`（canary 标红）；openalex 402/credit 耗尽→`rate_limited` 特化（当日熔断）。**新增 SSRN 专属**：DOI 不匹配 `ssrn\.` 中缀→**非错误**，计 `skipped_non_ssrn` 观测跳过（§4.2 护栏）。
+
+### 6.2 模式 B 失败模式（仅全文层，Cloudflare 语境）
+
+| 现象 | status_code | error_class | 说明 |
+|---|---|---|---|
+| Cloudflare 挑战页（`cf-mitigated: challenge` / "verify you are human" / `cf-chl`） | 403 | `challenge` | `ChallengeDetector.classify`（auth/challenge.py，§11 特征库）→ `Challenged` → **BLOCKED(challenge) + 平台冷却 24h**（auth-framework §8.4）；**绝不破解/绕过/重试**（AC-0.2） |
+| 本环境 TLS 握手 reset（`SSL_ERROR_SYSCALL`，CF 前置域整体不通） | — | 环境障碍 | 本机代理 fake-IP，发生在 UA 发送前、**非 SSRN 判罚**；记 BLOCKED 停止该域后续请求，不换 UA/不绕行（勘察 §4） |
+| `Delivery.cfm` 返 HTML 登录/付费页 | 200/302 | `no_entitlement` | 付费定价内容 → 标记 + OA-fallback（多为 landing-only 无副本，§4.4） |
+| Delivery token 过期（跨批次复用） | — | `config` | **设计违规信号**：resolve/fetch 必须同浏览器上下文同批（§11 约束） |
+
+### 6.3 BLOCKED 硬边界（勘察 §8，红线）
+
+1. **任何对 `*.ssrn.com` 的直连 HTTP 枚举/抓取 = BLOCKED**（2026-07-20 Cloudflare 挑战 + 2026-07-24 环境 TLS 阻断，双独立证据）——元数据层因此**根本不走** SSRN 域。
+2. **内部 `api.ssrn.com` 未文档化端点 = 禁用**（D-014 第 4 条 / AC-0 静态扫描项）。
+3. **全文批量下载 = 无合规路径**；仅模式 B 用户发起单篇、浏览器上下文、限速内、遇挑战即 BLOCKED。
+
+## 7. 测试与 fixture 计划（全离线可判；出处分级 [LIVE]/[DOCS]/合成）
+
+- **T1 单元（零网络）**：① `DOI→abstract_id` 抽取正则矩阵（合法 `10.2139/ssrn.4056799`→`4056799`；非 `ssrn.` 中缀的 10.2139 DOI→护栏拒绝；大小写/前缀经 `normalize_doi` 归一）；② created-date 虚拟桶生成边界（下界起点、上界"今日"截断、**脏未来年 2077/2103 不产桶**）；③ prefix+created-date URL 构造 + cursor 续拉窗口重建（假响应，`next-cursor`→items 空）；④ 复用 `crossref.parse` 的 works→PaperStub 已有覆盖，本 adapter 仅增 prefix-URL 与 SSRN identifier 产出单测。
+- **T3 fixture（脱敏，复用 aggregators crossref/unpaywall fixture 规范）**：① crossref 前缀 works 正常页（**混 journal-article + posted-content 两类型** + 合法 `ssrn.` DOI，证两类全收）；② 空 created 窗（合法空，`total:0`）；③ cursor 两页续拉；④ 前缀 10.2139 下**非-ssrn 中缀** DOI（护栏路径 → `skipped_non_ssrn`）；⑤ **unpaywall SSRN 响应**（`is_oa:true`、`oa_location` 指回 doi.org、`url_for_pdf:null`）→ 断言 `_stage_oa_fallback` **不产 asset**（验证 §4.4"landing-only 净效果 = PDF 命中≈0"）。
+- **模式 B fixture（仅 §11 案 A 落地时补）**：Cloudflare 挑战页（复用 auth-framework §11 challenge fixture，`cf-mitigated`/"Just a moment…" 脱敏）→ `ChallengeDetector` 判 CHALLENGE → `Challenged`→BLOCKED；`Delivery.cfm` token 语义经 browser 假 seam 单测（auth-framework §9/§10）。**案 B 下本组不需**。
+- **T5 在线冒烟（元数据层，授权真实网络，`MAX_REAL_REQUESTS≤5`，零 SSRN 域）**：crossref 前缀单窗口枚举首页 1 + openalex source S4210172589 计数 1 + unpaywall SSRN DOI 1（证 landing-only）——**均非 SSRN 域**。SSRN 站点连通性**永不进 CI/冒烟**（环境 TLS 阻断 + 红线）。
+- **模式 B 真实性验证 = 用户参与 runbook**（`tests/manual/`，换非-CF-阻断网络，records 留痕）——类 D-018 分层：离线 seam/challenge 单测先行 PASS，真实浏览器取回 defer 至可验证环境（§11 案 B）。
+
+## 8. 验收 AC-5 草案（controller 裁决点 #5：按新现实分层改写；写在本文档内，不改 acceptance-criteria.md）
+
+> development-plan 原 DoD：「按 FEN 子网增量拉取 SSRN 近 7 天新工作论文清单并按配额下载」。acceptance-criteria 现 AC-5.1：「按 FEN 子网枚举近 7 天清单成功率 ≥95%；全程限速 ≤1 req/5s（FetchLog 审计）；遇 Cloudflare 挑战正确 BLOCKED」。**按主路径改聚合优先 + 全文降 opt-in 的新现实，分层改写如下（草案，提请 controller 定夺是否回落 AC 本表）**。
+
+| 草案 ID | 层 | 场景 | 通过判据 | 验收形态 |
+|---|---|---|---|---|
+| **AC-5.1a** | 元数据（**CI 可判**） | crossref 前缀近 7 天 created 窗增量枚举 | ① T4 回放 7 收割日（含重叠窗口 + created ~1 日延迟注入）→ abstract_id 清单**无重复无遗漏**（沿 D-018 分层，机制正确性）；② econ/fin **主题近似过滤**一致率 ≥95%（AC-6.3 式：本地过滤 vs OpenAlex field 基准，**非** SSRN 真实子网）；③ **全程零 SSRN 接触**（obslog 无 `*.ssrn.com` 请求）；限速审计经 obslog jsonl（元数据层无 FetchLog） | 离线 T4 + 单次在线冒烟（D-018） |
+| **AC-5.1b** | 全文（**opt-in + 环境依赖，非 CI**） | 模式 B 单篇浏览器取回 | 遇 Cloudflare 挑战**正确 BLOCKED(challenge)+冷却 24h**（离线 challenge fixture 可判）；真实取回落盘 = 用户参与 runbook（换非阻断网络）；限速 ≤1 req/5s（仅模式 B 触 `*.ssrn.com` 时，FetchLog 审计） | **案 B 下 defer Phase 6**（§11） |
+
+- **「按 FEN 子网」修订注记**：精确子网枚举**无合规路径**（§3）→ 判据改「econ/fin 主题近似过滤一致率 ≥95%」（AC-6.3 式），与 development-plan 原 DoD 的"FEN 子网"字面差异如实公开（不静默弱化）。
+- **「遇 Cloudflare 挑战正确 BLOCKED」保留但语境收窄**：仅模式 B；元数据层零 SSRN 接触故**永不触发挑战**——该判据在元数据层退化为"obslog 证零 SSRN 请求"。
+- **关联**：AC-5.1a↔AC-6.3（本地过滤一致率）/ AC-2.3 分层先例（D-018）；AC-5.1b↔AC-4.6（风控即停）。**AC-5.2/5.3/5.4（nber/TE-QE/路由）不属本 adapter**，由 Phase 5 同批 adapter 承接。
+
+## 9. 风险与开放问题
+
+### 9.1 DOI 覆盖缺口量化（实现期任务，controller 裁决点 #3）
+
+- **问题**：crossref 1.41M DOI vs abstract_id 空间 ~7.17M；缺口成因 **① 无 DOI 投稿** / **② 稀疏跳号**混淆，不许假设 crossref 全覆盖。
+- **零-SSRN-接触量化法**（关键约束：**不能**采样整数 abstract_id——多数整数本非存在投稿，混淆两成因；**不能**采样 SSRN 本体 census——Cloudflare 门）：**以 OpenAlex source S4210172589 作 census 代理**（1.63M works，含无 DOI 补录）→ 随机采样 N works → 测「带 DOI 且 crossref 可解析」比率。**首阶估计 = 1.41M / 1.63M ≈ 87%**（openalex-相对覆盖）。细化：N≈1000（95%±3% CI），经 openalex `filter=primary_location.source.id:S4210172589` + 分页随机偏移，credit 预算内（§5 熔断）。
+- **判定阈值**：openalex-相对 DOI 覆盖 **≥90% → crossref 前缀枚举判"覆盖充分"，无候补**；**<90% → 评估候补路径**（下）。
+- **候补路径评估条件（缺口过大时，阶梯）**：(a) OpenAlex 补枚举无-DOI works（但 openalex 已**收回 ENUMERATE**，aggregators §1，且信用计费——需重评能力面）；(b) RePEc/NBER 交叉（Phase 5 同批，econ WP 书目）；(c) 有限度 SSRN 浏览页 census——**触 Cloudflare，须专门 BLOCKED 处置**，红线下降级/可选。默认不启用。
+- **固有天花板（如实标注）**：本法测「crossref 相对 openalex」覆盖，**非**「crossref 相对 SSRN 真实全库」——后者需 SSRN census（无合规路径）。OpenAlex 自身对 SSRN 的覆盖上界未知，是量化的天花板，记开放问题。
+
+### 9.2 其他风险与开放问题
+
+- **开放问题**（勘察 §8 清单，标注触发层）：① 重取 SSRN `robots.txt` 全文（Disallow 面 + crawl-delay 复核）——**仅模式 B 前置**，元数据层不触；② SSRN RSS/sitemap 作 crossref 外新鲜度源——今日不可验证；③ DOI 覆盖率量化（§9.1）；④ FEN network→聚合过滤映射（§3 子网近似）；⑤ crossref `journal-article` vs `posted-content` 语义差异是否可利用；⑥ 换非-CF-阻断网络对 SSRN 挑战门真实复测（确认 2026-07-20 结论现状）——**模式 B 前置**。
+- **风险**：crossref 计费/政策演变（aggregators §10 已备降级路径）；openalex 信用制（预算护栏）；**SSRN=Elsevier 风控随时收紧**——**元数据层零 SSRN 接触故天然免疫**，仅模式 B 受影响（canary 对模式 B 周检、连续 CHALLENGED 时 catalog 标降级）；crossref 前缀枚举腐化（canary 比对 healthcheck 固定 DOI title，沿 crossref 先例）。
+- **healthcheck**：元数据层 = `GET api.crossref.org/works/10.2139/ssrn.4056799` 比对规整化 `title[0]`（固定已知存在 DOI，[LIVE] 200，真值 [PENDING] 实现期 UPDATE_GOLDEN 捕获）；模式 B = 无 session 时 `NotImplementedError`→canary SKIP（沿 auth_gated 先例）。
+
+<!-- SECTION-5-9-END -->
