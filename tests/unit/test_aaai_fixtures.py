@@ -185,9 +185,11 @@ def test_dblp_aaai_anchor_oai_count_filled_but_dblp_cross_check_still_pending() 
     assert all(row["dblp_cross_check"] == "pending" for row in anchor["rows"])
 
 
-def test_dblp_aaai_anchor_lower_bound_is_2019() -> None:
-    # 覆盖下界 2019（Vol.33）：更早届为界外（survey §3.1/§6），锚点不含 <2019 行。
+def test_dblp_aaai_anchor_lower_bound_is_2010() -> None:
+    # 覆盖下界 2010（Vol.24）：controller 2026-07-24 裁决扩容纳入 2010-2018（design/
+    # adapters/aaai-ojs.md §10 ★F，依据 §11 全库收割实测）；更早届（<2010）仍为界外
+    # （survey §11.3/§11.5），锚点不含 <2010 行。
     anchor = json.loads(_ANCHOR_PATH.read_text(encoding="utf-8"))
     years = [row["year"] for row in anchor["rows"]]
-    assert min(years) == 2019
+    assert min(years) == 2010
     assert "界外" in anchor["coverage_note"]

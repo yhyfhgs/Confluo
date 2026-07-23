@@ -123,6 +123,15 @@ def test_aaai_venue_routes_to_aaai_ojs_adapter(adapters: dict[str, SourceAdapter
     assert spec.fulltext_source == "aaai_ojs"
     assert spec.quirks["ojs_code"] == "AAAI"
     assert spec.quirks["volume_map"] == {
+        2010: 24,
+        2011: 25,
+        2012: 26,
+        2013: 27,
+        2014: 28,
+        2015: 29,
+        2016: 30,
+        2017: 31,
+        2018: 32,
         2019: 33,
         2020: 34,
         2021: 35,
