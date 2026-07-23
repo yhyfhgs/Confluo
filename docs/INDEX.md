@@ -32,6 +32,7 @@
 | [plan/phase2-implementation-plan.md](plan/phase2-implementation-plan.md) | Phase 2 实施计划（Stage A 地基+arxiv；Stage B adapter 滚动） | approved | 2026-07-21 |
 | [plan/phase3-implementation-plan.md](plan/phase3-implementation-plan.md) | Phase 3 实施计划（聚合元数据层：五源 adapter + 合并引擎任务切分） | approved | 2026-07-22 |
 | [plan/phase4-implementation-plan.md](plan/phase4-implementation-plan.md) | Phase 4 实施计划（认证框架 + 出版社 adapters 任务切分） | approved | 2026-07-23 |
+| [plan/phase5-implementation-plan.md](plan/phase5-implementation-plan.md) | Phase 5 实施计划（SSRN 与特殊经济学源 adapters 任务切分） | approved | 2026-07-24 |
 | [plan/progress.md](plan/progress.md) | 项目进度跟踪 | approved | 2026-07-23 |
 | [plan/decision-log.md](plan/decision-log.md) | 架构决策记录（D-001…D-029） | approved | 2026-07-24 |
 
