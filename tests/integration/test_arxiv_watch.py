@@ -118,6 +118,7 @@ def _make_env(tmp_path: Path, handler: Handler, *, inception: str = "2024-01") -
         "wiley",  # Phase 4 T-wiley（auth_gated；注入不参与 arxiv watch——preprint venue only）
         "openalex",  # T6
         "s2",  # T6
+        "ssrn",  # Phase 5 T4（consumer；注入不参与 arxiv watch——ssrn preprint venue 单独 watch）
         "elsevier_sd",  # Phase 4 T3
     }
     registry = VenueRegistry(adapters)
