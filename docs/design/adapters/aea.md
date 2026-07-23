@@ -165,8 +165,9 @@ updated: 2026-07-24
 | `jel` | Journal of Economic Literature | 0022-0515 | T2 | none（免费） | crossref | aea（deferred/OA） |
 | `jep` | Journal of Economic Perspectives | 0895-3309 | T2 | none（gold OA） | crossref | aea（deferred/OA） |
 
-- **⚠ ISSN 出处分级**：上表 8 ISSN 中唯 **AER(`0002-8282`)/JEP(`0895-3309`) 经勘察 [LIVE 2026-07-24] 实证**（crossref 枚举实跑）；
-  其余 6（aeri/aej_macro/aej_micro/aej_applied/aej_policy/jel）**仅 catalog [DOC] 来源**——**实现期在线冒烟负逐一核实义务**（UPDATE_GOLDEN 纪律，沿 D-019 锚点先例）。
+- **⚠ ISSN 出处分级**（P5-M1 更新，2026-07-24）：上表 8 ISSN 中 **AER(`0002-8282`)/JEP(`0895-3309`) 经勘察 [LIVE 2026-07-24] 实证**（crossref 枚举实跑）；
+  **aej_macro(`1945-7707`)/aej_micro(`1945-7669`)/aej_applied(`1945-7782`)/aej_policy(`1945-7731`) 经 P5-M1 在线核实 [LIVE 2026-07-24] 转正**（`GET api.crossref.org/journals/{issn}` 逐刊 200 + title 吻合，4 请求，详见对应 venues/econ/*.yaml notes）；
+  余 2（`aeri` 2640-205X / `jel` 0022-0515）**仍仅 catalog [DOC] 来源**——`tests/online/test_aea_smoke.py` 已写入 ISSN 存在性断言但**未实跑**（待 controller T7/T8 批次统一执行，见该文件 docstring）。
 - 字段设计（YAML 属实现期交付，本文只给字段）：`kind: journal`；`field: [econ]`；`identifiers.issn: [<上表>]`；`metadata_source: crossref`；
   `fulltext_source: aea`；`auth.level`（上表，`provider_hint: aea` 备用）；`quirks: {ai_bot_sensitive: true, doi_forms: [submission, vol_issue_page, pnp]}`；`status: active`。
 - **P&P 注（A-3 裁决）**：AEA Papers & Proceedings（`aer.p*`/`pandp.*` 形态）**独立 venue 暂缓**——不入本 Phase 8 刊清单（年刊特刊、
@@ -211,5 +212,6 @@ updated: 2026-07-24
 | 1 | 2026-07-24 | 初稿（实现级，status draft）：crossref 标准 ISSN 枚举（含摘要，无需 prefix 扩展）+ DOI 双形态容错解析器 + code→venue 8 刊路由 + capabilities 论证（RESOLVE offline 有 / FETCH deferred 无）+ 全文 deferred/BLOCKED（pubs CF challenge，连 JEP OA 亦然的反直觉发现）+ 跨源 WP 兜底（D-007，非 unpaywall）+ browser-fetch 通道交叉引用（不重评）+ 8 venue 命名冲突按 catalog 裁决 + challenge-BLOCKED 边界（沿 wiley）+ 测试/fixture + 验收关联建议 | [research/site-survey/aea.md](../../research/site-survey/aea.md) [LIVE 2026-07-24] + catalog/economics-journals.md + crossref/unpaywall adapter + wiley.md/elsevier-sd.md 模板 + D-006/D-007 |
 | 2 | 2026-07-24 | **W0 双评审修订轮**（Approve-with-fixes）：③ §7 补注 **ISSN 出处分级**（唯 AER/JEP [LIVE] 实证、余 6 仅 catalog [DOC]，实现期在线冒烟负核实）+ **A-3 裁决** pandp 独立 venue 暂缓（不入 8 刊清单，同步 §3.2 路由表/§10 风险条）；④ §1 **auth 层次澄清**（venue `auth.level: institutional` 前瞻声明 vs adapter 本期 `auth_requirement=none`；不触 registry.py:234 lint——仅 venue 低于 adapter 要求时报错） | controller W0 回派 + registry.py:234 实证 |
 | 3 | 2026-07-24 | W0 双评审（A/B 独立实例，2026-07-24）Approve-with-fixes → 修订轮闭合 → controller approved | controller W0 收口 |
+| 4 | 2026-07-24 | **P5-M1 在线核实**：§7 ISSN 出处分级更新——`aej_macro`/`aej_micro`/`aej_applied`/`aej_policy` 经 `api.crossref.org/journals/{issn}` 逐刊核实（200 + title 吻合，4 请求）[DOC]→[LIVE 2026-07-24] 转正（对应 venues/econ/*.yaml notes 同步）；余 `aeri`/`jel` 仍 [DOC]（T5 遗留缺口的另一半，`test_aea_smoke.py` 断言已写未跑，非本批次范围） | P5-M1 crossref journals API [LIVE 2026-07-24]（本 T5 遗留缺口收口批次） |
 
 Co-Authored-By: Claude Fable 5 <noreply@anthropic.com>
