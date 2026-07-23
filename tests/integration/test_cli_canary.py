@@ -115,6 +115,7 @@ def test_canary_without_filter_checks_all_registered_adapters(
     from paper_crawler.adapters.cvf.adapter import CVFAdapter
     from paper_crawler.adapters.dblp.adapter import DblpAdapter
     from paper_crawler.adapters.econsoc.adapter import EconsocAdapter
+    from paper_crawler.adapters.nber.adapter import NberAdapter
     from paper_crawler.adapters.neurips_proceedings.adapter import NeuripsProceedingsAdapter
     from paper_crawler.adapters.openreview.adapter import OpenReviewAdapter
     from paper_crawler.adapters.pmlr.adapter import PmlrAdapter
@@ -143,12 +144,14 @@ def test_canary_without_filter_checks_all_registered_adapters(
     # ssrn（Phase 5 T4）healthcheck 经内部 crossref lookup **无条件**发真实请求（同 crossref/
     # arxiv 等）——离线须猴补丁，否则 socket 护栏拦截 → unhealthy → 退出码 1。
     monkeypatch.setattr(SsrnAdapter, "healthcheck", _fake_healthy)
+    # Phase 5 T3 nber：healthcheck 发真实请求（w30000 首 chunk %PDF 探测），离线须猴补丁。
+    monkeypatch.setattr(NberAdapter, "healthcheck", _fake_healthy)
 
     result = runner.invoke(app, ["canary", "--home", str(_home(tmp_path))])
 
     assert result.exit_code == 0, result.output
     # 断言列表须与 test_adapter_loading.py::EXPECTED_ADAPTER_IDS（全部已注册 adapter，
-    # 现 19 个——Phase 5 T4/T5/T6 三源 union 合并后实数）保持同步——Phase 4 M2b 检查单
+    # 现 20 个——Phase 5 T3/T4/T5/T6 四源 union 合并后实数）保持同步——Phase 4 M2b 检查单
     # #15d 发现本列表此前遗漏了 aaai_ojs/dblp；Phase 4 T8 controller 收尾又补上
     # oup_silverchair/wiley（同模式第二次：auth_gated 无凭证的 healthcheck 天然 raise
     # NotImplementedError→SKIP，同 openalex/s2 无需猴补丁，但断言列表须验证它们出现在
@@ -172,6 +175,7 @@ def test_canary_without_filter_checks_all_registered_adapters(
         "s2",  # T6（SKIP 行——无 key）
         "econsoc",  # Phase 5 T6（open_access；healthcheck 猴补丁为 healthy，同 aaai_ojs）
         "ssrn",  # Phase 5 T4（healthcheck 猴补丁为 healthy——经内部 crossref lookup 发真实请求）
+        "nber",  # Phase 5 T3（open_access，healthcheck 猴补丁为 healthy）
     ):
         assert adapter_id in result.output
 

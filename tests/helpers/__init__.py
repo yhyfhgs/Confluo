@@ -424,6 +424,30 @@ def make_econsoc_ecma_venue(**quirks_overrides: object) -> VenueSpec:
     )
 
 
+def make_nber_venue(**quirks_overrides: object) -> VenueSpec:
+    """构造 nber 契约/单测用的 `preprint_channel` venue（不依赖 `venues/` 目录文件）。
+
+    id='nber'（NBER Working Papers）：`metadata_source=crossref`（D-005：enumerate 走 crossref
+    的 prefix 模式，`identifiers.crossref_prefix=10.3386`）、`fulltext_source=nber`、`auth.level=
+    none`（匹配 adapter `auth_requirement`）。nber resolve 只读 `paper.identifiers` 的 doi + venue
+    的 `quirks.fulltext_open_after_months`（18 月窗）——`quirks_overrides` 可注入自定义窗口值。
+    无 ISSN（工作论文系列固有，preprint_channel 天然豁免 `_lint_issn`，nber.md §6）。
+    """
+    quirks: dict[str, object] = {"fulltext_open_after_months": 18, "series_prefixes": ["w", "t"]}
+    quirks.update(quirks_overrides)
+    return VenueSpec(
+        id="nber",
+        kind="preprint_channel",
+        names={"full": "NBER Working Papers", "aliases": ["NBER"]},
+        field=["econ"],
+        identifiers={"crossref_prefix": "10.3386"},
+        metadata_source="crossref",
+        fulltext_source="nber",
+        auth={"level": "none"},
+        quirks=quirks,
+    )
+
+
 class FakeFetchIO:
     """`FetchIO` 协议的测试替身：把 chunks 缓冲进内存并计算 `(bytes_written, sha256)`。
 
@@ -461,6 +485,7 @@ __all__ = [
     "make_cvf_venue",
     "make_elsevier_venue",
     "make_mock_venue",
+    "make_nber_venue",
     "make_openreview_venue",
     "make_oup_venue",
     "make_pmlr_venue",

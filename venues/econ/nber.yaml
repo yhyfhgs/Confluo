@@ -1,0 +1,32 @@
+# venues/econ/nber.yaml —— NBER Working Papers（Phase 5 T3；AC-5.2；design/adapters/nber.md §6）
+id: nber
+kind: preprint_channel        # working paper = 预印性质（与 arxiv 同族；type-level=report）
+names:
+  full: NBER Working Papers
+  aliases: [NBER]
+field: [econ]                 # National Bureau of Economic Research
+tier: T1                      # catalog/economics-journals.md 经济学工作论文旗舰系列
+identifiers:
+  crossref_prefix: "10.3386"  # 枚举键（§3.1 新 scheme；替代期刊的 issn）——CrossrefAdapter
+                              # prefix 模式按 /prefixes/10.3386/works 枚举全库 DOI（w + t）。
+                              # 无 ISSN（工作论文系列固有）——registry `_lint_issn` 仅 journal
+                              # 必填 issn，preprint_channel 天然豁免（N-4，nber.md §6）。
+metadata_source: crossref     # 元数据主干走 crossref prefix 枚举（D-005 分离；date-field 默认
+                              # published〔出版年轴〕——无 quirks.crossref_date_field）。
+fulltext_source: nber         # 全文平台 adapter：NberAdapter（RESOLVE|FETCH，open_access）。
+auth:
+  level: none                 # 无认证（匿名直取 + OA-fallback；auth_requirement=none）。
+quirks:
+  fulltext_open_after_months: 18   # 18 月开放窗（resolve 谓词参数，§3.2；软门 <18 月 no_entitlement）
+  series_prefixes: [w, t]          # enumerate 收录范围（w 工作论文 + t 技术工作论文，均 type=report）
+status: active
+notes: >
+  元数据经 Crossref 按前缀 10.3386 枚举全库 DOI（含 w 工作论文 + 少量 t 技术工作论文，均
+  type=report；D-005 metadata_source 分离，出版年 published 轴）。全文 = www.nber.org/system/files
+  匿名直链**仅 >18 月开放段**（NberAdapter resolve 离线 18 月窗判定 + fetch %PDF 魔数双守卫）；
+  <18 月新论文机构 IP/订阅/配额软门 → no_entitlement 终态（**不绕过、不利用 3 篇/年匿名配额**，
+  AC-5.2 调研伦理红线）→ 既有 unpaywall OA-fallback 天然兜底（auth-framework §8.1，10.3386 覆盖
+  oa_status=green 预期良好）。全文 Phase 5 先限 w 系列（t 全文路径未勘察实证 → 元数据照收、全文
+  路径核验后放开，N-2）。**字段缺口**：Crossref/OpenAlex/站内三路均无 JEL 分类码（唯一已知源
+  RePEc nbr:nberwo ReDIF）——RePEc enrich 挂 Phase 6（N-5，controller 令，不在本 adapter 实现）。
+  NBER WP 常后发 AER/QJE 等期刊版本（preprint_of 高频，D-007 版本关联同挂 Phase 6）。

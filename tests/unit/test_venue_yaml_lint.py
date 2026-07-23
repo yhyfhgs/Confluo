@@ -68,6 +68,8 @@ _NON_ARXIV_VENUE_IDS = {
     # Phase 5 T4：SSRN（聚合元数据主路径，站点零接触，D-029）——metadata/fulltext 均 ssrn adapter
     # （enumerate 内部委 crossref prefix 10.2139 + created 后处理，非独立 crossref 源）。
     "ssrn",
+    # Phase 5 T3 nber（preprint_channel；crossref prefix 10.3386 metadata_source + nber fulltext）。
+    "nber",
 }
 
 
@@ -259,6 +261,24 @@ def test_econsoc_venues_route_correctly(adapters: dict[str, SourceAdapter]) -> N
     # 三刊 route() 可解析（metadata/fulltext adapter 均已注册）。
     for venue_id in ("ecma", "te", "qe"):
         assert reg.route(venue_id).venue.id == venue_id
+
+
+def test_nber_venue_routes_to_crossref_and_nber(adapters: dict[str, SourceAdapter]) -> None:
+    # Phase 5 T3：nber preprint_channel——元数据走 crossref（prefix 10.3386），全文走 nber。
+    reg = VenueRegistry(adapters)
+    reg.load_dirs([REPO_VENUES_DIR])
+    spec = reg.get("nber")
+    assert spec.kind == "preprint_channel"
+    assert spec.metadata_source == "crossref"  # D-005 元数据主干分离
+    assert spec.fulltext_source == "nber"
+    assert spec.auth.level.value == "none"
+    assert spec.identifiers["crossref_prefix"] == "10.3386"  # T1 prefix 枚举键（无 issn）
+    assert "issn" not in spec.identifiers  # 工作论文系列固有无 ISSN（preprint_channel 豁免）
+    assert spec.quirks["fulltext_open_after_months"] == 18  # 18 月开放窗（resolve 谓词）
+    assert spec.quirks["series_prefixes"] == ["w", "t"]
+    route = reg.route("nber")  # 分离路由：metadata=crossref（aggregator），fulltext=nber
+    assert route.metadata_adapter.adapter_id == "crossref"
+    assert route.fulltext_adapter.adapter_id == "nber"
 
 
 @pytest.mark.parametrize("venue_id", sorted(_NON_ARXIV_VENUE_IDS))

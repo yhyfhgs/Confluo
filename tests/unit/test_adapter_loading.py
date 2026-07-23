@@ -42,6 +42,7 @@ EXPECTED_ADAPTER_IDS = {
     "aea",  # Phase 5 T5（auth_gated，RESOLVE-only offline；enumerate 走 crossref）
     "econsoc",  # Phase 5 T6（open_access；Econometric Society 三刊，OJS OAI + 域名分段路由）
     "ssrn",  # Phase 5 T4（open_access；DISCOVER|ENUMERATE|RESOLVE，委 crossref + landing-only）
+    "nber",  # Phase 5 T3（open_access，RESOLVE|FETCH；enumerate 走 crossref prefix 10.3386）
 }
 VALID_FAMILIES = {"open_access", "auth_gated", "aggregator"}
 
@@ -228,6 +229,20 @@ def test_aea_attributes(adapters: dict[str, SourceAdapter]) -> None:
     assert getattr(aea, "resolve_offline", None) is True
 
 
+def test_nber_attributes(adapters: dict[str, SourceAdapter]) -> None:
+    # Phase 5 T3：nber（open_access；RESOLVE|FETCH，enumerate 走 crossref prefix 10.3386，D-005）。
+    nber = adapters["nber"]
+    assert nber.family == "open_access"
+    assert nber.capabilities == Capability.RESOLVE | Capability.FETCH
+    assert Capability.DISCOVER not in nber.capabilities  # RSS watch DISCOVER Phase 6 转主
+    assert Capability.ENUMERATE not in nber.capabilities
+    assert nber.default_rate.requests_per_minute == 12.0  # www.nber.org 1 req/5s
+    assert "back.nber.org" in nber.default_rate.source_note  # 双域分桶出处（非占位）
+    assert nber.auth_requirement is AuthLevel.NONE
+    assert nber.domains == ("www.nber.org", "www2.nber.org")  # back.nber.org 独立桶不进 domains
+    assert getattr(nber, "resolve_offline", False) is True  # 零网络 18 月窗判定
+
+
 def test_healthcheck_defaults_healthy(adapters: dict[str, SourceAdapter]) -> None:
     # mock_platform 不覆写 healthcheck → 继承 AdapterBase 默认恒 healthy。
     # （stub adapter 现已覆写为抛 NotImplementedError，见下一个测试。）
@@ -311,6 +326,7 @@ def test_arxiv_is_http_client_consumer(adapters: dict[str, SourceAdapter]) -> No
         "elsevier_sd",  # Phase 4 T3：auth_gated，专属 client 注入（X-ELS-APIKey 头）
         "econsoc",  # Phase 5 T6：open_access，OJS OAI + 落地页 galley（共享 client 注入）
         "ssrn",  # Phase 5 T4：转发内部 CrossrefAdapter（元数据经 api.crossref.org）
+        "nber",  # Phase 5 T3：open_access，共享 client 注入（fetch/healthcheck，无携密隔离顾虑）
     ):
         assert isinstance(adapters[adapter_id], HttpClientConsumer)
 
@@ -342,6 +358,7 @@ def test_bind_http_client_injects_only_consumers(adapters: dict[str, SourceAdapt
         "elsevier_sd",  # Phase 4 T3：auth_gated，专属 client 注入 seam（X-ELS-APIKey 头）
         "econsoc",  # Phase 5 T6：open_access，OJS OAI + 落地页 galley（共享 client 注入）
         "ssrn",  # Phase 5 T4：consumer（set_http_client 转发内部 CrossrefAdapter）
+        "nber",  # Phase 5 T3：open_access，共享 client 注入（fetch/healthcheck）
     }
     # 注入生效：各 adapter 的 _client() 返回被注入的实例，不再惰性自建。
 

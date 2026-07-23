@@ -1,0 +1,31 @@
+{
+  "_synthetic": "SYNTHETIC (Phase 5 T3). Shape per Crossref REST /prefixes/10.3386/works?filter=from-pub-date,until-pub-date [DOCS]; DOIs [LIVE]-grounded to NBER 10.3386/w{n} form, type=report, no abstract (nber.md §2). One w-series + one t-series record (both type=report, series letter in DOI suffix); next-cursor null -> enumerate terminates in one page. Proves nber's crossref_prefix venue key enumerates via the T1 prefix+published contract (to_paper_stub yields (doi,) identifiers unchanged).",
+  "status": "ok",
+  "message-type": "work-list",
+  "message": {
+    "total-results": 2,
+    "next-cursor": null,
+    "items-per-page": 20,
+    "items": [
+      {
+        "DOI": "10.3386/w30000",
+        "title": ["Monetary Policy and the Term Structure of Interest Rates"],
+        "author": [
+          {"given": "Jane", "family": "Economist", "sequence": "first"},
+          {"given": "John", "family": "Researcher", "sequence": "additional"}
+        ],
+        "type": "report",
+        "published-online": {"date-parts": [[2015, 5]]},
+        "issued": {"date-parts": [[2015, 5]]},
+        "subject": []
+      },
+      {
+        "DOI": "10.3386/t0042",
+        "title": ["A Technical Note on Standard Errors"],
+        "author": [{"given": "Ada", "family": "Placeholder", "sequence": "first"}],
+        "type": "report",
+        "issued": {"date-parts": [[2015, 6]]}
+      }
+    ]
+  }
+}
