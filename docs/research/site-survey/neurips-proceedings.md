@@ -2,7 +2,7 @@
 title: 勘察：NeurIPS Proceedings（格式边界/hash id/关联线索）
 status: approved
 owner: fable5
-updated: 2026-07-22
+updated: 2026-07-24
 ---
 
 # NeurIPS Proceedings 站点勘察报告（LIVE）
@@ -175,7 +175,9 @@ Datasets and Benchmarks 条目（同一年页内混排，靠 `data-track="datase
 
 D&B 详情页 citation 样本（`.../2023/hash/00ba06ba5c324efdfb068865ca44cf0b-Abstract-Datasets_and_Benchmarks.html`）：`citation_pdf_url` = `.../file/00ba06ba5c324efdfb068865ca44cf0b-Paper-Datasets_and_Benchmarks.pdf`，字段结构与主赛道一致（只是后缀不同）。
 
-**[LIVE] 站点内部 bug（值得记录避坑）**：详情页 Bibtex 按钮 href 在 2021/2022/2023 三个年份样本里都是形如 `/paper_files/paper/{一串与 hash 无关的数字}-/bibtex`（如 `20165-`、`17527-`、`11624-`），路径带一个孤立连字符，明显是模板变量拼接错误；**本次未对该 URL 发真实请求验证是否可解析**（预算已内耗尽），标记 **[UNRESOLVED]**——实现期若要用站点自带 Bibtex 链接需先探活，不要假设它能用；建议改用 citation_* meta 自行拼 BibTeX。1987 年代的 Bibtex 链接则是规规矩矩的 `/paper_files/paper/1987/file/{hash}-Bibtex.bib`（hash 前缀，直接可用）。
+**[LIVE] 站点内部 bug（值得记录避坑）**：详情页 Bibtex 按钮 href 在 2021/2022/2023 三个年份样本里都是形如 `/paper_files/paper/{一串与 hash 无关的数字}-/bibtex`（如 `20165-`、`17527-`、`11624-`），路径带一个孤立连字符，明显是模板变量拼接错误；~~**本次未对该 URL 发真实请求验证是否可解析**（预算已内耗尽），标记 **[UNRESOLVED]**~~——实现期若要用站点自带 Bibtex 链接需先探活，不要假设它能用；建议改用 citation_* meta 自行拼 BibTeX。1987 年代的 Bibtex 链接则是规规矩矩的 `/paper_files/paper/1987/file/{hash}-Bibtex.bib`（hash 前缀，直接可用）。
+>
+> **[UNRESOLVED 闭合 · LIVE 2026-07-24]（见 §11 项③）**：实发请求验证——`GET /paper_files/paper/11624-/bibtex`（2021 样本）返回 **302 → `/paper_files/paper/2021/file/000c076c…-Bibtex.bib`**，跟随后该 `.bib` 返回 **200 `application/x-bibtex`（619 B，`@inproceedings{NEURIPS2021_000c076c,…}` 合法体）**。结论：畸形形态的 `/{sourceid}-/bibtex` **并非坏链**，`{数字}` 是站点内部 sourceid，服务端 302 重定向到规范 `{hash}-Bibtex.bib`——**可用**。更省事的做法是绕过短链、直接构造 `{hash}-Bibtex.bib`（本次实测同样 200 可用），与 1987 的 hash 前缀 `.bib` 形态统一。
 
 ---
 
@@ -275,7 +277,9 @@ Content-Length: 23
 
 **含义**：旧稿假设"评审版与 proceedings 无共同强 id，只能弱匹配"——这个假设对 **2022 及以后** 依然成立（本次样本证实），但 **2021 年可能存在例外**：如果这个"Reviews And Public Comment"链接在 2021 年是普遍存在的（而不是这一篇论文的偶然情况），ingest 合并在处理 2021 这一届时应优先尝试直接抽取 OpenReview forum id 作为强 id，而不是一律走候选队列弱匹配。
 
-**[UNRESOLVED]**：本次每年只抽了 1 篇样本（预算所限），无法确认"2021 独有 OpenReview 链接"是否对该年全部论文成立，还是只是这篇论文碰巧被作者/系统补挂了链接。**建议实现期用 healthcheck 之外的一次性抽样（比如 2021 年再测 10~20 篇）来确认覆盖率**，再决定 2021 年是否值得为强 id 合并单独开分支逻辑。
+~~**[UNRESOLVED]**：本次每年只抽了 1 篇样本（预算所限），无法确认"2021 独有 OpenReview 链接"是否对该年全部论文成立，还是只是这篇论文碰巧被作者/系统补挂了链接。~~**建议实现期用 healthcheck 之外的一次性抽样（比如 2021 年再测 10~20 篇）来确认覆盖率**，再决定 2021 年是否值得为强 id 合并单独开分支逻辑。
+
+**[UNRESOLVED 闭合 · LIVE 2026-07-24]（见 §11 项①）**：从 2021 年页（2334 篇）**跨全表均匀抽样 8 篇**（索引 0/333/667/1000/1333/1666/2000/2333，避开顺序偏置），逐篇取详情页——**8/8 全部内嵌 `openreview.net/forum?id=…` 强 id 链接**，且 8 个 forum id 各不相同（`CU8qQMhB3dh` / `qdphcA9jEbJ` / `AVS8CamBecS` / `N1i6BJzouX4` / `vGjTOxss-Dl` / `KLILoGYuOfw` / `NvXnBQQw0Jb` / `GgS40Y04LxA`）。**覆盖率实测 100%（8/8）**——原 n=1 不再是"碰巧补挂"，而是 2021 届的**普遍结构**。结论：Phase 3 ingest 处理 2021 时可放心把 forum id 当强合并 id 抽取，值得为 2021 单开强 id 分支（2022+ 仍无此链接，弱匹配不变）。附带证实：这 8 篇 **均无 arxiv.org 链接、均无 Metadata.json 按钮**（与 §10 一致）。
 
 ---
 
@@ -296,9 +300,13 @@ GET https://papers.neurips.cc/paper_files/paper/1987/file/03004620ea802b9118dd44
 
 字段：`title, book, page_first, page_last, abstract(可为 null), full_text(OCR 全文), award, sourceid(内部数字 id), authors[{given_name, family_name, institution}]`。**`full_text` 是整篇论文的 OCR 文本**（含明显 OCR 噪声，如 "proceSSing"），对老论文而言是比下载 PDF 自行抽取更省事的全文来源。
 
-**[UNRESOLVED] 覆盖范围未定**：2021 年样本详情页的 paper-actions 区块**没有** Metadata.json 按钮（只有 Bibtex/Paper/Reviews/Supplemental 四个），说明这个 JSON 端点的可用窗口比"旧后缀格式"窗口更窄——已知 1987 有、2021 没有，中间边界未测（预算耗尽）。实现期若想把 Metadata.json 当作老论文的 bulk 全文来源，需要先扫一遍这个窗口的具体年份范围。
+~~**[UNRESOLVED] 覆盖范围未定**~~：2021 年样本详情页的 paper-actions 区块**没有** Metadata.json 按钮（只有 Bibtex/Paper/Reviews/Supplemental 四个），说明这个 JSON 端点的可用窗口比"旧后缀格式"窗口更窄——已知 1987 有、2021 没有，中间边界未测（预算耗尽）。实现期若想把 Metadata.json 当作老论文的 bulk 全文来源，需要先扫一遍这个窗口的具体年份范围。
 
-未测试：`sitemap.xml`（预算耗尽，未探测）——标记 **[UNRESOLVED]**。
+**[UNRESOLVED 闭合 · LIVE 2026-07-24]（见 §11 项②）**：对 `…/{year}/file/{hash}-Metadata.json` 端点做**二分探测**（每年取该年页首篇 hash 构造 URL 直接 GET）——2004→200、2013→200、2017→200、2019→**200**（`application/json`，28–51 KB）；2020→**404**、2021→404（8 篇样本 0/8 有按钮）。**边界精确定位在 2019→2020**：Metadata.json 可用窗 = **1987–2019（含），2020 起消失**。为排除 hash 偶发错误，2020 用第二个 hash 复测仍 404、且该 hash 的 Abstract 页 200（真实论文），**确认是端点缺失而非坏 hash**。要点：此窗口（≤2019）与后缀格式窗口（≤2021）**边界不同**——旧稿担心的"更窄"得到证实。该边界恰与 §11 项⑤发现的 dblp slug `nips→neurips` 切换（2019→2020）**同年**，均对应 NeurIPS 2020 年 proceedings 流水线换代。
+
+~~未测试：`sitemap.xml`（预算耗尽，未探测）——标记 **[UNRESOLVED]**。~~
+
+**[UNRESOLVED 闭合 · LIVE 2026-07-24]（见 §11 项④）**：`GET https://papers.neurips.cc/sitemap.xml` → **404**（23 B 通用 `<h1>Page Not Found</h1>`，与不存在年份同一套 404）。**站点无 sitemap.xml**——与"无 robots.txt"一致，Django 未启用 sitemap 框架。discover 无机读全站清单可用，仍靠首页 `ul.proceedings-list`（§2）作年份索引权威源。
 
 ---
 
@@ -336,3 +344,32 @@ GET https://papers.neurips.cc/paper_files/paper/1987/file/03004620ea802b9118dd44
 | 26 | GET | https://papers.nips.cc/robots.txt | 404 |
 
 **总计 26 次，超出任务书 ≤25 预算 1 次。** 超额原因：第 23/24 两次探测在执行时被我合并写进同一个"探测批次"的日志标签下，误按 1 次计数，实际是 2 次独立 HTTP 请求；发现时预算已实际用尽，故未再补测原计划的 sitemap.xml 等项（已在正文标记为 [UNRESOLVED]）。除次数外，UA/间隔/HEAD 优先/不绕过挑战门等纪律均全程遵守。
+
+---
+
+## 11. UNRESOLVED 专项在线核实 [LIVE 2026-07-24]
+
+> Phase 5 开工检查单 #5（`docs/reports/2026-07-23-phase4-report.md`）neurips_proceedings 5 项专项复核。
+> 隔离脚本（httpx，**不经** `paper_crawler` 的 DB/pipeline/config/`PAPER_CRAWLER_HOME`）直连；
+> UA 恒 `PaperCrawler/0.1.0 (personal research; mailto:yhyfhgs@gmail.com)`；串行、同域 ≥2s 间隔；
+> 先读 `papers.neurips.cc/robots.txt`（**404，无 robots**，全路径无 Disallow）与 `dblp.org/robots.txt`
+> （`Crawl-delay: 4` → dblp 请求 ≥4s；`Allow: /db`，本次仅取 `/db/conf/nips/*.html`，规避 `Disallow: /*.xml|/*.json`）。
+> 全程 0 挑战门、0 限速信号、0 次 5xx。
+
+| # | 项（旧稿出处） | 结论 [LIVE 2026-07-24] | 关键证据 |
+|---|---|---|---|
+| ① | 2021 OpenReview 强 id 覆盖率（§9，原 n=1） | **闭合·普遍存在** | 2021 全表跨度均匀抽 8 篇 → **8/8** 内嵌 `openreview.net/forum?id=…`，8 个 forum id 互异 |
+| ② | Metadata.json 可用年份窗（§10，1987 有/2021 无，边界未测） | **闭合·窗 = 1987–2019** | 二分：2004/2013/2017/2019=200，2020/2021=404；**边界 2019→2020**（2020 双 hash 复测 + Abstract 200 佐证端点缺失） |
+| ③ | 详情页 Bibtex 畸形 URL 是否可解析（§4，未发请求） | **闭合·可用（302 短链）** | `GET …/11624-/bibtex` → 302 → `…/000c076c…-Bibtex.bib` → 200 `application/x-bibtex`（619 B 合法体） |
+| ④ | sitemap.xml 未探测（§10） | **闭合·不存在** | `GET …/sitemap.xml` → 404（23 B 通用页）；站点无 sitemap（同"无 robots"） |
+| ⑤ | 1987/1988 vol 0/1 约定 + dblp slug `nips{y}`↔`neurips{y}` 切换年（`design:177`） | **闭合·边界 2019→2020** | dblp `conf/nips` 索引 39 个年 TOC：`nips1987…nips2019`（33 年）+ `neurips2020…neurips2025`（6 年）；`nips1987.html`=200、**90 篇**（与 proceedings 站 1987=90 精确一致），dblp 按**年**建键（非按 vol），故 vol=year−1987 只是 proceedings 站的 citation_volume 约定、对 dblp slug 无影响 |
+
+**项⑤ 展开**：dblp `conf/nips` 卷目录（`https://dblp.org/db/conf/nips/index.html`，200，545 KB）一次请求即列全 39 个年 TOC 文件名——**`nips{year}` 用于 1987–2019，`neurips{year}` 用于 2020–2025，切换点精确在 2019→2020**。这补正了 `design/adapters/neurips-proceedings.md` §6 D-019 段"仅 2023 行经核准、其余 slug 猜测仍 [UNRESOLVED]"：现全 39 年 slug 命名规则实测锁定，无需逐年猜。`nips1987.html`（vol-0 年）实测 200 且 **90 篇 `inproceedings`** 与 proceedings 站 1987 篇数（§2）**逐字吻合**——证实 vol-0 年在 dblp 正常成卷、且 dblp 以年份（1987）而非卷号（vol 0）作 slug/键，"1987/1988=vol 0/1"纯属 proceedings 站的 `citation_volume` 约定，不构成 dblp slug 特例。锚点表 `dblp-nips-anchor.json` 的 `dblp_slug: conf/nips` 正确，逐年 TOC 文件名取 `nips{y}`(≤2019)/`neurips{y}`(≥2020) 即可。
+
+**本次核实请求台账汇总**（隔离脚本 ledger，独立于文首 26 请求的 2026-07-21 勘察）：
+
+| 域 | 请求数 | 分布 | 结果 |
+|---|---|---|---|
+| papers.neurips.cc | 25 | robots 1(404) + sitemap 1(404) + 2021 年页 1 + 2021 详情 8 + bibtex 短链/目标 2 + Metadata 二分（年页 6 + 探测 6 + 2020 复核 2）14 | 全 200/404/302 预期内，0 挑战 |
+| dblp.org | 3 | robots 1 + `conf/nips` 索引 1 + `nips1987.html` 1 | 全 200（robots 遵 `Crawl-delay:4`、仅取 `/db/*.html`） |
+| **neurips 侧合计** | **28** | （预算硬顶 ≤45，含 aaai 侧 4 次失败连接见 aaai-ojs.md §12） | 5/5 项闭合 |

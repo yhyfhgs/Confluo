@@ -2,7 +2,7 @@
 title: 勘察：AAAI OJS（OAI-PMH 主路径/分页/覆盖边界）
 status: approved
 owner: fable5
-updated: 2026-07-23
+updated: 2026-07-24
 ---
 
 # AAAI OJS（ojs.aaai.org）LIVE 勘察报告
@@ -489,3 +489,36 @@ Disallow: /cache/
 | **合计** | **~272 / 280 硬顶** | 246 页有效数据（23552 条，去重后 22352 条活记录）；红线触发 1 次（如约停手）；两段站点侧瞬时不稳定（非本方限速问题——全程未见 429/`Retry-After`，且 5xx 集中于单一 cursor 位置，非全站性） |
 
 逐请求明细（页号/URL/状态码/耗时/记录数/`resumptionToken`/时间戳）落盘于隔离 scratchpad（`aaai-harvest/ledger.jsonl`，非 git 产物，本仓不留存原始台账文件，仅本节摘要入库）。
+
+---
+
+## 12. UNRESOLVED 专项在线核实尝试 [LIVE 2026-07-24] — 站点侧持续性故障，BLOCKED
+
+> Phase 5 开工检查单 #5 分派本 agent 核实 aaai_ojs **2 项**（另 2 项 ①1980–2018 覆盖、③IAAI/EAAI 独立 issue 已由 2026-07-23 §11 全库收割闭合，不在本次范围）：
+> - **项②**：「AAAI-38」式**届序号**命名 vs 站点 `Vol.N`/`AAAI-YY` 品牌名对应关系（§0/§2.4，`site-survey:29,166`）——原为 `[UNRESOLVED，高置信推断]`（Vol.38↔2024↔站点品牌 `AAAI-24`）。
+> - **项④**：`ListSets` 展示的 setSpec 与 `ListIdentifiers`/`ListRecords` 实际可查询 setSpec 的层级/命名差异（§5.2，`site-survey:284`）——原 `set=AAAI:2023-11` 单独过滤返回 `noRecordsMatch`，疑 ListSets 名与可查询名不一致。
+
+**结论：两项均 `[UNRESOLVED 维持]`——2026-07-24 核实窗内 `ojs.aaai.org` 应用层持续性故障，判 BLOCKED，如约停手、未对抗。**
+
+**实测证据（隔离脚本，UA `PaperCrawler/0.1.0 (personal research; mailto:yhyfhgs@gmail.com)`，串行 ≥2s）**：
+
+| 层 | 实测 | 判读 |
+|---|---|---|
+| DNS | `ojs.aaai.org` → 198.18.1.180（沙箱出站解析，与同批正常域 dblp/neurips 同一代理段） | 正常 |
+| TCP :443 | connect OK（~5 ms） | 正常 |
+| TLS | 握手 OK，`TLSv1.3` | 正常（nginx/TLS 终端在线） |
+| **HTTP** | 发出 `GET /robots.txt` 后**服务器立即断开、返回 0 字节**（`RemoteProtocolError: Server disconnected without sending a response.` / curl `Empty reply from server` / HTTP2 `PROTOCOL_ERROR`），**裸 socket 手写 HTTP/1.1 复测 2 次仍 0 字节** | **应用层（OJS/PHP 后端或 nginx→后端）持续故障** |
+
+- **尝试次数与时间跨度**：约 10 次跨 `httpx`/`curl(--http2/--http1.1)`/`openssl s_client`/裸 TLS socket 的独立探测（其中 **5 次经脚本 ledger 记录的失败连接**），覆盖 17:49→18:07（≈18 分钟），**无一次到达应用层**；期间 TCP/TLS 始终正常，排除本方网络/UA/限速问题（全程未触发 429/挑战页，纯服务端不吐 HTTP 响应）。
+- **与既有勘察对照**：§11.6 已两度记录同站「站点侧瞬时不稳定（SSL EOF）」，2026-07-21/07-23 尚能自愈并完成 20 请求勘察 + 246 页收割；本次同一故障模式但在核实窗内**持续未自愈**。故属**已知的站点侧间歇性故障**，非端点消失、非反爬、非本方触发。
+- **红线遵守**：连接层失败非 5xx/挑战页，但按「不重试轰炸、不对抗」精神，达成故障可复现判定后即停手，未换 UA、未绕行、未降级重试。**未产生任何成功的 aaai 请求**（4 次经脚本 ledger 记录的失败连接 + 若干裸 socket/curl 诊断，全 0 应用层响应）。
+
+**为何无法以既有证据代替实测闭合（不编造）**：
+- **项②**：`Vol=年份−1986` 映射本身已由 §11.2 全库收割**逐届实测**（Vol.24–40，17 届 DOI-卷号 partition 与 `dc:source` "Vol. N" 交叉核 0 例不一致），故「Vol.38=2024」在数据层是**硬事实**；**唯一未直接取到的是 Vol.38 issue 标题页/OAI 记录里那串品牌名 `AAAI-24` 逐字串**（本次拟以 1–3 请求直取 issue 标题或 `dc:source` "Vol. 38 … AAAI-24" 佐证，因 BLOCKED 未获）。风险评估：低——§2.4 已实测同型 `dc:source`（"Vol. 33 … AAAI-19"），品牌名=2 位年、届序号=第 N 届 的区分结论不依赖 Vol.38 单点；但严格意义上**「AAAI-24」逐字串未直接实测**，如实维持 `[UNRESOLVED 高置信]`。
+- **项④**：完全依赖 live OAI 端点（`ListSets` 一次 + 带 `set` 的 `ListIdentifiers` 抽验），无任何离线替代证据可推断 setSpec 可查询性；`noRecordsMatch` 异常的成因（层级/命名/大小写/编码差异）**必须实测**。BLOCKED 下无法给出任何新结论，维持 `[UNRESOLVED]`。
+
+**移交 controller（见终报）**：
+1. **重跑窗口**：`ojs.aaai.org` 恢复后（可先裸 TLS + `GET /robots.txt` 探活确认应用层吐 200），以 ≤6 请求闭合两项：
+   - 项②：取任一 Vol.38 文章详情页（`/article/view/{id}` breadcrumb 含「Vol. 38 … (2024): AAAI-24 …」）或 OAI 一条 Vol.38 记录的 `dc:source`，直取 `AAAI-24` 品牌串。获取 Vol.38 article id 的稳妥法：`ListSets`→挑 2024 相关 set→`ListIdentifiers&set=…`；若 set 过滤仍空（即项④现象），退化为 issue archive HTML 翻页至 Vol.38（约 4–5 页）。
+   - 项④：`ListSets`（记 setSpec 原样）+ 对同一 setSpec 发 `ListIdentifiers&metadataPrefix=oai_dc&set={setSpec}`，比对返回 identifiers 数 vs `noRecordsMatch`；分别抽 `AAAI:{year}-{trackId}` 数字型 与 `AAAI:IAAI-DEP` 语义型 各一，定位「哪类 setSpec 可单独过滤」。
+2. **`docs/design/adapters/aaai-ojs.md` 联动**（本 agent 严禁触碰该文件，由 controller 定向处理）：该设计文档若在 §2.4/§5.2 或失败模式表引用了这两项的 `[UNRESOLVED]`，重跑闭合后须同步；本次仅记录，不擅改。
