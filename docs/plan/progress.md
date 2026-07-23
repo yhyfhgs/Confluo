@@ -14,7 +14,7 @@ updated: 2026-07-23
 
 - **当前 Phase**：3（聚合元数据层）**已完成**（2026-07-23，tag `phase-3` @ `35c79a6`）——合并引擎（AC-3.1/3.2/3.4）、verify 三类检出（AC-3.3）、五源 adapter（crossref/dblp/unpaywall + openalex/s2 enrich 通道）、`crawler enrich`/`oa-report` CLI、五刊 VenueSpec + AC-3.5 在线实跑双层 PASS（抽样年对账全部 diff=0）。验收：[Phase 3 汇总记录](../testing/records/2026-07-23-phase3-acceptance.md)（最终签署：**达成**）；报告：[phase3-report](../reports/2026-07-23-phase3-report.md)。终态门禁 **2154 passed / 24 skipped / 99.18%**（草稿期发现的 1 回归已于 `f114a09` 跟修）。→ 下一 Phase：4（认证框架+出版社），检查单见报告 §6（含终检增补）
 - **Phase 2 遗留 C-C/C-D 已修复**：C-C（大 venue pull 可用性——零网络 resolve 豁免限速闸 + `--limit` 前置圈选，D-022，`eeef820`/`7d3424d`）、C-D（openreview venueid 异构缺陷——2018/2019 逐年 accepted 规则，`8cc2a75`/`3b9e332`/`45c8250`）均已合并；openreview AC-2.1/2.2 在线层随之转 PASS（用户 token 已配置并建立自动刷新脚本）。Phase 2 报告检查单 #1（用户 token）与终检增补置顶 C-C/C-D 两项均已清零。
-- **待补验（不阻塞进行中状态，如实记录）**：S2 API key 未到（enrich/canary 在线层 SKIP 门控，D-021）；aaai_ojs 全库 OAI 补跑（Phase 2 检查单 #3 残项，本 Phase 未排期，仍缺）；AC-3.1/3.2/3.3/3.4 尚无独立汇总验收记录文档（现由 `tests/integration/test_merge_acceptance.py`/`test_merge_property.py`/`tests/unit/test_verify.py` 承载判据，T8 待收口成文）；D-019 锚点表 openalex 正锚点、s2 锚点仍 `[PENDING]`（需 key/credit）。
+- **待补验（不阻塞进行中状态，如实记录）**：S2 API key 未到（enrich/canary 在线层 SKIP 门控，D-021）；AC-3.1/3.2/3.3/3.4 尚无独立汇总验收记录文档（现由 `tests/integration/test_merge_acceptance.py`/`test_merge_property.py`/`tests/unit/test_verify.py` 承载判据，T8 待收口成文）；D-019 锚点表 openalex 正锚点、s2 锚点仍 `[PENDING]`（需 key/credit）。**aaai_ojs 全库 OAI 补跑已完成**（2026-07-23，Phase 2 检查单 #3 → Phase 3 报告 §6 检查单 #8 跨 3 Phase 清账：234/262 页/22352 条活记录，D-019 锚点表 8 行 `oai_count` 已回填，UNRESOLVED①③已闭合——详见 research/site-survey/aaai-ojs.md §11 与 design/adapters/aaai-ojs.md §10）；**新增待裁决项**：实测确认 Vol.24–32（2010–2018，9 个届）同构可收割，是否扩容 `volume_map` 纳入需主 agent 裁决（design/adapters/aaai-ojs.md §10 ★F）。
 - **总体进度**：Phase 0/1/2/3 = 100%（Phase 4 M2b 债务清理复核时勘正：本行此前仍写
   "Phase 3 T8 进行中/未打 tag"，与本文件顶部快照及下方"Phase 进度板"表的"tag
   phase-3"状态自相矛盾——T8 收尾项已随 `35c79a6` 终验签署 + `tag phase-3` 完成，
@@ -75,7 +75,7 @@ updated: 2026-07-23
 | pmlr（open_access） | stable | 100% | 自托管 + GitHub 双域 resolve |
 | acl_anthology（open_access） | stable | 100% | git-tree 发现 + legacy/modern 双命名 |
 | cvf（open_access） | stable | 99–100% | flat / day-landing 双形态；`parse.py` 99% |
-| aaai_ojs（open_access） | stable | 98–99% | OAI 收割；全库补跑残项见下方"待补验" |
+| aaai_ojs（open_access） | stable | 99% | OAI 收割；全库补跑已完成（2026-07-23，见"待补验"新增待裁决项：2010–2018 覆盖扩容） |
 | neurips_proceedings（open_access） | stable | 100% | legacy/modern 后缀边界 |
 | crossref（aggregator，Phase 3 T3） | stable | 98–100% | facet 逐年 + cursor 深翻断点续拉（检查单 #15a 补端到端窗口重建去重用例）；healthcheck golden 已转正 |
 | dblp（aggregator，Phase 3 T4） | stable | 100% | conf 索引发现 + 单请求整卷；线上 `<bht>` 真实 schema 已修（`c144573`） |

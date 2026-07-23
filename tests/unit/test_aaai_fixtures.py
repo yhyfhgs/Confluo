@@ -175,12 +175,13 @@ def test_dblp_aaai_anchor_years_match_venue_yaml_volume_map() -> None:
     assert anchor_years == venue_volume_map
 
 
-def test_dblp_aaai_anchor_all_oai_count_null_and_pending() -> None:
-    # D-019：本次未做真实全库收割/DBLP 交叉核对——所有行 oai_count 必须 null、
-    # dblp_cross_check 必须 pending（诚实标注，不悄悄标为已核准）。
+def test_dblp_aaai_anchor_oai_count_filled_but_dblp_cross_check_still_pending() -> None:
+    # D-019：2026-07-23 全库 OAI 收割（Phase 2 检查单 #3 → Phase 3 报告 §6 检查单 #8）已
+    # 回填 oai_count 为真实整数（research/site-survey/aaai-ojs.md §11）；DBLP TOC 人工
+    # 交叉核对未做——dblp_cross_check 仍必须 pending（诚实标注，不悄悄标为已核准）。
     anchor = json.loads(_ANCHOR_PATH.read_text(encoding="utf-8"))
     assert anchor["dblp_venue"] == "conf/aaai"
-    assert all(row["oai_count"] is None for row in anchor["rows"])
+    assert all(isinstance(row["oai_count"], int) and row["oai_count"] > 0 for row in anchor["rows"])
     assert all(row["dblp_cross_check"] == "pending" for row in anchor["rows"])
 
 
