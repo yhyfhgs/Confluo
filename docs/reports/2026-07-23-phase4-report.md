@@ -32,7 +32,7 @@ BLOCKED 人工介入流程演练通过。"AC-0 红线（每 Phase 强制基线�
 | AC-0 五条红线 | **全 PASS** | 本报告 §2 AC-0 系统性扫描——本次 T8 独立执行 grep/源码复核 + 转录 controller 亲检 AC-0.3 结果，五条逐条列证据 |
 | 全部认证 adapter 默认限速符合各自文档声明 | **PASS** | `elsevier_sd`/`oup_silverchair`/`wiley` 三 `default_rate.source_note` 与 [R0 LIVE 2026-07-23 复核](../research/site-survey/publisher-platforms-p4-recheck.md) 交叉核对一致，本次逐 adapter 源码复核（§2 AC-0.5 详述） |
 | BLOCKED 人工介入流程演练通过 | **PASS（离线）** | pipeline BLOCKED 状态携可读 `blocked_reason`（如 `"session expired；refresh 失败 → 整批 BLOCKED(auth)"`，`runner.py`）；`auth status` 暴露 EXPIRED/CHALLENGED 供人工判读；`auth login` 缺 key/token → exit 2 + guidance 文案指引重新配置（`test_login_api_key_missing_exit_2_with_guidance`）；真实平台撞墙演练（Cloudflare 挑战墙等）随 canary 周检 + T7b runbook 归线上口径，离线状态机转移已被 T5/T6 套件充分锁定 |
-| `make check` 全绿 / 核心覆盖率 ≥80% 不回退 | **PASS** | 本次终检亲跑 `make check` exit 0：**2715 passed / 21 skipped / 99.01%**（21 skip 全为 `test_adapter_contract.py` 能力缺口预期 skip：8 例 openalex/s2 duck-typed enrich 不参与协议 + 13 例各 adapter 缺 DISCOVER/ENUMERATE/RESOLVE/FETCH 之一；零凭证门控 skip 混入本离线套件）；较 phase-3 tag 的 99.18% 微降 0.17pp（T8 controller 补 crossref lookup 3 单测后回升），系新增 stmts 的防御分支增量（§5 已知限制逐条列） |
+| `make check` 全绿 / 核心覆盖率 ≥80% 不回退 | **PASS** | 本次终检亲跑 `make check` exit 0：**2721 passed / 21 skipped / 99.01%**（21 skip 全为 `test_adapter_contract.py` 能力缺口预期 skip：8 例 openalex/s2 duck-typed enrich 不参与协议 + 13 例各 adapter 缺 DISCOVER/ENUMERATE/RESOLVE/FETCH 之一；零凭证门控 skip 混入本离线套件）；较 phase-3 tag 的 99.18% 微降 0.17pp（T8 controller 补 crossref lookup 3 单测后回升），系新增 stmts 的防御分支增量（§5 已知限制逐条列）（终值含 tag 前 OUP 修复与 crossref lookup 补测增量） |
 | auth 包 + 三平台 adapter 覆盖 ≥90% | **PASS** | 本次亲测：`auth/` 全 12 文件 100%；`elsevier_sd`/`oup_silverchair`/`wiley` 三 adapter 的 `adapter.py`/`parse.py` 全部 100% |
 
 ## 2. AC-0 系统性扫描（2026-07-23，T8 独立执行）
@@ -156,7 +156,7 @@ development-plan §Phase 4 范围逐项：
 统计：**63 commits**（`phase-3..HEAD`，含 **14 次 merge**）——14 次 merge 精确对应
 phase4-implementation-plan §4 的任务卡（R0/W0/M2a/M2b/T1a/T1b/T2/T3/T-wiley/T4/T6/T5/T7a，
 另一次为 W0 内部分支合流）。测试从 phase-3 tag 的 **2154 passed / 24 skipped**（99.18%）增至
-终态的 **2715 passed / 21 skipped**（99.01%）；新增 22 个 `src/` 文件（auth 包 12 + 三 adapter
+终态的 **2721 passed / 21 skipped**（99.01%）；新增 22 个 `src/` 文件（auth 包 12 + 三 adapter
 包 9 + `sensitive.py` 1）、47 个 `tests/` 文件（含 `tests/manual/` runbook 3 篇、`tests/online/`
 smoke 3 篇、`tests/helpers/` fixture 助手 4 篇）、3 个 `config/` 规范文件；整体 **136 files
 changed / +17306 / -582**（`git diff --shortstat phase-3..HEAD`）。已注册 adapter 由 13 个
@@ -350,7 +350,6 @@ changed / +17306 / -582**（`git diff --shortstat phase-3..HEAD`）。已注册 
 
 - **T8 初判（2026-07-23）**：AC-4.2~4.6 离线载体 PASS（引 T7a 记录）、AC-4.1 离线载体+runbook
   就位（真实冒烟归 T7b，D-018 分层不阻塞）、AC-0 五条本次独立执行全 PASS、认证 adapter 限速
-  合规 PASS、BLOCKED 演练 PASS、`make check` 全绿（2715 passed / 21 skipped / 99.01%）、
+  合规 PASS、BLOCKED 演练 PASS、`make check` 全绿（2721 passed / 21 skipped / 99.01%）、
   在线预算 17/120 零超支。
-- **最终判定**：**[待 controller 终审签署]**——待 controller 亲验 AC-4 离线记录（`make check`
-  复跑吻合 + 载体计数复现）+ 本报告 AC-0 复核抽查 + §6 检查单条目确认后，签署 `tag phase-4`。
+- **最终判定（2026-07-23，controller 终审签署）**：fable 全分支终审**放行**（终审时点树门禁复现 2715 passed / 99.01%、AC-0 四项独立复核全 PASS、四缝合面一致、55/55 尾行合规、10 项 backlog 移交全部成立）；终审 MAJOR-1（OUP cookie supplier 生产装配缺口）已于 tag 前修复合并（懒解析闭包 + 6 离线测试，controller 亲验）；MINOR-1/2 同批闭合。**tag 终树门禁：2721 passed / 21 skipped / 99.01%，exit 0（F1 合并后实测；较终审时点 +OUP 6 单测 +crossref lookup 3 单测）**。**Phase 4 判定：达成**（AC-4.2~4.6 离线口径 + AC-4.1 离线载体与 runbook 就位；AC-4.1 真实 key 冒烟按 D-018 分层归 T7b，key 到位后补验，沿 Phase 2 openreview 补验先例）。tag `phase-4`。

@@ -1,6 +1,6 @@
 ---
 title: AC-4 离线端到端验收汇总记录 — 认证与出版社（离线载体收口）
-status: draft
+status: approved
 owner: t7a
 updated: 2026-07-23
 ---
@@ -162,3 +162,4 @@ T6 载体 `test_auth_lifecycle.py` 的 docstring 在其独立开发期（T5 尚�
 
 - **初判（2026-07-23，t7a）**：AC-4.2/4.3/4.4/4.5/4.6 **离线载体全部亲跑 PASS**（口径逐条注明）；AC-4 离线 DoD **达成**；AC-4.1 + 线上口径按 D-018 分层归 T7b，不阻塞离线收尾。本记录 status=draft，待 controller 亲验 + T8 统一登记（INDEX/progress 不在本任务改动范围）。
 - **待办**：controller 亲验（`make check` 复跑吻合 + 载体计数复现）；§5 移交三项入 T7b/T8 检查单。
+- **controller 终验（2026-07-23）**：亲验载体计数复现（pipeline 31 passed / AC-4.3 elsevier 端到端单跑通过）+ tag 终树门禁 2721 passed / 21 skipped exit 0 + fable 全分支终审放行——AC-4.2~4.6 离线判定**签署确认**。
