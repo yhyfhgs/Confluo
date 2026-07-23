@@ -72,14 +72,14 @@ updated: 2026-07-24
 ### 4.2 `enumerate_issue(venue, issue)`（ENUMERATE，枚举主干）
 
 - **端点**：`GET api.crossref.org/works?filter=prefix:10.2139,from-created-date:{桶起},until-created-date:{桶止}` + `cursor=*`→`message.next-cursor` 深翻至 `items` 空。**两类型全收**（不加 `type:` 过滤——journal-article + posted-content，§2）。
-- **复用面（不改 crossref 冻结件）**：`ssrn` adapter **自持**枚举（前缀+created-date 语义 SSRN 专属，不属 crossref 按-ISSN 期刊主干），但**复用** `adapters/crossref/parse.py` 的 works JSON→`PaperStub` **纯逻辑映射** + 共享 `HttpClient`（`HttpClientConsumer.bind_http_client`，携 `[identity].email` polite pool）。cursor 契约、限速、UA 沿 crossref 既有实现（aggregators §5.1，逐字）。**裁决**：不给 crossref 加"前缀枚举模式"（避免改 implemented 冻结 adapter + 污染其按-ISSN 期刊语义）；SSRN 专属枚举策略留在 `ssrn` adapter。此为设计接缝点，提请评审确认（§10）。
-- **DOI→abstract_id 抽取**：`items[].DOI` 经 `ids.normalize_doi()` → 正则 `^10\.2139/ssrn\.(\d+)$` 取 group(1) = abstract_id。产 `identifier(ssrn, abstract_id)`（下载主键）+ `identifier(doi, 全 DOI)`（跨源合并锚点，D-007）。**护栏**：DOI 不匹配 `ssrn\.` 中缀者 → 不产 `ssrn` identifier、计 `skipped_non_ssrn` 观测（防前缀 10.2139 下潜在非-SSRN DOI 误纳）。
+- **枚举接缝（controller 终裁 2026-07-24：扩展 `CrossrefAdapter` 通用 prefix 模式，与 nber 并轨 N-1=YES）**：`ssrn` 元数据枚举 = **消费扩展后的 `CrossrefAdapter`**，**非** ssrn 自持。**裁决背景（评审实码核实）**：`parse.py:114 parse_facet_years` 硬绑 `message.facets.published`、`to_paper_stub` 仅产 `(doi,)` identifier——故原稿"零改 crossref"**不成立**（prefix 枚举与 created facet 均触 crossref parse/adapter）。**扩展参数化两轴**（`CrossrefAdapter` 本体改动，nber/ssrn 共用**实现卡**，**规范出处 = [nber.md §3.1](nber.md)**，本稿只写消费侧契约）：① **enum-key** = `issn` XOR `prefix`（ssrn 走 `prefix=10.2139`）；② **date-field** = `published | created`（ssrn 走 `created`——枚举窗 `from/until-created-date`、discover facet `created`，§4.3）。cursor 契约、限速、UA、`to_paper_stub` 映射沿 crossref 既有（aggregators §5.1，逐字），共享 `HttpClient`（`HttpClientConsumer.bind_http_client`，携 `[identity].email` polite pool）。**SSRN 专属逻辑落 `ssrn` adapter 后处理层**（消费 crossref 产出的 `PaperStub` 流后加工，见下 abstract_id 条）。
+- **DOI→abstract_id 抽取（`ssrn` 后处理层，消费 crossref `PaperStub` 流后加工）**：取 `to_paper_stub` 既产的 `(doi,)` identifier 的 DOI 值 → 正则 `^10\.2139/ssrn\.(\d+)$` 取 group(1) = abstract_id → **增补 `(ssrn, abstract_id)`**（下载主键；`to_paper_stub` 仅产 `(doi,)`，第二 identifier 由本层补）。DOI 锚点保留（跨源合并，D-007）。**护栏**：DOI 不匹配 `ssrn\.` 中缀者 → **不增补** `ssrn` identifier、计 `skipped_non_ssrn` 观测（防前缀 10.2139 下潜在非-SSRN DOI 误纳）。
 - **字段映射**：复用 crossref `parse`——`title[0]`（空数组跳过 + `parse` 观测，沿 aggregators §5.1 裁决）、`published/issued` 日期族、authors、abstract（JATS，SSRN 侧常缺 → OpenAlex 补，§4.5）。source provenance tag = `"ssrn"`（枚举归属）/ DOI 锚点所有权中性。
 - **增量 watch（"近 N 天新 WP"，AC-5 元数据层）**：`from-created-date:{今-N}`（created ≈ SSRN 新投稿入 crossref 时刻，~1 日延迟）整窗收割；去重由 `identifier(ssrn)` 主键天然保证（重叠窗口不产重复行，沿 arxiv "当月桶整窗重收割"先例）。**不依赖显式 watermark**（隐式经 created-date 窗表达）。`index-date` 作候补游标（含元数据更新，噪声高，[推断]），默认用 created-date。
 
 ### 4.3 `discover_timeline(venue, since)`（DISCOVER）
 
-- **零网络虚拟桶**：`GET .../works?filter=prefix:10.2139&rows=0&facet=created:*`（1 请求）→ 按 created 年 facet 产逐年 `IssueRef`（`paper_count_claimed`=该年计数）；`label='YYYY'`、`year=YYYY`、`volume=NULL`（沿 arxiv 月度桶字段分解，幂等键 (venue, year)）。watch 语境下细化到月/周桶（`from/until-created-date` 边界）。`since` = 可选 created 年下界（勘察回溯 68 年桶，含脏未来年 2077/2103 → 上界按"今日"截断、下界默认合理起点如 1990，脏年不产桶）。
+- **零网络虚拟桶**：经**扩展 `CrossrefAdapter`（date-field=`created`）** `GET .../works?filter=prefix:10.2139&rows=0&facet=created:*`（1 请求）→ 按 created 年 facet 产逐年 `IssueRef`（`paper_count_claimed`=该年计数）。**注**：`parse.py:114 parse_facet_years` 现硬绑 `facets.published`，`facet=created` 属 §4.2 同一扩展轴（date-field）——**discover 亦不走"零改 crossref"**。`label='YYYY'`、`year=YYYY`、`volume=NULL`（沿 arxiv 月度桶字段分解，幂等键 (venue, year)）。watch 语境下细化到月/周桶（`from/until-created-date` 边界）。`since` = 可选 created 年下界（勘察回溯 68 年桶，含脏未来年 **2077/2103/2104** → 上界按"今日"截断、下界默认合理起点如 1990，脏年不产桶）。
 
 ### 4.4 `resolve_assets(venue, paper, session)`（RESOLVE，landing-only 零网络）
 
@@ -197,7 +197,7 @@ updated: 2026-07-24
 |---|---|---|---|
 | 1 | capabilities 集合（Phase 5） | `{DISCOVER, ENUMERATE, RESOLVE(landing-only)}`；`FETCH` 随 §11 终裁 | §4.1；controller 预裁决 #1/#2 |
 | 2 | venue 建模 | 单一 `ssrn` venue + econ/fin 主题近似过滤（非 per-FEN venue） | §3；对照 arxiv category-venue 差异 |
-| 3 | 枚举接缝 | `ssrn` adapter **自持**前缀+created-date 枚举，复用 `crossref.parse` + `HttpClient`；**不改 implemented crossref 冻结件** | §4.2；**提请评审确认**（避免污染 crossref 按-ISSN 语义） |
+| 3 | 枚举接缝 | **扩展 `CrossrefAdapter` 通用 prefix 模式**（enum-key: `issn` XOR `prefix`；date-field: `published`\|`created`，ssrn 走 prefix+created）——nber/ssrn 共用实现卡，规范出处 [nber.md §3.1](nber.md)；ssrn 只写消费侧契约 + 后处理层（abstract_id / `skipped_non_ssrn` / 增补 `(ssrn)` identifier） | §4.2；**controller 终裁 2026-07-24**（`parse.py:114` 硬绑 `published`、`to_paper_stub` 仅产 `(doi,)`，"零改"不成立；N-1=YES 并轨 nber） |
 | 4 | 全文能力 | 元数据层 landing-only；全文 defer（§11 案 B） | §4.4；勘察 §5 无旁路 |
 | 5 | AC-5 分层 | AC-5.1a（元数据 CI）/ AC-5.1b（全文 opt-in，defer） | §8；controller 预裁决 #5 |
 | 6 | 覆盖率量化 | OpenAlex census 代理采样法 + 90% 阈值 + 缺口候补阶梯 | §9.1；controller 预裁决 #3 |
