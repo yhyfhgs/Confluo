@@ -48,20 +48,25 @@ updated: 2026-07-24
 
 ## 3. 各阶段实现方案（字段级）
 
-### 3.1 enumerate = Crossref **prefix 模式**（关键扩展点，与 elsevier_sd 唯一结构性差异）
+### 3.1 enumerate = Crossref **参数化枚举扩展**（★N-1 裁决=YES；本节 = 全谱规范出处）
 
-NBER **无 ISSN**——现 `CrossrefAdapter` 的 `discover_timeline`/`enumerate_issue` 硬走 `/journals/{issn}/works` 且
-`_issn_of()` 缺 ISSN 即 `CONFIG` 早失败。故需对 `CrossrefAdapter` 作**最小、同构扩展**（不新建独立 adapter）：
+**controller 终裁 N-1=YES**（W0 双评审对"扩 crossref vs adapter 自持"反案独立收敛到本方向）：`CrossrefAdapter` 升为**通用参数化
+枚举源**，**本节为该扩展的规范出处**——消费方清单 = **nber（prefix + published）** 与 **ssrn（同一扩展、走 created，见 ssrn.md）**。
+NBER **无 ISSN**，现 `discover_timeline`/`enumerate_issue` 硬走 `/journals/{issn}/works` 且 `_issn_of()` 缺 ISSN 即 `CONFIG` 早失败——
+故作**最小、同构、两轴参数化扩展**（不新建独立 adapter）：
 
-- **触发键**：venue `identifiers.crossref_prefix: "10.3386"`（新增开放 identifier scheme；期刊仍用 `issn`，二者互斥择一）。
-  URL 构造从 `/journals/{issn}/works` 切到 `/prefixes/{prefix}/works`——**其余逐字复用**：
-  - `discover_timeline`：`/prefixes/10.3386/works?rows=0&facet=published:*` → `parse.parse_facet_years` 逐出版年 `IssueRef`
-    （`paper_count_claimed`=该年计数）。
-  - `enumerate_issue`：`(prefix, year)` → `filter=from-pub-date:{y}-01-01,until-pub-date:{y}-12-31&cursor=*` → `parse.
-    parse_works_page` cursor 深翻断点续拉（**cursor 契约、`(doi)` 去重、首页空判 parse 全部原样复用**，crossref adapter.py:181）。
-- **实现形态建议**：`_issn_of` 泛化为 `_enum_key_of(venue) -> (mode, key)`（issn|prefix），URL builder 分派；`parse.*`
-  与 cursor 循环零改动。扩展面 = URL 两处 + 键取值一处（独立审查易验），风险极低。**★开放题 N-1**：是否借此把 crossref
-  升为"通用 DOI-prefix 枚举源"（利后续 report 系列）留 controller 定；本详设只要 nber 走通。
+- **轴① enum-key（issn XOR prefix）**：venue `identifiers.issn`（期刊）**或** `identifiers.crossref_prefix`（前缀系列，nber=`"10.3386"`），
+  二者互斥择一 → URL 基址 `/journals/{issn}/works` **XOR** `/prefixes/{prefix}/works`。
+- **轴② date-field（published | created）**：**三处联动**——发现 facet + 枚举 filter + facet 解析键：
+  - `published`（nber 默认，出版年轴）：facet `published:*` / filter `from-pub-date,until-pub-date` / 解析 `facets.published`。
+  - `created`（ssrn 消费，登记年轴）：facet `created:*` / filter `from-created-date,until-created-date` / 解析 `facets.created`。
+  - **⚠ 评审实证（参数化必须覆盖）**：`parse.parse_facet_years`（parse.py:114-125）**硬绑 `message.facets.published`**——须泛化为
+    按 date-field 取 `facets.{field}`，否则 ssrn 的 `created` facet 解析恒空（评审据此判 MAJOR 联动）。
+- **逐字复用面（两轴之外零改）**：`discover_timeline`→`parse.parse_facet_years`（泛化后）逐年 `IssueRef`（`paper_count_claimed`=该年计数）；
+  `enumerate_issue`→`(key, year)` 日期窗 + `cursor=*` 深翻 → `parse.parse_works_page`（**cursor 契约、`(doi)` 去重、首页空判 parse
+  原样复用**，adapter.py:181-223）。
+- **实现形态建议**：`_issn_of`→`_enum_key_of(venue)->(mode,key)`（issn|prefix 互斥校验）+ 新 `_date_field_of(venue)`（默认 published）；
+  URL builder 与 facet-parse 按两轴分派、cursor 循环零改动。扩展面 = URL 基址 + filter 前缀 + facet 键 + 键/字段取值（独立审查易验），风险低。
 - **prefix 枚举含非 w 项**：`t{n}` 技术工作论文（同 NBER、type=report）**折入同 venue**（series 标识 = DOI 后缀 `w`/`t`）；
   少量 book chapter（type≠report）由 `parse.to_paper_stub` 的 type 落库、resolve 侧按 §3.3 谓词天然不产 NBER 全文计划。
 - **abstract/topics 补充**：enumerate 产 stub 后由 **OpenAlex 补充层**（源=`openalex`，D-005 信用预算，D-007 merge ingest）
@@ -142,8 +147,9 @@ register/alias` 单调收紧取 min。故若把 `back.nber.org` 放进 `domains`
 
 - `id: nber`；`kind: preprint_channel`（working paper=预印性质，与 arxiv 同族；type-level=report）；`field: [econ]`；`tier: T1`。
 - `identifiers.crossref_prefix: "10.3386"`（**枚举键**，§3.1 新 scheme，替代期刊的 `issn`）；`openalex_source`: NBER source id
-  （⚠ 实现期核验，补充层用）。**无 ISSN**（工作论文系列固有；D-015 期刊必填 issn 的 lint 须对 `preprint_channel`/prefix 枚举
-  放行——★开放题 N-4：确认 lint 对 prefix-枚举 venue 的 issn 豁免，沿 arxiv `preprint_channel` 无 issn 先例）。
+  （⚠ 实现期核验，补充层用）。**无 ISSN**（工作论文系列固有）——**现码已满足、零 lint 变更**（N-4 收口）：`registry.py` `_lint_issn`
+  仅 `kind=journal` 必填 issn（`kind != "journal"` 即 `return []`），`preprint_channel` 天然豁免（**arxiv 31 个 preprint_channel
+  venue 无 identifiers 块、全过 lint** 实证）；`identifiers` 为自由 dict（types.py:205 `dict[str, object]`），`crossref_prefix` 键结构合法。
 - `metadata_source: crossref`（prefix 模式）；`fulltext_source: nber`；`auth.level: none`。
 - `quirks`：`fulltext_open_after_months: 18`（软门窗，resolve 谓词参数）；`series_prefixes: [w, t]`（enumerate 收录范围）。
 - `status: active`；`notes` 标注 JEL 缺口（§9）与 `preprint_of` 高频（NBER WP 常后发 AER/QJE，D-007）。
@@ -174,12 +180,13 @@ register/alias` 单调收紧取 min。故若把 `back.nber.org` 放进 `domains`
 ## 9. 风险与开放问题
 
 - **N-2 `t{n}` 全文路径未证实**（勘察只 HEAD 过 `w{n}`）：Phase 5 全文实现建议先限 `w` 系列；`t` 元数据照收、全文路径核验后放开。
-- **N-4 JEL 缺口 `[UNRESOLVED/DOC]`**：站内/Crossref/OpenAlex 三路均无 JEL；唯一已知源 RePEc `nbr:nberwo` ReDIF（旧稿 [DOC]，
+- **N-5 JEL 缺口 `[UNRESOLVED/DOC]`**：站内/Crossref/OpenAlex 三路均无 JEL；唯一已知源 RePEc `nbr:nberwo` ReDIF（旧稿 [DOC]，
   本次未验）——**RePEc enrich 挂 Phase 6，不在本详设实现**（controller 令）；`nber.yaml` notes 如实标注字段缺口。
 - **18 月边界模糊**：NBER 分批开放，恰 ~18 月论文 open/gated 不确定 → §3.3 双守卫（离线日期预判 + fetch 魔数 `no_entitlement`
   兜底）诚实处置，不猜配额。
 - **sitemap.txt 陈旧**（2025-10，~9 月）：仅作 bulk 种子须叠加 RSS/Crossref 补新；Phase 5 主路径不依赖 sitemap。
-- **★待 controller 定**：N-1（crossref 是否升通用 prefix 枚举源）、N-3（back 独立桶注册钩子形态）、N-4（lint issn 豁免 prefix venue）。
+- **已裁决**：N-1=YES（crossref 升通用 prefix 枚举源，§3.1 规范出处）、N-4=现码满足零 lint 变更（§6）。**余开放**：N-2（`t{n}`
+  全文路径，impl 核验）、N-3（back 独立桶注册钩子，§4 接缝）、N-5（JEL 经 RePEc，Phase 6）。
 - **勘察事实无冲突**：本详设全部依据 [LIVE 2026-07-24] 勘察，未见与旧稿 `econ-fin-preprints.md` 断言矛盾（旧稿软门/RePEc 段
   均 `[DOC]` 承接、未反驳）。
 
@@ -188,5 +195,6 @@ register/alias` 单调收紧取 min。故若把 `back.nber.org` 放进 `domains`
 | # | 日期 | 修订 | 依据 |
 |---|---|---|---|
 | 1 | 2026-07-24 | 初稿（实现级，status draft）：crossref prefix 模式扩展（enumerate 主干）+ 零网络 resolve（18 月离线窗谓词）+ www/back 双域分桶（back 独立桶避 alias 陷阱）+ 软门 `no_entitlement` 双守卫（红线不绕过）+ RSS watch 通道 + venue 字段设计 + AC-5.2 载体 + JEL/`t`-path 开放题 | [research/site-survey/nber.md](../../research/site-survey/nber.md) [LIVE 2026-07-24] + crossref/unpaywall adapter + auth-framework §8 + elsevier-sd.md 模板 |
+| 2 | 2026-07-24 | **W0 双评审修订轮**（Approve-with-fixes）：§3.1 升格为**全谱参数化枚举扩展规范出处**（★N-1 裁决=YES：crossref 升通用 prefix 枚举源；两轴 enum-key〔issn XOR prefix〕+ date-field〔published\|created，评审实证 parse.py:114 硬绑 published 须泛化〕；消费方 nber〔published〕/ssrn〔created〕）；§6/§9 **N-4 收口**（现码零变更：registry `_lint_issn` 仅 journal 必填 issn、preprint_channel 豁免、identifiers 自由 dict——arxiv 31 venue 实证）+ JEL 缺口相碰号改 N-5 | controller W0 回派（双评审收敛）+ registry.py/types.py/parse.py 实证 |
 
 Co-Authored-By: Claude Fable 5 <noreply@anthropic.com>
