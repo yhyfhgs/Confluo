@@ -21,7 +21,7 @@ updated: 2026-07-24
 - **能力按 venue 非对称分工（★ 见 §3.1）**：**TE/QE** 走全四位（econsoc 自持 OJS OAI-PMH 枚举）；**ECMA** 只实际行使 `RESOLVE | FETCH`（枚举走 crossref——**ECMA 不在 econtheory OJS 实例上**，OAI 无 ECMA 端点）。capabilities 是 adapter 上界，venue 的 `metadata_source`/`fulltext_source` 决定每刊实际行使哪几位（先例 wiley：capabilities 只 RESOLVE|FETCH、enumerate 委 crossref）。
 - **服务 venue（3 个 venue YAML：`ecma` / `te` / `qe`）**：
   - **TE / QE**：`metadata_source: econsoc`（OJS OAI-PMH），`fulltext_source: econsoc`，`auth.level: none`。
-  - **ECMA**：`metadata_source: crossref`（按 ISSN，D-005），`fulltext_source: 年代分段`（当前→econsoc / 过刊→wiley(token) / pre-DOI→界外，§3.3 + §9 D-028）；`auth.level: none`（当前段主路径；过刊段路由到 wiley adapter 时由 wiley 自持 institutional 认证）。
+  - **ECMA**：`metadata_source: crossref`（按 ISSN，D-005），**`fulltext_source: econsoc`（单值——registry 单 fulltext_adapter，无"分段字段"）**；`auth.level: none`。ECMA DOI 经 econsoc 运行时**域名分段路由**（§3.3 方向 a）：当前段自营 OA 取回；**过刊段（doi.wiley.com）/pre-DOI 段（JSTOR）判定为非本 adapter 覆盖面 → `no_entitlement`/skip**（Phase 5 口径；**跨 adapter fetch 交接机制显式 defer**——registry 无交接机制、config 无 wiley token，见 §3.3/§6/§7）。
 - **元数据/全文本域分工**：TE/QE 元数据在 `econtheory.org/ojs`（OAI），全文 galley 在 `econometricsociety.org`（合并前端）；ECMA 元数据在 crossref、全文 galley 在 `econometricsociety.org`。**resolve/fetch 对三刊当前段统一落 `econometricsociety.org`**（§4）。
 - **版权红线（AGENTS §6.5）**：三刊最新样本 CC BY 4.0(ECMA) / CC BY-NC 4.0(TE/QE)（survey §1 [LIVE]，逐字引用 <15 词）——**是开放许可**（区别于 aaai_ojs 的"免费只读非 CC"）；仍按个人科研只读、诚实 UA、不再分发姿态实现。
 
@@ -79,12 +79,12 @@ ECMA(ECTA) 的 `10.3982` DOI 跨三个托管年代，**fulltext 分三段**：
 | 段 | 年代 | 托管 | 归属 adapter | 全文获取 |
 |---|---|---|---|---|
 | 当前段 | ~切换点起（2026 实测自营） | `econometricsociety.org` 自营（CF） | **econsoc**（本 adapter） | 匿名 OA galley 200 |
-| 过刊段 | ~2010–切换点 | `doi.wiley.com`（Wiley TDM 域） | **wiley**（token 档） | TDM API by DOI，无 token→skip |
-| pre-DOI 段 | <2010（10.2307 旧前缀） | JSTOR | 界外（tier T3 暂缓） | 不获取 |
+| 过刊段 | ~2010–切换点 | `doi.wiley.com`（Wiley TDM 域） | 界外本 adapter（**Phase 5：`no_entitlement`/skip**） | 域名路由判属过刊 → skip；wiley TDM 交接 defer（§7） |
+| pre-DOI 段 | <2010（10.2307 旧前缀） | JSTOR | 界外（tier T3 暂缓） | 域名路由判属 JSTOR → 零资产跳过 |
 
 **切换点日历日 [UNRESOLVED②]**（survey §2：R0c 未能定；实现期二分确定 DOI 区间分界）。分段判定法两案：
 
-- **方向 a（建议）：运行时 per-DOI 域名判归属**。判据 = DOI 实际落地域名：resolve 阶段对每个 ECMA DOI 走 `doi.org` HEAD `-L`（或读 crossref works 的 `resource.primary.URL` 域名，枚举 payload 已带、边际零请求）→ `econometricsociety.org`＝econsoc 取；`doi.wiley.com`＝路由 wiley adapter（token 档）；`jstor.org`＝界外跳过。
+- **方向 a（建议）：运行时 per-DOI 域名判归属**。判据 = DOI 实际落地域名：resolve 阶段对每个 ECMA DOI 走 `doi.org` HEAD `-L`（或读 crossref works 的 `resource.primary.URL` 域名，枚举 payload 已带、边际零请求）→ `econometricsociety.org`＝econsoc 取（当前段 OA）；`doi.wiley.com`＝判属过刊段（**Phase 5：`no_entitlement`/skip**，非本 adapter 覆盖）；`jstor.org`＝界外零资产跳过。**过刊段收口（Phase 5）**：registry 单 fulltext_adapter + 无跨 adapter fetch 交接机制 + config 无 wiley token → ECMA 过刊段 fetch 行为统一 `no_entitlement`/skip（不阻塞当前段 OA 主路径，对齐 §7）；wiley TDM 跨 adapter handoff 显式 **defer**（本 adapter 不设计跨 adapter fetch 交接）。
 - **方向 b：年份粗分 + 实现期在线核实**。在 `ecma.yaml` quirks 硬编码切换边界年：year≥boundary→econsoc、[wiley起,boundary)→wiley、pre-DOI→界外；边界年实现期以 `doi.org` HEAD 二分核实修正。
 
 **论证（取方向 a）**：①econsoc 的 resolve **本就网络绑定**（须 GET 落地页抽 galley，§4）——域名判归属的边际成本近零（crossref `resource.primary.URL` 域名在枚举 payload 已在手，doi.org 落地在 resolve 本会发生）；②**自校正**：学会未来若继续前向迁移过刊、或切换边界模糊，域名路由自动跟随现实，无需改 config/文档；硬编码边界年一旦学会移动边界即静默误路由；③**避开未定切换日**（[UNRESOLVED②] R0c 未能 pin down，方向 a 不依赖它）。**caveat**：crossref 登记 link 有陈旧风险（survey §2：QE 的 crossref link 仍留 `onlinelibrary.wiley.com` 遗留 Wiley link，即使已自营）→ **权威信号取 resolve 时的实际落地域名（doi.org HEAD -L 实时重定向终点），crossref link 仅作 pre-filter 提示**。方向 b 保留为 pre-filter（快速排除 10.2307/JSTOR 明显界外记录、在 crossref 域名可信为 econsoc/wiley 时免逐 DOI HEAD）。**TE/QE 不分段**（全程 econsoc OA），ECMA 才分段。
@@ -131,7 +131,7 @@ ECMA(ECTA) 的 `10.3982` DOI 跨三个托管年代，**fulltext 分三段**：
 | OAI `idDoesNotExist`（GetRecord canary） | `gone` | 单 id 未命中 |
 | **econometricsociety.org CF 挑战**（galley/landing） | `challenge` | `cf-mitigated: challenge`/挑战页 HTML → **BLOCKED + 冷却**；canary 监（§5）；**不对抗**（AC-0.2） |
 | galley PDF url 回 HTML（撤稿/登录/合并） | `gone` | adapter 首字节嗅探（复用 arxiv `_gone_guarded_stream`）；`%PDF` 权威校验归 pipeline |
-| ECMA DOI 落 `doi.wiley.com`（过刊段） | `no_entitlement`（路由信号） | §3.3：非 econsoc 覆盖面 → 路由 wiley adapter（token 档）或标 skip；无 token→该篇 skip 不阻塞 |
+| ECMA DOI 落 `doi.wiley.com`（过刊段） | `no_entitlement` | §3.3：非本 adapter 覆盖面 → skip（**Phase 5：跨 adapter 交 wiley 的 handoff 显式 defer**，不阻塞当前段 OA 主路径） |
 | ECMA DOI 落 JSTOR（10.2307，pre-DOI） | —（界外零资产） | resolve 产零资产（tier T3 暂缓），非错误 |
 | **当前 ECMA galley 非匿名可下**（若非全刊 OA，[UNRESOLVED①]） | `no_entitlement` | 保留 OA fallback 升级路径（unpaywall / 过刊 wiley token）；实现期 HEAD 一篇当前 ECMA galley 判定 |
 | oai_dc XML 语法错 / 缺 `dc:title` / 无 DOI | `parse` | canary 标红（arxiv `_fromstring`→PARSE 先例） |
