@@ -167,12 +167,12 @@ updated: 2026-07-24
 
 ## 10. 裁决记录
 
-### 10.1 D-011 修订注记草案（供 controller 追加为新 ADR / D-011 amendment；**本稿不改 decision-log.md 本身**）
+### 10.1 D-029 决策草案（聚合主路径确立 + 模式 B 降级；修订 D-011 定位）——供 controller 追加为新 ADR，**本稿不改 decision-log.md 本身**
 
 > 以下为草案文本，措辞对齐 ADR 格式，待 controller 采纳后落 decision-log。
 
 ```
-## D-0NN SSRN 定位修订：聚合元数据主路径 + 浏览器全文降 opt-in（修订 D-011）
+## D-029 SSRN 定位修订：聚合元数据主路径确立 + 浏览器全文降 opt-in（修订 D-011 定位）
 - 状态：proposed · 依据：research/site-survey/ssrn.md [LIVE 2026-07-24] R0a + design/adapters/ssrn.md
 - 背景：D-011（2026-07-20）设想「eLibrary 浏览页 + RSS 枚举 + 浏览器下载」双模式、auth_level
   free_account_preferred。R0a 勘察（2026-07-24）实测颠覆三点：① SSRN 全库经 Crossref 前缀 10.2139
@@ -228,15 +228,15 @@ updated: 2026-07-24
 
 ### 11.3 关键评估维度
 
-- **本机环境对 CF 前置域 TLS 层阻断（R0a [LIVE] 实测）——浏览器上下文同样被阻断**：本机强制走代理 `127.0.0.1:6152`（fake-IP DNS），对**所有 Cloudflare 前置域**在 TLS 握手 reset。Playwright 浏览器上下文的网络出口 = **同一本机代理** ⇒ **案 A 在线验收（真实 `Delivery.cfm` 取回）在本环境不可行——连 happy path 都无法验一次**。
+- **本机环境对 CF 前置域 TLS 层阻断（R0a [LIVE] 实测 curl/httpx）——浏览器上下文**同样被阻断 [推断]**（R0a 未实测 Playwright）**：本机强制走代理 `127.0.0.1:6152`（fake-IP DNS），对**所有 Cloudflare 前置域**在 TLS 握手 reset（curl/httpx 实测）。Playwright 浏览器上下文的网络出口 = **同一本机代理** ⇒ [推断] 同样被 reset ⇒ **案 A 在线验收（真实 `Delivery.cfm` 取回）在本环境大概率不可行——happy path 亦无法验一次**。
 - **离线可验证边界**：案 A 逻辑（challenge 判定 / BLOCKED / 同批约束 / 预算护栏）可经假 seam + fixture **离线全覆盖**；但「真穿 Cloudflare 取回 PDF」**永不可离线验**，且红线下遇挑战即 BLOCKED（不自动过）⇒ **即便非阻断环境**，诚实验收 = 用户已 CF-cleared 的浏览器 session 下取回，本质**用户参与 runbook、非 CI**。
 - **D-011 承诺与 R4 缓解兑现度**：案 A 兑现「设计 + 最小实现」；案 B 兑现「设计」（本 §11 + auth-framework §9/§10 基建已在），defer「实现」至可验证环境 + 横切件统一。两案的 R4 缓解（SSRN 无 API→浏览器自动化 + 严限速）**设计层等价兑现**，差异仅在「是否本 Phase 落实现代码」。
 
 ### 11.4 推荐与理由（controller 终裁）
 
-**推荐：案 B（defer 至 Phase 6 横切件）。**
+**推荐：案 B（defer 至 Phase 6 横切件）。（controller 已正式采纳案 B；本 §11 保留为 Phase 6 横切件设计种子。）**
 
-1. **环境 TLS 阻断 CF 前置域（含浏览器上下文）⇒ 案 A 在线验收本环境不可行**——shipping 无法验一次的代码，违项目「勘察先行 / 可验证」纪律（Phase 2 REJECT 教训）。
+1. **环境 TLS 阻断 CF 前置域（curl/httpx [LIVE]；浏览器上下文 [推断] 同源本机代理）⇒ 案 A 在线验收本环境大概率不可行**——shipping 无法验一次的代码，违项目「勘察先行 / 可验证」纪律（Phase 2 REJECT 教训）。
 2. D-011 修订（controller #1）已降模式 B 为 opt-in 低配额；**defer 实现至 Phase 6 让它与 aea/wiley 两消费方作一次横切件设计**，非 SSRN 单独 bolt-on（DRY + 一致 challenge/预算处置）。
 3. Phase 5 SSRN 元数据价值（crossref spine）零 SSRN 接触、全 CI 可判——**defer 全文不丢价值**。
 4. R4 缓解经「设计浏览器通道」（本 §11 + auth-framework 基建）兑现，「实现落地」待可验证环境 + 横切件 Phase。
