@@ -49,7 +49,7 @@ updated: 2026-07-24
 **论据（对照 arxiv category-venue 先例的关键差异）**：
 1. **arxiv 把 category 建为独立 `preprint_channel` venue（`arxiv-cs-lg`…）成立的前提是：其枚举源（OAI-PMH）原生支持按 category 精确过滤**（`set=archive` + 客户端 subject 过滤，arxiv.md §3）——每个 category venue 只枚举自己那一片。
 2. **SSRN 的枚举源（crossref 前缀查询）无 network/eJournal 过滤维度**（勘察 §8 明证："Crossref/OpenAlex 无法按 SSRN network/eJournal 精确过滤"）。若把 FEN/ERN 各建为独立 venue，**每个子网 venue 都得枚举整个 1.41M 前缀再本地过滤**——零枚举成本节省，且子网边界只能用**主题近似**（OpenAlex field/topic），并非 SSRN 真实的 FEN/ERN 成员籍。以近似冒充精确 venue 边界会误导用户（把"econ 主题"当成"FEN 子网"）。
-3. **故：一个 `ssrn` venue = 前缀 10.2139 全库**；econ/fin 定位表达为**可选本地过滤**（`Selector.filter_expr`），经 OpenAlex `primary_topic.field ∈ {Economics·Econometrics·Finance, Business·Management·Accounting}`（enrich 层已实现）**近似**实现，**如实标注为近似**（验收取 AC-6.3 式"本地过滤一致率 ≥95%"形态，**非**精确枚举断言）。勘察 [推断]：Economics/Finance + Business 领域 ≈ 48 万+，但 SSRN 已多学科化（Engineering 22 万、Medicine 7 万），非纯经济金融站——单 venue + 主题过滤如实反映此现实。
+3. **故：一个 `ssrn` venue = 前缀 10.2139 全库**；econ/fin 定位表达为**可选本地过滤**（`Selector.filter_expr`），经 OpenAlex `primary_topic.field ∈ {Economics·Econometrics·Finance, Business·Management·Accounting}`（enrich 层已实现）**近似**实现，**如实标注为近似**（验收 = **确定性过滤逻辑单测**（§8 AC-5.1a②：固定 fixture 输入→期望输出精确断言），**非**精确枚举断言；原"≥95% vs OpenAlex field 基准"因过滤信号本取自 OpenAlex field、自比恒 100% 空判而废）。勘察 [推断]：Economics/Finance + Business 领域 ≈ 48 万+，但 SSRN 已多学科化（Engineering 22 万、Medicine 7 万），非纯经济金融站——单 venue + 主题过滤如实反映此现实。
 4. **未来物化子网视图的低成本路径（保留 D-002 杠杆）**：若用户确需 per-子网视图，可增薄 YAML 声明**同一 `ssrn` adapter** + `quirks.topic_filter`（econ/fin/law…）——**零 adapter 改动**；但它们是**同一枚举之上的派生切片**，非独立枚举单元。此与 §9 开放问题④（FEN→聚合过滤映射）联动。
 5. **精确 per-eJournal 唯一硬路径 = SSRN 浏览页（Cloudflare 门）**——与红线冲突，降级/可选（模式 B 语境，§11），不作元数据主路径。
 
@@ -130,8 +130,8 @@ updated: 2026-07-24
 
 ## 7. 测试与 fixture 计划（全离线可判；出处分级 [LIVE]/[DOCS]/合成）
 
-- **T1 单元（零网络）**：① `DOI→abstract_id` 抽取正则矩阵（合法 `10.2139/ssrn.4056799`→`4056799`；非 `ssrn.` 中缀的 10.2139 DOI→护栏拒绝；大小写/前缀经 `normalize_doi` 归一）；② created-date 虚拟桶生成边界（下界起点、上界"今日"截断、**脏未来年 2077/2103 不产桶**）；③ prefix+created-date URL 构造 + cursor 续拉窗口重建（假响应，`next-cursor`→items 空）；④ 复用 `crossref.parse` 的 works→PaperStub 已有覆盖，本 adapter 仅增 prefix-URL 与 SSRN identifier 产出单测。
-- **T3 fixture（脱敏，复用 aggregators crossref/unpaywall fixture 规范）**：① crossref 前缀 works 正常页（**混 journal-article + posted-content 两类型** + 合法 `ssrn.` DOI，证两类全收）；② 空 created 窗（合法空，`total:0`）；③ cursor 两页续拉；④ 前缀 10.2139 下**非-ssrn 中缀** DOI（护栏路径 → `skipped_non_ssrn`）；⑤ **unpaywall SSRN 响应**（`is_oa:true`、`oa_location` 指回 doi.org、`url_for_pdf:null`）→ 断言 `_stage_oa_fallback` **不产 asset**（验证 §4.4"landing-only 净效果 = PDF 命中≈0"）。
+- **T1 单元（零网络）**：① `DOI→abstract_id` 抽取正则矩阵（合法 `10.2139/ssrn.4056799`→`4056799`；非 `ssrn.` 中缀的 10.2139 DOI→护栏拒绝；大小写/前缀经 `normalize_doi` 归一）；② created-date 虚拟桶生成边界（下界起点、上界"今日"截断、**脏未来年 2077/2103/2104 不产桶**）；③ prefix+created-date URL 构造 + cursor 续拉窗口重建（假响应，`next-cursor`→items 空）；④ 复用 `crossref.parse` 的 works→PaperStub 已有覆盖，本 adapter 仅增 prefix-URL 与 SSRN identifier 产出单测。
+- **T3 fixture（脱敏，复用 aggregators crossref/unpaywall fixture 规范）**：① crossref 前缀 works 正常页（**混 journal-article + posted-content 两类型** + 合法 `ssrn.` DOI，证两类全收）；② 空 created 窗（合法空，`total:0`）；③ cursor 两页续拉；④ 前缀 10.2139 下**非-ssrn 中缀** DOI（护栏路径 → `skipped_non_ssrn`）；⑤ **unpaywall SSRN 响应**（`is_oa:true`、`oa_location` 指回 doi.org、`url_for_pdf:null`）→ 断言 `_stage_oa_fallback` **不产 asset**（验证 §4.4"landing-only 净效果 = PDF 命中≈0"）；⑥ **7 收割日回放序列**（AC-5.1a① 判据载体）：跨 7 日 created 窗序列，含**重叠窗口**（相邻日窗交叠）+ **created 延迟注入**（某投稿延至次日窗出现）→ 断言 7 日累计去重后无重复无遗漏（沿 arxiv.md §6 七收割日回放 + D-018）；⑦ **主题过滤单测输入集**（混 econ/fin/非-econ 的 `primary_topic.field` stub）→ 期望过滤输出的确定性断言（AC-5.1a② 判据载体）。
 - **模式 B fixture（仅 §11 案 A 落地时补）**：Cloudflare 挑战页（复用 auth-framework §11 challenge fixture，`cf-mitigated`/"Just a moment…" 脱敏）→ `ChallengeDetector` 判 CHALLENGE → `Challenged`→BLOCKED；`Delivery.cfm` token 语义经 browser 假 seam 单测（auth-framework §9/§10）。**案 B 下本组不需**。
 - **T5 在线冒烟（元数据层，授权真实网络，`MAX_REAL_REQUESTS≤5`，零 SSRN 域）**：crossref 前缀单窗口枚举首页 1 + openalex source S4210172589 计数 1 + unpaywall SSRN DOI 1（证 landing-only）——**均非 SSRN 域**。SSRN 站点连通性**永不进 CI/冒烟**（环境 TLS 阻断 + 红线）。
 - **模式 B 真实性验证 = 用户参与 runbook**（`tests/manual/`，换非-CF-阻断网络，records 留痕）——类 D-018 分层：离线 seam/challenge 单测先行 PASS，真实浏览器取回 defer 至可验证环境（§11 案 B）。
@@ -142,12 +142,12 @@ updated: 2026-07-24
 
 | 草案 ID | 层 | 场景 | 通过判据 | 验收形态 |
 |---|---|---|---|---|
-| **AC-5.1a** | 元数据（**CI 可判**） | crossref 前缀近 7 天 created 窗增量枚举 | ① T4 回放 7 收割日（含重叠窗口 + created ~1 日延迟注入）→ abstract_id 清单**无重复无遗漏**（沿 D-018 分层，机制正确性）；② econ/fin **主题近似过滤**一致率 ≥95%（AC-6.3 式：本地过滤 vs OpenAlex field 基准，**非** SSRN 真实子网）；③ **全程零 SSRN 接触**（obslog 无 `*.ssrn.com` 请求）；限速审计经 obslog jsonl（元数据层无 FetchLog） | 离线 T4 + 单次在线冒烟（D-018） |
+| **AC-5.1a** | 元数据（**CI 可判**） | crossref 前缀近 7 天 created 窗增量枚举 | ① T4 回放 7 收割日（含重叠窗口 + created ~1 日延迟注入）→ abstract_id 清单**无重复无遗漏**（沿 D-018 分层，机制正确性）；② econ/fin 主题过滤 = **确定性过滤逻辑单测**（固定 fixture 输入 → 期望过滤输出精确断言，CI 稳定；**废止**原"一致率≥95% vs OpenAlex field 基准"——评审证实过滤信号本取自 OpenAlex field、自比恒 100% 为空判）；③ **全程零 SSRN 接触**（obslog 无 `*.ssrn.com` 请求）；限速审计经 obslog jsonl（元数据层无 FetchLog） | 离线 T4 + 单次在线冒烟（D-018） |
 | **AC-5.1b** | 全文（**opt-in + 环境依赖，非 CI**） | 模式 B 单篇浏览器取回 | 遇 Cloudflare 挑战**正确 BLOCKED(challenge)+冷却 24h**（离线 challenge fixture 可判）；真实取回落盘 = 用户参与 runbook（换非阻断网络）；限速 ≤1 req/5s（仅模式 B 触 `*.ssrn.com` 时，FetchLog 审计） | **案 B 下 defer Phase 6**（§11） |
 
-- **「按 FEN 子网」修订注记**：精确子网枚举**无合规路径**（§3）→ 判据改「econ/fin 主题近似过滤一致率 ≥95%」（AC-6.3 式），与 development-plan 原 DoD 的"FEN 子网"字面差异如实公开（不静默弱化）。
+- **「按 FEN 子网」修订注记**：精确子网枚举**无合规路径**（§3）→ 判据改「econ/fin 主题**确定性过滤逻辑单测**」（AC-5.1a②），与 development-plan 原 DoD 的"FEN 子网"字面差异如实公开（不静默弱化）。
 - **「遇 Cloudflare 挑战正确 BLOCKED」保留但语境收窄**：仅模式 B；元数据层零 SSRN 接触故**永不触发挑战**——该判据在元数据层退化为"obslog 证零 SSRN 请求"。
-- **关联**：AC-5.1a↔AC-6.3（本地过滤一致率）/ AC-2.3 分层先例（D-018）；AC-5.1b↔AC-4.6（风控即停）。**AC-5.2/5.3/5.4（nber/TE-QE/路由）不属本 adapter**，由 Phase 5 同批 adapter 承接。
+- **关联**：AC-5.1a②（确定性过滤单测，CI）↔ AC-6.3（Phase 6 SSRN 无下推补偿：**人工浏览基准**一致率，runbook 层，异于同信号自比）/ AC-2.3 分层先例（D-018）；AC-5.1b↔AC-4.6（风控即停）。**AC-5.2/5.3/5.4（nber/TE-QE/路由）不属本 adapter**，由 Phase 5 同批 adapter 承接。
 
 ## 9. 风险与开放问题
 
