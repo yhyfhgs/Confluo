@@ -2,7 +2,7 @@
 
 覆盖：AUTH_EXPIRED 整批 BLOCKED + resume 后 re-resolve 生效（AC-1.5）/
 CHALLENGE、CONFIG 单点 BLOCKED / fail_enumerate → FAILED(parse) / GONE 标 asset
-不重试 / NO_ENTITLEMENT 标 asset + FAILED / TRANSIENT 耗尽预算 attempts==4 与
+不重试 / NO_ENTITLEMENT 标 asset + 独立终态不计 failed（§8.5） / TRANSIENT 耗尽预算 attempts==4 与
 退避序列 × retry_scale / INTEGRITY 重下 1 次 / RATE_LIMITED 循环保护升级 /
 非 CrawlerError → TRANSIENT 处置 / blocked 报告计数。
 Refs: FR-09, FR-10, D-004, AC-1.5。
@@ -194,20 +194,26 @@ def test_gone_marks_asset_done_and_never_retries(env: PipelineEnv) -> None:
     assert env.repo.counts(VENUE)["assets_fetched"] == 4
 
 
-# -- NO_ENTITLEMENT：标 asset + FAILED ----------------------------------------
+# -- NO_ENTITLEMENT：标 asset + 独立终态不计 failed（§8.5）--------------------
 
 
-def test_no_entitlement_marks_asset_and_fails(env: PipelineEnv) -> None:
+def test_no_entitlement_marks_asset_independent_terminal(env: PipelineEnv) -> None:
+    """auth-framework §8.5 回归锁定：no_entitlement 是预期内**独立终态**——任务 complete
+    （DONE，非 FAILED）、**不计失败率**、`report.no_entitlement` 单列计数、asset 标
+    no_entitlement（AC-4.3）。OA-fallback 默认关（直建 StageContext oa_fallback=False）时
+    不派生兜底任务。**与旧语义 diff**：此前 NO_ENTITLEMENT→FAILED（计 failed），现独立终态。"""
     env.write_venue(fail_fetch("no_entitlement", [1]))
     report = env.make_runner().pull(VENUE, Selector(volume="1", issue="1"))
 
-    assert report.succeeded == 4 and report.failed == 1
-    assert report.failures[0]["error_class"] == "no_entitlement"
+    assert report.succeeded == 4
+    assert report.failed == 0 and report.failures == []  # 不计失败率（§8.5）
+    assert report.no_entitlement == 1  # 单列计数（复审 n1）
     marked = env.repo.list_assets(venue_id=VENUE, state="no_entitlement")
     assert len(marked) == 1
-    failed = fetch_tasks(env, state="FAILED")
-    assert len(failed) == 1
-    assert failed[0]["attempts"] == 1  # 不重试
+    assert fetch_tasks(env, state="FAILED") == []  # 无 FAILED——任务 DONE
+    # 该 asset 的 fetch 任务 complete（预期内终态，不占重试预算）
+    assert len(failure_fetch_logs(env, "no_entitlement")) == 1  # 失败路径仍写 fetch_log 审计行
+    assert all(r["attempts"] == 0 for r in fetch_tasks(env))  # complete 不经 fail，不动 attempts
 
 
 # -- TRANSIENT：重试 3 次后 FAILED 且 attempts==4 -----------------------------
@@ -373,7 +379,8 @@ def test_adapter_ok_false_routed_by_result_error_class(
     monkeypatch.setattr(MockPlatformAdapter, "fetch_asset", fetch_denied)
     report = env.make_runner().drain()
 
-    assert report.failed == 1
+    # §8.5：FetchResult(ok=False, NO_ENTITLEMENT) 同样走独立终态——不计 failed。
+    assert report.failed == 0 and report.no_entitlement == 1
     asset = env.repo.get_asset(asset_id)
     assert asset is not None and asset["state"] == "no_entitlement"
 
