@@ -4,6 +4,20 @@
 （§1 表）：``DISCOVER | ENUMERATE``——**无 SEARCH/RESOLVE/FETCH**（五源均无 FETCH，
 plan §2-3；SEARCH 冻结协议无 `search()`，订阅命中经 enumerate + 本地过滤达成，§1）。
 
+**两轴参数化枚举扩展**（Phase 5 T1；规范出处 nber.md §3.1，★N-1 裁决=YES）：本 adapter
+升为通用参数化枚举源，消费方 = nber（prefix+published）/ ssrn（prefix+created）+ 既有全部
+by-ISSN 期刊（issn+published，**零回归**）：
+
+- **轴① enum-key（issn XOR prefix）**：venue `identifiers.issn`（期刊）**XOR**
+  `identifiers.crossref_prefix`（前缀系列，nber `10.3386` / ssrn `10.2139`）→ URL 基址
+  `/journals/{issn}/works` **XOR** `/prefixes/{prefix}/works`；二者都缺/都在 → CONFIG 响亮。
+- **轴② date-field（published | created）**：venue `quirks.crossref_date_field`（默认
+  `published`）三处联动——发现 facet `{field}:*` / 枚举 filter `from/until-{pub|created}-date`
+  / 解析键 `facets.{field}`（★注：`published` 轴 filter 前缀是 `pub` 缩写、facet/解析键用
+  全名 `published`；`created` 轴三处同名）。
+- **零改面**：`to_paper_stub`（仍产 `(doi,)`）、cursor 深翻契约、首页空判、限速、UA、
+  polite pool 逐字复用（扩展纯加性，两轴之外零改）。
+
 阶段分工（§5.1）：
 
 - `discover_timeline`：`/journals/{issn}/works?rows=0&facet=published:*`（1 请求）→ 按
@@ -66,6 +80,15 @@ _API_ROOT = "https://api.crossref.org"
 # 深翻页大小：rows≤1000（offset≤10000 浅翻不用，深翻一律 cursor）。cursor 模式下
 # 每页取 rows 条 + next-cursor 续页，直至 items 空。
 _ROWS = 1000
+
+# --- date-field 轴常量（nber.md §3.1）---------------------------------------------------------
+# venue.quirks.crossref_date_field 择一，默认 published。映射值 = date-field → Crossref filter
+# 日期名——★published 轴 filter 前缀是 `pub` 缩写（from-pub-date），而 facet 参数 / 解析键用全名
+# `published`；created 轴三处同名（from-created-date / created:* / facets.created）。
+_DATE_FIELD_QUIRK = "crossref_date_field"
+_DATE_FIELD_FILTER: dict[str, str] = {"published": "pub", "created": "created"}
+_VALID_DATE_FIELDS = frozenset(_DATE_FIELD_FILTER)  # {"published", "created"}
+_DEFAULT_DATE_FIELD = "published"
 
 _CONTACT_EMAIL_ENV = "PAPER_CRAWLER_CONTACT_EMAIL"
 # RFC 2606 保留 .invalid 顶级域——占位联系人不可能是真实地址（隐私安全），且明确信号
@@ -133,21 +156,22 @@ class CrossrefAdapter(AdapterBase):
     # -- discover（facet 逐年计数，1 请求）---------------------------------------------------
 
     def discover_timeline(self, venue: VenueSpec, since: str | None = None) -> Iterable[IssueRef]:
-        """`rows=0&facet=published:*` → 逐出版年 `IssueRef`（§5.1）。
+        """`rows=0&facet={field}:*` → 逐年 `IssueRef`（§5.1；两轴见模块 docstring）。
 
-        `issn` 从 `venue.identifiers.issn[0]` 取（D-015：期刊+crossref 必填，lint 保证；
-        本层缺省仍 CONFIG 早失败）。`since`（可选年份下界，取前 4 位）收窄起点。目标/边界
-        急切求值（非法早失败 CONFIG）；网络在返回生成器惰性执行。
+        enum-key（issn XOR prefix）+ date-field（published|created）从 venue 急切解析
+        （非法早失败 CONFIG：issn·prefix 都缺/都在、未知 date-field）。`since`（可选年份
+        下界，取前 4 位）收窄起点；网络在返回生成器惰性执行。
         """
-        issn = _issn_of(venue)
+        mode, key = _enum_key_of(venue)
+        field = _date_field_of(venue)
         since_year = _since_year(since)
-        return self._discover_years(venue, issn, since_year)
+        return self._discover_years(venue, mode, key, field, since_year)
 
     def _discover_years(
-        self, venue: VenueSpec, issn: str, since_year: int | None
+        self, venue: VenueSpec, mode: str, key: str, field: str, since_year: int | None
     ) -> Iterator[IssueRef]:
-        data = self._client().get_bytes(self._facet_url(issn))
-        year_counts, _total = parse.parse_facet_years(data)
+        data = self._client().get_bytes(self._facet_url(mode, key, field))
+        year_counts, _total = parse.parse_facet_years(data, field)
         for year in sorted(year_counts):
             if since_year is not None and year < since_year:
                 continue
@@ -164,27 +188,31 @@ class CrossrefAdapter(AdapterBase):
     # -- enumerate（日期窗 + cursor 深翻断点续拉）-------------------------------------------
 
     def enumerate_issue(self, venue: VenueSpec, issue: IssueRef) -> Iterable[PaperStub]:
-        """`(issn, year)` 日期窗 → works cursor 深翻 → PaperStub 流（§5.1 cursor 契约）。
+        """`(key, year)` 日期窗 → works cursor 深翻 → PaperStub 流（§5.1 cursor 契约）。
 
-        目标/窗口急切求值（缺 issn/year 早失败 CONFIG）；cursor 翻页与网络在返回生成器
-        惰性执行。去重由 `(doi)` identifier 主键天然保证（窗口重建/重叠不产重复入库）。
+        enum-key（issn XOR prefix）+ date-field + year 急切求值（缺/冲突 → CONFIG）；cursor
+        翻页与网络在返回生成器惰性执行。去重由 `(doi)` identifier 主键天然保证（窗口重建/
+        重叠不产重复入库）。
         """
-        issn = _issn_of(venue)
+        mode, key = _enum_key_of(venue)
+        field = _date_field_of(venue)
         year = issue.year
         if year is None:
             raise CrawlerError(
                 ErrorClass.CONFIG,
                 f"crossref enumerate needs IssueRef.year (per-year window), got {issue!r}",
             )
-        return self._enumerate_window(venue, issn, year)
+        return self._enumerate_window(venue, mode, key, field, year)
 
-    def _enumerate_window(self, venue: VenueSpec, issn: str, year: int) -> Iterator[PaperStub]:
+    def _enumerate_window(
+        self, venue: VenueSpec, mode: str, key: str, field: str, year: int
+    ) -> Iterator[PaperStub]:
         frm = f"{year:04d}-01-01"
         until = f"{year:04d}-12-31"
         cursor = "*"  # 深翻起点；不持久化、不跨任务复用（中断按窗口重建从头，§5.1）
         first_page = True
         while True:
-            data = self._client().get_bytes(self._works_url(issn, frm, until, cursor))
+            data = self._client().get_bytes(self._works_url(mode, key, field, frm, until, cursor))
             page = parse.parse_works_page(data)
 
             # total-results>0 但**首页** items 空解析 0 条 → parse（canary 标红，§5.1）。
@@ -197,8 +225,8 @@ class CrossrefAdapter(AdapterBase):
             ):
                 raise CrawlerError(
                     ErrorClass.PARSE,
-                    f"crossref {issn} {year}: total-results={page.total_results} but first page "
-                    "items empty — parse anomaly",
+                    f"crossref {mode}:{key} {year}: total-results={page.total_results} but first "
+                    "page items empty — parse anomaly",
                 )
             first_page = False
 
@@ -274,17 +302,20 @@ class CrossrefAdapter(AdapterBase):
 
     # -- URL 构造 ---------------------------------------------------------------------------
 
-    def _facet_url(self, issn: str) -> str:
-        params = {"rows": "0", "facet": "published:*"}
-        return f"{_API_ROOT}/journals/{issn}/works?{urlencode(params)}"
+    def _facet_url(self, mode: str, key: str, field: str) -> str:
+        params = {"rows": "0", "facet": f"{field}:*"}
+        return f"{_API_ROOT}/{_base_path(mode, key)}/works?{urlencode(params)}"
 
-    def _works_url(self, issn: str, frm: str, until: str, cursor: str) -> str:
+    def _works_url(
+        self, mode: str, key: str, field: str, frm: str, until: str, cursor: str
+    ) -> str:
+        date_name = _DATE_FIELD_FILTER[field]
         params = {
-            "filter": f"from-pub-date:{frm},until-pub-date:{until}",
+            "filter": f"from-{date_name}-date:{frm},until-{date_name}-date:{until}",
             "rows": str(_ROWS),
             "cursor": cursor,
         }
-        return f"{_API_ROOT}/journals/{issn}/works?{urlencode(params)}"
+        return f"{_API_ROOT}/{_base_path(mode, key)}/works?{urlencode(params)}"
 
     def _work_url(self, doi: str) -> str:
         # DOI 原样入 path（Crossref /works/{doi} 标准端点，DOI 内含 '/' 是 path 组成部分）。
@@ -294,15 +325,73 @@ class CrossrefAdapter(AdapterBase):
 # --- 模块级纯函数 -----------------------------------------------------------------------------
 
 
-def _issn_of(venue: VenueSpec) -> str:
-    """从 `venue.identifiers.issn[0]` 取 ISSN；缺失/畸形 → CONFIG（D-015 lint 已保证期刊必填）。"""
+def _enum_key_of(venue: VenueSpec) -> tuple[str, str]:
+    """enum-key 轴（issn XOR prefix，nber.md §3.1）→ `(mode, key)`，mode ∈ {"issn","prefix"}。
+
+    - `identifiers.issn`（期刊，`list[str]` 取 [0]）→ `("issn", issn)` → 基址 /journals/{issn}
+    - `identifiers.crossref_prefix`（前缀系列，`str`，如 nber `10.3386` / ssrn `10.2139`）→
+      `("prefix", prefix)` → 基址 /prefixes/{prefix}
+    二者**都在**（歧义）或**都缺**（无枚举键）→ CONFIG 响亮报错（XOR 校验）。期刊 issn 必填由
+    D-015 lint 保证；前缀系列（preprint_channel）经 lint 豁免（registry `_lint_issn`，nber.md §6）。
+    """
+    issn = _issn_value(venue)
+    prefix = _prefix_value(venue)
+    if issn is not None and prefix is not None:
+        raise CrawlerError(
+            ErrorClass.CONFIG,
+            f"crossref venue {venue.id!r} has both identifiers.issn and identifiers."
+            "crossref_prefix — enum-key must be issn XOR prefix (exactly one)",
+        )
+    if issn is not None:
+        return ("issn", issn)
+    if prefix is not None:
+        return ("prefix", prefix)
+    raise CrawlerError(
+        ErrorClass.CONFIG,
+        f"crossref venue {venue.id!r} needs identifiers.issn[0] XOR "
+        "identifiers.crossref_prefix (enum-key)",
+    )
+
+
+def _issn_value(venue: VenueSpec) -> str | None:
+    """`identifiers.issn[0]`（合法非空串）→ str；缺失/畸形 → None（非枚举键）。"""
     raw = venue.identifiers.get("issn")
     if isinstance(raw, list) and raw and isinstance(raw[0], str) and raw[0].strip():
         return raw[0].strip()
+    return None
+
+
+def _prefix_value(venue: VenueSpec) -> str | None:
+    """`identifiers.crossref_prefix`（合法非空串，如 `10.3386`）→ str；缺失/畸形 → None。"""
+    raw = venue.identifiers.get("crossref_prefix")
+    if isinstance(raw, str) and raw.strip():
+        return raw.strip()
+    return None
+
+
+def _date_field_of(venue: VenueSpec) -> str:
+    """date-field 轴（published | created，默认 published，nber.md §3.1）。
+
+    从 `venue.quirks.crossref_date_field` 读取；缺省 → `published`（既有 by-ISSN 期刊零改）；
+    未知值 → CONFIG 响亮报错。ssrn 走 `created`（登记年轴），nber/期刊走 `published`（出版年轴）。
+    """
+    raw = venue.quirks.get(_DATE_FIELD_QUIRK)
+    if raw is None:
+        return _DEFAULT_DATE_FIELD
+    if isinstance(raw, str) and raw in _VALID_DATE_FIELDS:
+        return raw
     raise CrawlerError(
         ErrorClass.CONFIG,
-        f"crossref venue {venue.id!r} needs identifiers.issn[0] (D-015)",
+        f"crossref venue {venue.id!r} has invalid quirks.{_DATE_FIELD_QUIRK}={raw!r} "
+        f"(must be one of {sorted(_VALID_DATE_FIELDS)})",
     )
+
+
+def _base_path(mode: str, key: str) -> str:
+    """enum-key `(mode, key)` → Crossref URL 基址路径段（不含前导/后随斜杠）。"""
+    if mode == "issn":
+        return f"journals/{key}"
+    return f"prefixes/{key}"  # mode == "prefix"（_enum_key_of 保证二值域）
 
 
 def _since_year(since: str | None) -> int | None:
