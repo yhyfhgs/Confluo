@@ -101,6 +101,20 @@ def test_journal_of_doi_rejects_non_econsoc(doi: str) -> None:
     assert parse.journal_of_doi(doi) is None
 
 
+@pytest.mark.parametrize(
+    ("doi", "expected"),
+    [
+        ("10.2307/1912227", True),  # ECMA pre-DOI（JSTOR 旧前缀）
+        ("https://doi.org/10.2307/1912227", True),  # URL 前缀归一后仍判 True
+        ("10.3982/ECTA23709", False),  # modern ECMA（非 pre-DOI）
+        ("10.3982/te6021", False),  # TE born-DOI（无 pre-DOI 时代）
+        ("", False),
+    ],
+)
+def test_is_pre_doi(doi: str, expected: bool) -> None:
+    assert parse.is_pre_doi(doi) is expected
+
+
 # --- ECMA 分段路由 classify_ecma_segment（design §3.3 三态 + caveat）--------------------------
 
 

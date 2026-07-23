@@ -78,6 +78,17 @@ def journal_of_doi(doi: str) -> str | None:
     return _TOKEN_TO_JOURNAL[match.group(1)] if match else None
 
 
+def is_pre_doi(doi: str) -> bool:
+    """本 DOI 是否为 ECMA pre-DOI 时代（JSTOR 旧前缀 `10.2307`，survey §2）。
+
+    ECMA 分段路由面 = modern `10.3982/ecta`（`journal_of_doi=='ecma'`）∪ pre-DOI `10.2307`
+    （journal_of_doi 判 None，但仍属 ECMA 界外过刊面）；TE/QE 自 2006 born-DOI（10.3982），
+    无 pre-DOI 时代，不涉此面（resolve 据此把 pre-DOI 归 PRE_DOI 界外零资产，而非误 GET
+    econsoc 当前段落地页）。
+    """
+    return normalize_doi(doi).startswith(_PRE_DOI_PREFIX)
+
+
 # --- ECMA 年代分段路由（design §3.3 方向 a；D-028）---------------------------------------------
 
 
@@ -326,6 +337,7 @@ __all__ = [
     "classify_ecma_segment",
     "extract_galley_url",
     "identify_repository_name",
+    "is_pre_doi",
     "journal_of_doi",
     "parse_get_record",
     "parse_oai_page",
