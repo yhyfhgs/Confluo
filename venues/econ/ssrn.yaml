@@ -1,0 +1,31 @@
+# venues/econ/ssrn.yaml —— SSRN（Phase 5 T4；聚合元数据主路径，站点零接触，D-029）
+id: ssrn
+kind: preprint_channel          # working paper 预印性质（与 arxiv/nber 同族；type-level 多态）
+names:
+  full: Social Science Research Network
+  aliases: [SSRN]
+field: [econ, finance]          # Econ/Fin 主源（catalog/preprint-platforms.md §2）；SSRN 已多学科化
+tier: T1                        # Econ/Fin working paper 关键先行源（D-011；catalog）
+identifiers:
+  crossref_prefix: "10.2139"    # 枚举键（§4.2）：Crossref 前缀 10.2139 全库（Elsevier BV 注册）
+metadata_source: ssrn           # discover(纯生成年桶)/enumerate(委 crossref prefix+created 后处理) 由 ssrn adapter 承
+fulltext_source: ssrn           # resolve=landing-only 零网络（不产 PDF asset）；全文交 unpaywall OA-fallback
+auth:
+  level: none                   # 元数据主路径 auth_level=none（聚合 API 无认证、零 SSRN 接触，§1）
+quirks:
+  crossref_date_field: created  # §4.2 date-field 轴（登记年 created，非出版年）——内部 crossref 消费
+  topic_filter: econ_fin        # §3 econ/fin 主题**近似**过滤（opt-in；近似非精确 FEN 子网枚举）
+status: active
+notes: >
+  SSRN 无官方 API、站点本体 Cloudflare + 环境 TLS 双阻断（勘察 §2）——元数据主路径**零
+  *.ssrn.com 接触**（AC-5.1a③ 红线，D-029）：全经第三方聚合 API。discover=纯生成零网络
+  年桶（1990..今年；controller 发现①仲裁令——真实 Crossref facet=created:* 返 HTTP 400，
+  原 §4.3 facet 方案不可实现 → 纯本地生成，规模锚移交 M1 census）；enumerate=委扩展
+  CrossrefAdapter（prefix 10.2139 + created 日期轴，两类型全收）+ 后处理增补 (ssrn) identifier
+  （护栏拒非 ssrn. 中缀 DOI）；resolve=landing-only 零网络（不产 PDF asset，PDF 命中≈0，
+  交 unpaywall OA-fallback，§4.4）。**venue 建模（§3）**：单一 ssrn venue = 前缀 10.2139 全库；
+  econ/fin 定位表达为**主题近似过滤**（quirks.topic_filter，OpenAlex primary_topic.field ∈
+  {Economics·Econometrics·Finance, Business·Management·Accounting}，谓词见 adapters/ssrn/
+  parse.py::topic_field_matches；Selector filter_expr 下推 Phase 6）——**如实标注为近似，非
+  SSRN 真实 FEN/ERN 成员籍**（聚合源无子网过滤维度，development-plan 原「按 FEN 子网」字面
+  收窄为「econ/fin 近似过滤」，D-029）。全文层（模式 B 浏览器）defer Phase 6（D-029 案 B）。

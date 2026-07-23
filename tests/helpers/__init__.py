@@ -299,6 +299,29 @@ def make_oup_venue(**quirks_overrides: object) -> VenueSpec:
     )
 
 
+def make_ssrn_venue(**quirks_overrides: object) -> VenueSpec:
+    """构造 ssrn 契约/单测用的 `preprint_channel` venue（不依赖 `venues/` 目录文件）。
+
+    单一 ssrn venue（前缀 10.2139 全库，ssrn.md §3）：`identifiers.crossref_prefix='10.2139'`
+    （内部 CrossrefAdapter 的 prefix 枚举键）、`quirks.crossref_date_field='created'`（date-field
+    登记年轴，内部 crossref 消费，§4.2）。metadata/fulltext 均 `ssrn`（enumerate 内部委 crossref
+    后处理，非独立 crossref metadata_source——区别于 nber）。auth=none（元数据层零认证）。
+    `quirks_overrides` 可注入/覆盖（如 topic_filter）。
+    """
+    quirks: dict[str, object] = {"crossref_date_field": "created", "topic_filter": "econ_fin"}
+    quirks.update(quirks_overrides)
+    return VenueSpec(
+        id="ssrn",
+        kind="preprint_channel",
+        names={"full": "Social Science Research Network", "aliases": ["SSRN"]},
+        field=["econ", "finance"],
+        identifiers={"crossref_prefix": "10.2139"},
+        metadata_source="ssrn",
+        fulltext_source="ssrn",
+        quirks=quirks,
+    )
+
+
 def make_neurips_venue(**quirks_overrides: object) -> VenueSpec:
     """构造 neurips_proceedings 契约/集成测试用的 `conference` venue（不依赖 `venues/` 目录）。
 
@@ -441,6 +464,7 @@ __all__ = [
     "make_openreview_venue",
     "make_oup_venue",
     "make_pmlr_venue",
+    "make_ssrn_venue",
     "make_wiley_venue",
     "DEFAULT_NEURIPS_QUIRKS",
     "make_neurips_venue",

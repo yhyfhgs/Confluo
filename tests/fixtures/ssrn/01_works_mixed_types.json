@@ -1,0 +1,28 @@
+{
+  "_synthetic": "Phase 5 T4 ssrn fixture — crossref /prefixes/10.2139/works 页：混 journal-article + posted-content 两类型（证两类全收，不加 type: 过滤，ssrn.md §2/§4.2）；两条均合法 `ssrn.` 中缀 DOI（后处理增补 (ssrn, abstract_id) id）。posted-content 无 container-title（§2 半数不挂 journal container）。DOI/title/author 构造值；结构依 aggregators.md §5.1 + crossref REST [DOCS]。",
+  "status": "ok",
+  "message-type": "work-list",
+  "message": {
+    "total-results": 2,
+    "next-cursor": null,
+    "items-per-page": 2,
+    "items": [
+      {
+        "DOI": "10.2139/ssrn.4056799",
+        "title": ["Asset Pricing with Working-Paper Frictions"],
+        "type": "journal-article",
+        "container-title": ["SSRN Electronic Journal"],
+        "author": [{"given": "Ada", "family": "Researcher", "sequence": "first"}],
+        "created": {"date-parts": [[2024, 3, 15]]},
+        "issued": {"date-parts": [[2024, 3, 10]]}
+      },
+      {
+        "DOI": "10.2139/ssrn.5001234",
+        "title": ["A Posted-Content SSRN Working Paper"],
+        "type": "posted-content",
+        "author": [{"given": "Boaz", "family": "Author", "sequence": "first"}],
+        "created": {"date-parts": [[2024, 6, 1]]}
+      }
+    ]
+  }
+}

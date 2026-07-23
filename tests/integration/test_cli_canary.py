@@ -118,6 +118,7 @@ def test_canary_without_filter_checks_all_registered_adapters(
     from paper_crawler.adapters.neurips_proceedings.adapter import NeuripsProceedingsAdapter
     from paper_crawler.adapters.openreview.adapter import OpenReviewAdapter
     from paper_crawler.adapters.pmlr.adapter import PmlrAdapter
+    from paper_crawler.adapters.ssrn.adapter import SsrnAdapter
     from paper_crawler.adapters.unpaywall.adapter import UnpaywallAdapter
 
     def _fake_healthy(self: object, session: object = None) -> HealthReport:
@@ -139,6 +140,9 @@ def test_canary_without_filter_checks_all_registered_adapters(
     monkeypatch.setattr(DblpAdapter, "healthcheck", _fake_healthy)
     monkeypatch.setattr(MockPlatformAdapter, "healthcheck", _fake_healthy)
     monkeypatch.setattr(UnpaywallAdapter, "healthcheck", _fake_healthy)
+    # ssrn（Phase 5 T4）healthcheck 经内部 crossref lookup **无条件**发真实请求（同 crossref/
+    # arxiv 等）——离线须猴补丁，否则 socket 护栏拦截 → unhealthy → 退出码 1。
+    monkeypatch.setattr(SsrnAdapter, "healthcheck", _fake_healthy)
 
     result = runner.invoke(app, ["canary", "--home", str(_home(tmp_path))])
 
@@ -166,6 +170,7 @@ def test_canary_without_filter_checks_all_registered_adapters(
         "openalex",  # T6（SKIP 行——无 key）
         "s2",  # T6（SKIP 行——无 key）
         "econsoc",  # Phase 5 T6（open_access；healthcheck 猴补丁为 healthy，同 aaai_ojs）
+        "ssrn",  # Phase 5 T4（healthcheck 猴补丁为 healthy——经内部 crossref lookup 发真实请求）
     ):
         assert adapter_id in result.output
 

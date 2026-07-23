@@ -54,6 +54,9 @@ aea = "paper_crawler.adapters.aea.adapter:AeaAdapter"
 # Phase 5 T6：econsoc（open_access；Econometric Society 三刊——TE/QE 全链 OJS OAI-PMH，
 # ECMA RESOLVE|FETCH 域名分段路由，enumerate 委 crossref，D-028/econsoc.md）。
 econsoc = "paper_crawler.adapters.econsoc.adapter:EconsocAdapter"
+# Phase 5 T4：ssrn（open_access；DISCOVER 纯生成年桶 + ENUMERATE 委 crossref prefix 10.2139
+# + created 后处理增补 (ssrn) id + RESOLVE landing-only；无 FETCH，元数据主路径零 SSRN 接触，D-029）。
+ssrn = "paper_crawler.adapters.ssrn.adapter:SsrnAdapter"
 
 [dependency-groups]
 dev = [

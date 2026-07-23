@@ -1,0 +1,30 @@
+{
+  "_synthetic": "Phase 5 T4 ssrn fixture — 护栏路径（ssrn.md §4.2/§6.1）：前缀 10.2139 下混 2 条合法 `ssrn.` 中缀 DOI + 1 条**非-ssrn 中缀** 10.2139 DOI（潜在非-SSRN）。后处理层对非-ssrn 中缀者不增补 (ssrn) id、计 skipped_non_ssrn、跳过（防误纳本 venue）。",
+  "status": "ok",
+  "message-type": "work-list",
+  "message": {
+    "total-results": 3,
+    "next-cursor": null,
+    "items-per-page": 3,
+    "items": [
+      {
+        "DOI": "10.2139/ssrn.4056799",
+        "title": ["Valid SSRN Working Paper One"],
+        "type": "journal-article",
+        "author": []
+      },
+      {
+        "DOI": "10.2139/dpr.v3.2019.0042",
+        "title": ["Not An SSRN Paper (non-ssrn infix under prefix 10.2139)"],
+        "type": "journal-article",
+        "author": []
+      },
+      {
+        "DOI": "10.2139/ssrn.7654321",
+        "title": ["Valid SSRN Working Paper Two"],
+        "type": "posted-content",
+        "author": []
+      }
+    ]
+  }
+}

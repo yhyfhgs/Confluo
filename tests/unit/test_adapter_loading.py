@@ -41,6 +41,7 @@ EXPECTED_ADAPTER_IDS = {
     "oup_silverchair",  # Phase 4 T4（auth_gated，RESOLVE|FETCH）
     "aea",  # Phase 5 T5（auth_gated，RESOLVE-only offline；enumerate 走 crossref）
     "econsoc",  # Phase 5 T6（open_access；Econometric Society 三刊，OJS OAI + 域名分段路由）
+    "ssrn",  # Phase 5 T4（open_access；DISCOVER|ENUMERATE|RESOLVE，委 crossref + landing-only）
 }
 VALID_FAMILIES = {"open_access", "auth_gated", "aggregator"}
 
@@ -309,6 +310,7 @@ def test_arxiv_is_http_client_consumer(adapters: dict[str, SourceAdapter]) -> No
         "s2",  # T6
         "elsevier_sd",  # Phase 4 T3：auth_gated，专属 client 注入（X-ELS-APIKey 头）
         "econsoc",  # Phase 5 T6：open_access，OJS OAI + 落地页 galley（共享 client 注入）
+        "ssrn",  # Phase 5 T4：转发内部 CrossrefAdapter（元数据经 api.crossref.org）
     ):
         assert isinstance(adapters[adapter_id], HttpClientConsumer)
 
@@ -339,6 +341,7 @@ def test_bind_http_client_injects_only_consumers(adapters: dict[str, SourceAdapt
         "s2",  # T6
         "elsevier_sd",  # Phase 4 T3：auth_gated，专属 client 注入 seam（X-ELS-APIKey 头）
         "econsoc",  # Phase 5 T6：open_access，OJS OAI + 落地页 galley（共享 client 注入）
+        "ssrn",  # Phase 5 T4：consumer（set_http_client 转发内部 CrossrefAdapter）
     }
     # 注入生效：各 adapter 的 _client() 返回被注入的实例，不再惰性自建。
 
