@@ -1,0 +1,29 @@
+# fixture · pubs.aeaweb.org 全文层 Cloudflare 挑战边界（ClassifyResult.CHALLENGE）
+# 出处等级：[LIVE-DERIVED] —— 依 docs/research/site-survey/aea.md §4 + 附录请求 #11
+#   （[LIVE] 2026-07-24 实测）构造：`HEAD pubs.aeaweb.org/doi/pdfplus/10.1257/jep.20251473`
+#   （JEP，全刊 gold OA，即便如此仍落此 CF 域）→ `HTTP/2 403` + `cf-mitigated: challenge`
+#   + `server: cloudflare` + `cf-ray` + 5672B 挑战体。头名/值与站点勘察实测记录逐字对齐；
+#   body 为最小复刻（原始 5672B 响应体未随勘察提交 git，只有文字记录——沿
+#   oup_silverchair `01_challenge_cf_mitigated.http` 先例："仅保留判定器所需特征"，
+#   非全量截断）。
+# 判定依据：cf-mitigated:challenge 头（精确相等）→ CHALLENGE；body 亦含 "Just a moment"
+#   与 /cdn-cgi/challenge-platform/ 冗余特征（ChallengeDetector 特征库双重命中）。
+#   挑战即 BLOCKED、绝不对抗（AC-0.2/4.6；aea.md §3.4/§10 红线）。
+# 站点级判罚辨析（非环境障碍）：同域 robots.txt 先前 [LIVE] 200（TLS 握手成功），此处
+#   是应用层 403 challenge（非连接 reset）——site-survey.md 顶部"环境障碍甄别"已区分。
+HTTP-STATUS: 403
+server: cloudflare
+cf-mitigated: challenge
+cf-ray: 8f00000000000000-SYN
+content-type: text/html; charset=UTF-8
+
+<!DOCTYPE html>
+<html lang="en-US"><head><title>Just a moment...</title>
+<meta http-equiv="Content-Type" content="text/html; charset=UTF-8"/>
+<meta name="robots" content="noindex,nofollow"/></head>
+<body>
+<div class="main-wrapper"><div class="main-content">
+<noscript><div class="h2"><span>Enable JavaScript and cookies to continue</span></div></noscript>
+</div></div>
+<script src="/cdn-cgi/challenge-platform/h/b/orchestrate/chl_page/v1?ray=synthetic"></script>
+</body></html>

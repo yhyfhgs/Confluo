@@ -1,0 +1,65 @@
+{
+  "_grounded": "[LIVE-DERIVED] docs/research/site-survey/aea.md §4/§5 (2026-07-24): GET api.unpaywall.org/v2/10.1257/jep.20251473 -> is_oa=true, oa_status=gold, journal_is_oa=true, best_oa_location.host_type=publisher (literal captured fields, appendix request #13). REVERSE-INFERRED (not literally quoted in the survey text, but directly entailed by it): best_oa_location.url/url_for_pdf below point at pubs.aeaweb.org/doi/pdfplus/{doi} because aea.md §4 independently establishes that is the one and only real full-text delivery path for JEP on this platform (`HEAD www.aeaweb.org/articles/pdf/doi/10.1257/jep.20251473` -> 302 -> that exact pubs.aeaweb.org URL) -- and that same pubs.aeaweb.org host is the one that returned `403 cf-mitigated: challenge` in appendix request #11. This fixture exists specifically to lock in the counter-intuitive finding (aea.md §3.4): even a 'gold OA' Unpaywall record's best_oa host is the CF-blocked domain, so unpaywall OA-fallback yields ~0 real throughput for AEA. Surrounding schema shape is SYNTHETIC (same convention as 05_unpaywall_closed_aer.json).",
+  "doi": "10.1257/jep.20251473",
+  "doi_url": "https://doi.org/10.1257/jep.20251473",
+  "title": "Synthetic Placeholder Title (real JEP title not captured by site survey)",
+  "genre": "journal-article",
+  "is_paratext": false,
+  "published_date": "2025-01-01",
+  "year": 2025,
+  "journal_name": "Journal of Economic Perspectives",
+  "journal_issns": "0895-3309",
+  "journal_is_oa": true,
+  "journal_is_in_doaj": false,
+  "publisher": "American Economic Association",
+  "is_oa": true,
+  "oa_status": "gold",
+  "has_repository_copy": false,
+  "best_oa_location": {
+    "endpoint_id": null,
+    "evidence": "oa journal (via publisher name)",
+    "host_type": "publisher",
+    "is_best": true,
+    "license": null,
+    "pmh_id": null,
+    "repository_institution": null,
+    "updated": "2026-07-24T00:00:00.000000",
+    "url": "https://pubs.aeaweb.org/doi/pdfplus/10.1257/jep.20251473",
+    "url_for_landing_page": "https://doi.org/10.1257/jep.20251473",
+    "url_for_pdf": "https://pubs.aeaweb.org/doi/pdfplus/10.1257/jep.20251473",
+    "version": "publishedVersion"
+  },
+  "first_oa_location": {
+    "endpoint_id": null,
+    "evidence": "oa journal (via publisher name)",
+    "host_type": "publisher",
+    "is_best": true,
+    "license": null,
+    "pmh_id": null,
+    "repository_institution": null,
+    "updated": "2026-07-24T00:00:00.000000",
+    "url": "https://pubs.aeaweb.org/doi/pdfplus/10.1257/jep.20251473",
+    "url_for_landing_page": "https://doi.org/10.1257/jep.20251473",
+    "url_for_pdf": "https://pubs.aeaweb.org/doi/pdfplus/10.1257/jep.20251473",
+    "version": "publishedVersion"
+  },
+  "oa_locations": [
+    {
+      "endpoint_id": null,
+      "evidence": "oa journal (via publisher name)",
+      "host_type": "publisher",
+      "is_best": true,
+      "license": null,
+      "pmh_id": null,
+      "repository_institution": null,
+      "updated": "2026-07-24T00:00:00.000000",
+      "url": "https://pubs.aeaweb.org/doi/pdfplus/10.1257/jep.20251473",
+      "url_for_landing_page": "https://doi.org/10.1257/jep.20251473",
+      "url_for_pdf": "https://pubs.aeaweb.org/doi/pdfplus/10.1257/jep.20251473",
+      "version": "publishedVersion"
+    }
+  ],
+  "z_authors": [
+    { "given": "Synthetic", "family": "AuthorThree" }
+  ]
+}
