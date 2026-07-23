@@ -24,6 +24,7 @@ import pytest
 import yaml
 
 from paper_crawler.adapter import AdapterBase, AdapterFamily
+from paper_crawler.adapters.elsevier_sd.adapter import ElsevierScienceDirectAdapter
 from paper_crawler.config import Config
 from paper_crawler.errors import CrawlerError, ErrorClass
 from paper_crawler.http import HttpClient
@@ -98,6 +99,9 @@ class _AuthGatedMock(AdapterBase):
             raise CrawlerError(ErrorClass.NO_ENTITLEMENT, "403 no entitlement (mock)")
         if self.fetch_mode == "challenge":
             raise CrawlerError(ErrorClass.CHALLENGE, "cf-mitigated challenge (mock)")
+        if self.fetch_mode == "bad_pdf":  # 非 %PDF（拦截页伪装）→ pipeline 判 INTEGRITY
+            n, sha = io.write_stream([b"<html>not a pdf</html>"])  # type: ignore[attr-defined]
+            return FetchResult(ok=True, bytes_written=n, sha256=sha)
         n, sha = io.write_stream([_PDF])  # type: ignore[attr-defined]
         return FetchResult(ok=True, bytes_written=n, sha256=sha)
 
@@ -691,3 +695,147 @@ def test_oa_direct_fetch_non_pdf_fails_integrity(tmp_path: Path) -> None:
 )
 def test_work_hours_ok_boundaries(window: str, hour: int, expected: bool) -> None:
     assert _work_hours_ok(window, datetime(2026, 7, 23, hour, 0, 0)) is expected
+
+
+# -- MAJOR-1：elsevier_sd resolve 阶段 entitlement 预检否 → NE → OA-fallback（AC-4.3 真实载体）--
+
+
+def test_elsevier_resolve_entitlement_false_derives_oa_fallback(tmp_path: Path) -> None:
+    """MAJOR-1 / AC-4.3 真实载体（fable 审查必修）：真实 `ElsevierScienceDirectAdapter` 在
+    **resolve** 阶段 entitlement 预检 entitled:false → 抛 NE（非 fetch 阶段）→ runner 从
+    params["paper"] 派生 oa_fallback → unpaywall OA 副本 direct 落盘。不计 failed（§8.5）。
+
+    此前 NE 派生仅限 kind=="fetch"（asset_id 门控），resolve NE 不派生——elsevier 无权 DOI
+    得不到 OA 兜底，AC-4.3 破。本测试是修复的端到端断言（真实 elsevier 场景，非泛 mock）。
+    """
+    doi = "10.1016/j.example.notsubscribed"
+    # 真实 elsevier adapter：MockTransport 回 entitled:false 封套（fixture 02 结构）+ key
+    ent_false = (
+        b'{"entitlement-response":{"document-entitlement":'
+        b'{"@status":"found","doi":"' + doi.encode() + b'","entitled":false}}}'
+    )
+    els = ElsevierScienceDirectAdapter(
+        HttpClient(
+            user_agent="pc-test",
+            transport=httpx.MockTransport(lambda req: httpx.Response(200, content=ent_false)),
+        )
+    )
+    els.set_api_key("test-key")
+
+    home = tmp_path / "home"
+    venues = home / "venues"
+    venues.mkdir(parents=True)
+    (home / "config.toml").write_text('[paths]\nvenues_dirs = ["venues"]\n', encoding="utf-8")
+    (venues / "els_venue.yaml").write_text(
+        yaml.safe_dump(
+            {
+                "id": "els_venue",
+                "kind": "journal",
+                "names": {"full": "Els Venue", "aliases": []},
+                "field": ["finance"],
+                "identifiers": {"issn": ["0000-0000"]},
+                "fulltext_source": "elsevier_sd",
+                "auth": {"level": "institutional"},
+            }
+        ),
+        encoding="utf-8",
+    )
+    config = Config.load(home)
+    setup_logging(config.log_dir, console_level="CRITICAL")
+    db = Database(config.db_path)
+    db.migrate()
+    repo = Repo(db)
+    queue = TaskQueue(db)
+    ua = _FakeUnpaywall(
+        [
+            AssetPlan(
+                kind=AssetKind.PDF,
+                url="https://oa.example.org/copy.pdf",
+                url_strategy=UrlStrategy.DIRECT,
+                version="publishedVersion",
+            )
+        ]
+    )
+    registry = VenueRegistry({"elsevier_sd": els, "unpaywall": ua})
+    registry.load_dirs([venues])
+    repo.upsert_venue(registry.get("els_venue"))
+    paper_id = repo.upsert_paper(
+        "els_venue", None, PaperStub(title="unsubscribed", identifiers=(("doi", doi),))
+    )
+    ctx = StageContext(
+        config=config,
+        db=db,
+        repo=repo,
+        registry=registry,
+        queue=queue,
+        limiter=RateLimiter(scale=config.rate_scale),
+        sleeper=[].append,
+        oa_fallback=True,
+        unpaywall_adapter=ua,
+        http=_oa_http(),
+    )
+    queue.enqueue("resolve", "els_venue", {"paper": paper_id})  # resolve 任务（elsevier 预检）
+    runner = PipelineRunner(ctx, clock=_OK_CLOCK(), auth_manager=_FakeAuthManager(_ok_provider()))
+    report = runner.drain()
+
+    # resolve 阶段 entitled:false → NE 独立终态（不计 failed）→ oa_fallback → OA 副本落盘
+    assert report.no_entitlement == 1 and report.failed == 0
+    assert ua.calls == 1  # unpaywall 被查（派生生效）
+    fetched = repo.list_assets(venue_id="els_venue", state="fetched")
+    assert len(fetched) == 1 and fetched[0]["source_adapter"] == "unpaywall"
+    assert Path(str(fetched[0]["file_path"])).is_file()  # OA 副本 %PDF 落盘
+    db.close()
+
+
+# -- MAJOR-2：INTEGRITY（伪装 PDF）→ 强制下个 fetch 健康门（§8.2 文件验证器联动）--------------
+
+
+def test_integrity_forces_health_check_on_next_fetch(tmp_path: Path) -> None:
+    """MAJOR-2（fable 审查必修）：auth_gated fetch 得非 %PDF（拦截页伪装）→ INTEGRITY → 门龄
+    归零 → 下个 fetch（重试）**强制 health_check**（防伪装 PDF 连环命中）。此前未实现。"""
+    auth_mock = _AuthGatedMock(fetch_mode="bad_pdf")
+    provider = _ok_provider()  # health 恒 OK（验证"强制探测发生"，非探测结果）
+    env = _setup(tmp_path, auth_mock=auth_mock, n_papers=1)
+    _enqueue_fetches(env)
+    report = _runner(env, provider=provider, clock=_OK_CLOCK()).drain()
+
+    # INTEGRITY RetrySpec(2)：attempt1 INTEGRITY→门龄归零；attempt2 前老化门必触发 health_check
+    # →仍 bad_pdf→INTEGRITY→FAILED。健康门被 INTEGRITY 强制探测恰 1 次（无本修复则为 0）。
+    assert report.failed == 1
+    assert auth_mock.fetch_calls == 2  # 两次尝试
+    assert provider.health_calls == 1  # INTEGRITY 强制下个 fetch 必探（§8.2 联动）
+
+
+# -- MINOR-1：OA-direct 幂等跳过（已 fetched 不因再入队/--force 重下）--------------------------
+
+
+def test_oa_direct_fetch_idempotent_skip_when_already_fetched(tmp_path: Path) -> None:
+    """MINOR-1：OA 副本已 fetched 且文件校验合格 → `_fetch_oa_direct` 幂等跳过（不真实重下）。"""
+    import hashlib
+
+    env = _setup(tmp_path, auth_mock=_AuthGatedMock(fetch_mode="ok"), http=_oa_http())
+    paper_id = env.repo.upsert_paper(
+        "auth_venue", None, PaperStub(title="oa", identifiers=(("doi", "10.9/oa"),))
+    )
+    oa_asset = env.repo.plan_asset(
+        paper_id,
+        AssetPlan(
+            kind=AssetKind.PDF, url="https://oa.example.org/x.pdf", version="publishedVersion"
+        ),
+        "unpaywall",
+    )
+    # 落一个合格 %PDF + mark fetched（sha 对上 → fetched_file_ok 通过）
+    pdf_path = env.config.data_dir / "oa_copy.pdf"
+    pdf_path.parent.mkdir(parents=True, exist_ok=True)
+    pdf_path.write_bytes(_PDF)
+    env.repo.mark_asset(
+        oa_asset,
+        state="fetched",
+        file_path=str(pdf_path),
+        bytes_=len(_PDF),
+        sha256=hashlib.sha256(_PDF).hexdigest(),
+    )
+    env.queue.enqueue("fetch", "auth_venue", {"asset": oa_asset}, force=True)
+    report = _runner(env, provider=_ok_provider(), clock=_OK_CLOCK()).drain()
+
+    assert report.skipped == 1 and report.succeeded == 0  # OA 分支幂等跳过

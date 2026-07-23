@@ -51,6 +51,7 @@ import sqlite3
 from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import UTC, date, datetime, timedelta
+from pathlib import Path
 from typing import Any
 
 from paper_crawler.errors import RETRY_TABLE, CrawlerError, ErrorClass, RetrySpec
@@ -344,7 +345,7 @@ class PipelineRunner:
         log_event(
             "INFO",
             f"{report.command}: 成功 {report.succeeded} 失败 {report.failed} "
-            f"阻塞 {report.blocked} 跳过 {report.skipped}",
+            f"阻塞 {report.blocked} 跳过 {report.skipped} 无订阅 {report.no_entitlement}",
             venue=report.venue_id,
         )
         return report
@@ -571,7 +572,7 @@ class PipelineRunner:
 
     # -- challenge 平台冷却（§8.4；跨运行持久化在 config-home）---------------------
 
-    def _cooldown_path(self, platform: str):  # type: ignore[no-untyped-def]
+    def _cooldown_path(self, platform: str) -> Path:
         return self.ctx.config.home / "state" / "cooldown" / f"{platform}.json"
 
     def _platform_of(self, venue: str) -> str | None:
@@ -608,19 +609,19 @@ class PipelineRunner:
                     return False
         return until is not None and self._clock() < until
 
-    def _enqueue_oa_fallback(self, row: sqlite3.Row, asset_id: str, report: RunReport) -> None:
-        """no_entitlement → 派生 oa_fallback 任务（§8.1 接线点 A）；paper 无 doi → 不派生。"""
-        asset = self.ctx.repo.get_asset(asset_id)
-        if asset is None:
-            return
-        paper_id = str(asset["paper_id"])
+    def _enqueue_oa_fallback(self, row: sqlite3.Row, paper_id: str, report: RunReport) -> None:
+        """no_entitlement（fetch 或 resolve 阶段）→ 派生 oa_fallback 任务（§8.1 接线点 A）。
+
+        `paper_id` 由调用方按阶段解析（fetch: asset→paper；resolve: params["paper"]）。paper
+        无 doi identifier / 任务无 venue → 不派生（AC-4.3：仅有 DOI 且可路由才尝试 OA 兜底）。
+        """
         doi_rows = self.ctx.db.query(
             "SELECT value FROM identifier WHERE paper_id = ? AND scheme = 'doi' "
             "ORDER BY is_primary DESC, value LIMIT 1",
             (paper_id,),
         )
         if not doi_rows:
-            return  # 无 doi → 无从 unpaywall 兜底（AC-4.3：仅有 DOI 才尝试 OA）
+            return  # 无 doi → 无从 unpaywall 兜底
         if row["venue_id"] is None:
             return  # oa_fallback handler 需 venue（`_task_venue`/registry 路由）；无则不派生
         doi = str(doi_rows[0]["value"])
@@ -696,8 +697,17 @@ class PipelineRunner:
         # RETRY_TABLE 缺省 RetrySpec(1)→FAILED（计 failed），现改为独立终态（回归锁定：
         # test_pipeline_errors 同步更新）。
         if error_class is ErrorClass.NO_ENTITLEMENT:
-            if asset_id is not None:
+            # OA-fallback 派生的 paper 来源（§8.1 接线点 A 明文"fetch 失败 **或 resolve
+            # entitlement 预检否**"）：fetch 阶段从 asset→paper（并标该 asset no_entitlement）；
+            # resolve 阶段从 params["paper"]——elsevier_sd 等 auth_gated 平台在 resolve 预检
+            # entitled:false 即抛 NE（无平台 asset 产出，AC-4.3 真实载体）。
+            oa_paper_id: str | None = None
+            if kind == "fetch" and asset_id is not None:
                 self.ctx.repo.mark_asset(asset_id, state="no_entitlement")
+                ne_asset = self.ctx.repo.get_asset(asset_id)
+                oa_paper_id = str(ne_asset["paper_id"]) if ne_asset is not None else None
+            elif kind == "resolve" and "paper" in params:
+                oa_paper_id = str(params["paper"])
             self.ctx.queue.complete(task_id)
             report.no_entitlement += 1
             log_event(
@@ -708,9 +718,17 @@ class PipelineRunner:
                 stage=kind,
                 error_class=error_class.value,
             )
-            if self.ctx.oa_fallback and asset_id is not None:
-                self._enqueue_oa_fallback(row, asset_id, report)
+            if self.ctx.oa_fallback and oa_paper_id is not None:
+                self._enqueue_oa_fallback(row, oa_paper_id, report)
             return
+
+        # §8.2 文件验证器联动：INTEGRITY 疑似 auth_leak（拦截页伪装 PDF）→ 强制下个 fetch 必探
+        # 健康门（门龄归零：把 last_check_at 拨老，令下个 auth_gated fetch 的老化判定必触发
+        # health_check），防伪装 PDF 连环命中。仅当该 venue 已有活跃健康门批。
+        if error_class is ErrorClass.INTEGRITY and venue is not None:
+            integrity_gate = self._auth_batch.get(venue)
+            if integrity_gate is not None:
+                integrity_gate.last_check_at = self._clock() - timedelta(days=1)
 
         # 其余走 RETRY_TABLE：TRANSIENT/RATE_LIMITED/INTEGRITY 可重试；PARSE 表内缺省
         # RetrySpec(1) → 立即 FAILED。

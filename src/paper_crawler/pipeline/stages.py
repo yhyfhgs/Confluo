@@ -47,7 +47,7 @@ import time
 from collections.abc import Callable
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any, Literal
+from typing import TYPE_CHECKING, Any, Literal
 from urllib.parse import urlsplit
 
 from paper_crawler.config import Config
@@ -70,6 +70,12 @@ from paper_crawler.types import (
     UrlStrategy,
     utcnow_iso,
 )
+
+if TYPE_CHECKING:
+    # 冻结面类型精度（spec §8）——`from __future__ import annotations` 使注解惰性，仅供
+    # mypy 解析，运行时不 import（避免 pipeline→adapter/http 的运行时依赖）。
+    from paper_crawler.adapters.unpaywall.adapter import UnpaywallAdapter
+    from paper_crawler.http import HttpClient
 
 # ---------------------------------------------------------------------------
 # 接口冻结件 §2.7：Selector / StageContext
@@ -118,10 +124,10 @@ class StageContext:
     # 与命令保持默认 False → 行为逐字不变（回归锁定安全网）。
     oa_fallback: bool = False
     # unpaywall adapter 实例（§8.1 接线点 B `_stage_oa_fallback` 消费）；None = 未装配 → 静默跳过。
-    unpaywall_adapter: Any | None = None
+    unpaywall_adapter: UnpaywallAdapter | None = None
     # 共享 HttpClient（§8.1 接线点 C `_fetch_oa_direct` 的通用 direct stream 复用；离线路径为
     # None → OA direct fetch 静默跳过）。
-    http: Any | None = None
+    http: HttpClient | None = None
     # auth_gated venue 的活跃 SessionHandle 注入通道（venue_id → session）：**runner 独占写**
     # （健康门建立/refresh 后落此表，§8.2），resolve/fetch 阶段只读消费——传给 adapter 冻结
     # 协议里自 Phase 1 即存在的 `session` 形参。默认空 → Phase 1-3 venue 恒读到 None（session=
@@ -549,7 +555,13 @@ def _fetch_oa_direct(ctx: StageContext, task: sqlite3.Row, asset: sqlite3.Row) -
     30 rpm；`register` 幂等取最保守），与 auth 平台域天然隔离（日配额只数 auth 平台域，§8.3）。
     """
     asset_id = str(asset["id"])
-    if ctx.http is None:
+    # §5.3 幂等跳过（与 `_stage_fetch` 主路径一致）：OA 副本已 fetched 且文件校验合格 → 跳过，
+    # 不因 --force/再入队真实重下（OA 分支先于主路径的 fetched 判定，故此处独立复制该检查）。
+    if str(asset["state"]) == "fetched" and fetched_file_ok(asset):
+        log_event("INFO", "skipped", stage="fetch", asset_id=asset_id)
+        return "skipped"
+    http = ctx.http
+    if http is None:
         # 未注入共享 client（离线路径/未装配）→ 静默跳过，不误报失败。
         log_event(
             "INFO", "oa direct fetch skipped (no http client)", stage="fetch", asset_id=asset_id
@@ -576,12 +588,18 @@ def _fetch_oa_direct(ctx: StageContext, task: sqlite3.Row, asset: sqlite3.Row) -
     io = PartFileIO(ctx.config.data_dir / "tmp", asset_id)
     started = time.monotonic()
     try:
-        bytes_written, sha256_hex = io.write_stream(ctx.http.stream(url))
+        bytes_written, sha256_hex = io.write_stream(http.stream(url))
         if bytes_written <= 0:
             raise CrawlerError(ErrorClass.INTEGRITY, "empty OA download (0 bytes)")
         if not validate_pdf_magic(io.part_path):
             raise CrawlerError(ErrorClass.INTEGRITY, "OA copy lacks %PDF- magic")
         # OA 副本恒 pdf（身份 (paper,pdf,<oa版>)）；落位复用主路径 `_asset_final_path`。
+        # ★已知限制（Phase 4 债务，MINOR-2）：`_asset_final_path` 的 pdf 落位路径
+        # `data/pdf/{venue}/{year}/{paper}.pdf` **不含 version**（design/06 §4 布局）——故本 OA
+        # 副本（version=oa 串）与日后同 paper 的平台 pdf（version=None）**共享同一文件路径**，
+        # 后取回者覆盖前者、且 asset 行 sha 与磁盘可不一致（verify 潜在冲突）。当前 OA 兜底仅在
+        # 平台无权（no_entitlement，无平台 pdf 落盘）时触发，路径实际空闲、无冲突；design/06
+        # 层的 version 化落位缺口记入 Phase 4 债务档（T8 报告）。
         final_path = _asset_final_path(
             ctx.config, venue_id, paper, AssetPlan(kind=AssetKind.PDF, url=url)
         )
