@@ -6,7 +6,8 @@
 - ENUMERATE 委内部 crossref（prefix 10.2139 + created URL 形态）+ 后处理增补 (ssrn) id
   （混两类型全收 / 护栏 skipped_non_ssrn obslog + 丢弃 / cursor 两页 / 空窗）。
 - RESOLVE landing-only（返 [] + 落 landing 观测；ssrn id / DOI 回退 / 缺失 CONFIG）。
-- healthcheck（PENDING 结构态 / 未收录 / 不可达；经 crossref lookup 打 api.crossref.org）。
+- healthcheck（golden 匹配态 [LIVE 2026-07-24 双源转正] / drift / 未收录 / 不可达；
+  经 crossref lookup 打 api.crossref.org）。
 - HttpClient 注入转发内部 crossref。
 - **AC-5.1a③ 零 SSRN 接触**：全生命周期 MockTransport 记录请求域，断言无 `*.ssrn.com`。
 - **AC-5.1a① 7 收割日回放**：重叠窗 + created 延迟注入 → (ssrn) 主键去重无重复无遗漏。
@@ -229,11 +230,17 @@ def test_resolve_missing_ssrn_identity_raises_config() -> None:
 # --- healthcheck（经 crossref lookup 打 api.crossref.org；非 SSRN 域）-----------------------
 
 
-def test_healthcheck_pending_structural_healthy() -> None:
-    """固定 SSRN DOI 经 crossref lookup 命中 → title 非空 → 结构性健康（PENDING golden）。"""
+def test_healthcheck_golden_title_match_healthy() -> None:
+    """固定 SSRN DOI 经 crossref lookup 命中、title 与 golden 一致 → healthy「matched」。
+
+    golden 真值 [LIVE 2026-07-24]（P5-M1 双源转正：crossref 冒烟 + openalex 第二源一致，
+    见 adapter `_HEALTHCHECK_TITLE` 模块常量注释）——本测试用**默认模块状态**（无
+    monkeypatch），故 fixture body title 须与实测 golden 逐字一致（沿 crossref
+    `test_healthcheck_golden_title_match_healthy` 转正后同款先例）。
+    """
     body = (
         b'{"status":"ok","message-type":"work","message":{'
-        b'"DOI":"10.2139/ssrn.4056799","title":["A Known SSRN Working Paper"]}}'
+        b'"DOI":"10.2139/ssrn.4056799","title":["Allocating Scarce Information"]}}'
     )
 
     def handler(request: httpx.Request) -> httpx.Response:
@@ -243,7 +250,7 @@ def test_healthcheck_pending_structural_healthy() -> None:
 
     report = _adapter(handler).healthcheck()
     assert report.healthy is True
-    assert "PENDING golden" in report.detail
+    assert "matched" in report.detail
 
 
 def test_healthcheck_anchor_not_found_unhealthy() -> None:

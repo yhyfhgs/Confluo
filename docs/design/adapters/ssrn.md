@@ -176,7 +176,7 @@ updated: 2026-07-24
 
 - **开放问题**（勘察 §8 清单，标注触发层）：① 重取 SSRN `robots.txt` 全文（Disallow 面 + crawl-delay 复核）——**仅模式 B 前置**，元数据层不触；② SSRN RSS/sitemap 作 crossref 外新鲜度源——今日不可验证；③ DOI 覆盖率量化（§9.1）；④ FEN network→聚合过滤映射（§3 子网近似）；⑤ crossref `journal-article` vs `posted-content` 语义差异是否可利用；⑥ 换非-CF-阻断网络对 SSRN 挑战门真实复测（确认 2026-07-20 结论现状）——**模式 B 前置**。
 - **风险**：crossref 计费/政策演变（aggregators §10 已备降级路径）；openalex 信用制（预算护栏）；**SSRN=Elsevier 风控随时收紧**——**元数据层零 SSRN 接触故天然免疫**，仅模式 B 受影响（canary 对模式 B 周检、连续 CHALLENGED 时 catalog 标降级）；crossref 前缀枚举腐化（canary 比对 healthcheck 固定 DOI title，沿 crossref 先例）。
-- **healthcheck**：元数据层 = `GET api.crossref.org/works/10.2139/ssrn.4056799` 比对规整化 `title[0]`（固定已知存在 DOI，[LIVE] 200，真值 [PENDING] 实现期 UPDATE_GOLDEN 捕获）；模式 B = 无 session 时 `NotImplementedError`→canary SKIP（沿 auth_gated 先例）。
+- **healthcheck**：元数据层 = `GET api.crossref.org/works/10.2139/ssrn.4056799` 比对规整化 `title[0]`（固定已知存在 DOI，[LIVE] 200；真值 `title[0]="Allocating Scarce Information"` **[LIVE 2026-07-24] 双源转正**——crossref 冒烟捕获 + P5-M1 openalex 第二源确认一致，UPDATE_GOLDEN 已执行、`_HEALTHCHECK_TITLE` 已置真值）；模式 B = 无 session 时 `NotImplementedError`→canary SKIP（沿 auth_gated 先例）。
 
 ## 10. 裁决记录
 
