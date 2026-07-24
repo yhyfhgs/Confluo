@@ -14,7 +14,7 @@ updated: 2026-07-24
 | id | 名称 | 平台/fulltext | ISSN ⚠核验 | DOI 前缀 | auth | 备注 |
 |---|---|---|---|---|---|---|
 | aer | American Economic Review | `aea`（supported_since: phase-5） | 0002-8282 | 10.1257 | institutional | AEA 自营；AER: Insights 另刊 |
-| ecma | Econometrica | `wiley`（supported_since: phase-5） | 0012-9682 | 10.3982 | institutional | Econometric Society，Wiley 出版 |
+| ecma | Econometrica | `econsoc`（当前段自营 OA）/`wiley`（过刊段，D-028） | 0012-9682 | 10.3982 | institutional | Econometric Society，Wiley 出版 |
 | jpe | Journal of Political Economy | `uchicago` | 0022-3808 | 10.1086 | institutional | UChicago Press |
 | qje | Quarterly Journal of Economics | `oup_silverchair` | 0033-5533 | 10.1093 | institutional | OUP |
 | restud | Review of Economic Studies | `oup_silverchair` | 0034-6527 | 10.1093 | institutional | OUP（RES 学会） |

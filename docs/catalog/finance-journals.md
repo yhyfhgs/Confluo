@@ -2,7 +2,7 @@
 title: 金融学期刊清单
 status: approved
 owner: fable5
-updated: 2026-07-20
+updated: 2026-07-24
 ---
 
 # 金融学期刊
@@ -55,7 +55,7 @@ updated: 2026-07-20
 
 - 时间轴与清单：`crossref` 按 ISSN（JF 可回溯至 1946）；
 - **SSRN 是金融 working paper 的关键先行源**（D-011）：JF/JFE/RFS 论文常先在 SSRN；订阅缺失时 SSRN 公开版 + Unpaywall 兜底；
-- JFE 走 Elsevier（[LIVE] Cloudflare + TDM opt-out，走 API 优先）；JF/ECMA/MathFin 走 Wiley（TDM API 优先）；RFS/RoF/RAPS/RCFS 走 OUP 一个 adapter 全包。
+- JFE 走 Elsevier（[LIVE] Cloudflare + TDM opt-out，走 API 优先）；JF/MathFin 走 Wiley（TDM API 优先）；ECMA 当前段已迁自营 econsoc，仅过刊段走 Wiley（见 D-028）；RFS/RoF/RAPS/RCFS 走 OUP 一个 adapter 全包。
 
 ## 待核验
 
