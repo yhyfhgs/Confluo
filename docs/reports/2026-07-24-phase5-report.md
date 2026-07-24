@@ -246,4 +246,4 @@ ruff/mypy 均无输出（全绿）；与 [AC-5 记录](../testing/records/2026-0
   四详设本次转 `implemented`；两处遗留清理（aea.md 孤立尾行、wiley_runbook ECMA 注记）已闭合；一处新发现
   的既有 catalog 不一致（economics-journals.md ECMA 行 adapter 字段）已如实登记、未越权修改，已用 `spawn_task`
   移交独立待办。
-- **最终判定**：Phase 5 判定：待终审。
+- **最终判定**：Phase 5 判定：达成（controller 合并裁决 2026-07-24 —— opus 独立全分支终审「放行附条件」，附条件（D-028 catalog 两处残留修正）已随本收尾链闭合；终审七项清单全 PASS：门禁复现 3056 passed/28 skipped/98.78% 覆盖率、AC-0 四项全清、接缝一致性 8 处吻合、提交尾行 91/91、git 历史健康、backlog 载体齐备；AC-5 验收 approved——四条 PASS + AC-5.1b N/A defer Phase 6）
