@@ -1,7 +1,7 @@
 # 文档索引（唯一权威清单）
 
 > 本表是全仓库文档的单一事实来源（D-008）。任何新增/改名/废弃文档必须同一提交内更新本表（AGENTS.md §4）。
-> status 取值与流转见 [process/status-workflow.md](process/status-workflow.md)。最后盘点：2026-07-23（Phase 4 收尾）。
+> status 取值与流转见 [process/status-workflow.md](process/status-workflow.md)。最后盘点：2026-07-24（Phase 5 收尾）。
 
 ## 按意图导航（先于逐目录清单）
 
@@ -12,7 +12,7 @@
 | 设计/实现一个新 adapter | [design/02 框架](design/02-plugin-framework.md) → [adapters/README 模板](design/adapters/README.md) → 同族样例（Atypon 看 [informs](design/adapters/informs.md)，Silverchair 看 [oup](design/adapters/oup-silverchair.md)，OA 看 [pmlr](design/adapters/pmlr.md)）→ [test-plan fixture 规范](testing/test-plan.md) |
 | 理解认证与合规边界 | [design/04](design/04-auth-gated-module.md) → [design/07](design/07-auth-session.md) → [decision-log](plan/decision-log.md) D-006/D-014 → [AC-0 红线](testing/acceptance-criteria.md) |
 | 开始 Phase 1 开发 | [development-plan §Phase 1](plan/development-plan.md) → design/01/02/05/06 → [status-workflow 开工门禁](process/status-workflow.md) |
-| 查"为什么这样设计" | [plan/decision-log.md](plan/decision-log.md)（D-001…D-025） |
+| 查"为什么这样设计" | [plan/decision-log.md](plan/decision-log.md)（D-001…D-029） |
 | 了解某站点的实测事实 | research/site-survey/ 对应勘察（各 adapter 文档 §2 已内联引用） |
 
 ## 根文档
@@ -59,10 +59,10 @@
 |---|---|---|---|
 | [design/adapters/README.md](design/adapters/README.md) | 模板 + 索引 + 勘察清单 | approved | 2026-07-20 |
 | [design/adapters/arxiv.md](design/adapters/arxiv.md) | arXiv | implemented | 2026-07-22 |
-| [design/adapters/ssrn.md](design/adapters/ssrn.md) | Adapter 设计 · SSRN（聚合主路径/browser-fetch defer） | approved | 2026-07-24 |
-| [design/adapters/nber.md](design/adapters/nber.md) | Adapter 设计 · NBER Working Papers（crossref prefix 枚举扩展 + www/back 双域） | approved | 2026-07-24 |
-| [design/adapters/aea.md](design/adapters/aea.md) | Adapter 设计 · AEA（AER+AEJ 四系+Insights+JEL/JEP，crossref ISSN 枚举） | approved | 2026-07-24 |
-| [design/adapters/econsoc.md](design/adapters/econsoc.md) | Adapter 设计 · Econometric Society（ECMA/TE/QE，OAI-PMH + ECMA 年代分段路由） | approved | 2026-07-24 |
+| [design/adapters/ssrn.md](design/adapters/ssrn.md) | Adapter 设计 · SSRN（聚合主路径/browser-fetch defer） | implemented | 2026-07-24 |
+| [design/adapters/nber.md](design/adapters/nber.md) | Adapter 设计 · NBER Working Papers（crossref prefix 枚举扩展 + www/back 双域） | implemented | 2026-07-24 |
+| [design/adapters/aea.md](design/adapters/aea.md) | Adapter 设计 · AEA（AER+AEJ 四系+Insights+JEL/JEP，crossref ISSN 枚举） | implemented | 2026-07-24 |
+| [design/adapters/econsoc.md](design/adapters/econsoc.md) | Adapter 设计 · Econometric Society（ECMA/TE/QE，OAI-PMH + ECMA 年代分段路由） | implemented | 2026-07-24 |
 | [design/adapters/openreview.md](design/adapters/openreview.md) | OpenReview | implemented | 2026-07-22 |
 | [design/adapters/pmlr.md](design/adapters/pmlr.md) | PMLR | implemented | 2026-07-23 |
 | [design/adapters/cvf.md](design/adapters/cvf.md) | CVF Open Access | implemented | 2026-07-23 |
@@ -86,10 +86,10 @@
 | [catalog/publishers-platforms.md](catalog/publishers-platforms.md) | 平台→Adapter 映射总表 | approved | 2026-07-23 |
 | [catalog/cs-ai-conferences.md](catalog/cs-ai-conferences.md) | CS/AI 顶会 | approved | 2026-07-23 |
 | [catalog/ai-ml-journals.md](catalog/ai-ml-journals.md) | AI/ML/CS 期刊 | review | 2026-07-20 |
-| [catalog/economics-journals.md](catalog/economics-journals.md) | 经济学期刊 | approved | 2026-07-20 |
+| [catalog/economics-journals.md](catalog/economics-journals.md) | 经济学期刊 | approved | 2026-07-24 |
 | [catalog/finance-journals.md](catalog/finance-journals.md) | 金融学期刊 | approved | 2026-07-20 |
 | [catalog/or-ms-journals.md](catalog/or-ms-journals.md) | OR/MS 期刊 | approved | 2026-07-20 |
-| [catalog/preprint-platforms.md](catalog/preprint-platforms.md) | 预印本/WP 平台与订阅范围 | review | 2026-07-20 |
+| [catalog/preprint-platforms.md](catalog/preprint-platforms.md) | 预印本/WP 平台与订阅范围 | review | 2026-07-24 |
 
 ## testing/ — 测试
 
@@ -166,3 +166,4 @@
 | [reports/2026-07-22-phase2-report.md](reports/2026-07-22-phase2-report.md) | Phase 2 阶段报告（DoD 判定 + 终审 + Phase 3 检查单） |
 | [reports/2026-07-23-phase3-report.md](reports/2026-07-23-phase3-report.md) | Phase 3 阶段报告（DoD 判定 + 收尾中草稿，判定列待 controller 终验签署 + Phase 4 检查单） |
 | [reports/2026-07-23-phase4-report.md](reports/2026-07-23-phase4-report.md) | Phase 4 阶段报告（DoD 判定 + AC-0 系统性扫描 + 收尾中草稿，判定列待 controller 终验签署 + Phase 5 检查单） |
+| [reports/2026-07-24-phase5-report.md](reports/2026-07-24-phase5-report.md) | Phase 5 阶段报告（8 卡 4 波次交付 + D-027/028/029 + AC-5 引用 + 事件教训 + Phase 6 检查单，判定：待终审） |

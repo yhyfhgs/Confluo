@@ -28,8 +28,8 @@ updated: 2026-07-23
 | 1 核心框架 | **done** | 100% | 报告：reports/2026-07-21-phase1-report.md；tag phase-1 + schema-v1 |
 | 2 Open-Access MVP | **done** | 100% | 报告：reports/2026-07-22-phase2-report.md；tag phase-2；openreview 在线层已于 Phase 3 期间补验 PASS（用户 token 到位，见下） |
 | 3 聚合元数据层 | **done** | 100%（tag phase-3） | 全部任务卡合并+汇总验收最终签署（AC-3 全 PASS/AC-0 全 PASS/预算零超支）；验收：testing/records/2026-07-23-phase3-acceptance.md |
-| 4 认证框架+出版社 | **T8 收尾中** | ~100%（DoD 离线口径达成，待签署+tag） | 全部任务卡合并；AC-4.2~4.6 离线 DoD PASS（T7a）；AC-4.1 分层归 T7b（D-018，不阻塞）；验收：testing/records/2026-07-23-ac4-acceptance.md；报告：reports/2026-07-23-phase4-report.md |
-| 5 SSRN 与特殊源 | planned | 0% | |
+| 4 认证框架+出版社 | **done**（tag `phase-4`） | 100% | 全部任务卡合并；AC-4.2~4.6 离线 DoD PASS（T7a）+ controller 终验签署；AC-4.1 真实凭证归 T7b（D-018，不阻塞，跨 Phase 遗留见下）；验收：testing/records/2026-07-23-ac4-acceptance.md；报告：reports/2026-07-23-phase4-report.md |
+| 5 SSRN 与特殊源 | **T8 收尾中** | ~100%（8 卡全交付，DoD 离线口径达成，待 opus 全分支终审+tag） | 全部任务卡合并（T1 crossref 两轴扩展/T3 nber/T4 ssrn/T5 aea/T6 econsoc+wiley 联动/T7 AC-5 正式化/M1 census）；AC-5 四条 PASS + 5.1b N/A defer（T7 draft→controller 终验 approved）；4 新 adapter（16→20）+ 13 新 venue（45→58）；验收：testing/records/2026-07-24-ac5-acceptance.md；报告：reports/2026-07-24-phase5-report.md（判定：待终审） |
 | 6 订阅与搜索 | planned | 0% | |
 | 7 全文抽取与库增强 | planned | 0% | |
 
