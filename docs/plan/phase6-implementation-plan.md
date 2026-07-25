@@ -38,7 +38,7 @@ updated: 2026-07-26
 | `subs/model.py` | `Subscription`/`SourceSelector`/`LocalFilter`/`Guard`/`Actions` 类型 + YAML 加载校验入口 | T2/T3/T4/T5/T6/T8 |
 | `subs/types.py` | `CompiledPlan`/`PlanStep`（下推参数+补偿谓词标记）、`RunSummary`/`ReportEntry`（日报数据结构）、`WatchOutcome` | T2/T3/T5/T6 |
 | `storage/repo.py` 增量 | `SubscriptionRepo`：subscription/subscription_run CRUD + watermark 读写（表已在 0001 建好，字段核对 design/06 §2） | T4/T5 |
-| 既有冻结件 | `types.PaperMeta`/`adapter.AdapterBase`/`errors` 层级/退出码 0/1/2/3 契约——Phase 6 **不动**；如需动走仲裁 | 全部 |
+| 既有冻结件 | `types.PaperStub`/`adapter.AdapterBase`/`errors` 层级/退出码 0/1/2/3 契约——Phase 6 **不动**；如需动走仲裁 | 全部 |
 
 ## §3 在线预算分项表（全 Phase 专项行 ≤60 请求；超支入档）
 
@@ -85,7 +85,7 @@ updated: 2026-07-26
 
 #### T3 本地过滤器 + 护栏引擎（`subs/filter-guard`，**sonnet/opus**，依 T1 仅类型）
 
-- **范围**：`subs/filter.py`（title_regex_any/exclude_regex/min_year 对 `PaperMeta` 流统一过滤，
+- **范围**：`subs/filter.py`（title_regex_any/exclude_regex/min_year 对 `PaperStub` 流统一过滤，
   大小写不敏感，命中规则记录进 `ReportEntry.matched_rules`）；`subs/guard.py`（`max_new_per_run`
   熔断判定 + `dedupe_against_library` 复用 storage identifier (scheme,value) 去重 + 过载报告数据：
   计数/按源与分类分布/收窄建议生成）。
