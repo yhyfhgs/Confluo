@@ -90,6 +90,7 @@ guard: {max_new_per_run: 100}
 - arXiv：`submittedDate` 上界推进，重叠 1 天窗口防边界丢失（announce 延迟）+ id 去重；
 - SSRN：~~最近 N 页 `abstract_id` 集合差分（无可靠时间过滤时的通用法）~~ **D-029 联动修订（2026-07-26）**：ssrn 元数据主路径改经 crossref prefix 枚举后，时间过滤已可靠——增量语义改用 `from-created-date` 游标（[ssrn.md §4.2](adapters/ssrn.md) 权威，P6-T4 审查裁定）；
 - OpenAlex/S2/Crossref：`from_*_date` 游标；
+- **NBER（P6-T10 补记，2026-07-26）**：program RSS（`back.nber.org/rss/new{code}.xml`）无日期轴可下推，SSRN 让出的"最近 N 个 id 集合差分"通用法改由 NBER 承接——`IdSetDiff`（[nber.md §3.4](adapters/nber.md) 权威规格，`subs/watermark.py` 实现），截断只砍最旧、保留上限防 `watermark_json` 无限膨胀。**口径收窄**：本项目当前只映射 19 个官方 program 中的 5 个（`AP`/`CF`/`EFG`/`IFM`/`ME`，逐条 `[LIVE]` 实证）；`PE` 因 Public/Political Economy 两义未核验被明确排除，其余 14 个官方 program 无码不猜——**扩展前须先补勘察证据（含 PE 语义核验）**，不得凭猜测扩表；
 - 全源统一：入库前对 (scheme,value) 去重 → "无重复"由 identifier 主键保证（design/06）。
 
 ## 6. 护栏与报告（防过载）
@@ -118,3 +119,4 @@ guard: {max_new_per_run: 100}
 |---|---|---|---|
 | 1 | 2026-07-26 | 滞后修正（status 不降，仍 approved）：§2 示例一（llm-agents）补脚注——`title_regex_any` 需含 `sources.*.concepts`/`query` 声明词的全称对应式，防止照抄该示例时复现"query/concept 有词、title 本地过滤无对应式"的死子句缺陷 | T8（`subs/presets`）审查：用真实经典论文标题实测 9 件预置 topic 包，发现同类 P1 级缺陷 7 处并修复；本条为反哺设计文档源头示例 |
 | 2 | 2026-07-26 | **文档转正**：front matter `status: approved`→`implemented`——T1–T8 主线全部合并（DSL 地基/查询编译器/本地过滤+护栏/watermark 三策略/watch runner+CLI/日报渲染/nber RSS watch 转主/9 preset）；AC-6.1~6.4 离线 DoD 判据 T9 全部建议 PASS、fable 亲验签署"达成"（[2026-07-26-ac6-acceptance.md](../testing/records/2026-07-26-ac6-acceptance.md)） | Phase 6 T10 收尾（[phase6-report](../reports/2026-07-26-phase6-report.md)） |
+| 3 | 2026-07-26 | **§5 补 NBER 增量语义条目**（此前只有 arXiv/SSRN/OpenAlex-S2-Crossref 三条，NBER 缺席）：`IdSetDiff`（id 集合差分）权威归属由 SSRN（D-029 后已改 `DateCursor`）移交 NBER；一并登记口径收窄——19 官方 program 仅 5 个 `[LIVE]` 映射、`PE` 两义未核验排除、扩展前须先补勘察证据 | Phase 6 终审附条件：`subs/watermark.py:425` docstring 引用的"design/09 §5 第二条"实指已删除线的 SSRN 旧文，本条补齐 NBER 权威归属并订正该 docstring 引用 |

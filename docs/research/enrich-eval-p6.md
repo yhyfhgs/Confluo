@@ -5,7 +5,7 @@ owner: fable5
 updated: 2026-07-26
 ---
 
-# R2 · repec enrich 通道 + ssrn 覆盖候补 ladder 合并评估（draft，待 fable 裁决）
+# R2 · repec enrich 通道 + ssrn 覆盖候补 ladder 合并评估（approved，fable 已裁决签署，见 §6/§5#2）
 
 > **任务卡**：[phase6-implementation-plan §4 R2](../plan/phase6-implementation-plan.md)（opus 起草 / fable 定稿）。
 > 合并对象 = [phase5-report §6 检查单 #4](../reports/2026-07-24-phase5-report.md)（repec enrich）+ **#1**（ssrn 覆盖候补阶梯）。
@@ -455,3 +455,4 @@ ssrn 语料是 141 万篇——**repec enrich 的覆盖面比 ssrn 小两个数�
 |---|---|---|---|
 | 1 | 2026-07-26 | 初稿（R2 起草，opus）：① repec enrich 评估（建议再缓 + 探针 + 任务卡草稿）；② ssrn ladder 三路径评估（推荐序 a≫b 出列≫c 否决 + 量化表 + M1-d 供数清单 + 任务卡草稿）；§4 交裁决 13 项 | 既有 [LIVE] 勘察（repec.md / ssrn.md / nber.md / aggregators.md）+ 本仓库源码事实（C1–C13）；**零网络** |
 | 2 | 2026-07-26 | **fable 定稿（draft→approved）**：§6 定稿裁决附录（M1-d U1–U5 回填 + repec 探针 GO + Q1–Q13 裁决表）；联动回填 ssrn.md §9.1 / repec.md §7.1 / design-09 §5 D-029 注记 / plan-T4 卡 ssrn 表述 / nber.yaml N-5 | fable 通读 + M1-d/探针供数 |
+| 3 | 2026-07-26 | **文档滞后清账**：H1 标题仍留"（draft，待 fable 裁决）"字样，与 front matter（已 `approved`，行 2 记录的定稿事实）不一致——改为"（approved，fable 已裁决签署，见 §6/§5#2）"；同批修正 `docs/INDEX.md` 该行 status 列（此前仍误标 `draft`） | Phase 6 T10 收尾（终审附条件）盘点发现 |

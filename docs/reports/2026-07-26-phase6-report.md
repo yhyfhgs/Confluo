@@ -1,17 +1,13 @@
----
-title: Phase 6 阶段报告 — 订阅与搜索（2026-07-26）
-status: draft
-owner: T10
-updated: 2026-07-26
----
-
 # Phase 6 阶段报告 — 订阅与搜索（2026-07-26）
 
-> 格式仿 [2026-07-24-phase5-report.md](2026-07-24-phase5-report.md)。**本稿由 T10 收尾撰写**：18 张任务卡
-> （主线 T1–T9、修复批 F1–F7、设计批 R1/R2、在线批 M1）已全部合并；[AC-6 离线端到端验收 + 在线冒烟记录](../testing/records/2026-07-26-ac6-acceptance.md)
+> 格式仿 [2026-07-24-phase5-report.md](2026-07-24-phase5-report.md)。**本稿由 T10 收尾撰写**：**21** 张任务卡
+> （主线 T1+T1b/T2–T10 共 11 卡、修复批 F1–F7 共 7 卡、设计批 R1/R2 共 2 卡、在线批 M1 共 1 卡；T1b/F7
+> 系执行期间发现接缝/在线缺陷后增补，沿 F6"定稿增补卡"先例补入 [phase6-implementation-plan.md](../plan/phase6-implementation-plan.md) §4/§5）已全部合并；[AC-6 离线端到端验收 + 在线冒烟记录](../testing/records/2026-07-26-ac6-acceptance.md)
 > 已由 controller（fable）亲验签署（`status: approved`，判定"达成"）——本报告引用其已签署结论，不重新独立验证 AC-6.x。
 > `tag phase-6` **未打**（T10 职责边界之外，controller 在 opus 全分支终审 + 合并裁决后另打，见
-> phase6-implementation-plan.md §4 T10 卡定义）。本报告自身判定列**待 controller 终审裁决**。
+> phase6-implementation-plan.md §4 T10 卡定义）。**opus 全分支终审已回"放行附条件"**（零 P0/代码
+> 缺陷/红线，门禁逐位复现）——六项文档修正条件已随本次追加提交逐项闭合（详见 §8），`tag phase-6`
+> 仍待 controller 执行。
 > 依据：[development-plan §Phase 6](../plan/development-plan.md)、
 > [phase6-implementation-plan.md](../plan/phase6-implementation-plan.md)、
 > [acceptance-criteria.md AC-6/AC-0](../testing/acceptance-criteria.md)、
@@ -27,7 +23,8 @@ updated: 2026-07-26
 
 ## 1. 概览
 
-Phase 6「订阅与搜索」18 卡 5 波次（W0 八卡并行铺开 T1+F1+F2+F3+F4+F5+R1+R2 → W1 滚动补位
+Phase 6「订阅与搜索」**21 卡**5 波次（较原计划新增 T1b/F7 两张执行期增补卡，详见
+phase6-implementation-plan.md §4/§5）（W0 八卡并行铺开 T1+F1+F2+F3+F4+F5+R1+R2 → W1 滚动补位
 T2+T3+T4+T8(部分)+M1 → W2 T5+T6+T7 → W3 T9 → W4 T10）**全交付**，实际合并顺序与波次并行图
 （phase6-implementation-plan.md §5）吻合，零波次外插队；冲突面预算表所列的三处真正串行点
 （repo.py 由 T1 独占先行、cli.py 由 T5 独占、`.gitignore` T5 一处）均按预期无冲突落地。
@@ -124,8 +121,11 @@ development-plan §Phase 6 范围逐项：
 | T7 nber RSS 坐实 | newap/newefg/newifm/newme 四个"命名模式外推"feed 实测 200+正确解析，证据分级"1 直证+4 外推"升级为"5/5 全 `[LIVE]`" | 挂机动 / **4** | `bf6e635` |
 | T9 AC-6 冒烟延伸 | llm-agents/econometrics-methods 两 preset `--dry-run`（arxiv 恒失败实证，发现 §4 已知限制①②） | ≤15 / **3** | [AC-6 记录 §3](../testing/records/2026-07-26-ac6-acceptance.md) |
 | F7 接缝复验 | F7 修复后在线复验（ssrn 日窗 count-only 探测 6,067 vs 整年 155,461；arxiv 收窄 venue dry-run 无 `badArgument`；cs archive 探测超时未重试） | controller 特批 ≤6 / **3** | [AC-6 记录 §4.1a](../testing/records/2026-07-26-ac6-acceptance.md) |
+| T9 环境连通性探测（不占用任何预算行，为审计完整性一并如实记录） | 沙箱出网连通性确认：命中 `api.crossref.org`/`api.openalex.org` 200、`export.arxiv.org` 一次超时+一次 429，均在真正执行 `crawler` 命令前完成 | 不计入预算行 / **2** | [AC-6 记录 §3.4](../testing/records/2026-07-26-ac6-acceptance.md) |
 
-**已知可核实的在线请求合计 32**，远低于 phase6-implementation-plan.md §3 的 phase 级 ≤60 名义预算。
+**已知可核实的在线请求合计 34**（含上表最后一行 2 条环境连通性探测——该 2 条不占用任何预算行，
+按 AC-6 记录 §3.4 原文"为审计完整性一并如实记录"的口径并入本报告 roll-up），远低于
+phase6-implementation-plan.md §3 的 phase 级 ≤60 名义预算。
 **一处台账缺口如实登记**（§4 事件⑤）：`repec 探针`(6) + `acl_anthology`(1) + `T7 坐实`(4) 三批均明确
 标注"挂机动 ≤10 行"，合计 **11**，较该行名义上限**超出 1 请求**——三次独立会话各自依据静态余额推算
 （"占机动预算 6/10"/"余 9"/未复核累计），无人核对过跨会话的累计消耗，暴露共享预算池缺一份运行时账本
@@ -234,27 +234,46 @@ development-plan §Phase 6 范围逐项：
 5. **`preprint_of` 建边零实现**（R2 Q6，enrich-eval-p6.md §附录）：repec 的 wp↔published 版本关联独家
    增值须先有此建边能力（merge/repo 侧新工作面），design/06 已有设计、无代码。
 6. **aaai/econsoc 回看窗完整性闭合评估**：aaai_ojs 冷回填已修（F3），econsoc 当前年 30 天回看窗完整性
-   缺口（与 aaai_ojs 同构）仅加了 WARNING（F4），尚未做结构性修复；econsoc ECMA `[UNRESOLVED①④]` 亦
-   待站点风险面稳定后重估。
+   缺口（与 aaai_ojs 同构）F4 审查后已将提示降级为 **INFO**（常态加窗路径每次触发，非异常条件，不占用
+   WARNING 语义），但尚未做结构性修复（首拉当年仍可能漏收超 30 天论文）；econsoc ECMA `[UNRESOLVED①④]`
+   亦待站点风险面稳定后重估。
 7. **E-2 冷却键全量统一 + `cooldown` CLI**：D-030 §12 裁决点④"缓议"——`crawler cooldown status|clear`
    新 CLI 面登记为 Phase 7 检查单候选，横切件实现卡时一并重估；E-2（全量域键统一）列后续清账候选。
 8. **http→auth import 分层**：本 Phase 未触及，若后续横切件实现需要更细的 provider/http 依赖分层，
-   随该实现卡一并评估（未在本 Phase 发现具体缺陷，仅登记为需关注面）。
+   随该实现卡一并评估（未在本 Phase 发现具体缺陷，仅登记为需关注面）。**本条无既往台账出处，本报告
+   首次登记**——底层事实：`http.py:52` 已 `import auth.challenge`（`ChallengeDetector`），即 http 层
+   反向依赖 auth 包的具体点；F6 审查 P3 曾提及该依赖方向，但未单独立项，本条据此正式登记供 Phase 7
+   评估是否需要分层解耦。
 9. **幻影字段文档清账**：本卡（T10）已完成——`auth-framework.md §8.1`/`ssrn.md §4.4`/`aggregators.md
    §5.5` 三处"VenueSpec 声明 OA-fallback"幻影字段表述已订正为实况（`cli.py::_assemble_auth_seam`
    无条件置位）。此项**已闭合**，列入本检查单仅为完整性存档。
-10. **全库 ~30 处 `Database` 构造审计**（P3 级，跨 Phase 遗留，本 Phase 未触及）：`test_migrations.py`
-    本 Phase 已加固连接纪律（F5），但更广泛的 `Database` 直接构造点是否全部遵循同等资源纪律未做全库
-    扫描，建议 Phase 7 或下次全库审计时纳入。
+10. **全库 76 处/41 文件 `Database` 构造审计**（终审实测，归口审计域 S4，跨 Phase 遗留，本 Phase 未
+    触及）：`test_migrations.py` 本 Phase 已加固连接纪律（F5），但更广泛的 `Database` 直接构造点是否
+    全部遵循同等资源纪律未做全库扫描，建议 Phase 7 或下次全库审计时纳入。
 11. **nber 隔离在线验证 + `asset-pricing` CLI 端到端补验**：F7 §4.1a 残留（§5 已详述），建议预算更宽
     的会话补一次（估 ~9 请求：ssrn 7 页 + arxiv 1 + nber RSS 1）。
-12. **AEJ 四刊（`aej_macro`/`aej_micro`/`aej_applied`/`aej_policy`）catalog 行内 ISSN ⚠ 残留清账**：
-    跨 Phase 5–6 未清，非阻断，随手可清但本 Phase 未纳入窄范围。
-13. **aaai 全文回填批**（~5049 篇，≈2.8h@30rpm+5–15GB）：待用户令另行插单，enumerate 侧成本已由 F3
-    降至 0 请求，仅剩 fetch 阶段待令。
+12. **AEJ 四刊 catalog 行内注记与 notes 不一致清账**（口径订正——非 ISSN 未核验缺口）：
+    `economics-journals.md` 表头"ISSN ⚠核验"的 `⚠` 是**列头标记**（提醒该列取值实现期以 Crossref 复核），
+    非逐行未验证标记；`aej_macro`/`aej_micro`/`aej_applied`/`aej_policy` 四刊 ISSN 已随 Phase 5 M1 与
+    `aeri`/`jel` 同批转 `[LIVE]`（8 刊出处全清零），并非未验证。残留的真实清账是：`aeri`/`jel` 两行
+    备注列已补 `[LIVE 2026-07-26] crossref 核实` 注记，另外四行（`aej_*`）备注列仍为空、未同步补上
+    对应注记——纯表格内部一致性清理，非阻断，随手可清但本 Phase 未纳入窄范围。
+13. **aaai 全文回填批**（~5049 篇，≈2.8h@30rpm+5–15GB）：待用户令另行插单；enumerate 侧**首趟后边际
+    历史届成本**已由 F3 降至 0 请求（首趟仍需一次全库扫描——F3 集成测试实测该场景 4 请求 vs 修复前
+    10 请求，非"整体 0 请求"），仅剩 fetch 阶段待令。
 14. **elsevier T7b / S2 key 等外部依赖沿账**：elsevier API key（BLOCKER-1，跨 Phase 3–6 四阶段未清）、
     S2 key、wiley TDM token、oup SSO 首登 runbook——均为计划内外部依赖，非阻断，待用户执行（见
     progress.md 快照"待用户执行"清单）。
+15. **`economics-journals.md`/`publishers-platforms.md` ECMA 行 adapter 归属表述不一致清账**（§5 已知
+    限制沿账，Phase 5 T8 `spawn_task` 移交、跨 Phase 5–6 两阶段未清）：今日实况——前者（`economics-
+    journals.md` ecma 行）写"`econsoc`（当前段自营 OA）/`wiley`（过刊段，D-028）"；后者
+    （`publishers-platforms.md` econsoc 行）写"TE、QE、ECMA(部分)"。两处对同一事实（econsoc 服务 ECMA
+    当前段、wiley 服务 ECMA 过刊段）的表述结构不同，未经统一措辞规范核对，建议 Phase 7 择一表述范式
+    统一改写。
+16. **机动预算运行时共享账本**（§4 事件⑤ 载体行）：repec 探针/acl_anthology/T7 坐实三批共享同一条
+    "机动 ≤10"预算行、累计 11、超线 1 请求（§4 详述），根因是缺一份跨会话运行时账本；建议 Phase 7
+    预算记录规范新增"消费共享预算行前核对其余会话已用量"纪律，或改用单一文件式运行时计数器承载
+    "机动"（及其他共享行）的累计消耗。
 
 ## 7. 门禁
 
@@ -272,7 +291,7 @@ ruff/mypy 均无输出（全绿）；与 [AC-6 记录](../testing/records/2026-0
 
 ## 8. 签署
 
-- **T10 初判（2026-07-26）**：18 卡 5 波次全交付，实际合并顺序与波次并行图吻合；门禁 3056→3820
+- **T10 初判（2026-07-26）**：21 卡 5 波次全交付（含 T1b/F7 两张执行期增补卡），实际合并顺序与波次并行图吻合；门禁 3056→3820
   （+764 测试，coverage 98.78%→98.99%，中途峰值 99.00%，EXIT=0）；adapter/venue 数不变（20/58，本
   Phase 不新增平台）；新增 `subs` 包（8 模块）+ `subscriptions/presets/`（9 件）+ `nber/rss.py`；AC-6
   四条 PASS，fable 已亲验签署"达成"（本报告引用而非重新独立判定）；D-030/D-031 两条新 ADR 已正式化；
@@ -280,5 +299,14 @@ ruff/mypy 均无输出（全绿）；与 [AC-6 记录](../testing/records/2026-0
   为实况；subscriptions/README 过时"presets/（后续到位）"小节已修正合并；GLOSSARY 增补 6 条
   （Subscription DSL/preset/批内去重/browser-fetch 横切件为新增，watch/watermark 为更新）；progress.md/
   INDEX.md 已同步至本终态。
-- **最终判定**：**待 controller 终审裁决**（本报告不自置"达成"——按任务卡字面纪律，Phase 6 最终判定、
-  opus 全分支终审、`tag phase-6` 均由 controller 在收到本报告后另行执行）。
+- **终审附条件闭合（2026-07-26，追加提交）**：opus 全分支终审已回"**放行附条件**"（零 P0/代码缺陷/
+  红线；门禁逐位复现）。六项文档修正条件本次追加提交逐项闭合：①本节（Phase 7 检查单）补两行（ECMA
+  两处 catalog 表述不一致 15、机动预算运行时账本 16）；②本节四项事实订正（item 6 WARNING→INFO、item 8
+  补 `http.py:52` 出处标注、item 10 改"76 处/41 文件·归 S4"、item 12 AEJ 口径重述、item 13"0 请求"
+  精确化为"首趟后边际 0 请求"）；③卡数矛盾 9 处"18 卡"统一订正为"21 卡"，phase6-implementation-plan.md
+  §4/§5 补 T1b/F7 两卡说明+波次图注记；④三处 INDEX/front matter 漂移修正（enrich-eval-p6.md/
+  decision-log.md/GLOSSARY.md）；⑤在线 roll-up 32→34（§3.4 补 AC-6 记录连通性探测两条）；⑥design/09
+  §5 补 NBER 增量语义条目 + 订正 `watermark.py:425` docstring 失效引用（纯注释，零行为改动）。门禁
+  复跑零回归（详见 §7）。
+- **最终判定**：终审附条件已闭合（六项，本次提交）；**`tag phase-6` 待 controller** 执行（本报告不
+  自置签署——tag 与最终判定文字由 controller 收到本次收尾提交后落笔）。

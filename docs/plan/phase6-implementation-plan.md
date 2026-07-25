@@ -70,6 +70,19 @@ updated: 2026-07-26
   （未知源/坏正则/负数 guard/空 sources 等）全部响亮报错；repo CRUD + watermark 读写落 DB 可回读。
 - **测试**：unit（解析/校验/缺省）+ integration（repo 走真 sqlite）；covering `subs/` ≥95%。
 
+#### T1b 接缝终裁（`subs/dsl-core` 同分支延伸，**opus/opus**，依 T1；**T1 深审后增补卡**，T10 终审后补记）
+
+- **背景**：T1 深审热修（3×P1）与 T3（`subs/guard.py`）并行开发期间，T1 冻结件 `RunSummary` 的过载
+  分布字段形状与 T3 实际产出的 `OverloadReport` 双轴（按源/按类目）分布不完全对齐——T1 侧原按单一
+  维度声明分布字段，T3 侧需要同时表达"来源"与"类目"两个独立轴。本卡是 T1/T3 双卡合并窗口期的一次
+  接缝终裁，非独立立项，随 T1 分支延伸一次性提交（`cf4068f`）。
+- **范围**：`RunSummary.distribution` 字段形状升级为三元组 `(axis, label, count)`（`axis` 取值
+  `source`/`category`），对齐 `subs/guard.py::OverloadReport` 的双轴表达；下游 T3（生成）/T5（装配）/
+  T6（渲染）三方消费点同步核对零回归。
+- **DoD**：`RunSummary.distribution` 新形状被 T3/T5/T6 三方实际消费点验证零回归；既有 T1 单测覆盖
+  同步更新，无遗留旧形状消费点。
+- **测试**：unit（新形状构造/序列化）+ 既有 T1/T3 回归套件零回归。
+
 #### T2 查询编译器（`subs/compilers`，**opus/opus**，依 T1）
 
 - **范围**：`subs/compile.py`——每源 Compiler 把 `Subscription` 编译为 `PlanStep`（下推参数 + 本地补偿
@@ -196,6 +209,24 @@ updated: 2026-07-26
   文档段（不常驻、不改 CI，本地 cron 方案，写进 canary README 或 testing/）。
 - **DoD**：canary 断言 20/20 等值自断言常绿；migrations 测试无 ResourceWarning；周跑模板可手动演练。
 
+#### F7 watch 在线可用性两接缝修复（`fix/watch-online-usability`，**opus/opus**，依 T5+T9；**T9 验收后增补卡**，沿 F6"R1 定稿增补卡"先例补入）
+
+- **背景**：T9 AC-6 在线冒烟延伸（§3 T9-online 行）实测发现两项此前全部离线测试未能覆盖的真实网络
+  接缝缺陷——离线 mock/fixture 测试不经过真实服务端校验规则（arXiv 官方 `badArgument` 拒绝逻辑、
+  crossref 真实记录规模），结构性覆盖不到，只有在线冒烟才能暴露；本卡是 AC-6 记录 §4 已知限制 #1/#2
+  的正式修复卡，在 T9 验收之后增补。
+- **范围**：① `subs/watch.py::_lower_bound_of` 对 arxiv 恒返回 `None`，导致真实 OAI-PMH 请求以 venue
+  `quirks.inception`（1998-01）为起点，被 arXiv 官方以 `badArgument`"start date too early"确定性
+  拒绝——任何声明 `sources.arxiv` 的订阅在真实网络下 `subs watch` 恒失败零候选。修复：`_lower_bound_of`
+  把窗值解回 ISO 下界喂 `since`，月桶起点=窗下界所在月。② ssrn 源年粒度桶触发
+  `CrossrefAdapter._enumerate_window` 对前缀 `10.2139` 整年无条件枚举，7 日 watch 增量窗传导不到日
+  粒度（探测实证 2026 全年已 155,461 条）。修复：`CrossrefAdapter` 新增日窗通道 `_window_bounds`
+  （venue `quirks` 的 `from/until-{pub|created}-date` 与桶年取交集拼进 `filter=`，交集为空零请求；
+  backfill 主路径不声明日窗时行为零回归）。
+- **DoD**：两接缝在线复验（arxiv 收窄 venue dry-run 无 `badArgument`；ssrn 日窗 count-only 探测服务端
+  计数 6,067 vs 整年 155,461，25.6× 收敛）；离线回归零翻转；AC-6 记录 §4 已知限制 #1/#2 转"已修复"。
+- **测试**：unit（两接缝专测）+ 在线复验（controller 特批 ≤6 请求，实耗 3，AC-6 记录 §4.1a 台账）。
+
 ### 设计批（opus 起草 / fable 定稿——AGENTS §7 架构决策主 agent 保留）
 
 #### R1 browser-fetch 横切件正式详设（`design/browser-fetch`，**opus 起草/fable 定稿**，零依赖）
@@ -254,6 +285,11 @@ W2（T2/T3/T4 合并后）: T5 ▎T6(依T1类型,与T5并行) ▎T7(依T2)
 W3（T5+T6+T8 合并后）: T9(fable 亲验)
 W4: T10(opus 终审 + fable 裁决 + tag)
 ```
+
+**波次图外增补卡**（本图为 W0 开工前定稿的原始 5 波次图，以下两卡是执行期间发现接缝/在线缺陷后临时
+插入、原图未覆盖，沿用 F6"R1 定稿增补卡"同款处理方式补记——不改变已完成波次的判定，仅补全任务卡
+清单完整性，详见 §4 对应小节）：**T1b** 落在 W0→W1 过渡（T1 深审热修与 T3 并行开发期间的接缝终裁）；
+**F7** 落在 W3→W4 过渡（T9 在线冒烟验收之后、T10 收尾之前）。18 卡（原图）+ T1b + F7 = **21 卡**终态。
 
 冲突面预算：主线 T1–T8 全部落在新包 `subs/`、新目录 `subscriptions/` 与 repo.py 追加段——与修复批
 F1（merge.py）/F2（config.py+docs）/F3（aaai_ojs/）/F4（分散 adapter 小改）/F5（tests 基建）零文件

@@ -422,7 +422,9 @@ class DateCursor:
 
 @dataclass(frozen=True)
 class IdSetDiff:
-    """nber：最近 N 个 id 集合差分（design/09 §5 第二条的"无可靠时间过滤"通用法）。
+    """nber：最近 N 个 id 集合差分（[nber.md §3.4] 权威规格——"无可靠时间过滤"场景通用法；
+    design/09 §5 现有独立 NBER 条目引用同一权威出处，T10 终审订正：此前误引"design/09 §5
+    第二条"实指已加删除线的 SSRN 旧文，非本策略的真实权威来源）。
 
     **当前唯一适用者是 nber**：其增量通道是 program RSS（`back.nber.org/rss/new{code}.xml`，
     nber.md §3.4），feed 只给"最近一批"，没有任何日期轴可下推。ssrn 曾用本策略，

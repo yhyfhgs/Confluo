@@ -21,7 +21,7 @@
 |---|---|---|---|
 | [../README.md](../README.md) | 项目总览 | approved | 2026-07-21 |
 | [../AGENTS.md](../AGENTS.md) | AI/LLM 协作者工作规范 | approved | 2026-07-21 |
-| [GLOSSARY.md](GLOSSARY.md) | 术语表（全库速查） | review | 2026-07-22 |
+| [GLOSSARY.md](GLOSSARY.md) | 术语表（全库速查） | review | 2026-07-26 |
 
 ## plan/ — 计划与决策
 
@@ -144,7 +144,7 @@
 | [research/site-survey/publisher-platforms-econfin.md](research/site-survey/publisher-platforms-econfin.md) | 勘察：Econ/Fin 六出版社平台 | approved | 2026-07-20 |
 | [research/site-survey/publisher-platforms-cs.md](research/site-survey/publisher-platforms-cs.md) | 勘察：IEEE/AEA/SIAM/MIT Press | approved | 2026-07-20 |
 | [research/site-survey/publisher-platforms-p4-recheck.md](research/site-survey/publisher-platforms-p4-recheck.md) | 复核：出版社平台增量勘察（Elsevier/OUP/Wiley/ACM）+凭证核查 [LIVE 07-23] | draft | 2026-07-23 |
-| [research/enrich-eval-p6.md](research/enrich-eval-p6.md) | 评估：repec enrich 通道 + ssrn 覆盖候补 ladder（P6-R2，待 fable 裁决） | draft | 2026-07-26 |
+| [research/enrich-eval-p6.md](research/enrich-eval-p6.md) | 评估：repec enrich 通道 + ssrn 覆盖候补 ladder（P6-R2，fable 已裁决签署：repec 再缓定档 Phase 7 首批候选；ssrn ladder (b)出列/(c)否决/(a)条件立卡） | approved | 2026-07-26 |
 | [research/github-similar-projects.md](research/github-similar-projects.md) | 调研：GitHub 同类项目（20 项）+架构总结 | approved | 2026-07-20 |
 
 ## diagrams/ — SVG 图（源文件即交付物）
@@ -172,4 +172,4 @@
 | [reports/2026-07-23-phase4-report.md](reports/2026-07-23-phase4-report.md) | Phase 4 阶段报告（DoD 判定 + AC-0 系统性扫描 + 收尾中草稿，判定列待 controller 终验签署 + Phase 5 检查单） |
 | [reports/2026-07-24-phase5-report.md](reports/2026-07-24-phase5-report.md) | Phase 5 阶段报告（8 卡 4 波次交付 + D-027/028/029 + AC-5 引用 + 事件教训 + Phase 6 检查单，判定：**达成**——controller 合并裁决签署，tag `phase-5`） |
 | [reports/2026-07-24-post-phase5-audit.md](reports/2026-07-24-post-phase5-audit.md) | Phase 5 终审后独立全库审计报告（8 subagent：4 Opus 深审+4 Sonnet 面审；八域附条件达标、零 P0；P1×3/P2×12 台账 + AC-0 复核全 PASS + Phase 6 处置建议） |
-| [reports/2026-07-26-phase6-report.md](reports/2026-07-26-phase6-report.md) | Phase 6 阶段报告（订阅与搜索：主线 T1–T9 + 修复批 F1–F7 + 设计批 R1/R2 + 在线批 M1 交付清单 + D-030/D-031 + 事件教训 + Phase 7 开工检查单，判定：待 controller 终审裁决） |
+| [reports/2026-07-26-phase6-report.md](reports/2026-07-26-phase6-report.md) | Phase 6 阶段报告（订阅与搜索：21 卡——主线 T1+T1b/T2–T10 + 修复批 F1–F7 + 设计批 R1/R2 + 在线批 M1 交付清单 + D-030/D-031 + 事件教训 + Phase 7 开工检查单；opus 终审"放行附条件"，六项文档修正条件已闭合，`tag phase-6` 待 controller） |

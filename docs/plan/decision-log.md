@@ -2,7 +2,7 @@
 title: 架构决策记录（ADR）
 status: approved
 owner: fable5
-updated: 2026-07-24
+updated: 2026-07-26
 ---
 
 # 架构决策记录（Decision Log / ADR）
