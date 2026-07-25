@@ -529,9 +529,10 @@ def _primary_domain(paper: PaperStub) -> str | None:
 def _guard_challenge(data: bytes, url: str) -> None:
     """resolve 落地页 body 命中 CF 质询特征 → `Challenged`（BLOCKED，不对抗 AC-0.2，§6）。
 
-    `HttpClient.get_bytes` 不暴露状态/响应头，故只判 200-body 型质询（"Just a moment"/
+    `HttpClient.get_bytes` 不暴露状态/响应头，故本函数只判 200-body 型质询（"Just a moment"/
     `/cdn-cgi/challenge-platform/`，challenge.py 平台无关特征）；头级质询（403 `cf-mitigated`）
-    经 `HttpClient` 映射 NO_ENTITLEMENT（二者皆阻塞；canary/冒烟监质询，§5）。
+    由 `HttpClient` 自身映射为 `Challenged`（S-c/D-030 裁决②——此前统一映射 NO_ENTITLEMENT，
+    403 型质询会静默降级为"无权限"，现已收口）。两条路径互补，覆盖全部质询形态（§5）。
     """
     verdict = ChallengeDetector().classify(status=200, headers={}, final_url=url, body=data)
     if verdict is ClassifyResult.CHALLENGE:

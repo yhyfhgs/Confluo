@@ -1,7 +1,7 @@
 """错误分类路由集成（design/05 §4；进程内经 `PipelineRunner`，mock 故障注入驱动）。
 
 覆盖：AUTH_EXPIRED 整批 BLOCKED + resume 后 re-resolve 生效（AC-1.5）/
-CHALLENGE、CONFIG 单点 BLOCKED / fail_enumerate → FAILED(parse) / GONE 标 asset
+CONFIG 单点 BLOCKED、CHALLENGE 域冷却连带 / fail_enumerate → FAILED(parse) / GONE 标 asset
 不重试 / NO_ENTITLEMENT 标 asset + 独立终态不计 failed（§8.5） / TRANSIENT 耗尽预算 attempts==4 与
 退避序列 × retry_scale / INTEGRITY 重下 1 次 / RATE_LIMITED 循环保护升级 /
 非 CrawlerError → TRANSIENT 处置 / blocked 报告计数。
@@ -129,20 +129,40 @@ def test_auth_expired_dois_batch_of_two(env: PipelineEnv) -> None:
     assert len(fetch_tasks(env)) == 2  # 批就是 2 个，无其他 fetch 任务
 
 
-# -- CHALLENGE / CONFIG：单点 BLOCKED（无连带）--------------------------------
+# -- CONFIG：单点 BLOCKED（无连带）/ CHALLENGE：域冷却连带 --------------------
 
 
-@pytest.mark.parametrize("error_class", ["challenge", "config"])
-def test_challenge_and_config_block_single_task(env: PipelineEnv, error_class: str) -> None:
-    env.write_venue(fail_fetch(error_class, [0]))
+def test_config_blocks_single_task(env: PipelineEnv) -> None:
+    env.write_venue(fail_fetch("config", [0]))
     report = env.make_runner().pull(VENUE, Selector(volume="1", issue="1"))
 
     assert report.blocked == 1  # 仅注入者；不像 auth 那样整批连带
     assert report.succeeded == 4
     blocked = fetch_tasks(env, state="BLOCKED")
     assert len(blocked) == 1
-    assert str(blocked[0]["blocked_reason"]).startswith(f"{error_class}:")
+    assert str(blocked[0]["blocked_reason"]).startswith("config:")
     assert blocked[0]["attempts"] == 0
+
+
+def test_challenge_blocks_the_whole_domain_queue(env: PipelineEnv) -> None:
+    """CHALLENGE 与 CONFIG 不同：命中即写域冷却，**同域剩余队列连带 BLOCKED**。
+
+    **回归锁定（E-1，D-030 裁决③）**：此前本例断言 `blocked == 1 / succeeded == 4`
+    ——那是冷却"写而不读"缺陷的表征（冷却判定被 open_access family 早返回跳过，
+    mock_platform 正属该 family）。修复后与 04 §5 / AC-4.6"检测到风控页立即 BLOCKED
+    ＋停止该平台全部队列＋冷却 24h"一致。冷却链路专测见
+    `tests/integration/test_cf403_cooldown.py`（T-7）。
+    """
+    env.write_venue(fail_fetch("challenge", [0]))
+    report = env.make_runner().pull(VENUE, Selector(volume="1", issue="1"))
+
+    assert report.blocked == 5 and report.succeeded == 0
+    blocked = fetch_tasks(env, state="BLOCKED")
+    assert len(blocked) == 5
+    assert all(r["attempts"] == 0 for r in blocked)  # block 不占重试次数
+    reasons = [str(r["blocked_reason"]) for r in blocked]
+    assert sum(r.startswith("challenge:") and "挑战冷却期" not in r for r in reasons) == 1
+    assert sum("挑战冷却期" in r for r in reasons) == 4  # 其余 4 篇经冷却门连带
 
 
 # -- fail_enumerate → FAILED(parse)，级联继续 ---------------------------------

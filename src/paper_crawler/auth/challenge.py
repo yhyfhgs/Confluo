@@ -12,6 +12,11 @@ Elsevier JSON 封套不走本判定器（§11）。非页面态异常（5xx 等�
 
 真实脱敏 fixture（含 R0 [LIVE] 风控页）归 T4（oup-silverchair.md §8）；特征表
 后续按 fixture 校准只增不改语义（数据表非冻结签名）。
+
+**S-c 纯附加**（D-030 裁决②，11-browser-fetch §5.5-1）：`has_challenge_headers`
+把"头级质询特征"这一步从 `classify` 里切出来供 `http.py` 的 403 分支消费——
+特征库 `_CHALLENGE_HEADER_SIGNATURES` 仍是**唯一权威源**，`http.py` 不复制特征串；
+`classify` 改调本方法，判定语义与行序逐字不变。
 """
 
 from collections.abc import Mapping
@@ -121,6 +126,22 @@ class ChallengeDetector:
     不抛错、不发请求、不含任何对抗逻辑。
     """
 
+    @staticmethod
+    def has_challenge_headers(headers: Mapping[str, str]) -> bool:
+        """头级质询子判定：响应头是否命中 `_CHALLENGE_HEADER_SIGNATURES`（精确相等，
+        名/值均小写化后比对——`cf-mitigated: challenge` 是值精确相等信号，非子串）。
+
+        `classify` 第一优先级判据的可复用切片（**纯附加**，S-c/D-030 裁决②）：
+        `http.py` 的 403 分支据此把 `403 + cf-mitigated: challenge` 映射为
+        `Challenged`，从而复用同一张特征表——**特征串不在 `http.py` 复制**
+        （11-browser-fetch §5.5-1"特征库单一权威源纪律"）。静态方法：调用方无须
+        持有 detector 实例，也不引入任何求解/绕过语义（仍是纯分类，AC-0.2）。
+        """
+        header_map = {
+            name.strip().lower(): value.strip().lower() for name, value in headers.items()
+        }
+        return any(header_map.get(name) == value for name, value in _CHALLENGE_HEADER_SIGNATURES)
+
     def classify(
         self, *, status: int, headers: Mapping[str, str], final_url: str, body: bytes
     ) -> ClassifyResult:
@@ -133,11 +154,8 @@ class ChallengeDetector:
         """
         text = body.decode("utf-8", errors="replace").lower()
         url = final_url.lower()
-        header_map = {
-            name.strip().lower(): value.strip().lower() for name, value in headers.items()
-        }
 
-        if any(header_map.get(name) == value for name, value in _CHALLENGE_HEADER_SIGNATURES):
+        if self.has_challenge_headers(headers):
             return ClassifyResult.CHALLENGE
         if any(signature in text for signature in _CHALLENGE_BODY_SIGNATURES):
             return ClassifyResult.CHALLENGE

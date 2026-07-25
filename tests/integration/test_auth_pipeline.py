@@ -52,6 +52,7 @@ from paper_crawler.types import (
 
 _VENUE = "auth_venue"
 _PLATFORM = "auth_mock"
+_DOMAIN = "auth.mock.local"  # 冷却键（E-1 后 = 域；`_AuthGatedMock.domains[0]` 与 asset host）
 _PDF = b"%PDF-1.4\n" + b"0" * 1024 + b"\n%%EOF\n"
 
 
@@ -472,7 +473,12 @@ def test_runner_reads_real_config_field_not_getattr_default(tmp_path: Path) -> N
 
 
 def test_challenge_blocks_and_writes_cooldown(tmp_path: Path) -> None:
-    """fetch 命中挑战 → BLOCKED(challenge) + 平台冷却落盘；同批后续经冷却门连带 BLOCKED。"""
+    """fetch 命中挑战 → BLOCKED(challenge) + 域冷却落盘；同批后续经冷却门连带 BLOCKED。
+
+    **键粒度回归锁定（E-1，D-030 裁决③）**：落盘文件名此前是 `<adapter_id>.json`，
+    现为 `<域>.json`（域取自 asset URL host）——修 aea 一 adapter 双域异质的连坐。
+    旧键仍被**读**到（向前兼容），见 `test_challenge_cooldown_persists_across_runs`。
+    """
     auth_mock = _AuthGatedMock(fetch_mode="challenge")
     env = _setup(tmp_path, auth_mock=auth_mock, n_papers=3)
     _enqueue_fetches(env)
@@ -480,14 +486,18 @@ def test_challenge_blocks_and_writes_cooldown(tmp_path: Path) -> None:
 
     assert report.blocked == 3 and report.succeeded == 0
     assert auth_mock.fetch_calls == 1  # 首篇命中 challenge；其余经冷却门拦截，未 fetch
-    cooldown_file = env.config.home / "state" / "cooldown" / f"{_PLATFORM}.json"
+    cooldown_file = env.config.home / "state" / "cooldown" / f"{_DOMAIN}.json"
     assert cooldown_file.is_file()  # 冷却状态落盘（跨运行持久化）
     reasons = env.db.query("SELECT blocked_reason FROM task WHERE state = 'BLOCKED'")
     assert any("challenge" in str(r["blocked_reason"]) for r in reasons)
 
 
 def test_challenge_cooldown_persists_across_runs(tmp_path: Path) -> None:
-    """冷却期内新一次运行（新 runner 进程语义）：从 config-home JSON 加载冷却 → 该平台 BLOCKED。"""
+    """冷却期内新一次运行（新 runner 进程语义）：从 config-home JSON 加载冷却 → 该平台 BLOCKED。
+
+    预置的是**旧格式** `<adapter_id>.json` 键——E-1 后读时两键都查，故上一版本落盘的
+    冷却文件仍然生效（向前兼容，无迁移脚本）。
+    """
     auth_mock = _AuthGatedMock(fetch_mode="ok")  # 若门放行本会成功——但冷却应拦截
     env = _setup(tmp_path, auth_mock=auth_mock, n_papers=1)
     # 预置冷却文件（未来 12h）——模拟前次运行已进入冷却
@@ -593,7 +603,7 @@ def test_health_check_challenged_blocks_and_cooldown(tmp_path: Path) -> None:
 
     assert report.blocked == 3 and report.succeeded == 0
     assert provider.health_calls == 1 and auth_mock.fetch_calls == 0
-    assert (env.config.home / "state" / "cooldown" / f"{_PLATFORM}.json").is_file()
+    assert (env.config.home / "state" / "cooldown" / f"{_DOMAIN}.json").is_file()
 
 
 def test_no_entitlement_paper_without_doi_no_oa_fallback(tmp_path: Path) -> None:

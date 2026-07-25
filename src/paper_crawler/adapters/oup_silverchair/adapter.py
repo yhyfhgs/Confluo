@@ -23,9 +23,10 @@ client 直取；真实供给（读 `CredentialStore` 解密 storage_state）由 
   零真实网络（同 HttpClient 的 transport 注入通道先例）。
 
 **为何不复用共享 `HttpClient`**：①凭证隔离红线——cookie 必须挂在**携密专属 client**，
-绝不复用共享 client（否则外泄他站，plan §7-4）；②`ChallengeDetector` 需读 **403 挑战页
-的 headers+body**，而共享 `HttpClient` 的冻结错误映射在 ≥400 处即 `raise`（403→
-NO_ENTITLEMENT）会吞掉挑战页 body，无从分类。故本 adapter 用专属 `httpx.Client`（UA+
+绝不复用共享 client（否则外泄他站，plan §7-4）；②`ChallengeDetector` 需读 **403 落地页
+的 headers+body** 才能四态分类，而共享 `HttpClient` 在 ≥400 处即 `raise` 会吞掉 body
+（S-c/D-030 后它已能凭 `cf-mitigated` 头独立判出 CHALLENGE，但 LOGIN_REDIRECT /
+NO_ENTITLEMENT / OK 三态仍须 body，理由不变）。故本 adapter 用专属 `httpx.Client`（UA+
 domain 限定 cookie jar + follow_redirects），GET 后返回**原始响应视图**（不在 4xx 处
 raise），交 `ChallengeDetector` 事后判读（design §5）。详设 §3.2 措辞"专属 HttpClient"
 即此专属 client（同构：UA+Cookie+跟随重定向），实现上因上述②改用裸 httpx。

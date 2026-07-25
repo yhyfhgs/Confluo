@@ -7,6 +7,7 @@ obslog debug 事件、流式多分块、超时与连接错误、UA/Accept 头、
 
 import json
 import logging
+import re
 from collections.abc import Callable, Iterator
 from datetime import UTC, datetime, timedelta
 from email.utils import format_datetime
@@ -15,8 +16,8 @@ from pathlib import Path
 import httpx
 import pytest
 
-from paper_crawler.errors import CrawlerError, ErrorClass
-from paper_crawler.http import HttpClient
+from paper_crawler.errors import Challenged, CrawlerError, ErrorClass
+from paper_crawler.http import HttpClient, _error_for_status
 from paper_crawler.obslog import setup_logging
 
 UA = "PaperCrawler/0.1.0 (personal research; mailto:test@example.com)"
@@ -680,3 +681,198 @@ def test_stream_throttles_once_per_logical_request() -> None:
 
     assert b"".join(chunks) == b"%PDF-1.5\nx"
     assert spy.calls == ["arxiv.org"]
+
+
+# ---------------------------------------------------------------------------
+# T-6：CF-403 判定演进 S-c（D-030 裁决②；11-browser-fetch §5.4/§8 T-6）
+#
+# 改判面严格限于「403 **且** 响应头 `cf-mitigated: challenge`」——真实 Cloudflare
+# 判罚形态（[LIVE 2026-07-24] aea pubs / [LIVE 2026-07-23] OUP QJE）。其余一切 403
+# 维持 NO_ENTITLEMENT **逐字不变**（wiley TDM 无权 / 机构无订阅 / github 配额 403…），
+# 由下方三形态用例 + 全库 fixture/内联 mock 双扫描共同回归锁定。
+# ---------------------------------------------------------------------------
+
+_CF_HEADERS = {"cf-mitigated": "challenge"}
+_FIXTURE_ROOT = Path(__file__).resolve().parents[1] / "fixtures"
+_TESTS_ROOT = Path(__file__).resolve().parents[1]
+
+
+def _parse_http_fixture(path: Path) -> tuple[int, dict[str, str], bytes]:
+    """解析 `.http` 快照 → `(status, headers, body)`（全库 fixture 通用约定：`#` 注释行、
+    `HTTP-STATUS: <int>` 声明状态码、其余 `Key: Value` 为响应头、首个空行后为 body）。"""
+    raw = path.read_bytes()
+    head, sep, body = raw.partition(b"\n\n")
+    if not sep:
+        return 200, {}, raw
+    status = 200
+    headers: dict[str, str] = {}
+    for line in head.decode("utf-8", errors="replace").splitlines():
+        stripped = line.strip()
+        if not stripped or stripped.startswith("#"):
+            continue
+        key, _, value = stripped.partition(":")
+        key, value = key.strip(), value.strip()
+        if key.upper() == "HTTP-STATUS":
+            status = int(value)
+        else:
+            headers[key] = value
+    return status, headers, body
+
+
+# --- 三形态（§8 T-6 主表）------------------------------------------------------
+
+
+def test_t6_form1_cf_403_maps_challenge() -> None:
+    """形态①：403 + `cf-mitigated: challenge` → `Challenged`（error_class=CHALLENGE）。"""
+    client = make_client(_status_handler(403, headers=_CF_HEADERS))
+    with pytest.raises(Challenged) as exc_info:
+        client.get_text("https://pubs.aeaweb.org/doi/pdfplus/10.1257/jep.20251473")
+    assert exc_info.value.error_class is ErrorClass.CHALLENGE
+    assert exc_info.value.detail == "cf_challenge"
+
+
+def test_t6_form1_cf_403_on_stream_path_too() -> None:
+    """流式取回路径共用同一 `_error_for_status`——改判在 fetch(stream) 上同样生效。"""
+    client = make_client(_status_handler(403, headers=_CF_HEADERS))
+    with pytest.raises(Challenged):
+        list(client.stream("https://pubs.aeaweb.org/doi/pdfplus/10.1257/jep.20251473"))
+
+
+def test_t6_form1_cf_403_header_match_is_case_insensitive() -> None:
+    """头名/值大小写不敏感（判定复用 `ChallengeDetector` 的小写化精确比对）。"""
+    client = make_client(_status_handler(403, headers={"CF-Mitigated": "Challenge"}))
+    with pytest.raises(Challenged):
+        client.get_text("https://academic.oup.com/qje/article/1/1/1/1")
+
+
+def test_t6_form2_plain_403_stays_no_entitlement() -> None:
+    """形态②：403 **无** CF 头 → NO_ENTITLEMENT 逐字不变（类型/消息/status_code 均不变）。"""
+    client = make_client(_status_handler(403))
+    with pytest.raises(CrawlerError) as exc_info:
+        client.get_text("https://x.local/p")
+    assert type(exc_info.value) is CrawlerError  # 非 Challenged 子类
+    assert exc_info.value.error_class is ErrorClass.NO_ENTITLEMENT
+    assert exc_info.value.status_code == 403
+    assert str(exc_info.value) == "HTTP 403 for https://x.local/p"
+
+
+def test_t6_form2_cf_mitigated_other_value_stays_no_entitlement() -> None:
+    """`cf-mitigated` 值非 `challenge`（如 `logged`）→ 不改判——精确相等而非子串。"""
+    client = make_client(_status_handler(403, headers={"cf-mitigated": "logged"}))
+    with pytest.raises(CrawlerError) as exc_info:
+        client.get_text("https://x.local/p")
+    assert exc_info.value.error_class is ErrorClass.NO_ENTITLEMENT
+
+
+def test_t6_form3_wiley_tdm_403_stays_no_entitlement() -> None:
+    """形态③（回归锁定）：wiley TDM 403 真实形态（`api.wiley.com` 无 CF 前置，不携该头）
+    → NO_ENTITLEMENT 不变；wiley.md §5 第 2 行与 adapter 的 OA 兜底链均依赖此语义。"""
+    status, headers, body = _parse_http_fixture(
+        _FIXTURE_ROOT / "wiley" / "03_tdm_403_no_entitlement.http"
+    )
+    assert status == 403 and "cf-mitigated" not in {k.lower() for k in headers}
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(status, headers=headers, content=body)
+
+    client = make_client(handler)
+    with pytest.raises(CrawlerError) as exc_info:
+        client.get_bytes("https://api.wiley.com/onlinelibrary/tdm/v1/articles/10.1111%2Fecta.12058")
+    assert exc_info.value.error_class is ErrorClass.NO_ENTITLEMENT
+    assert exc_info.value.status_code == 403
+
+
+# --- 全库零翻转扫描：§5.4 兼容性论证的机器化复核 ---------------------------------
+
+# 全库**唯一**两个携 `cf-mitigated: challenge` 的 403 fixture。二者**都不经共享
+# HttpClient 消费**，故 S-c 对既有行为零影响：
+#   - oup_silverchair/01：oup adapter 用**专属 httpx.Client**（凭证隔离 + 需读挑战页
+#     body，见其模块 docstring"为何不复用共享 HttpClient"），直喂 `ChallengeDetector`；
+#   - aea/01：`test_aea_fixtures.py` 直喂 `ChallengeDetector`（aea adapter 零网络）。
+# 两者本就判 CHALLENGE，S-c 只是让**共享 HttpClient 路径**也得到同一结论。
+_CF_403_FIXTURES = frozenset(
+    {
+        "aea/01_challenge_cf_mitigated.http",
+        "oup_silverchair/01_challenge_cf_mitigated.http",
+    }
+)
+
+# 构造内联 `httpx.Response(403, …cf-mitigated…)` 的测试文件白名单：
+#   - `integration/conftest.py` / `unit/test_auth_providers.py`：auth provider 的探针路径
+#     （`CookieSessionProvider`/`SSOFlowProvider` 自持 httpx.Client + `ChallengeDetector`），
+#     **不经** `HttpClient` 错误映射 ⇒ 零翻转（本就判 CHALLENGE）；
+#   - `integration/test_cf403_cooldown.py`：S-c 改判**本身**的端到端用例（期望 CHALLENGE）。
+# 新增条目须先论证它不落在期望 NO_ENTITLEMENT 的面上。
+_INLINE_CF_403_ALLOWLIST = frozenset(
+    {
+        "integration/conftest.py",
+        "integration/test_cf403_cooldown.py",
+        "unit/test_auth_providers.py",
+    }
+)
+
+
+def _all_403_fixtures() -> list[tuple[str, dict[str, str], bytes]]:
+    """全库 `.http` fixture 中**全部** 403 用例（相对路径, headers, body）。"""
+    found: list[tuple[str, dict[str, str], bytes]] = []
+    for path in sorted(_FIXTURE_ROOT.rglob("*.http")):
+        status, headers, body = _parse_http_fixture(path)
+        if status == 403:
+            found.append((path.relative_to(_FIXTURE_ROOT).as_posix(), headers, body))
+    return found
+
+
+def test_t6_scan_finds_the_expected_403_fixture_corpus() -> None:
+    """扫描器自证不空跑（防"扫了 0 条也绿"的假通过）：全库 403 fixture 恰这 5 条。"""
+    names = {name for name, _, _ in _all_403_fixtures()}
+    assert names == {
+        "acl_anthology/08_github_403.http",
+        "aea/01_challenge_cf_mitigated.http",
+        "openreview/06_challenge_403.http",
+        "oup_silverchair/01_challenge_cf_mitigated.http",
+        "wiley/03_tdm_403_no_entitlement.http",
+    }
+
+
+def test_t6_full_repo_403_fixture_scan_zero_flip() -> None:
+    """全库 403 fixture 逐条过新映射：改判集合**恰好**等于两个 CF 挑战 fixture，
+    其余全部维持 NO_ENTITLEMENT（且仍携 status_code=403）。
+
+    ⚠ 本断言若失败即意味着"某个期望 NO_ENTITLEMENT 的既有用例被 S-c 翻转"——
+    D-030 兼容性论证的前提被破坏，必须停手复核而非放宽断言。
+    """
+    flipped: set[str] = set()
+    for name, headers, body in _all_403_fixtures():
+        response = httpx.Response(
+            403,
+            headers=headers,
+            content=body,
+            request=httpx.Request("GET", "https://fixture.local/probe"),
+        )
+        error = _error_for_status(response)
+        if error.error_class is ErrorClass.CHALLENGE:
+            flipped.add(name)
+            continue
+        assert error.error_class is ErrorClass.NO_ENTITLEMENT, name
+        assert error.status_code == 403, name
+    assert flipped == set(_CF_403_FIXTURES)
+
+
+def test_t6_inline_403_challenge_mocks_are_allowlisted() -> None:
+    """测试源码里内联构造的 `httpx.Response(403, …cf-mitigated…)` 集合冻结在白名单内。
+
+    与上一测互补：fixture 扫描覆盖落盘快照，本测覆盖**内联 mock**。集合一旦变化
+    （新增一处 403+CF 内联 mock）即失败，强制新增方论证它不经共享 HttpClient
+    ——否则就是一次未经论证的改判面扩张。
+    """
+    pattern = re.compile(r"httpx\.Response\(\s*403\b")
+    self_path = Path(__file__).resolve()
+    found: set[str] = set()
+    for path in sorted(_TESTS_ROOT.rglob("*.py")):
+        if path == self_path:
+            continue  # 本文件只在**散文注释**里提到该形态（扫描器自指，非真实 mock）
+        text = path.read_text(encoding="utf-8")
+        for match in pattern.finditer(text):
+            if "cf-mitigated" in text[match.start() : match.start() + 300].lower():
+                found.add(path.relative_to(_TESTS_ROOT).as_posix())
+    assert found == set(_INLINE_CF_403_ALLOWLIST)

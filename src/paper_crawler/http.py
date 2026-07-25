@@ -15,7 +15,8 @@
 - 429 → RATE_LIMITED（detail 含 `retry_after_s=<n>`，无头时省略该段）
 - 5xx → TRANSIENT（503 且带 Retry-After → RATE_LIMITED）
 - 401 → AUTH_EXPIRED
-- 403 → NO_ENTITLEMENT
+- 403 + `cf-mitigated: challenge` 响应头 → CHALLENGE（`Challenged`）；403 无该头 →
+  NO_ENTITLEMENT（**受控演进 S-c**，D-030 裁决②；见 `_error_for_status` 403 分支注释）
 - 404 / 410 / 451 → GONE（资源终态；451 法律不可用亦属资源终态）
 - 其余 4xx（400 / 405 / …）→ CONFIG（请求构造有缺陷，如 arxiv offset>30000→400，
   应响亮停机而非标资源终态；CONFIG 经 pipeline 特判转 BLOCKED）
@@ -25,6 +26,14 @@
 即用 httpx 默认传输，测试传 MockTransport 即零真实网络。UA 由调用方（从 config 组装
 D-014 格式 `PaperCrawler/<ver> (personal research; mailto:<email>)`）注入，本模块不读
 config。
+
+**S-c 受控演进**（D-030 裁决②，11-browser-fetch §5.4/§5.5）：403 分支新增头级判别
+——真实 Cloudflare 判罚形态是 `403 + cf-mitigated: challenge`，此前被统一映射
+NO_ENTITLEMENT，导致「不冷却、不 BLOCKED、还派生 OA-fallback 继续对判罚中的平台
+发请求」，与 04 §5/AC-4.6"检测到风控页立即 BLOCKED + 冷却 24h"语义相反。改判面经
+论证恰好 = wiley.md §5 / aea.md §6 / auth-framework §11 三处文档**已声明应改**的场景
+（wiley TDM 403 走无 CF 前置的 `api.wiley.com`、elsevier 走 JSON 封套，均不携该头
+⇒ 行为不变），故属"让实现追上文档"而非语义变更；全库 fixture 零翻转由 T-6 机器化复核。
 
 **T6 纯附加扩展**：新增 `post_json`（S2 `POST /paper/batch` 批查通道所需——冻结的
 GET-only 三方法 `get_text`/`get_bytes`/`stream` 签名与行为完全未改动，仅在 `_request`
@@ -40,7 +49,8 @@ from types import TracebackType
 
 import httpx
 
-from paper_crawler.errors import CrawlerError, ErrorClass
+from paper_crawler.auth.challenge import ChallengeDetector
+from paper_crawler.errors import Challenged, CrawlerError, ErrorClass
 from paper_crawler.obslog import log_event, redact
 from paper_crawler.ratelimit import RateLimiter
 
@@ -87,6 +97,16 @@ def _error_for_status(response: httpx.Response) -> CrawlerError:
     if status == 401:
         return CrawlerError(ErrorClass.AUTH_EXPIRED, msg, status_code=status)
     if status == 403:
+        # S-c（D-030 裁决②）：头级质询判别复用 `ChallengeDetector` 的**唯一权威特征源**
+        # （不在本模块复制 `cf-mitigated` 特征串，11-browser-fetch §5.5-1）。命中 →
+        # `Challenged`（error_class 恒 CHALLENGE）→ pipeline 既有 `_BLOCK_CLASSES` 路径
+        # → BLOCKED + 域冷却 24h，**零新增处置逻辑**（§5.5-2）。未命中 → NO_ENTITLEMENT
+        # 逐字不变（wiley TDM 403 / 机构无订阅等真实场景，§5.5-3）。
+        # `Challenged` 的冻结签名不带 `status_code`（沿 auth-framework §2.4 固定
+        # error_class 先例），故本分支不携原始 status——这也让 elsevier 的
+        # `exc.status_code == 403 → AUTH_EXPIRED` 重分类不会把挑战悄悄降级（fail-safe）。
+        if ChallengeDetector.has_challenge_headers(response.headers):
+            return Challenged(msg, detail="cf_challenge")
         return CrawlerError(ErrorClass.NO_ENTITLEMENT, msg, status_code=status)
     if status in (404, 410, 451):
         # 404/410 资源消失；451 法律不可用——同属"资源终态、不重试"。
