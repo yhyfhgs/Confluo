@@ -637,15 +637,22 @@ fetch 前:  if count_fetch_today(domain) >= cap:      # cap = Config.auth_daily_
 | provider/adapter 抛出 | error_class | runner 现有路由 | Phase 4 增量 |
 |---|---|---|---|
 | `AuthRequired` / 401 / 302→login / health_check EXPIRED 且 refresh→None | AUTH_EXPIRED | `queue.block` + 同 venue 剩余 fetch 连带 BLOCKED（`_auth_blocked_venues`）；提示 `crawler auth login` | **零改动**——现有 AUTH_EXPIRED 路径即满足 04 §7 |
-| `Challenged` / 特征库命中（§11） | CHALLENGE | ∈ `_BLOCK_CLASSES` → `queue.block` | **新增平台冷却**：写 `<config-home>/state/cooldown/<platform>.json = {until: now+24h}`；`route_for`/健康门读该状态，冷却内该平台全队列 BLOCKED（04 §5"停止该平台全部队列 + 冷却 24h"） |
+| `Challenged` / 特征库命中（§11） | CHALLENGE | ∈ `_BLOCK_CLASSES` → `queue.block` | **新增域冷却**：写 `<config-home>/state/cooldown/<domain>.json = {until: now+24h}`；fetch 前置门读该状态，冷却内该**域**全队列 BLOCKED（04 §5"停止该平台全部队列 + 冷却 24h"在 D-030 E-1 下细化为域粒度——一 adapter 可服务异质多域，按域停手才不连坐无辜域） |
 | 日配额达上限 | CONFIG | ∈ `_BLOCK_CLASSES` → `queue.block` | detail="daily quota"，报告显著呈现 |
 
 - **人工恢复**（05 §2 / 04 §7）：BLOCKED 不占重试、不自动恢复；`crawler auth login <provider>`（重登，
   清对应 `_auth_blocked_venues`）→ `crawler resume <task|--all>` 转回 PENDING → 下次 drain 继续。
   challenge 冷却期满（或用户已在浏览器处理挑战后）`crawler resume` 恢复。**冷却状态非 git**（config-home）。
-- **runner 状态复用**：`_auth_blocked_venues`（现有）承接 auth 连带；新增 `_challenge_cooldown`（venue→until）
-  与 `_auth_batch`（健康门），均在 `_new_report` 重置（每次运行独立）。冷却 24h 跨运行持久化在
-  config-home JSON（进程重启不丢），运行态缓存加速。
+- **runner 状态复用**：`_auth_blocked_venues`（现有）承接 auth 连带；新增 `_challenge_cooldown`
+  （**冷却键→until**，键 = 域，见下条）与 `_auth_batch`（健康门）。`_auth_blocked_venues`/`_auth_batch`
+  每次运行独立（运行期重置）；`_challenge_cooldown` **不重置**——冷却 24h 跨运行有效，持久化在
+  config-home JSON（进程重启不丢），运行态字典只作本次运行的读缓存。
+- **冷却键粒度（D-030 E-1）**：键取该任务实际请求的 **asset URL host**；无 asset/URL 时（resolve
+  阶段抛挑战）如实退回 `<adapter_id>` 平台级键（不猜某个域名，免误标无辜域）。**读时新旧两键都查**，
+  故上一版本落盘的 `<adapter_id>.json` 仍生效（向前兼容，无迁移脚本）；判定为已过期的冷却文件顺手清理。
+- **冷却门位置**：在 runner 的 fetch 前置门中**先于 OA-fallback 旁路**执行，对**全部** fetch 任务
+  （含 OA direct asset）生效——冷却语义是"该域已被判罚、暂停发请求"，与是否走 auth 平台无关。
+  OA 兜底通常落在第三方 OA 域上，域粒度天然把它与平台域冷却隔开。
 
 ### 8.5 no_entitlement 终态口径（A-m5：不计 failures）
 
@@ -810,7 +817,8 @@ class ChallengeDetector:
 | 2 | 2026-07-23 | P0b R0 落地：§2.4 异常子类 + §6 status_code 权威版**归 T2**（D-024 波次，plan §5）；§3.4 补 `[auth.elsevier]`/`[auth.wiley]` Config-slot + **两级凭证模型**（简单串走 Config-slot 不触 cryptography / 有状态走 AES-GCM store）；P0a 开放题①②由 **D-023** 定裁（cryptography optional extra + SessionHandle 具体化附注）、③健康门/配额/冷却默认值确认沿 04 原文 | [R0 勘察](../research/site-survey/publisher-platforms-p4-recheck.md) [LIVE 2026-07-23] + controller 裁决 D-023/D-024 |
 | 3 | 2026-07-23 | **W0 双评审修订轮**（评审 A Reject 3B+7M+5m / 评审 B Approve-with-fixes 4M+5m 逐条闭合）：**A-B1 OA-fallback 取回全链**（主方向：record→AssetPlan 规格化 + `_stage_fetch` OA 分支 + `_fetch_oa_direct` 通用 direct + OA 域保守桶自动注册，§8.1）；A-B2/B-m5 `DATE(ts)` 实名列 + A-M5 配额口径"fetch 尝试篇次"三处统一（§8.3）；A-M2 工作时段窗（§8.6）；A-M7 一次性 user-data-dir mkdtemp+rmtree（§10 + AC-4.5 ⑥）；B-M1 假时钟注入（PipelineRunner/provider clock，§8.2/§9）；B-M3 fixture 分平台形态（OUP HTML 四类 / elsevier JSON 封套，§11）；B-M4 canary SKIP 钉死删 AuthRequired 归一（§7）；A-M1 canary 补限速域注册（§7）；A-m1 nonce/A-m2 sidecar/A-m5 no_entitlement 不计 failed（§3/§8.5）/B-m6 取证清单按 kind 分列/B-m7 CI 装 [auth]/B-m8 AC-4.2 双源；config.py 归 **T2 独占**（撞面消除）；controller 亲读 quota_probe 样例值 + probe_url ⚠ 未实测（§3.4） | 评审 A/B 裁决 + controller 增量令（T1→T1a/T1b、config→T2、10-config-layout D-025） |
 | 4 | 2026-07-24 | **可测性 backlog 登记（非缺陷，非设计变更）**：`AuthManager.resolve`/`get`（§2 编排入口）走 provider 默认构造，**不支持**注入 `http_factory`/`login_flow` 测试 seam——T6 全生命周期集成测试因此须绕过 `AuthManager` 直接构造 `SSOFlowProvider(...)`（`_make_sso_provider`；仅 `logout` 经 `AuthManager` 驱动）。生产路径无影响（默认构造即真实路径），但集成测试无法端到端经 manager 装配 mock 平台。登记为可测性改进 backlog，本条不改动既有 `AuthManager` 接口设计。 | Phase 4 T6 发现；[2026-07-23-phase4-report.md §5「AuthManager DI 缺口」](../reports/2026-07-23-phase4-report.md) + [AC-4 离线汇总记录 §5「AuthManager DI 缺口（T6 发现 → T8 登记）」](../testing/records/2026-07-23-ac4-acceptance.md)；phase4-report §6 开工检查单 #1③ 移交 |
-| 5 | 2026-07-26 | **§8.3 文档滞后修正（非设计变更）**：日配额 `cap` 表述由"VenueSpec `rate_limit`（若声明日上限）> `Config.auth_daily_cap`"改为"`Config.auth_daily_cap` 单一来源"——`VenueRateLimit`（types.py）schema 只有 `requests_per_minute`、从无日上限字段，`runner.py::_auth_gate_fetch` 的实现也从不读 VenueSpec，原表述高估系统能力 | Phase 6 F2（[2026-07-24-post-phase5-audit.md §5](../reports/2026-07-24-post-phase5-audit.md)） |
+| 5 | 2026-07-26 | **§8.3 文档滞后修正（非设计变更）**：日配额 `cap` 表述由"VenueSpec `rate_limit`（若声明日上限）> `Config.auth_daily_cap`"改为"`Config.auth_daily_cap` 单一来源"——`VenueRateLimit` schema 无日上限字段、runner 只读 `Config.auth_daily_cap`（P6-F2，审计 §5 文档滞后处置） |
+| 6 | 2026-07-26 | **§8.4 冷却规格随 D-030 E-1 落地同步**（F6 实现卡）：冷却落盘键 `<platform>.json`→`<domain>.json`（键 = asset URL host，无 asset 时如实退回 `<adapter_id>`；读时新旧两键都查，向前兼容；过期文件顺手清理）；"冷却内该平台全队列 BLOCKED"→"该域全队列"；冷却门**先于 OA-fallback 旁路**对全部 fetch 生效（F6-2）。一并订正两处既有失准：`_challenge_cooldown` 实为**键→until**（非 venue→until）；"均在 `_new_report` 重置"与实码矛盾——冷却跨运行有效、**不重置**（重置的只有 `_auth_blocked_venues`/`_auth_batch`） | [D-030](../plan/decision-log.md) 裁决③ + F6 实现卡（`fix/cf403-cooldown`）+ F6 审查裁决 F6-1/F6-2 |
 
 > **[已裁决]**（P0b，2026-07-23）：①`cryptography` optional extra → **D-023**（含 `types.SessionHandle` 具体化系 types.py:128 预留的计划内变更之附注）；②健康门 N=20/15min、日配额 200、challenge 冷却 24h **确认沿 04 §4/§5 原文**；③异常子类 + status_code **归 T2 权威版**（plan §5）；④wiley **纳入本 Phase + token 门控** → **D-024**（acm_dl 维持出列、全文改道 unpaywall 一并入 D-024）。
 > **[待双评审]**：elsevier entitlement 语义、`X-RateLimit-*` 真值、全文/attachment 字段名——R0 keyless 429 拦在 auth 层前无法活验，留 T3 实现期真实 key 核验（BLOCKER-1，见 elsevier-sd.md §2/§5）。

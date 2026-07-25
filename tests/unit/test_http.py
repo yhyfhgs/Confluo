@@ -689,7 +689,8 @@ def test_stream_throttles_once_per_logical_request() -> None:
 # 改判面严格限于「403 **且** 响应头 `cf-mitigated: challenge`」——真实 Cloudflare
 # 判罚形态（[LIVE 2026-07-24] aea pubs / [LIVE 2026-07-23] OUP QJE）。其余一切 403
 # 维持 NO_ENTITLEMENT **逐字不变**（wiley TDM 无权 / 机构无订阅 / github 配额 403…），
-# 由下方三形态用例 + 全库 fixture/内联 mock 双扫描共同回归锁定。
+# 由下方三形态用例 + 全库 fixture 等值扫描（权威）+ 内联 mock 启发式扫描（辅助）
+# 共同回归锁定。
 # ---------------------------------------------------------------------------
 
 _CF_HEADERS = {"cf-mitigated": "challenge"}
@@ -861,16 +862,22 @@ def test_t6_full_repo_403_fixture_scan_zero_flip() -> None:
 def test_t6_inline_403_challenge_mocks_are_allowlisted() -> None:
     """测试源码里内联构造的 `httpx.Response(403, …cf-mitigated…)` 集合冻结在白名单内。
 
-    与上一测互补：fixture 扫描覆盖落盘快照，本测覆盖**内联 mock**。集合一旦变化
-    （新增一处 403+CF 内联 mock）即失败，强制新增方论证它不经共享 HttpClient
-    ——否则就是一次未经论证的改判面扩张。
+    **定位：辅助护栏，非权威判据。** 零翻转的权威复核是上一测（`_all_403_fixtures`
+    等值扫描——解析真实响应、跑真实映射）。本测只是正则 + 300 字符窗的**启发式**
+    tripwire：它按文本近似判断"这个 403 mock 带不带 CF 头"，既会被跨窗写法漏掉
+    （头声明离构造点太远、头存于变量、经 `MockTransport` 间接构造），也会被散文
+    注释误命中。它的价值只在于：**新增一处内联 403+CF mock 时集合变化 → 失败 →
+    强制作者论证它不落在期望 NO_ENTITLEMENT 的面上**，不能据此宣称"全库无遗漏"。
     """
     pattern = re.compile(r"httpx\.Response\(\s*403\b")
     self_path = Path(__file__).resolve()
     found: set[str] = set()
     for path in sorted(_TESTS_ROOT.rglob("*.py")):
         if path == self_path:
-            continue  # 本文件只在**散文注释**里提到该形态（扫描器自指，非真实 mock）
+            # 自排除：本文件既有**真实** 403 构造（`_all_403_fixtures` 扫描用，窗内无 CF 头），
+            # 也在散文注释里字面写出 `httpx.Response(403, …cf-mitigated…)` 形态——后者会被
+            # 正则+窗口误命中（扫描器自指）。本文件自身的 403 语义由同段其余用例直接断言。
+            continue
         text = path.read_text(encoding="utf-8")
         for match in pattern.finditer(text):
             if "cf-mitigated" in text[match.start() : match.start() + 300].lower():

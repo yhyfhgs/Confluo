@@ -2,7 +2,7 @@
 title: 六阶段 Pipeline 与任务系统
 status: implemented
 owner: fable5
-updated: 2026-07-21
+updated: 2026-07-26
 ---
 
 # 05 · 六阶段 Pipeline 与任务系统
@@ -59,7 +59,7 @@ Task {
 | `rate_limited` | 429、Retry-After | 按 Retry-After 或退避重试，不计失败 | 连续 3 次 → domain 冷却 1h（Phase 1 近似：连续 >3 次转按 `transient` 处置防串行 drain 挂死；domain 冷却机制随 Phase 2 真实站点落地） |
 | `auth_expired` | 401/302→login、healthcheck 失败 | 不重试 | 整批 BLOCKED(auth) |
 | `no_entitlement` | 403 且 session 健康、entitlement 预检否 | 不重试 | 标记 + OA fallback（Unpaywall） |
-| `challenge` | CAPTCHA/Cloudflare 特征 | 不重试 | BLOCKED(challenge) + 平台冷却 24h |
+| `challenge` | CAPTCHA/Cloudflare 特征（含 403 + `cf-mitigated: challenge` 头） | 不重试 | BLOCKED(challenge) + **域冷却 24h**（D-030 E-1：键 = 该任务 asset URL host，无 asset 时退回 `<adapter_id>` 平台级键；冷却门先于 OA-fallback 旁路，对全部 fetch 生效。详见 [auth-framework.md](auth-framework.md) §8.4） |
 | `gone` | 404/410 | 不重试 | Asset 标 gone；VenueEra 级链接走 Wayback 兜底 |
 | `parse` | 解析 0 命中、schema 校验失败 | 不重试 | FAILED(parse) + canary 标红（adapter 腐化信号） |
 | `integrity` | 非 %PDF 魔数、大小异常、哈希不符 | 重下 1 次 | auth_leak 疑似 → 触发 healthcheck |
@@ -109,3 +109,9 @@ crawler verify / report [--last-run]                   # 对账与报告
   - AC-1.2 dry-run 与实跑清单一致且 dry-run 零网络下载副作用；
   - AC-1.3 任意阶段 kill 后重跑，最终结果与不中断一致（对比 DB dump）；
   - AC-1.4 限速器在压力测试下 per-domain 速率不超配置值 ±5%。
+
+## 9. 修订记录
+
+| # | 日期 | 修订 | 依据 |
+|---|---|---|---|
+| 1 | 2026-07-26 | §4 `challenge` 行"平台冷却 24h"→"**域冷却 24h**"（键 = asset URL host，无 asset 退回 `<adapter_id>`；冷却门先于 OA-fallback 旁路），并补 403+`cf-mitigated` 亦属该类的判据来源 | [D-030](../plan/decision-log.md) 裁决②③ + F6 实现卡（`fix/cf403-cooldown`）+ F6 审查裁决 F6-1 |

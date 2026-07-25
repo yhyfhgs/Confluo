@@ -25,6 +25,7 @@ from pathlib import Path
 
 import httpx
 import pytest
+import yaml
 
 from integration.test_pipeline_e2e import DEFAULT_QUIRKS, VENUE, PipelineEnv, make_env
 from paper_crawler.errors import Challenged, CrawlerError, ErrorClass
@@ -81,6 +82,35 @@ def _one_asset_row(env: PipelineEnv) -> sqlite3.Row:
     return env.db.query("SELECT * FROM asset ORDER BY id LIMIT 1")[0]
 
 
+def _write_sibling_venue(env: PipelineEnv, venue_id: str) -> None:
+    """再写一个 venue：**同 adapter、同 host**（`mock.local`），用于跨 venue 同域连带断言。"""
+    doc: dict[str, object] = {
+        "id": venue_id,
+        "kind": "journal",
+        "names": {"full": "Sibling Mock Journal"},
+        "field": ["cs_ai"],
+        "tier": "T1",
+        "identifiers": {"issn": ["0000-0001"]},
+        "metadata_source": "mock_platform",
+        "fulltext_source": "mock_platform",
+        "auth": {"level": "none"},
+        "quirks": dict(DEFAULT_QUIRKS),
+        "status": "active",
+    }
+    (env.venues_dir / f"{venue_id}.yaml").write_text(
+        yaml.safe_dump(doc, allow_unicode=True), encoding="utf-8"
+    )
+
+
+def _make_oa_direct_asset(env: PipelineEnv, host: str) -> None:
+    """把既有 asset 全部改造成 OA-fallback direct asset（`source_adapter=unpaywall`）
+    并指向第三方 OA 域——用于验证冷却门**先于** OA 旁路生效（F6-2）。"""
+    env.db.execute(
+        "UPDATE asset SET source_adapter = 'unpaywall', url = 'https://' || ? || '/pdf/oa'",
+        (host,),
+    )
+
+
 # ---------------------------------------------------------------------------
 # T-7：open_access family 冷却"写而不读"修复（E-1；**修复前必失败**）
 # ---------------------------------------------------------------------------
@@ -123,6 +153,27 @@ def test_t7_cooldown_expiry_releases_the_queue(env: PipelineEnv) -> None:
     assert report.succeeded == 5 and report.blocked == 0
 
 
+def test_expired_cooldown_file_is_cleaned_up(env: PipelineEnv) -> None:
+    """F6-4：判定为已过期时顺手删掉落盘文件——冷却文件是纯状态残留，效力一过即无用，
+    不清则 `state/cooldown/` 随时间单调堆积陈旧键（旧 adapter_id 键只读不写尤甚）。"""
+    _seed_cooldown(env, _DOMAIN_KEY, hours=-1.0)
+    _seed_cooldown(env, _ADAPTER_KEY, hours=-1.0)
+    assert _cooldown_files(env) == [f"{_DOMAIN_KEY}.json", f"{_ADAPTER_KEY}.json"]
+
+    report = env.make_runner().pull(VENUE, Selector(volume="1", issue="1"))
+
+    assert report.succeeded == 5 and report.blocked == 0  # 过期不拦
+    assert _cooldown_files(env) == []  # 两个键的过期文件均已清理
+
+
+def test_active_cooldown_file_is_kept(env: PipelineEnv) -> None:
+    """清理只针对**已过期**文件：生效中的冷却文件必须留在盘上（跨运行持久化前提）。"""
+    _seed_cooldown(env, _DOMAIN_KEY)
+    env.make_runner().pull(VENUE, Selector(volume="1", issue="1"))
+
+    assert _cooldown_files(env) == [f"{_DOMAIN_KEY}.json"]
+
+
 def test_t7_cooldown_is_not_written_for_other_block_classes(env: PipelineEnv) -> None:
     """只有 CHALLENGE 写冷却：CONFIG 等其余 BLOCKED 类不写，同批其余照常成功（无连坐）。"""
     env.write_venue(_quirks_with(fail_fetch={"error_class": "config", "paper_indexes": [0]}))
@@ -158,29 +209,117 @@ def test_unrelated_domain_cooldown_does_not_block(env: PipelineEnv) -> None:
 
 
 # ---------------------------------------------------------------------------
+# F6-2：冷却门先于 OA-fallback 旁路（域冷却与 auth 无关）+ 跨 venue 同域连带
+# ---------------------------------------------------------------------------
+
+
+def test_oa_fallback_asset_is_blocked_by_its_own_domain_cooldown(env: PipelineEnv) -> None:
+    """OA-fallback direct asset（旁路 auth 门）在其**目标域**冷却期内同样 BLOCKED。
+
+    冷却是"该域已被判罚、暂停对它发请求"的信号，与是否走 auth 平台无关——OA 兜底
+    若继续对判罚中的域敲门只会加重判罚。故冷却门位于 OA 旁路**之前**（F6-2）。
+    """
+    env.make_runner().pull(VENUE, Selector(volume="1", issue="1"))
+    _make_oa_direct_asset(env, "oa.mock.local")
+    assert env.queue.resume(all_blocked=True) == 0
+    env.db.execute("UPDATE task SET state = 'PENDING' WHERE kind = 'fetch'")
+    _seed_cooldown(env, "oa.mock.local")
+
+    report = env.make_runner().drain()
+
+    assert report.blocked == 5 and report.succeeded == 0
+    reasons = env.db.query(
+        "SELECT blocked_reason FROM task WHERE kind = 'fetch' AND state = 'BLOCKED'"
+    )
+    assert all("oa.mock.local" in str(r["blocked_reason"]) for r in reasons)
+
+
+def test_oa_fallback_asset_unaffected_by_platform_domain_cooldown(env: PipelineEnv) -> None:
+    """对照组：平台域（`mock.local`）冷却**不牵连**第三方 OA 域上的兜底取回——
+    域粒度天然隔离，冷却门前移不会误伤 OA 通道。"""
+    env.make_runner().pull(VENUE, Selector(volume="1", issue="1"))
+    _make_oa_direct_asset(env, "oa.mock.local")
+    env.db.execute("UPDATE task SET state = 'PENDING' WHERE kind = 'fetch'")
+    _seed_cooldown(env, _DOMAIN_KEY)
+
+    report = env.make_runner().drain()
+
+    assert report.blocked == 0
+
+
+def test_cooldown_carries_across_venues_sharing_a_host(env: PipelineEnv) -> None:
+    """跨 venue 同域连带：venue A 命中挑战 → 同 host 的 venue B 亦 BLOCKED。
+
+    键是**域**不是 venue——判罚发生在站点侧，同域的其他 venue 继续发请求同样会被判罚。
+    """
+    sibling = "sibling_journal"
+    _write_sibling_venue(env, sibling)
+    env.write_venue(_challenge_on([0]))
+    first = env.make_runner().pull(VENUE, Selector(volume="1", issue="1"))
+    assert first.blocked == 5
+    assert _cooldown_files(env) == [f"{_DOMAIN_KEY}.json"]
+
+    second = env.make_runner().pull(sibling, Selector(volume="1", issue="1"))
+
+    assert second.succeeded == 0 and second.blocked == 5
+    reasons = env.db.query(
+        "SELECT blocked_reason FROM task WHERE venue_id = ? AND state = 'BLOCKED'", (sibling,)
+    )
+    assert all(_DOMAIN_KEY in str(r["blocked_reason"]) for r in reasons)
+
+
+# ---------------------------------------------------------------------------
 # 键粒度契约：域键在前、旧 adapter 键在后；写只用首键
 # ---------------------------------------------------------------------------
 
 
 def test_cooldown_key_order_domain_first_then_legacy(env: PipelineEnv) -> None:
-    """`_cooldown_keys` 顺序契约：asset URL host → adapter 主域 → adapter_id（去重）。"""
+    """`_cooldown_keys` 顺序契约：asset URL host（域级新键）→ adapter_id（旧键，向前兼容）。
+
+    **无 asset 时不猜 `domains[0]`**（F6-3）：手上没有"哪个域被判罚"的证据，退回平台级
+    `adapter_id` 键——键名如实、不误标无辜域。
+    """
     env.make_runner().pull(VENUE, Selector(volume="1", issue="1"))
     runner = env.make_runner()
     asset = _one_asset_row(env)
 
-    # 同域：host == domains[0] → 去重后只剩两键
     assert runner._cooldown_keys(VENUE, asset) == (_DOMAIN_KEY, _ADAPTER_KEY)
-    # 无 asset（resolve 阶段抛挑战 / asset 行缺失）→ 退化到 adapter 主域
-    assert runner._cooldown_keys(VENUE, None) == (_DOMAIN_KEY, _ADAPTER_KEY)
-    # 异质子域（aea `pubs.aeaweb.org` 同构）：该 asset 的键集**不含**主域被判罚时的其他域
+    # 无 asset（resolve 阶段抛挑战 / asset 行缺失）→ 只有平台级键，绝不出现某个域名
+    assert runner._cooldown_keys(VENUE, None) == (_ADAPTER_KEY,)
+    # 异质子域（aea `pubs.aeaweb.org` 同构）：键集取本任务实际请求的 host，不含姊妹域
     env.db.execute(
         "UPDATE asset SET url = 'https://pubs.mock.local/pdf/x' WHERE id = ?", (asset["id"],)
     )
-    assert runner._cooldown_keys(VENUE, _one_asset_row(env)) == (
-        "pubs.mock.local",
-        _DOMAIN_KEY,
-        _ADAPTER_KEY,
+    assert runner._cooldown_keys(VENUE, _one_asset_row(env)) == ("pubs.mock.local", _ADAPTER_KEY)
+
+
+@pytest.mark.parametrize("url", ["", "/relative/no-host.pdf"])
+def test_cooldown_keys_fall_back_when_asset_url_has_no_host(env: PipelineEnv, url: str) -> None:
+    """`asset.url` 可空/可为无 host 的相对路径（schema 允许）→ 退回平台级键，不崩。"""
+    env.make_runner().pull(VENUE, Selector(volume="1", issue="1"))
+    asset = _one_asset_row(env)
+    env.db.execute("UPDATE asset SET url = ? WHERE id = ?", (url, asset["id"]))
+
+    assert env.make_runner()._cooldown_keys(VENUE, _one_asset_row(env)) == (_ADAPTER_KEY,)
+
+
+def test_cooldown_keys_dedupe_host_equal_to_adapter_id(env: PipelineEnv) -> None:
+    """退化去重：host 恰与 `adapter_id` 同名时只留一个键（不产生重复键）。"""
+    env.make_runner().pull(VENUE, Selector(volume="1", issue="1"))
+    asset = _one_asset_row(env)
+    env.db.execute(
+        "UPDATE asset SET url = ? WHERE id = ?", (f"https://{_ADAPTER_KEY}/pdf/x", asset["id"])
     )
+
+    assert env.make_runner()._cooldown_keys(VENUE, _one_asset_row(env)) == (_ADAPTER_KEY,)
+
+
+def test_cooldown_without_asset_writes_platform_key(env: PipelineEnv) -> None:
+    """写入侧同款（F6-3）：无 asset 的挑战（resolve 阶段）落盘 `<adapter_id>.json`，
+    **不是**某个域名文件——避免"文件名声称某域被判罚、实则未知"的撒谎键。"""
+    env.make_runner()._enter_challenge_cooldown(VENUE, None)
+
+    assert _cooldown_files(env) == [f"{_ADAPTER_KEY}.json"]
 
 
 def test_challenge_writes_domain_key_not_adapter_key(env: PipelineEnv) -> None:
@@ -202,10 +341,8 @@ def test_unknown_venue_yields_no_cooldown_keys(env: PipelineEnv) -> None:
 
 
 def test_gate_passes_through_when_task_has_no_venue(env: PipelineEnv) -> None:
-    """防御路径：fetch 任务无 venue → 无从判平台/冷却，直接放行（交 stage 自身路由）。
-
-    冷却键推导恒需 venue（registry 路由入口），故该早返回必须在冷却判定**之前**。
-    """
+    """防御路径：fetch 任务无 venue → auth 门与冷却门均无从判定，放行交 stage 自身路由
+    （冷却键推导恒需 venue，`_execute_claimed` 侧亦以 `venue is not None` 守卫）。"""
     env.make_runner().pull(VENUE, Selector(volume="1", issue="1"))
     row = env.db.query("SELECT * FROM task WHERE kind = 'fetch' ORDER BY id LIMIT 1")[0]
     report = RunReport(command="drain", venue_id=None, started_at=utcnow_iso())

@@ -28,10 +28,11 @@ Phase 4 auth 前置门（§8.2/8.3/8.6；默认关闭——未装配 `auth_manag
 1-3 逐字不变）：auth_gated venue 的 fetch 前经 `_auth_gate_fetch` 施加健康门（每 N 篇/老化
 15min 主动 health_check，EXPIRED→refresh 失败即整批 BLOCKED(auth)，防 401 轰炸）、日配额
 （当日 fetch 尝试篇次达 cap → BLOCKED(config)）、工作时段窗（窗外延迟不失败）。
-**challenge 冷却（§8.4）不属 auth 门**（E-1/D-030 裁决③）：它在同一函数内**先于** family 与
-AuthManager 判别执行，故 open_access/aggregator venue 与未装配 auth 的运行同样受约束——
-写入侧（`_route_error`）本就无 family 判别，此前读侧被早返回跳过即"写而不读"缺陷。
-OA-fallback direct asset（source_adapter=unpaywall）旁路一切 fetch 前置门。
+OA-fallback direct asset（source_adapter=unpaywall）旁路该 auth 门。
+**challenge 域冷却（§8.4）不属 auth 门**（E-1/D-030 裁决③ + F6-2）：它在 `_execute_claimed`
+里**先于 OA 旁路**对全部 fetch 生效——冷却是"该域已被判罚、暂停发请求"的信号，与 auth 无关；
+写入侧（`_route_error`）本就无 family 判别，此前读侧被 auth 门的 family 早返回跳过即
+"写而不读"缺陷。见 `_block_if_cooling_down` / `_cooldown_keys`。
 假时钟经 `__init__(clock=)` 注入（健康门老化/工作时段窗/冷却判定，B-M1 可测性）。
 
 RunReport 计数口径：`succeeded` = 实际完成下载的 fetch 任务数（AC-1.1/AC-1.2 的
@@ -49,6 +50,7 @@ runner 启动（`__init__`）：`config.ensure_dirs()` + `cleanup_tmp(data/tmp)`
 
 from __future__ import annotations
 
+import contextlib
 import json
 import sqlite3
 from collections.abc import Callable
@@ -206,8 +208,8 @@ class PipelineRunner:
         # 该注入时钟判定（先例 TaskQueue.__init__(clock=)）；默认 UTC now，有默认值→零回归。
         self._clock: Callable[[], datetime] = clock or (lambda: datetime.now(UTC))
         # auth_gated 平台的 provider 注册表 + session 解析入口（§8.2）；None = 未装配（Phase
-        # 1-3 / 非 auth pull）→ 健康门/日配额/工作时段窗旁路（**challenge 冷却除外**：E-1
-        # 后它先于本判别，全 family/无 AuthManager 亦生效，D-030 裁决③）。
+        # 1-3 / 非 auth pull）→ 健康门/日配额/工作时段窗旁路（**challenge 域冷却除外**：它已
+        # 移出本门、对全部 fetch 生效，D-030 裁决③ + F6-2）。
         self._auth_manager = auth_manager
         # 单 venue 一旦 auth_expired，本次运行内其余 fetch 连带 block（整批 BLOCKED(auth)）。
         self._auth_blocked_venues: set[str] = set()
@@ -370,16 +372,22 @@ class PipelineRunner:
         kind = str(row["kind"])
         venue = str(row["venue_id"]) if row["venue_id"] is not None else None
 
-        # fetch 前置门（§8.2/8.3/8.4/8.6）：OA-fallback direct asset（source_adapter=unpaywall）
-        # **旁路一切 auth 门**——第三方 OA 域，不占 auth 平台 session/配额，也不受整批连带块。
-        # 其余 fetch 过 `_auth_gate_fetch`（含既有整批 BLOCKED(auth) 连带；非 auth venue 早放行）。
+        # fetch 前置门。两层，**次序有语义**（F6-2 裁决）：
+        # ① challenge 域冷却——**先于 OA 旁路**：冷却是"该域已被判罚、暂停对它发请求"的信号，
+        #    与 auth 无关。OA-fallback direct asset 若其目标域正是被判罚的那个域，同样必须停发
+        #    （不能因为"它不占 auth 配额"就继续敲门）。故本层对**全部** fetch 任务生效。
+        # ② auth 门（§8.2/8.3/8.6：整批连带 / 批入口 / 日配额 / 工作时段 / 健康门）——
+        #    OA-fallback direct asset（source_adapter=unpaywall）**旁路**之：第三方 OA 域，
+        #    不占 auth 平台 session/配额，也不受整批连带块。
         gated_fetch = False
         if kind == "fetch":
             asset = self._fetch_asset_of(row)
+            if venue is not None and self._block_if_cooling_down(task_id, venue, asset, report):
+                return
             is_oa = asset is not None and str(asset["source_adapter"]) == "unpaywall"
             if not is_oa:
-                if not self._auth_gate_fetch(row, venue, report, asset=asset):
-                    return  # 门内已处置（连带 / 冷却 / 配额 / 工作时段 / 健康门 EXPIRED/CHALLENGE）
+                if not self._auth_gate_fetch(row, venue, report):
+                    return  # 门内已处置（连带 / 配额 / 工作时段 / 健康门 EXPIRED/CHALLENGE）
                 gated_fetch = venue is not None and venue in self._auth_batch
 
         try:
@@ -421,27 +429,18 @@ class PipelineRunner:
         asset_id = _params_of(row).get("asset")
         return self.ctx.repo.get_asset(str(asset_id)) if asset_id is not None else None
 
-    def _auth_gate_fetch(
-        self,
-        row: sqlite3.Row,
-        venue: str | None,
-        report: RunReport,
-        *,
-        asset: sqlite3.Row | None = None,
-    ) -> bool:
-        """fetch 前置门。返回 True=放行；False=已处置（BLOCKED，调用方直接 return）。
+    def _auth_gate_fetch(self, row: sqlite3.Row, venue: str | None, report: RunReport) -> bool:
+        """auth_gated fetch 前置门。返回 True=放行；False=已处置（BLOCKED，调用方直接 return）。
 
-        顺序：整批 BLOCKED(auth) 连带 → 工作时段窗延迟集 → **challenge 冷却** →
-        [非 auth_gated / 未装配 → 放行] → 批入口（工作时段窗一次性检查 + provider/session
-        建立）→ 日配额 → 周期性健康门（N 篇 / 老化）→ 注入 session。健康门 EXPIRED→refresh
-        失败即整批 BLOCKED(auth)（首个 auth_expired 连带，无 401 轰炸，AC-4.2）。
+        顺序：整批 BLOCKED(auth) 连带 → 工作时段窗延迟集 → [非 auth_gated / 未装配 → 放行] →
+        批入口（工作时段窗一次性检查 + provider/session 建立）→ 日配额 → 周期性健康门
+        （N 篇 / 老化）→ 注入 session。健康门 EXPIRED→refresh 失败即整批 BLOCKED(auth)
+        （首个 auth_expired 连带，无 401 轰炸，AC-4.2）。
 
-        **E-1（D-030 裁决③）**：冷却判定原在 family 判别**之后**，而写入侧
-        （`_route_error`）无 family 判别——open_access family（ssrn/aea/mock_platform）
-        因此"写而不读"：命中挑战写了冷却 JSON，下一次 drain 照样发请求（11-browser-fetch
-        §5.6-1）。本次上移到 family/AuthManager 早返回之前，读写对称；键粒度同时由
-        adapter 改为**域**（§5.6-2，见 `_cooldown_keys`）。`asset` 由调用方传入（已在手，
-        免二次查库）——冷却键取其 URL host。
+        **challenge 冷却不在本门内**（E-1/D-030 裁决③ + F6-2）：它与 auth 无关，已上移到
+        `_execute_claimed` 的 OA 旁路之前对**全部** fetch 生效——写入侧（`_route_error`）
+        本就无 family 判别，此前读侧被本门的 family 早返回跳过即"写而不读"缺陷
+        （11-browser-fetch §5.6-1）。见 `_block_if_cooling_down`。
         """
         task_id = str(row["id"])
         # 整批 BLOCKED(auth) 连带（既有机制；auth_expired 首发后同 venue 剩余 fetch 连带）。
@@ -466,32 +465,8 @@ class PipelineRunner:
             self._block_work_hours(task_id, venue, report)
             return False
 
-        if venue is None:
-            return True  # 无 venue 的 fetch：无从判平台/冷却，交 stage 自身路由
-
-        # challenge 冷却（§8.4；E-1 后**先于** family/AuthManager 判别，全 family 生效）：
-        # 冷却内该域（或旧键下的该平台）全队列 BLOCKED。
-        cooldown_key = self._active_cooldown_key(venue, asset)
-        if cooldown_key is not None:
-            self.ctx.queue.block(
-                task_id,
-                f"challenge: {cooldown_key} 处于挑战冷却期（24h），venue {venue} 延后；"
-                "冷却期满后 `crawler resume --all` 恢复",
-            )
-            report.blocked += 1
-            log_event(
-                "WARNING",
-                "blocked (challenge cooldown)",
-                task_id=task_id,
-                venue=venue,
-                stage="fetch",
-                error_class=ErrorClass.CHALLENGE.value,
-                domain=cooldown_key,
-            )
-            return False
-
-        if self._auth_manager is None:
-            return True  # 未装配 AuthManager（Phase 1-3）：auth 门整体旁路
+        if venue is None or self._auth_manager is None:
+            return True  # 非 auth 场景（Phase 1-3 / 未装配 AuthManager）：早放行
         try:
             route = self.ctx.registry.route(venue)
         except CrawlerError:
@@ -607,16 +582,19 @@ class PipelineRunner:
         取代原 `_platform_of`（单返 `adapter_id`）——D-030 裁决③明文"令 `_platform_of`
         改用域作键"，此处即其落地形态（键集而非单键，以承载向前兼容）。
 
-        写只用首键（域级）；读遍历全部——故上一版本落盘的 `<adapter_id>.json` 仍被读到
-        （**向前兼容**，无须迁移脚本；旧键自然随 24h 过期退场）。
+        写只用首键；读遍历全部——故上一版本落盘的 `<adapter_id>.json` 仍被读到
+        （**向前兼容**，无须迁移脚本）。
 
         为什么改域级：一个 adapter 可服务**异质多域**——aea 的 `www.aeaweb.org`（Apache，
         无挑战）与 `pubs.aeaweb.org`（Cloudflare 判罚）同属 `aea` adapter，按 adapter 冷却
         会让无辜域连坐（11-browser-fetch §5.6-2）。
 
-        域的取法（读写同源，天然对称）：优先取**本任务实际请求的 asset URL host**；无
-        asset/URL 时（resolve 阶段抛挑战、asset 行缺失）退化到 adapter 声明的主域
-        `domains[0]`，再退化到 `adapter_id`——任何场景都有键可写，绝不静默丢冷却。
+        域**只从本任务实际请求的 asset URL host 取**（读写同源，天然对称）。无 asset/URL 时
+        （resolve 阶段抛挑战、asset 行缺失）**退回 `adapter_id` 平台级键，不猜 `domains[0]`**
+        （F6-3）：此时手上根本没有"哪个域被判罚"的证据，写 `domains[0]` 会同时造成两个
+        后果——① 键名撒谎（文件名声称某域被判罚，实则未知）；② 误标：若判罚发生在
+        `pubs.` 而 `domains[0]` 是 `www.`，被停的恰是无辜域而真凶照发。退回平台级键则
+        粒度**如实**变粗（该 adapter 全域连坐），语义与文件名一致、无误标。
         """
         keys: list[str] = []
         if asset is not None:
@@ -625,21 +603,22 @@ class PipelineRunner:
             if host:
                 keys.append(host)
         try:
-            adapter = self.ctx.registry.route(venue).fulltext_adapter
+            adapter_id = self.ctx.registry.route(venue).fulltext_adapter.adapter_id
         except CrawlerError:
             return tuple(keys)  # 未知/畸形 venue：只剩 URL 键（可能为空）
-        domains: tuple[str, ...] = getattr(adapter, "domains", ())
-        for candidate in (domains[0] if domains else None, adapter.adapter_id):
-            if candidate and candidate not in keys:
-                keys.append(str(candidate))
+        if adapter_id not in keys:
+            keys.append(adapter_id)
         return tuple(keys)
 
     def _enter_challenge_cooldown(self, venue: str, asset: sqlite3.Row | None = None) -> None:
-        """CHALLENGE → 写域冷却（now+24h）到运行态字典 + config-home JSON（§8.4）。"""
+        """CHALLENGE → 写冷却（now+24h）到运行态字典 + config-home JSON（§8.4）。
+
+        键 = `_cooldown_keys` 首键：有 asset URL 时是**域**，否则如实退回 `adapter_id`。
+        """
         keys = self._cooldown_keys(venue, asset)
         if not keys:
             return
-        key = keys[0]  # 域级新键（E-1）；旧 `<adapter_id>` 键只读不写
+        key = keys[0]
         until = self._clock() + _CHALLENGE_COOLDOWN
         self._challenge_cooldown[key] = until
         path = self._cooldown_path(key)
@@ -649,6 +628,36 @@ class PipelineRunner:
         except OSError as exc:
             log_event("WARNING", f"challenge 冷却状态落盘失败（运行态仍生效）: {exc}", venue=venue)
 
+    def _block_if_cooling_down(
+        self, task_id: str, venue: str, asset: sqlite3.Row | None, report: RunReport
+    ) -> bool:
+        """域冷却门（§8.4）：命中则 `queue.block` 并返回 True（调用方直接 return）。
+
+        **对全部 fetch 任务生效**（F6-2），含 OA-fallback direct asset：冷却语义是"该域
+        已被判罚、暂停对它发请求"，与是否走 auth 平台无关——OA 兜底若目标域正是被判罚
+        的那个域，继续敲门只会加重判罚。冷却键取自该任务自己的 asset URL host，故
+        OA 兜底通常落在**第三方 OA 域**上、不受平台域冷却牵连（域粒度自然隔离）。
+        """
+        key = self._active_cooldown_key(venue, asset)
+        if key is None:
+            return False
+        self.ctx.queue.block(
+            task_id,
+            f"challenge: {key} 处于挑战冷却期（24h），venue {venue} 延后；"
+            "冷却期满后 `crawler resume --all` 恢复",
+        )
+        report.blocked += 1
+        log_event(
+            "WARNING",
+            "blocked (challenge cooldown)",
+            task_id=task_id,
+            venue=venue,
+            stage="fetch",
+            error_class=ErrorClass.CHALLENGE.value,
+            domain=key,
+        )
+        return True
+
     def _active_cooldown_key(self, venue: str, asset: sqlite3.Row | None) -> str | None:
         """命中冷却的首个候选键（域级新键 → 旧 adapter 键）；均未命中返 None。"""
         for key in self._cooldown_keys(venue, asset):
@@ -657,7 +666,12 @@ class PipelineRunner:
         return None
 
     def _challenge_cooldown_active(self, key: str) -> bool:
-        """该键是否在冷却期内：运行态字典优先，缺失则从 config-home JSON 加载（进程重启不丢）。"""
+        """该键是否在冷却期内：运行态字典优先，缺失则从 config-home JSON 加载（进程重启不丢）。
+
+        判定为**已过期**时顺手清掉落盘文件（F6-4）：冷却文件是纯状态残留，效力一过即无用；
+        不清则 `state/cooldown/` 会随时间单调堆积陈旧键（旧 `<adapter_id>` 键尤甚——它只读
+        不写，永远等不到覆盖）。清理幂等、失败不影响判定（判定只看 `until`）。
+        """
         until = self._challenge_cooldown.get(key)
         if until is None:
             path = self._cooldown_path(key)
@@ -668,7 +682,19 @@ class PipelineRunner:
                     self._challenge_cooldown[key] = until
                 except (OSError, ValueError, KeyError):
                     return False
-        return until is not None and self._clock() < until
+        if until is None:
+            return False
+        if self._clock() < until:
+            return True
+        self._drop_expired_cooldown(key)
+        return False
+
+    def _drop_expired_cooldown(self, key: str) -> None:
+        """冷却效力已过 → 丢运行态条目 + 删落盘文件（幂等；纯清理，不参与判定）。"""
+        self._challenge_cooldown.pop(key, None)
+        # 删不掉（只读目录/竞态）无任何后果：判定只认 `until`，过期文件再读一次仍判过期。
+        with contextlib.suppress(OSError):
+            self._cooldown_path(key).unlink(missing_ok=True)
 
     def _enqueue_oa_fallback(self, row: sqlite3.Row, paper_id: str, report: RunReport) -> None:
         """no_entitlement（fetch 或 resolve 阶段）→ 派生 oa_fallback 任务（§8.1 接线点 A）。
