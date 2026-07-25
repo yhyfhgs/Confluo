@@ -307,7 +307,8 @@ class AclAnthologyAdapter(AdapterBase):
     def resolve_assets(
         self, venue: VenueSpec, paper: PaperStub, session: SessionHandle | None = None
     ) -> list[AssetPlan]:
-        """PDF（恒产）+ SI（`<attachment>` 逐条；前缀 [LIVE 2026-07-26] HEAD 核实——§4/§8）→ `AssetPlan`。
+        """PDF（恒产）+ SI（`<attachment>` 逐条；前缀 [LIVE 2026-07-26] HEAD 核实，
+        见 §4/§8）→ `AssetPlan`。
 
         anthology_id 直接读 stub 的 `identifier('anthology')`，不重新发请求（真零网络）。
         """
