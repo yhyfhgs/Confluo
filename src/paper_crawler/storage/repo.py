@@ -18,7 +18,7 @@ from collections.abc import Mapping
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Literal
 
-from paper_crawler.errors import CrawlerError, ErrorClass
+from paper_crawler.errors import CrawlerError, ErrorClass, SubscriptionInvalid
 from paper_crawler.ids import normalize_identifier, normalize_title
 from paper_crawler.obslog import redact
 from paper_crawler.storage.db import Database
@@ -944,9 +944,10 @@ class SubscriptionRepo:
             "  query_json=excluded.query_json, guard_json=excluded.guard_json",
             (
                 subscription.name,
-                _json_text(subscription.to_query_dict()),
+                # sort_keys=False：`to_query_dict()` 已是确定序，含 sources 声明序（P1-1）。
+                _json_text(subscription.to_query_dict(), sort_keys=False),
                 None,
-                _json_text(subscription.guard.to_dict()),
+                _json_text(subscription.guard.to_dict(), sort_keys=False),
                 utcnow_iso(),
                 None,
             ),
@@ -1007,8 +1008,10 @@ class SubscriptionRepo:
         什么读出来什么"。未知订阅名 → `CrawlerError(CONFIG)`（与 `registry.get`
         对未知 venue_id 的处置同构），不返回 `{}` 假装首跑。
 
-        **畸形 JSON 也归 CONFIG**（不让裸 `JSONDecodeError` 逃出错误分类学——审计对
-        config TOML 同型缺口的 P1 教训）：损坏的游标若被当成"首跑"会静默重刷全窗。
+        **畸形 JSON 也归 CONFIG，且抛 `SubscriptionInvalid`**（P2#1 热修：异常类型
+        统一，`error_class` 仍是 CONFIG，行为兼容——不让裸 `JSONDecodeError` 逃出
+        错误分类学，也不再用泛型 `CrawlerError` 兜底；审计对 config TOML 同型缺口
+        的 P1 教训）：损坏的游标若被当成"首跑"会静默重刷全窗。
         """
         rows = self.db.query("SELECT watermark_json FROM subscription WHERE name = ?", (name,))
         if not rows:
@@ -1019,14 +1022,12 @@ class SubscriptionRepo:
         try:
             loaded = json.loads(str(raw))
         except json.JSONDecodeError as exc:
-            raise CrawlerError(
-                ErrorClass.CONFIG,
+            raise SubscriptionInvalid(
                 f"subscription {name!r} 的 watermark_json 解析失败: {exc}",
                 detail=name,
             ) from None
         if not isinstance(loaded, dict):
-            raise CrawlerError(
-                ErrorClass.CONFIG,
+            raise SubscriptionInvalid(
                 f"subscription {name!r} 的 watermark_json 顶层不是对象",
                 detail=type(loaded).__name__,
             )
@@ -1041,7 +1042,8 @@ class SubscriptionRepo:
         with self.db.tx() as conn:
             cursor = conn.execute(
                 "UPDATE subscription SET watermark_json = ? WHERE name = ?",
-                (_json_text(dict(watermark)), name),
+                # sort_keys=True：payload 是调用方 dict，键序不受本层控制（P1-1）。
+                (_json_text(dict(watermark), sort_keys=True), name),
             )
             if cursor.rowcount == 0:
                 raise _unknown_subscription(name)
@@ -1104,9 +1106,21 @@ class SubscriptionRepo:
         return rows[0] if rows else None
 
 
-def _json_text(payload: Mapping[str, object]) -> str:
-    """订阅域 JSON 列的统一序列化（确定性：sort_keys + 非 ASCII 原样）。"""
-    return json.dumps(dict(payload), ensure_ascii=False, sort_keys=True)
+def _json_text(payload: Mapping[str, object], *, sort_keys: bool) -> str:
+    """订阅域 JSON 列的序列化（非 ASCII 原样）；`sort_keys` 按列语义显式选择
+    （P1-1 热修——原先恒 `sort_keys=True` 会打乱 `sources` 的 YAML 声明序）。
+
+    - `query_json`/`guard_json`：payload 来自 `to_query_dict()`/`Guard.to_dict()`，
+      两者已按 DSL 字段序构造好确定序（含 `sources` 的**声明序**，编译计划步骤序
+      的来源）——排序会把 `sources` 的键序打成字母序，破坏声明序往返（回归判据见
+      `tests/integration/test_subscription_repo.py` 的 `asset-pricing-wp` 参数化，
+      其声明序 ssrn→arxiv→nber 非字母序）。调用方须传 `sort_keys=False`。
+    - `watermark_json`：payload 是调用方（T4）传入的 dict，键序不受本层控制，传
+      `sort_keys=True` 换取确定性输出（可读 diff、可测试）。
+
+    无默认值——强制每个调用点显式做出选择，不给"复制上一行却传错"留空子。
+    """
+    return json.dumps(dict(payload), ensure_ascii=False, sort_keys=sort_keys)
 
 
 def _unknown_subscription(name: str) -> CrawlerError:

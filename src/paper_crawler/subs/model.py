@@ -22,7 +22,10 @@ design/05 §2；plan §4 T1 已裁决歧义③）。
 - 数值域：`guard.max_new_per_run ≥ 1`、`actions.auto_fetch_limit ≥ 0`、
   `filters.min_year ∈ [1000, 3000]`；`bool` 不被当作 int 接受（YAML `true` 误填
   数值位 → 报错）；
-- 文件名 stem 必须等于 `name`（沿 registry 的"文件名与 id 一致"惯例，此处升为硬错）。
+- 文件名 stem 必须等于 `name`（沿 registry 的"文件名与 id 一致"惯例，此处升为硬错）；
+- YAML **同一映射内的重复键**（如两次 `sources:`、`sources:` 内两次同一源、选择器
+  内两次同一字段）→ 报错（PyYAML 默认静默取后者覆盖前者，此处升级为拒载——
+  Phase 6 深审 P1-2 热修，`_DuplicateKeySafeLoader`）。
 
 ## `guard` 缺省补全（design/09 §2 示例二只写 `max_new_per_run`）
 
@@ -39,10 +42,10 @@ design/05 §2；plan §4 T1 已裁决歧义③）。
 
 import json
 import re
-from collections.abc import Mapping, Sequence
+from collections.abc import Hashable, Mapping, Sequence
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Literal, NoReturn
+from typing import Any, Literal, NoReturn
 
 import yaml
 
@@ -506,6 +509,43 @@ def _parse_guard(raw: object, *, where: str) -> Guard:
 # --- 文件/目录加载 ----------------------------------------------------------
 
 
+class _DuplicateKeySafeLoader(yaml.SafeLoader):
+    """`SafeLoader` 子类：同一映射内的重复键 → 拒载（P1-2 热修）。
+
+    PyYAML 的默认行为是"后声明的键静默覆盖前面的"，且不留任何痕迹——用户复制一段
+    选择器改分类时手滑重复了 `sources:`、某个源、或某个字段，前一半声明会被悄悄
+    丢弃，表现为"订阅文件看起来完整但少了半个领域却不报错"，正是本模块 docstring
+    开篇要堵的"静默降级"反模式。
+
+    覆盖点是 `construct_mapping`（保留 `SafeConstructor.flatten_mapping` 的 `<<`
+    合并键语义，只是在原有"后者覆盖前者"的赋值前插入重复检测），对**全部**映射
+    节点生效而不区分层级——顶层字段、`sources:` 内的源名、单个选择器内的字段，
+    只要在同一 YAML 映射里重复出现，都会被抓住。
+    """
+
+    def construct_mapping(self, node: yaml.MappingNode, deep: bool = False) -> dict[Hashable, Any]:
+        self.flatten_mapping(node)
+        mapping: dict[Hashable, Any] = {}
+        for key_node, value_node in node.value:
+            key = self.construct_object(key_node, deep=deep)
+            if not isinstance(key, Hashable):
+                raise yaml.constructor.ConstructorError(
+                    "while constructing a mapping",
+                    node.start_mark,
+                    "found unhashable key",
+                    key_node.start_mark,
+                )
+            if key in mapping:
+                raise yaml.constructor.ConstructorError(
+                    "while constructing a mapping",
+                    node.start_mark,
+                    f"发现重复键 {key!r}（PyYAML 默认会静默用后者覆盖前者）",
+                    key_node.start_mark,
+                )
+            mapping[key] = self.construct_object(value_node, deep=deep)
+        return mapping
+
+
 def load_subscription_file(path: Path) -> Subscription:
     """加载单个订阅 YAML；读取/解析/校验任一环节失败 → `SubscriptionInvalid`。
 
@@ -520,7 +560,7 @@ def load_subscription_file(path: Path) -> Subscription:
         _fail(where, "", f"文件读取失败（{type(exc).__name__}）: {exc}")
 
     try:
-        raw = yaml.safe_load(text)
+        raw = yaml.load(text, Loader=_DuplicateKeySafeLoader)  # 子类仍是 SafeLoader，非泛型 load
     except yaml.YAMLError as exc:
         _fail(where, "", f"YAML 解析失败: {exc}")
 

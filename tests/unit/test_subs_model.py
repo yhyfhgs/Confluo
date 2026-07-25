@@ -292,6 +292,59 @@ def test_filename_must_match_name(tmp_path: Path) -> None:
         load_subscription_file(path)
 
 
+# --- YAML 重复键（P1-2 热修：PyYAML 默认静默取后者覆盖前者）------------------
+
+
+def test_duplicate_source_key_fails_loud(tmp_path: Path) -> None:
+    """`sources:` 内重复声明同一源（两次 `arxiv:`）→ 拒载，而非静默取后者覆盖前者。"""
+    path = _write(
+        tmp_path / "dup-source.yaml",
+        "name: dup-source\n"
+        "sources:\n"
+        "  arxiv:\n"
+        "    categories: [cs.AI]\n"
+        "  arxiv:\n"
+        "    categories: [cs.LG]\n",
+    )
+    with pytest.raises(SubscriptionInvalid) as excinfo:
+        load_subscription_file(path)
+    message = str(excinfo.value)
+    assert "重复键" in message and "arxiv" in message
+    assert message.startswith(str(path))  # 文件定位恒在（_fail 的 where 前缀）
+
+
+def test_duplicate_field_within_selector_fails_loud(tmp_path: Path) -> None:
+    """选择器内重复字段（两次 `categories:`）→ 拒载，而非静默取后者覆盖前者。"""
+    path = _write(
+        tmp_path / "dup-field.yaml",
+        "name: dup-field\nsources:\n  arxiv:\n    categories: [cs.AI]\n    categories: [cs.LG]\n",
+    )
+    with pytest.raises(SubscriptionInvalid) as excinfo:
+        load_subscription_file(path)
+    message = str(excinfo.value)
+    assert "重复键" in message and "categories" in message
+    assert message.startswith(str(path))
+
+
+def test_duplicate_top_level_field_fails_loud(tmp_path: Path) -> None:
+    """顶层字段重复（两次 `sources:`）同样拒载——检测不分层级。"""
+    path = _write(
+        tmp_path / "dup-top.yaml",
+        "name: dup-top\n"
+        "sources:\n"
+        "  arxiv:\n"
+        "    categories: [cs.AI]\n"
+        "sources:\n"
+        "  nber:\n"
+        "    programs: [AP]\n",
+    )
+    with pytest.raises(SubscriptionInvalid) as excinfo:
+        load_subscription_file(path)
+    message = str(excinfo.value)
+    assert "重复键" in message and "sources" in message
+    assert message.startswith(str(path))
+
+
 # --- 3. 目录加载语义 --------------------------------------------------------
 
 

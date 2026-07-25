@@ -11,6 +11,7 @@ from paper_crawler.errors import (
     ErrorClass,
     IllegalTransition,
     RetrySpec,
+    SubscriptionInvalid,
 )
 
 EXPECTED_ERROR_VALUES = {
@@ -167,13 +168,51 @@ def test_challenged_custom_msg_and_detail() -> None:
     assert err.detail == "cloudflare"
 
 
+# 子类矩阵（P2#4 热修）：`errors.py` 里*全部* CrawlerError 子类 × 其固定 error_class。
+# 手工清单——配合下方 `test_error_class_matrix_covers_every_crawler_error_subclass`
+# 的集合等值自断言（同 F5 canary 手法）：新增子类忘了登记这里会立刻红，根治
+# "注册了却没验证"反模式。
+_ERROR_CLASS_MATRIX: list[tuple[type[CrawlerError], ErrorClass]] = [
+    (CapabilityNotSupported, ErrorClass.CONFIG),
+    (AuthRequired, ErrorClass.AUTH_EXPIRED),
+    (Challenged, ErrorClass.CHALLENGE),
+    (SubscriptionInvalid, ErrorClass.CONFIG),
+]
+
+
 @pytest.mark.parametrize(
     ("subclass", "expected_class"),
-    [(AuthRequired, ErrorClass.AUTH_EXPIRED), (Challenged, ErrorClass.CHALLENGE)],
+    _ERROR_CLASS_MATRIX,
+    ids=[cls.__name__ for cls, _ in _ERROR_CLASS_MATRIX],
 )
-def test_auth_subclasses_route_via_existing_error_class(
+def test_crawler_error_subclasses_route_via_fixed_error_class(
     subclass: type[CrawlerError], expected_class: ErrorClass
 ) -> None:
     # 不新增 ErrorClass 九类——子类只固定既有类别（沿 CapabilityNotSupported 先例）。
     assert subclass().error_class is expected_class
     assert expected_class in set(ErrorClass)
+
+
+def _all_crawler_error_subclasses() -> set[type[CrawlerError]]:
+    """递归收集 `CrawlerError` 的全部子类（`__subclasses__()` 只返回直接子类，
+    这里做广度优先遍历以覆盖"子类的子类"）。"""
+    collected: set[type[CrawlerError]] = set()
+    frontier = [CrawlerError]
+    while frontier:
+        parent = frontier.pop()
+        for child in parent.__subclasses__():
+            if child not in collected:
+                collected.add(child)
+                frontier.append(child)
+    return collected
+
+
+def test_error_class_matrix_covers_every_crawler_error_subclass() -> None:
+    """集合等值自断言：`_ERROR_CLASS_MATRIX` 覆盖集 == `errors.py` 里实际存在的
+    全部 `CrawlerError` 子类（同 F5 canary 手法）。
+
+    根治"注册了却没验证"——以后谁给 `errors.py` 加了新的 `CrawlerError` 子类却
+    忘了登记到矩阵，这里立刻红，而不是悄悄漏掉一个从未被验证过 error_class 的类型。
+    """
+    covered = {subclass for subclass, _ in _ERROR_CLASS_MATRIX}
+    assert _all_crawler_error_subclasses() == covered

@@ -139,9 +139,17 @@ class RunSummary:
     计数口径（避免下游各算各的）：
     - `seen_count`：本次从各源拉到的候选总数（本地过滤前）；
     - `new_count`：本地过滤 + 去重后的**净新增**数（= 护栏比对的量，design/09 §6.1）；
-    - `ingested_count`：真正入库数——dry-run 与熔断路径恒 0（plan §4 T5 已裁决）；
-    - `fetched_count`：本次派生的 fetch 任务数（`actions.auto_fetch_limit` 上限内）；
+    - `ingested_count`：真正入库数——dry-run 与熔断路径恒 0（`__post_init__` 强制，
+      P2#3 热修；plan §4 T5 已裁决）；
+    - `fetched_count`：本次派生的 fetch 任务数（`actions.auto_fetch_limit` 上限内）——
+      同样受 dry-run 恒零约束；
     - `library_total`：累计库存（日报第二要素，§6.3）。
+
+    `narrowing_hints`/`distribution`（Phase 6 深审热修纯追加，既有构造点零改动）：
+    T3（guard）依据本次过载/命中情况产出收窄建议与按源计数分布，T5 原样装配进本
+    摘要，T6 渲染日报时呈现——是 AC-6.2（过载报告需给出可操作的收窄线索）的判据
+    承载字段。`distribution` 是 `(source, count)` 的有序元组（tuple-of-tuples，同
+    模块 docstring 的 hashable 约定）。
     """
 
     subscription: str
@@ -158,6 +166,23 @@ class RunSummary:
     guard_limit: int = 0  # 本次生效的 `guard.max_new_per_run`（过载报告展示阈值）
     failures: tuple[FailureEvent, ...] = ()
     report_path: str | None = None
+    # T3 guard 生成 → T5 装配 → T6 渲染（AC-6.2）；纯追加字段，既有构造点缺省即空。
+    narrowing_hints: tuple[str, ...] = ()
+    distribution: tuple[tuple[str, int], ...] = ()  # (source, count)，按源计数分布
+
+    def __post_init__(self) -> None:
+        """dry-run 不变量（P2#3 热修）：`dry_run=True` 时绝不能真的入库或派生 fetch。
+
+        违反即拒绝构造（`ValueError`）——不是运行期悄悄纠正，是构造期就响亮报错，
+        逼上游（T5）在装配 `RunSummary` 前就把 dry-run 路径的计数清零，而不是"先
+        算出真实计数再假装是演习"。
+        """
+        if self.dry_run and (self.ingested_count != 0 or self.fetched_count != 0):
+            raise ValueError(
+                "RunSummary: dry_run=True 时 ingested_count/fetched_count 必须为 0"
+                f"（实际 ingested_count={self.ingested_count}, "
+                f"fetched_count={self.fetched_count}）"
+            )
 
     @property
     def truncated(self) -> bool:

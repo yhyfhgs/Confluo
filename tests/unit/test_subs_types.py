@@ -108,7 +108,7 @@ def test_watch_outcome_values_are_stable_strings() -> None:
 
 
 def test_dry_run_is_orthogonal_to_outcome() -> None:
-    """dry-run 也可能"本会熔断"：两者正交，过载报告照出、入库恒 0。"""
+    """dry-run 也可能"本会熔断"：两者正交，过载报告（`new_count`/`guard_limit`）照出。"""
     summary = RunSummary(
         subscription="s",
         started_at="2026-07-26T00:00:00+00:00",
@@ -117,7 +117,36 @@ def test_dry_run_is_orthogonal_to_outcome() -> None:
         new_count=500,
         guard_limit=200,
     )
-    assert summary.truncated and summary.dry_run and summary.ingested_count == 0
+    assert summary.truncated and summary.dry_run
+    assert summary.new_count == 500 and summary.guard_limit == 200
+
+
+@pytest.mark.parametrize(
+    "kwargs",
+    [
+        {"ingested_count": 1},
+        {"fetched_count": 1},
+        {"ingested_count": 3, "fetched_count": 2},
+    ],
+    ids=["ingested_count", "fetched_count", "both"],
+)
+def test_dry_run_invariant_rejects_nonzero_ingest_or_fetch(kwargs: dict[str, int]) -> None:
+    """P2#3：`dry_run=True` 时 `ingested_count`/`fetched_count` 必须为 0——违反即拒绝构造。
+
+    此前 `test_dry_run_is_orthogonal_to_outcome` 断言 `ingested_count == 0` 是恒真式
+    （从未尝试传非零值，无论不变量是否真的被强制都会通过）；这里直接构造违例并
+    断言拒绝构造，才是对不变量本身的验证。
+    """
+    with pytest.raises(ValueError, match="dry_run"):
+        RunSummary(subscription="s", started_at="t", dry_run=True, **kwargs)
+
+
+def test_dry_run_false_allows_nonzero_ingest_and_fetch() -> None:
+    """不变量只在 `dry_run=True` 时生效——正常运行路径的真实计数不受影响。"""
+    summary = RunSummary(
+        subscription="s", started_at="t", dry_run=False, ingested_count=5, fetched_count=2
+    )
+    assert summary.ingested_count == 5 and summary.fetched_count == 2
 
 
 def test_run_summary_defaults_are_zeroed() -> None:
@@ -127,6 +156,22 @@ def test_run_summary_defaults_are_zeroed() -> None:
     assert (summary.seen_count, summary.new_count, summary.ingested_count) == (0, 0, 0)
     assert (summary.fetched_count, summary.library_total, summary.guard_limit) == (0, 0, 0)
     assert summary.report_path is None and summary.finished_at == ""
+    assert summary.narrowing_hints == () and summary.distribution == ()
+
+
+def test_run_summary_carries_narrowing_hints_and_distribution() -> None:
+    """AC-6.2 判据承载字段：T3 生成、T5 装配、T6 渲染（Phase 6 深审热修，纯追加）。"""
+    summary = RunSummary(
+        subscription="s",
+        started_at="t",
+        narrowing_hints=("收窄 min_year 到 2024 起", "exclude_regex 加 'workshop'"),
+        distribution=(("arxiv", 120), ("ssrn", 30)),
+    )
+    assert summary.narrowing_hints == (
+        "收窄 min_year 到 2024 起",
+        "exclude_regex 加 'workshop'",
+    )
+    assert summary.distribution == (("arxiv", 120), ("ssrn", 30))
 
 
 def test_report_entry_carries_daily_report_columns() -> None:

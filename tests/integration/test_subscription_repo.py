@@ -32,15 +32,25 @@ def _example(stem: str = "llm-agents") -> Subscription:
     return load_subscription_file(_FIXTURES / f"{stem}.yaml")
 
 
+# 各 fixture 的 `sources:` YAML 声明序（P1-1 回归判据）。`asset-pricing-wp` 的声明序
+# ssrn→arxiv→nber **非字母序**（字母序应为 arxiv→nber→ssrn）——若 `query_json`
+# 序列化误用 `sort_keys=True`，`sources` 的键序会被打乱成字母序，此处能抓住。
+_DECLARED_SOURCE_ORDER: dict[str, tuple[str, ...]] = {
+    "llm-agents": ("arxiv", "openalex"),
+    "asset-pricing-wp": ("ssrn", "arxiv", "nber"),
+}
+
+
 # --- DDL 核对（design/06 §2 ↔ 0001_init.sql）--------------------------------
 
 
 @pytest.mark.parametrize(
-    ("table", "columns"),
+    ("table", "columns", "not_null"),
     [
         (
             "subscription",
             {"name", "query_json", "watermark_json", "guard_json", "created_at", "last_run_at"},
+            {"query_json"},
         ),
         (
             "subscription_run",
@@ -53,13 +63,22 @@ def _example(stem: str = "llm-agents") -> Subscription:
                 "truncated",
                 "report_path",
             },
+            set(),
         ),
     ],
 )
-def test_tables_match_design_06_ddl(repo: SubscriptionRepo, table: str, columns: set[str]) -> None:
-    """列集合等值自断言：0001 已建表与 design/06 §2 DDL 逐列一致（T1 核对义务的载体）。"""
+def test_tables_match_design_06_ddl(
+    repo: SubscriptionRepo, table: str, columns: set[str], not_null: set[str]
+) -> None:
+    """列集合等值自断言：0001 已建表与 design/06 §2 DDL 逐列一致（T1 核对义务的载体）。
+
+    同时核对 NOT NULL 约束（PRAGMA `table_info` 的 `notnull` 列，P2#5 热修）：
+    `query_json` 是 DSL 主体，`upsert` 恒写非空值——约束若被建表脚本悄悄丢掉，
+    上面的列名集合断言看不出来（列还在，只是少了约束），得单独核对。
+    """
     rows = repo.db.query(f"PRAGMA table_info({table})")
     assert {str(row["name"]) for row in rows} == columns
+    assert {str(row["name"]) for row in rows if row["notnull"]} == not_null
 
 
 def test_subscription_name_is_primary_key(repo: SubscriptionRepo) -> None:
@@ -71,10 +90,15 @@ def test_subscription_name_is_primary_key(repo: SubscriptionRepo) -> None:
 # --- CRUD 往返 --------------------------------------------------------------
 
 
-def test_upsert_then_get_round_trips_every_field(repo: SubscriptionRepo) -> None:
-    original = _example()
+@pytest.mark.parametrize("stem", ["llm-agents", "asset-pricing-wp"])
+def test_upsert_then_get_round_trips_every_field(repo: SubscriptionRepo, stem: str) -> None:
+    original = _example(stem)
     repo.upsert(original)
-    assert repo.get("llm-agents") == original  # dataclass 值语义 → 逐字段等值
+    restored = repo.get(original.name)
+    assert restored == original  # dataclass 值语义 → 逐字段等值
+    assert restored is not None
+    # P1-1 回归判据：见 `_DECLARED_SOURCE_ORDER` 注释——声明序必须逐位存活往返。
+    assert restored.source_names() == _DECLARED_SOURCE_ORDER[stem]
 
 
 def test_get_unknown_returns_none(repo: SubscriptionRepo) -> None:
@@ -170,13 +194,15 @@ def test_watermark_write_overwrites_wholesale(repo: SubscriptionRepo) -> None:
 def test_corrupt_watermark_fails_loud_as_config(
     repo: SubscriptionRepo, payload: str, needle: str
 ) -> None:
-    """畸形游标一律 CONFIG 分类，绝不降级成"首跑"（那会静默重刷整个历史窗）。"""
+    """畸形游标一律 CONFIG 分类、抛 `SubscriptionInvalid`（P2#1 热修：异常类型统一），
+    绝不降级成"首跑"（那会静默重刷整个历史窗）。"""
     repo.upsert(_example())
     repo.db.execute(
         "UPDATE subscription SET watermark_json = ? WHERE name = ?", (payload, "llm-agents")
     )
-    with pytest.raises(CrawlerError) as excinfo:
+    with pytest.raises(SubscriptionInvalid) as excinfo:
         repo.read_watermark("llm-agents")
+    assert isinstance(excinfo.value, CrawlerError)  # 归入既有 errors 层级
     assert excinfo.value.error_class is ErrorClass.CONFIG
     assert needle in str(excinfo.value)
 
