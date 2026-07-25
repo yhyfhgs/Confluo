@@ -82,6 +82,21 @@ class Challenged(CrawlerError):
         super().__init__(ErrorClass.CHALLENGE, msg, detail=detail)
 
 
+class SubscriptionInvalid(CrawlerError):
+    """订阅 DSL（design/09 §2）解析/校验失败；`error_class` 恒 `CONFIG`。
+
+    Phase 6 T1 **纯追加**子类（既有 errors 层级与退出码契约不动）——沿
+    `CapabilityNotSupported` 的"固定 error_class"先例：订阅文件属用户配置，任何
+    结构/取值问题都是 CONFIG 类（CLI 退出码 2），**绝不静默降级为空订阅**
+    （fail-loud，plan §4 T1 已裁决歧义②）。
+
+    `detail` 存问题定位串（`<文件>:<字段路径>`），供 CLI 直接指向出错的行。
+    """
+
+    def __init__(self, msg: str = "invalid subscription", *, detail: str = "") -> None:
+        super().__init__(ErrorClass.CONFIG, msg, detail=detail)
+
+
 @dataclass(frozen=True)
 class RetrySpec:
     """重试规格；`backoff_seconds` 秒值可被 `Config.retry_scale` 缩放。"""

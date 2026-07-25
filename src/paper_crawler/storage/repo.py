@@ -16,8 +16,9 @@ import json
 import sqlite3
 from collections.abc import Mapping
 from dataclasses import dataclass
-from typing import Literal
+from typing import TYPE_CHECKING, Literal
 
+from paper_crawler.errors import CrawlerError, ErrorClass
 from paper_crawler.ids import normalize_identifier, normalize_title
 from paper_crawler.obslog import redact
 from paper_crawler.storage.db import Database
@@ -29,6 +30,9 @@ from paper_crawler.types import (
     new_ulid,
     utcnow_iso,
 )
+
+if TYPE_CHECKING:  # 仅类型：运行期由 SubscriptionRepo 内的局部 import 承担（见其 docstring）
+    from paper_crawler.subs.model import Subscription
 
 # MergeEngine.ingest 的动作枚举（接口冻结件 §2-1）。定义在 repo 层，供 merge.py 复用其
 # `IngestResult.action` 的类型——避免 repo→merge 反向导入形成环（merge 依赖 repo）。
@@ -895,3 +899,216 @@ class Repo:
                 "WHERE p.venue_id = ? AND a.state = 'fetched'"
             ),
         }
+
+
+class SubscriptionRepo:
+    """订阅仓储（Phase 6 T1 冻结件）：`subscription` / `subscription_run` 两表 + watermark。
+
+    与 `Repo` 并列而非合并——订阅是独立聚合根（design/06 §1 ER：Subscription 1─N
+    SubscriptionRun），与论文/资产那套没有共享事务面；分开也让 T4/T5 的消费面只暴露
+    它们真正需要的方法。
+
+    **DSL 类型走局部 import**（沿 `db.py::_backfill_title_norm` 的先例："局部 import
+    避免 storage 层顶层依赖上层模块"）：`subs.model` 反过来不依赖 storage，故本类
+    与订阅域之间恒无导入环——即使 T5 之后把 `subs/watch.py`（依赖本类）导出到
+    `subs/__init__.py` 也不会成环。
+
+    表结构核对（design/06 §2 ↔ `migrations/0001_init.sql`）：两表逐列一致，本卡未改表。
+
+    - `subscription(name PK, query_json NOT NULL, watermark_json, guard_json,
+      created_at, last_run_at)`；
+    - `subscription_run(id PK, name REFERENCES subscription, started_at, new_count,
+      fetched_count, truncated, report_path)`。
+
+    时间列一律 UTC ISO8601（`utcnow_iso`），`truncated` 用 0/1 整数（SQLite 无 bool，
+    方言中性；读出时归一为 Python bool 由调用方按需转换）。
+    """
+
+    def __init__(self, db: Database) -> None:
+        self.db = db
+
+    # -- subscription CRUD ---------------------------------------------------
+
+    def upsert(self, subscription: Subscription) -> None:
+        """按 name 幂等写入订阅（DSL 主体 + 护栏）。
+
+        **只更新 `query_json`/`guard_json`**：`watermark_json`/`created_at`/`last_run_at`
+        是运行期状态，改订阅内容（如收窄正则）绝不能顺手把增量游标清零——否则下一次
+        watch 会把整个历史窗重刷一遍（design/09 §5 增量语义的基本要求）。
+        """
+        self.db.execute(
+            "INSERT INTO subscription "
+            "(name, query_json, watermark_json, guard_json, created_at, last_run_at) "
+            "VALUES (?,?,?,?,?,?) "
+            "ON CONFLICT(name) DO UPDATE SET "
+            "  query_json=excluded.query_json, guard_json=excluded.guard_json",
+            (
+                subscription.name,
+                _json_text(subscription.to_query_dict()),
+                None,
+                _json_text(subscription.guard.to_dict()),
+                utcnow_iso(),
+                None,
+            ),
+        )
+
+    def get(self, name: str) -> Subscription | None:
+        """按 name 取订阅并**还原为 `Subscription`**；不存在返回 None。
+
+        还原走 `Subscription.from_stored`（= 文件加载的同一校验器）：库内存量若因
+        手改/旧版本而不合法，此处响亮报错（`SubscriptionInvalid`），不返回半截对象。
+        """
+        rows = self.db.query("SELECT * FROM subscription WHERE name = ?", (name,))
+        return self._row_to_subscription(rows[0]) if rows else None
+
+    def all(self) -> list[Subscription]:
+        """全部订阅，按 name 排序（确定性输出，`watch --all` 的遍历序）。"""
+        rows = self.db.query("SELECT * FROM subscription ORDER BY name")
+        return [self._row_to_subscription(row) for row in rows]
+
+    @staticmethod
+    def _row_to_subscription(row: sqlite3.Row) -> Subscription:
+        """`subscription` 行 → `Subscription`（`get`/`all` 的单一还原路径）。"""
+        from paper_crawler.subs.model import Subscription
+
+        guard_json = row["guard_json"]
+        return Subscription.from_stored(
+            str(row["name"]),
+            str(row["query_json"]),
+            str(guard_json) if guard_json is not None else None,
+        )
+
+    def list_names(self) -> list[str]:
+        """全部订阅名（升序）——不做 DSL 反序列化，供只需清单的调用方。"""
+        rows = self.db.query("SELECT name FROM subscription ORDER BY name")
+        return [str(row["name"]) for row in rows]
+
+    def delete(self, name: str) -> bool:
+        """删除订阅及其全部运行记录；返回是否真的删到（不存在 → False，非错误）。
+
+        先删 `subscription_run` 子行再删父行——外键 `PRAGMA foreign_keys=ON`
+        （`Database.__init__`）下顺序不可颠倒。单事务，同进同退。
+        """
+        with self.db.tx() as conn:
+            conn.execute("DELETE FROM subscription_run WHERE name = ?", (name,))
+            cursor = conn.execute("DELETE FROM subscription WHERE name = ?", (name,))
+            return cursor.rowcount > 0
+
+    def exists(self, name: str) -> bool:
+        """订阅是否存在（不解析 DSL）。"""
+        return bool(self.db.query("SELECT 1 FROM subscription WHERE name = ?", (name,)))
+
+    # -- watermark（design/09 §5；格式归 T4）---------------------------------
+
+    def read_watermark(self, name: str) -> dict[str, object]:
+        """读 `watermark_json` → dict；未运行过（NULL）或空串 → `{}`（首跑语义）。
+
+        本层不解释格式（`{source: {...}, "schema_ver": N}` 归 T4），只保证"存进去
+        什么读出来什么"。未知订阅名 → `CrawlerError(CONFIG)`（与 `registry.get`
+        对未知 venue_id 的处置同构），不返回 `{}` 假装首跑。
+
+        **畸形 JSON 也归 CONFIG**（不让裸 `JSONDecodeError` 逃出错误分类学——审计对
+        config TOML 同型缺口的 P1 教训）：损坏的游标若被当成"首跑"会静默重刷全窗。
+        """
+        rows = self.db.query("SELECT watermark_json FROM subscription WHERE name = ?", (name,))
+        if not rows:
+            raise _unknown_subscription(name)
+        raw = rows[0]["watermark_json"]
+        if raw is None or not str(raw).strip():
+            return {}
+        try:
+            loaded = json.loads(str(raw))
+        except json.JSONDecodeError as exc:
+            raise CrawlerError(
+                ErrorClass.CONFIG,
+                f"subscription {name!r} 的 watermark_json 解析失败: {exc}",
+                detail=name,
+            ) from None
+        if not isinstance(loaded, dict):
+            raise CrawlerError(
+                ErrorClass.CONFIG,
+                f"subscription {name!r} 的 watermark_json 顶层不是对象",
+                detail=type(loaded).__name__,
+            )
+        return {str(key): value for key, value in loaded.items()}
+
+    def write_watermark(self, name: str, watermark: Mapping[str, object]) -> None:
+        """覆盖写 `watermark_json`（T4 的推进出口）。未知订阅名 → `CrawlerError(CONFIG)`。
+
+        整体覆盖而非合并：watermark 的"哪些源该留、该删"由 T4 按订阅当前 `sources`
+        决定，仓储层做部分合并只会让退订的源留下幽灵游标。
+        """
+        with self.db.tx() as conn:
+            cursor = conn.execute(
+                "UPDATE subscription SET watermark_json = ? WHERE name = ?",
+                (_json_text(dict(watermark)), name),
+            )
+            if cursor.rowcount == 0:
+                raise _unknown_subscription(name)
+
+    def touch_last_run(self, name: str, *, at: str | None = None) -> None:
+        """推进 `last_run_at`（缺省取当前 UTC）。未知订阅名 → `CrawlerError(CONFIG)`。"""
+        with self.db.tx() as conn:
+            cursor = conn.execute(
+                "UPDATE subscription SET last_run_at = ? WHERE name = ?",
+                (at if at is not None else utcnow_iso(), name),
+            )
+            if cursor.rowcount == 0:
+                raise _unknown_subscription(name)
+
+    # -- subscription_run ----------------------------------------------------
+
+    def record_run(
+        self,
+        *,
+        name: str,
+        started_at: str,
+        new_count: int,
+        fetched_count: int = 0,
+        truncated: bool = False,
+        report_path: str | None = None,
+    ) -> str:
+        """落一条运行记录，返回其 ULID。
+
+        字段与 `subs.types.RunSummary` 一一对应（T5 直接从 summary 取值调用）。
+        **熔断也要落记录**（`truncated=1` + 零入库，plan §4 T5 已裁决歧义②）——
+        "跑过但被拦下"与"没跑"必须可区分。dry-run **不落**（T5 侧不调用本方法）。
+        """
+        if not self.exists(name):
+            raise _unknown_subscription(name)
+        run_id = new_ulid()
+        self.db.execute(
+            "INSERT INTO subscription_run "
+            "(id, name, started_at, new_count, fetched_count, truncated, report_path) "
+            "VALUES (?,?,?,?,?,?,?)",
+            (run_id, name, started_at, new_count, fetched_count, int(truncated), report_path),
+        )
+        return run_id
+
+    def runs(self, name: str | None = None, *, limit: int | None = None) -> list[sqlite3.Row]:
+        """运行记录，按 `started_at` 降序（最近在前）；可限订阅、可限条数。"""
+        sql = "SELECT * FROM subscription_run"
+        params: list[object] = []
+        if name is not None:
+            sql += " WHERE name = ?"
+            params.append(name)
+        sql += " ORDER BY started_at DESC, id DESC"
+        if limit is not None:
+            sql += " LIMIT ?"
+            params.append(limit)
+        return self.db.query(sql, params)
+
+    def last_run(self, name: str) -> sqlite3.Row | None:
+        """某订阅最近一次运行记录；从未运行 → None。"""
+        rows = self.runs(name, limit=1)
+        return rows[0] if rows else None
+
+
+def _json_text(payload: Mapping[str, object]) -> str:
+    """订阅域 JSON 列的统一序列化（确定性：sort_keys + 非 ASCII 原样）。"""
+    return json.dumps(dict(payload), ensure_ascii=False, sort_keys=True)
+
+
+def _unknown_subscription(name: str) -> CrawlerError:
+    """未知订阅名的统一错误（同 `registry.get` 对未知 venue_id 的 CONFIG 处置）。"""
+    return CrawlerError(ErrorClass.CONFIG, f"unknown subscription: {name!r}")
