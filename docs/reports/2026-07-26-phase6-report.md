@@ -291,22 +291,6 @@ ruff/mypy 均无输出（全绿）；与 [AC-6 记录](../testing/records/2026-0
 
 ## 8. 签署
 
-- **T10 初判（2026-07-26）**：21 卡 5 波次全交付（含 T1b/F7 两张执行期增补卡），实际合并顺序与波次并行图吻合；门禁 3056→3820
-  （+764 测试，coverage 98.78%→98.99%，中途峰值 99.00%，EXIT=0）；adapter/venue 数不变（20/58，本
-  Phase 不新增平台）；新增 `subs` 包（8 模块）+ `subscriptions/presets/`（9 件）+ `nber/rss.py`；AC-6
-  四条 PASS，fable 已亲验签署"达成"（本报告引用而非重新独立判定）；D-030/D-031 两条新 ADR 已正式化；
-  design/09 本次转 `implemented`；三处幻影字段表述（auth-framework.md/ssrn.md/aggregators.md）已订正
-  为实况；subscriptions/README 过时"presets/（后续到位）"小节已修正合并；GLOSSARY 增补 6 条
-  （Subscription DSL/preset/批内去重/browser-fetch 横切件为新增，watch/watermark 为更新）；progress.md/
-  INDEX.md 已同步至本终态。
-- **终审附条件闭合（2026-07-26，追加提交）**：opus 全分支终审已回"**放行附条件**"（零 P0/代码缺陷/
-  红线；门禁逐位复现）。六项文档修正条件本次追加提交逐项闭合：①本节（Phase 7 检查单）补两行（ECMA
-  两处 catalog 表述不一致 15、机动预算运行时账本 16）；②本节四项事实订正（item 6 WARNING→INFO、item 8
-  补 `http.py:52` 出处标注、item 10 改"76 处/41 文件·归 S4"、item 12 AEJ 口径重述、item 13"0 请求"
-  精确化为"首趟后边际 0 请求"）；③卡数矛盾 9 处"18 卡"统一订正为"21 卡"，phase6-implementation-plan.md
-  §4/§5 补 T1b/F7 两卡说明+波次图注记；④三处 INDEX/front matter 漂移修正（enrich-eval-p6.md/
-  decision-log.md/GLOSSARY.md）；⑤在线 roll-up 32→34（§3.4 补 AC-6 记录连通性探测两条）；⑥design/09
-  §5 补 NBER 增量语义条目 + 订正 `watermark.py:425` docstring 失效引用（纯注释，零行为改动）。门禁
-  复跑零回归（详见 §7）。
-- **最终判定**：终审附条件已闭合（六项，本次提交）；**`tag phase-6` 待 controller** 执行（本报告不
-  自置签署——tag 与最终判定文字由 controller 收到本次收尾提交后落笔）。
+- **T10 初判（2026-07-26）**：21 卡全交付（主线 T1+T1b/T2–T10、修复 F1–F7、设计 R1/R2、在线 M1+探针）；门禁 3056→3820（+764 测试，coverage 98.99%）；AC-6 四条 PASS（fable 亲验签署）；D-030/D-031 两条 ADR；在线预算 ~34/60（机动行 11/10 记账缺口如实入档）；判定列待 controller 终审裁决。
+- **终审（2026-07-26，opus 独立全分支）**：放行附条件——零 P0/零代码缺陷/零红线，门禁逐位复现（3820/28/98.99%/EXIT=0 + venues lint 58/58 + 尾行 48/48 + git 历史线性零 merge）；条件六项（检查单补载体 ×2、事实订正 ×4+出处 ×1、卡数统一 ×9 处+计划回填、INDEX 漂移 ×3、roll-up 口径、design/09 nber 条目）已全数闭合（`5c2c865`）。
+- **最终判定（fable 合并裁决 2026-07-26）**：**Phase 6 判定：达成**。AC-6 四条 PASS（离线 DoD + F7 后在线通道实证可用）、AC-0 全程零触碰、终审七项清单全 PASS、放行条件全闭合。tag `phase-6` 随本裁决落地。
