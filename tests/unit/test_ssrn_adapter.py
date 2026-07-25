@@ -116,6 +116,34 @@ def test_enumerate_url_delegates_prefix_10_2139_created_filter() -> None:
     assert url.params.get("cursor") == "*"
 
 
+def test_enumerate_day_window_quirk_is_pushed_down_to_the_crossref_filter() -> None:
+    """F7：venue quirks 带日窗（订阅 watch 注入）→ 内部 crossref 的 filter 收到日粒度窗。
+
+    没有这条通道时 7 天 watch 窗会退化成 `prefix:10.2139` 的整年枚举（实测 2026 全年
+    155,461 条，`docs/testing/records/2026-07-26-ac6-acceptance.md` §4.2）。
+    """
+    captured: list[httpx.URL] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        captured.append(request.url)
+        return _resp(fixture_bytes("02_works_empty.json"))
+
+    venue = _venue(**{"from-created-date": "2026-07-19", "until-created-date": "2026-07-26"})
+    list(_adapter(handler).enumerate_issue(venue, IssueRef(venue_id="ssrn", year=2026)))
+
+    assert len(captured) == 1
+    assert captured[0].params.get("filter") == (
+        "from-created-date:2026-07-19,until-created-date:2026-07-26"
+    )
+
+
+def test_enumerate_year_bucket_outside_the_day_window_makes_zero_requests() -> None:
+    """窗未触及的年桶零请求——年桶粒度与日窗的差额不该变成一整年的翻页。"""
+    venue = _venue(**{"from-created-date": "2026-07-19", "until-created-date": "2026-07-26"})
+    stubs = list(_adapter(_never).enumerate_issue(venue, IssueRef(venue_id="ssrn", year=2025)))
+    assert stubs == []
+
+
 def test_enumerate_mixed_types_both_collected_and_augmented() -> None:
     """混 journal-article + posted-content 两类型全收（不加 type: 过滤）；均增补 (ssrn) id。"""
     stubs = list(

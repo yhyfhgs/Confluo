@@ -136,7 +136,15 @@ class SsrnAdapter(AdapterBase):
         """委内部 `CrossrefAdapter`（prefix 10.2139 + created 窗）→ 后处理增补 `(ssrn)` id。
 
         crossref 侧走 `venue.identifiers.crossref_prefix` + `quirks.crossref_date_field=created`
-        （venue YAML 声明，§4.2 消费侧契约）——两类型全收（不加 `type:` 过滤）。本层加工每个
+        （venue YAML 声明，§4.2 消费侧契约）——两类型全收（不加 `type:` 过滤）。
+
+        **日粒度增量窗（Phase 6 F7）**：venue `quirks` 若带 `from-created-date`/
+        `until-created-date`（订阅 watch 由 `subs.watch.AdapterFetcher.venue_for` 并进），
+        内部 crossref 的 `_window_bounds` 会与桶年取交集后下推——本层零改动即生效。没有这
+        条通道时一个 7 天的 watch 窗会退化成整年枚举（实测 2026 全年 155,461 条）。本层的
+        年桶（`discover_timeline(venue, since)`）负责下界裁剪，窗内的日粒度归内部 crossref。
+
+        本层加工每个
         `PaperStub`：DOI 匹配 `10.2139/ssrn.{id}` → 增补 `(ssrn, abstract_id)`；**护栏**：非
         `ssrn.` 中缀（潜在非-SSRN）→ 不增补 + 跳过 + 计 `skipped_non_ssrn` 观测（§4.2）。
         cursor 深翻/限速/错误映射沿 crossref 既有（惰性生成器，去重由 identifier 主键保证）。

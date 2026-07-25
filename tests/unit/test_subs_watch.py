@@ -7,15 +7,20 @@ CLI 层在 `tests/integration/test_cli_subs_watch.py`。本文件只测不需要
 from __future__ import annotations
 
 import logging
-from collections.abc import Iterable
-from datetime import date
+from collections.abc import Callable, Iterable
+from datetime import UTC, date, datetime, timedelta
 from pathlib import Path
 
 import httpx
 import pytest
 
+from helpers import make_ssrn_venue
+from helpers.arxiv_fixtures import fixture_bytes as arxiv_fixture_bytes
 from helpers.nber_fixtures import fixture_bytes
+from helpers.ssrn_fixtures import fixture_bytes as ssrn_fixture_bytes
 from paper_crawler.adapter import AdapterBase, AdapterFamily
+from paper_crawler.adapters.arxiv.adapter import ArxivAdapter
+from paper_crawler.adapters.ssrn.adapter import SsrnAdapter
 from paper_crawler.errors import CrawlerError, ErrorClass
 from paper_crawler.http import HttpClient
 from paper_crawler.subs.compile import compile_subscription
@@ -32,6 +37,13 @@ from paper_crawler.subs.watch import (
     daily_report_path,
     exit_code_for,
     overload_brief,
+)
+from paper_crawler.subs.watermark import (
+    DEFAULT_INITIAL_LOOKBACK_DAYS,
+    DateUpperBound,
+    Watermark,
+    strategy_for,
+    window_params,
 )
 from paper_crawler.types import (
     AuthLevel,
@@ -78,12 +90,40 @@ def test_arxiv_window_is_anded_into_the_same_search_query() -> None:
             "(cat:cs.AI OR cat:cs.LG) AND submittedDate:[202607190000 TO 202607262359]",
         ),
     )
-    assert request.since is None  # arxiv 的窗只以查询式形态存在，无独立 ISO 下界
+    # F7：窗值同时解回 ISO 下界喂 DISCOVER 的 since=（此前恒 None → adapter 从 venue 的
+    # quirks.inception=1998-01 起枚举 → 被 arXiv OAI 以 badArgument 确定性拒绝）。
+    assert request.since == "2026-07-19"
 
 
 def test_arxiv_without_static_query_emits_window_only() -> None:
-    (request,) = build_requests("s", _step("arxiv"), (("submittedDate", "[A TO B]"),))
-    assert request.params == (("search_query", "submittedDate:[A TO B]"),)
+    window = (("submittedDate", "[202607190000 TO 202607262359]"),)
+    (request,) = build_requests("s", _step("arxiv"), window)
+    assert request.params == (("search_query", "submittedDate:[202607190000 TO 202607262359]"),)
+    assert request.since == "2026-07-19"
+
+
+def test_arxiv_since_is_the_watermark_lower_bound_itself() -> None:
+    """跨模块契约：T4 产的窗 → T5 解出的 `since` == `DateUpperBound.lower_bound`。
+
+    两侧都从**真实** watermark 件取值（不写死字符串）：窗值形态若在 T4 侧改了，这条
+    会立刻红，而不是等到线上再被服务端拒绝一次。
+    """
+    day = date(2026, 7, 26)
+    strategy = strategy_for("arxiv")
+    assert isinstance(strategy, DateUpperBound)
+    window = window_params(Watermark(), "arxiv", now=day)  # 空 watermark = 首跑
+
+    (request,) = build_requests("s", _step("arxiv"), window)
+
+    assert request.since == strategy.lower_bound(None, now=day).isoformat()
+    assert request.since == "2026-07-19"  # 首跑 = 今天 − DEFAULT_INITIAL_LOOKBACK_DAYS(7)
+
+
+def test_arxiv_window_of_unknown_shape_is_rejected_loudly() -> None:
+    """形态认不出 → CONFIG，**不**退回 None：那条静默路径正是 F7 修掉的 bug 本身。"""
+    with pytest.raises(CrawlerError) as excinfo:
+        build_requests("s", _step("arxiv"), (("submittedDate", "[A TO B]"),))
+    assert excinfo.value.error_class is ErrorClass.CONFIG
 
 
 def test_arxiv_without_anything_still_emits_one_request() -> None:
@@ -353,6 +393,146 @@ def test_synthesized_venue_id_is_registry_legal() -> None:
     spec = AdapterFetcher({}).venue_for(SourceRequest(subscription="s", source="openalex"))
     assert spec.id == "subs_openalex"
     assert spec.fulltext_source == "openalex"
+
+
+def test_ssrn_result_side_window_is_skipped_because_the_axis_differs() -> None:
+    """ssrn 豁免结果面收窄：窗轴是 `created`（登记），`pub_date` 是 `published`（刊期）。
+
+    错轴比较会把"本周登记、刊期挂在更早"的 SSRN 记录整批丢掉——窗已在正确的轴上服务端
+    下推（`quirks.from/until-created-date`），这一层既冗余又有害。
+    """
+    fetcher = AdapterFetcher({"ssrn": _DatedAdapter()})
+    request = SourceRequest(subscription="s", source="ssrn", since="2026-07-19")
+
+    titles = [stub.title for stub in fetcher.fetch(request)]
+
+    assert titles == ["早于窗", "窗内", "窗下界当天", "无日期"]  # 一条都不丢
+
+
+def test_arxiv_undeliverable_warning_does_not_claim_a_local_fallback(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    """arxiv 的 search_query 既没下推也**没有**本地补偿谓词——WARNING 不许说"本地兜底"。"""
+    fetcher = AdapterFetcher({"arxiv": _TwoIssueAdapter()})
+    request = SourceRequest(
+        subscription="s",
+        source="arxiv",
+        params=(("search_query", "(cat:cs.AI) AND ti:agent"),),
+        since="2026-07-19",
+    )
+    with caplog.at_level(logging.WARNING, logger="paper_crawler"):
+        list(fetcher.fetch(request))
+
+    (warning,) = [r for r in caplog.records if "无法下达" in r.getMessage()]
+    message = warning.getMessage()
+    assert "无本地补偿谓词" in message
+    assert "其余条件由本地过滤兜底" not in message
+
+
+def test_ssrn_window_params_no_longer_warn_as_undeliverable(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    """F7 后 ssrn 的日窗**是**能下达的（经 quirks → 内部 crossref filter），不再降级告警。"""
+    fetcher = AdapterFetcher({"ssrn": _TwoIssueAdapter()})
+    window = window_params(Watermark(), "ssrn", now=date(2026, 7, 26))
+    with caplog.at_level(logging.WARNING, logger="paper_crawler"):
+        list(fetcher.fetch(SourceRequest(subscription="s", source="ssrn", params=window)))
+    assert [r for r in caplog.records if "无法下达" in r.getMessage()] == []
+
+
+# ---------------------------------------------------------------------------
+# 真实 adapter 上的两条在线可用性接缝（F7；MockTransport 零网络，断言发出的 URL）
+# ---------------------------------------------------------------------------
+
+
+_UA = "PaperCrawler/test (personal research; mailto:test@example.com)"
+
+
+def _mock_client(handler: Callable[[httpx.Request], httpx.Response]) -> HttpClient:
+    return HttpClient(user_agent=_UA, transport=httpx.MockTransport(handler))
+
+
+def _arxiv_cs_ai_venue() -> VenueSpec:
+    """逐字对齐 `venues/preprint/arxiv-cs-ai.yaml` 的 quirks（1998 起点即出自这里）。"""
+    return VenueSpec(
+        id="arxiv_cs_ai",
+        kind="preprint_channel",
+        names=VenueNames(full="arXiv cs.AI · Artificial Intelligence"),
+        field=["cs_ai"],
+        metadata_source="arxiv",
+        fulltext_source="arxiv",
+        quirks={"inception": "1998-01", "arxiv_set": "cs", "arxiv_category": "cs.AI"},
+    )
+
+
+def _months_spanned(lower: date, upper: date) -> set[str]:
+    """`[lower, upper]` 触及的月首日集合（月桶粒度的期望值，随真实时钟变动）。"""
+    months = {f"{lower:%Y-%m}-01"}
+    months.add(f"{upper:%Y-%m}-01")
+    return months
+
+
+def test_arxiv_since_narrows_the_oai_window_to_the_watermark_month() -> None:
+    """F7 ①：DISCOVER 的 `since` 真的收窄了 OAI 的 `from=`——不再从 1998-01 起枚举。
+
+    修复前实测：`from=1998-01-01&until=1998-01-31` 被 arXiv 官方 OAI-PMH 以
+    `badArgument`/"start date too early" 确定性拒绝（`docs/testing/records/
+    2026-07-26-ac6-acceptance.md` §4.1），任何含 arxiv 源的订阅恒失败。
+    """
+    captured: list[httpx.URL] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        captured.append(request.url)
+        return httpx.Response(200, content=arxiv_fixture_bytes("10_oai_norecordsmatch.xml"))
+
+    # 桶上界走 adapter 内部的真实时钟（`discover_timeline` 的 `until`），故窗也用真实时钟取。
+    today = datetime.now(UTC).date()
+    window = window_params(Watermark(), "arxiv", now=today)
+    (request,) = build_requests("llm-agents", _step("arxiv"), window)
+    fetcher = AdapterFetcher(
+        {"arxiv": ArxivAdapter(http=_mock_client(handler))},
+        venues={"arxiv": _arxiv_cs_ai_venue()},
+    )
+
+    list(fetcher.fetch(request))
+
+    lower = today - timedelta(days=DEFAULT_INITIAL_LOOKBACK_DAYS)
+    expected = _months_spanned(lower, today)
+    assert {str(url.params.get("from")) for url in captured} == expected  # 只有窗触及的月桶
+    assert len(captured) == len(expected)
+    assert all(url.params.get("set") == "cs" for url in captured)
+    assert "1998-01-01" not in {str(url.params.get("from")) for url in captured}
+    # 对照：不给 since 时同一 venue 会产出三百多个月桶（= 修复前每次首跑的请求面）。
+    unbounded = list(ArxivAdapter().discover_timeline(_arxiv_cs_ai_venue(), None))
+    assert len(unbounded) > 300 and unbounded[0].label == "1998-01"
+
+
+def test_ssrn_day_window_reaches_the_crossref_filter_and_trims_the_year_buckets() -> None:
+    """F7 ②：ssrn 的 7 天窗 → crossref `filter=` 日窗 + 只产窗口触及的年桶（1 次请求）。
+
+    修复前：年桶照产、`filter` 退化成整年（实测 `prefix:10.2139` 2026 全年 155,461 条）。
+    """
+    captured: list[httpx.URL] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        captured.append(request.url)
+        return httpx.Response(200, content=ssrn_fixture_bytes("02_works_empty.json"))
+
+    day = date(2026, 7, 26)
+    window = window_params(Watermark(), "ssrn", now=day)
+    (request,) = build_requests("asset-pricing", _step("ssrn"), window)
+    adapter = SsrnAdapter(
+        http=_mock_client(handler), clock=lambda: datetime(2026, 7, 26, tzinfo=UTC)
+    )
+    fetcher = AdapterFetcher({"ssrn": adapter}, venues={"ssrn": make_ssrn_venue()})
+
+    list(fetcher.fetch(request))
+
+    assert len(captured) == 1  # 年桶只剩 2026 一个（since=2026-07-19），整年翻页没了
+    assert captured[0].path == "/prefixes/10.2139/works"
+    assert captured[0].params.get("filter") == (
+        "from-created-date:2026-07-19,until-created-date:2026-07-26"
+    )
 
 
 # ---------------------------------------------------------------------------

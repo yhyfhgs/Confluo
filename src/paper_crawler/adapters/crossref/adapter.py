@@ -25,7 +25,10 @@ by-ISSN 期刊（issn+published，**零回归**）：
   年份下界。Crossref 无 volume/issue filter，故时间轴粒度=出版年（volume/issue 从 works
   记录字段读入 meta，不作枚举键）。
 - `enumerate_issue`：`(issn, year)` → `filter=from-pub-date,until-pub-date` 日期窗
-  拉 works → PaperStub 流。**cursor 深翻断点续拉**（§5.1 契约逐字）：首请求 `cursor=*`
+  拉 works → PaperStub 流。**日窗可再收窄**（Phase 6 F7）：venue `quirks` 声明
+  `from-{pub|created}-date`/`until-…` 时与桶年取交集（订阅 watch 的日粒度增量窗经此
+  下推，见 `_window_bounds`），交集为空则零请求。
+  **cursor 深翻断点续拉**（§5.1 契约逐字）：首请求 `cursor=*`
   → 读 `message.next-cursor` → 续拉至 `items` 空。cursor 值**不持久化、不跨任务复用**；
   中断续拉按 `(issn, year)` 窗口**重建** `cursor=*` 从头（幂等由 `(doi)` identifier
   去重天然保证，无重复入库）。
@@ -55,6 +58,7 @@ from __future__ import annotations
 
 import os
 from collections.abc import Iterable, Iterator
+from datetime import date
 from urllib.parse import urlencode
 
 from paper_crawler.adapter import AdapterBase, AdapterFamily
@@ -190,9 +194,12 @@ class CrossrefAdapter(AdapterBase):
     def enumerate_issue(self, venue: VenueSpec, issue: IssueRef) -> Iterable[PaperStub]:
         """`(key, year)` 日期窗 → works cursor 深翻 → PaperStub 流（§5.1 cursor 契约）。
 
-        enum-key（issn XOR prefix）+ date-field + year 急切求值（缺/冲突 → CONFIG）；cursor
-        翻页与网络在返回生成器惰性执行。去重由 `(doi)` identifier 主键天然保证（窗口重建/
-        重叠不产重复入库）。
+        enum-key（issn XOR prefix）+ date-field + year + **可选日窗**急切求值（缺/冲突/
+        窗值非法 → CONFIG）；cursor 翻页与网络在返回生成器惰性执行。去重由 `(doi)`
+        identifier 主键天然保证（窗口重建/重叠不产重复入库）。
+
+        日窗（`_window_bounds`，venue quirks 声明）与桶年**无交集**时返回空序列、
+        **零请求**——同 arxiv `_oai_window` 对空窗桶的处置。
         """
         mode, key = _enum_key_of(venue)
         field = _date_field_of(venue)
@@ -202,13 +209,15 @@ class CrossrefAdapter(AdapterBase):
                 ErrorClass.CONFIG,
                 f"crossref enumerate needs IssueRef.year (per-year window), got {issue!r}",
             )
-        return self._enumerate_window(venue, mode, key, field, year)
+        window = _window_bounds(venue, field, year)
+        if window is None:
+            return iter(())
+        return self._enumerate_window(venue, mode, key, field, year, window)
 
     def _enumerate_window(
-        self, venue: VenueSpec, mode: str, key: str, field: str, year: int
+        self, venue: VenueSpec, mode: str, key: str, field: str, year: int, window: tuple[str, str]
     ) -> Iterator[PaperStub]:
-        frm = f"{year:04d}-01-01"
-        until = f"{year:04d}-12-31"
+        frm, until = window
         cursor = "*"  # 深翻起点；不持久化、不跨任务复用（中断按窗口重建从头，§5.1）
         first_page = True
         while True:
@@ -365,6 +374,50 @@ def _prefix_value(venue: VenueSpec) -> str | None:
     if isinstance(raw, str) and raw.strip():
         return raw.strip()
     return None
+
+
+def _window_bounds(venue: VenueSpec, field: str, year: int) -> tuple[str, str] | None:
+    """桶年窗 ∩ venue 声明的可选日窗 → `(from, until)`；交集为空 → None（零请求）。
+
+    **日窗通道（Phase 6 F7）**：`IssueRef` 只带年（Crossref 无 volume/issue filter，时间
+    轴粒度 = 年，§5.1），而订阅 watch 的增量窗是**日**粒度。冻结的 `enumerate_issue`
+    签名没有第三个参数可以承载它，故走 venue 的 `quirks`——adapter 读配置的既有入口
+    （`crossref_date_field`/`arxiv_set` 皆然），订阅层 `subs.watch.AdapterFetcher.venue_for`
+    把增量窗参数并进 `quirks` 后 spec 就带上了它。
+
+    键名**就是该 date-field 轴的 filter 名本身**（`from-created-date`/`until-created-date`
+    或 `from-pub-date`/`until-pub-date`），与 `subs.types.DATE_WINDOW_PARAMS` 的槽位名逐字
+    相同——两侧同名故不需要第二张映射表，也就不会漂。两端各自可选：只声明 from 时上界仍是
+    年末（crossref 期刊 watch 只推下界，watermark.py `DateCursor` 的三种上界形态之一）。
+
+    没有这条通道时的净效果（修复前实测）：ssrn 的 7 天窗退化成 `prefix:10.2139` 整年
+    枚举——2026 全年 155,461 条，一次 watch 要翻上百页
+    （`docs/testing/records/2026-07-26-ac6-acceptance.md` §4.2）。
+
+    值须是 ISO `YYYY-MM-DD`（非法 → CONFIG 响亮，同 `_date_field_of` 对未知轴的处置）：
+    畸形日期原样拼进 `filter=` 只会换回一个 400，报错信息里看不出是谁写坏的。
+    """
+    date_name = _DATE_FIELD_FILTER[field]
+    frm = max(f"{year:04d}-01-01", _iso_date_quirk(venue, f"from-{date_name}-date") or "")
+    until_quirk = _iso_date_quirk(venue, f"until-{date_name}-date")
+    until = f"{year:04d}-12-31" if until_quirk is None else min(f"{year:04d}-12-31", until_quirk)
+    return None if frm > until else (frm, until)
+
+
+def _iso_date_quirk(venue: VenueSpec, name: str) -> str | None:
+    """读一条 ISO 日期形态的 quirk；未声明 → None，声明了但非 `YYYY-MM-DD` → CONFIG。"""
+    raw = venue.quirks.get(name)
+    if raw is None:
+        return None
+    if isinstance(raw, str):
+        try:
+            return date.fromisoformat(raw.strip()).isoformat()
+        except ValueError:
+            pass
+    raise CrawlerError(
+        ErrorClass.CONFIG,
+        f"crossref venue {venue.id!r} has invalid quirks.{name}={raw!r} (need ISO YYYY-MM-DD)",
+    )
 
 
 def _date_field_of(venue: VenueSpec) -> str:

@@ -214,6 +214,92 @@ def test_enumerate_missing_year_raises_config() -> None:
     assert exc.value.error_class is ErrorClass.CONFIG
 
 
+# --- enumerate 日窗（Phase 6 F7：订阅 watch 的日粒度增量窗经 quirks 下推）------------------
+
+
+def _capture_filters(venue: VenueSpec, issue: IssueRef) -> list[str]:
+    """跑一次 enumerate，返回逐请求的 `filter=` 值（首页即空 → 一次请求）。"""
+    captured: list[str] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        captured.append(str(request.url.params.get("filter")))
+        return _resp(fixture_bytes("02_works_empty.json"))
+
+    list(_adapter(handler).enumerate_issue(venue, issue))
+    return captured
+
+
+def test_day_window_quirk_narrows_the_published_axis_filter() -> None:
+    """期刊 watch：`quirks.from/until-pub-date` 把整年窗收成日窗（不再整年枚举）。"""
+    venue = _venue().model_copy(
+        update={"quirks": {"from-pub-date": "2026-07-19", "until-pub-date": "2026-07-26"}}
+    )
+    assert _capture_filters(venue, IssueRef(venue_id="qje", year=2026)) == [
+        "from-pub-date:2026-07-19,until-pub-date:2026-07-26"
+    ]
+
+
+def test_day_window_quirk_narrows_the_created_axis_filter() -> None:
+    """ssrn 走的 created 轴同一通道（键名随 date-field 轴变，无第二张映射表）。"""
+    venue = _prefix_venue(prefix="10.2139", venue_id="ssrn", date_field="created").model_copy(
+        update={
+            "quirks": {
+                "crossref_date_field": "created",
+                "from-created-date": "2026-07-19",
+                "until-created-date": "2026-07-26",
+            }
+        }
+    )
+    assert _capture_filters(venue, IssueRef(venue_id="ssrn", year=2026)) == [
+        "from-created-date:2026-07-19,until-created-date:2026-07-26"
+    ]
+
+
+def test_day_window_is_intersected_with_the_bucket_year_not_replacing_it() -> None:
+    """跨年窗 × 桶年 = 交集：桶年那一侧的边界由年首/年末给，不被窗的另一端顶出去。"""
+    venue = _venue().model_copy(
+        update={"quirks": {"from-pub-date": "2025-12-26", "until-pub-date": "2026-01-02"}}
+    )
+    assert _capture_filters(venue, IssueRef(venue_id="qje", year=2025)) == [
+        "from-pub-date:2025-12-26,until-pub-date:2025-12-31"
+    ]
+    assert _capture_filters(venue, IssueRef(venue_id="qje", year=2026)) == [
+        "from-pub-date:2026-01-01,until-pub-date:2026-01-02"
+    ]
+
+
+def test_only_one_end_declared_leaves_the_other_at_the_year_boundary() -> None:
+    """crossref watch 只推下界（`DateCursor` 无 until_param）——上界仍是年末。"""
+    venue = _venue().model_copy(update={"quirks": {"from-pub-date": "2026-07-19"}})
+    assert _capture_filters(venue, IssueRef(venue_id="qje", year=2026)) == [
+        "from-pub-date:2026-07-19,until-pub-date:2026-12-31"
+    ]
+
+
+def test_day_window_disjoint_from_the_bucket_year_makes_zero_requests() -> None:
+    """窗与桶年无交集 → 空序列 + **零请求**（`_never` 不被调用）。"""
+    venue = _venue().model_copy(
+        update={"quirks": {"from-pub-date": "2026-07-19", "until-pub-date": "2026-07-26"}}
+    )
+    assert list(_adapter(_never).enumerate_issue(venue, IssueRef(venue_id="qje", year=2024))) == []
+
+
+def test_invalid_day_window_quirk_raises_config_before_any_request() -> None:
+    """畸形日期不许原样拼进 filter=（换回一个 400 看不出是谁写坏的）；急切校验、零请求。"""
+    venue = _venue().model_copy(update={"quirks": {"from-pub-date": "2026-07"}})
+    with pytest.raises(CrawlerError) as exc:
+        list(_adapter(_never).enumerate_issue(venue, IssueRef(venue_id="qje", year=2026)))
+    assert exc.value.error_class is ErrorClass.CONFIG
+    assert "from-pub-date" in str(exc.value)
+
+
+def test_no_day_window_quirk_keeps_the_whole_year_window() -> None:
+    """零回归：venue YAML 不声明日窗（生产 backfill 主路径）时窗仍是整年。"""
+    assert _capture_filters(_venue(), IssueRef(venue_id="qje", year=2024)) == [
+        "from-pub-date:2024-01-01,until-pub-date:2024-12-31"
+    ]
+
+
 # --- 错误映射（经 HttpClient 状态映射）-----------------------------------------------------
 
 

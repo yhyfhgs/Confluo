@@ -75,23 +75,47 @@ dry-run 走"早退"捷径，那些只在遍历时才触发的校验（解析异�
 venue 自己的全量面。现在改为按下表**逐参数**处置，并对下达不了的参数每源一条
 WARNING（响亮降级，不静默）：
 
-| 源 | 能下达的参数 | 通道 | 下达不了的部分 |
+| 源 | 能下达的 | 通道 | 下达不了的 |
 |---|---|---|---|
-| crossref | `issn` | 写进 `VenueSpec.identifiers.issn`（`_enum_key_of` 读它） | 日期窗（见下） |
-| nber | `program` | 专属 RSS fetcher 直接消费 | — |
-| ssrn | — | 元数据经 crossref 前缀枚举，选择器本就无下推面（design/09 §3） | 日期窗 |
-| arxiv | — | adapter 是 OAI 按月桶枚举，无 `search_query` 接缝 | `search_query` |
-| openalex / s2 | — | 二者 `capabilities` 空集（`EnrichmentSource`），无 DISCOVER/ENUMERATE | 全部 |
+| crossref | `issn` + 日窗 | `identifiers.issn`；`quirks.from/until-pub-date` | — |
+| nber | `program` | 专属 RSS fetcher 直接消费（feed 路由） | — |
+| ssrn | 日窗 | `quirks.from/until-created-date`（经内部 crossref） | 选择器无下推面（§3） |
+| arxiv | 日窗（**月桶**） | `SourceRequest.since` → `discover_timeline` 起始月 | `search_query` |
+| openalex / s2 | — | `capabilities` 空集，无 DISCOVER/ENUMERATE | 全部 |
 
-**日期窗单独一档：降级为"请求面按年、结果面按日"**。crossref 的 `enumerate_issue`
-从 `IssueRef.year` 自算 `YYYY-01-01..YYYY-12-31`，而 DISCOVER 的 `since` 经
-`_since_year` 只取前 4 位——把 7 天窗交给它就退化成整年枚举（审查 P3-3）。日粒度窗
-的正确接缝在 enumerate 的 filter 上，那是冻结协议之外的改动，不属本卡。故本模块在
-**结果面**按 `SourceRequest.since` 客户端收窄（`pub_date < since` 的条目丢弃；
-`pub_date` 缺失一律保留——保守侧，同 watermark"宁可重看不可漏看"）。这不是省流量的
-优化，是**正确性必需**：不收窄的话一次 7 天 watch 会拿回整年记录 → 必然超护栏 →
-熔断 → 水位不推进 → 下次仍是整年，永久熔断死循环。请求量的那一半缺口如实留在上表
-与本段，等 adapter 侧开出日粒度枚举接缝再闭合。
+日窗那两条 `quirks` 通道的消费点是 `CrossrefAdapter._window_bounds`（与桶年取交集后
+拼进 `filter=`）；参数经 `AdapterFetcher.venue_for` 并进 `quirks`，键名与
+`DATE_WINDOW_PARAMS` 的槽位名逐字相同，两侧不需要第二张映射表。
+
+**日期窗（F7 修复：从"客户端收窄"升级为"服务端下推"）**。原实现只在结果面按
+`SourceRequest.since` 丢弃 `pub_date < since` 的条目，请求面仍是整年/全史，两条真实
+后果（T9 在线冒烟实证，`docs/testing/records/2026-07-26-ac6-acceptance.md` §4）：
+
+- **arxiv 恒失败**——`_lower_bound_of` 对 arxiv 恒返回 `None`，`discover_timeline`
+  退到 venue 的 `quirks.inception`（`1998-01`）逐月枚举，被 arXiv 官方 OAI-PMH 以
+  `badArgument`/"start date too early" 确定性拒绝。现在 arxiv 的窗值
+  （`[YYYYMMDDHHMM TO …]`，`watermark.DateUpperBound.window_params` 的形态）被解回
+  ISO 下界喂给 `since`，起始月即窗下界所在月。**月桶与日窗的差额仍由结果面收窄兜底**
+  （`_within_since`）——这一层对 arxiv 不可省，且轴是对的（arxiv stub 的 `pub_date`
+  取 OAI `created` = 提交日，与 `submittedDate` 同轴）。
+- **ssrn 整年枚举**——7 天窗退化成 `prefix:10.2139` 的整年（实测 2026 全年
+  155,461 条）。现在 `from/until-created-date` 经 `venue_for` 并进 `quirks`，由
+  `CrossrefAdapter._enumerate_window` 与桶年取交集后拼进 `filter=`，请求量降到窗量级。
+
+**ssrn 不再做结果面收窄**（`_SKIP_RESULT_SIDE_WINDOW`）：其窗轴是 crossref 的
+`created`（登记时刻），而 `PaperStub.pub_date` 携的是 `published`（刊期）——拿刊期去
+比登记窗是**错轴比较**，会把"本周登记、刊期挂在去年"的 SSRN 记录整批丢掉。窗已在正确
+的轴上服务端下推，这一层既冗余又有害，故摘掉。crossref 两轴同为 `published`，保留。
+
+**`search_query` 仍下达不了，且没有本地补偿**（如实列账，非本卡范围）：OAI-PMH 无
+关键词查询能力，`enumerate_issue` 的收割面 = venue 的 `quirks.arxiv_set`（archive 级）
++ `arxiv_category`（客户端按 primary_category 过滤）。故 `sources.arxiv.query` 的字段级
+布尔式与 `categories` 的多分类**都不进请求**，本地也没有对应谓词兑现它们
+（`filter.PREDICATE_REGISTRY` 只有 `ssrn.topic_filter`，且谓词签名不带参数、无法承载
+订阅级表达式）——实际生效的只有 `filters:` 三谓词。9 个预置靠"`title_regex_any` 手工
+镜像 query 词族"这条**约定**兜底（llm-agents 的 T8 修复即为此），不是机制。此外
+`_watch_source_venues` 按 id 序取该源首个 venue（arxiv → `arxiv_cs_ai`），故订阅声明的
+其余分类实际收不到。两者均已就地列账并经 WARNING 响亮告知，修复须另开卡。
 
 ## 与既有 pipeline 队列的接缝（plan §7 风险②："T5 只派生任务不改 runner"）
 
@@ -117,6 +141,7 @@ CLI 层归 2。
 
 from __future__ import annotations
 
+import re
 from collections.abc import Callable, Iterable, Mapping, Sequence
 from dataclasses import dataclass, field, replace
 from datetime import UTC, date, datetime
@@ -139,6 +164,7 @@ from paper_crawler.subs.guard import build_overload_report, dedupe_against_libra
 from paper_crawler.subs.model import Subscription, load_subscriptions_dir
 from paper_crawler.subs.report import render_daily
 from paper_crawler.subs.types import (
+    DATE_WINDOW_PARAMS,
     CompiledPlan,
     FailureEvent,
     PlanStep,
@@ -240,13 +266,40 @@ class SourceFetcher(Protocol):
 # 值 = 该源 adapter 真正会读到的参数名；不在表内的参数进不了真实请求 → 每源一条
 # WARNING（响亮降级，不静默丢弃）。表按源穷举而非缺省放行：新增源时必须显式回答
 # "它的编译产物能不能下达"，忘了填就会被 `test_subs_watch` 的集合等值自断言抓住。
+#
+# 日期窗那几项从 `DATE_WINDOW_PARAMS` **反向导出**而不逐字重抄（同 `compile.
+# _DATE_WINDOW_NAMES` 的守法）：槽位名只有一份权威，改了名不会在这里留下一个悄悄
+# 变成"下达不了"的旧名。
 _DELIVERABLE_PARAMS: dict[str, frozenset[str]] = {
-    "crossref": frozenset({"issn"}),  # → identifiers.issn（`_enum_key_of` 读它）
+    # issn → identifiers.issn（`_enum_key_of` 读它）；日窗 → quirks（`_enumerate_window`）
+    "crossref": frozenset({"issn", *DATE_WINDOW_PARAMS["crossref"]}),
     "nber": frozenset({"program"}),  # → NberRssFetcher 直接消费（feed 路由）
-    "ssrn": frozenset(),  # 聚合源无下推面（design/09 §3），本就无参数可下达
-    "arxiv": frozenset(),  # adapter 是 OAI 按月桶枚举，无 search_query 接缝
+    # 选择器无下推面（design/09 §3），但日窗经 quirks 进内部 crossref 的 filter=（F7）
+    "ssrn": frozenset(DATE_WINDOW_PARAMS["ssrn"]),
+    # OAI-PMH 无关键词查询能力 → search_query 下达不了（模块 docstring 末段列账）；
+    # 日窗不走 params 而走 `SourceRequest.since`（月桶粒度），故不在本表内。
+    "arxiv": frozenset(),
     "openalex": frozenset(),  # capabilities 空集（EnrichmentSource），无 DISCOVER
     "s2": frozenset(),  # 同上
+}
+
+# 结果面窗收窄（`_within_since`）的**豁免源**：窗已在正确的轴上服务端下推，且本地能
+# 拿到的日期字段与窗轴不同——再收窄一道就是错轴比较（模块 docstring "日期窗"段）。
+# 当前只有 ssrn：窗轴 = crossref `created`（登记时刻），`PaperStub.pub_date` = `published`
+# （刊期）。crossref 两轴同名同义，不豁免（冗余但无害，多一道保险）。
+_SKIP_RESULT_SIDE_WINDOW: frozenset[str] = frozenset({"ssrn"})
+
+# 下达不了时 WARNING 的补语：**默认**说"其余条件由本地过滤兜底"，源专属处置写进下表。
+_FALLBACK_LOCAL_FILTER = "，其余条件由本地过滤兜底"
+
+_UNDELIVERABLE_FALLBACK: dict[str, str] = {
+    # arxiv 的 search_query 没有任何本地补偿谓词（模块 docstring 末段列账）——不许说
+    # "由本地过滤兜底"，那会让用户以为分类组与关键词布尔式仍在生效。
+    "arxiv": (
+        "；增量窗已按月桶下推（DISCOVER since=）+ 结果面按日收窄，但 search_query 的"
+        "分类组与关键词布尔式**无本地补偿谓词**，实际只有订阅 filters: 三谓词生效"
+        "——收窄请写进 filters.title_regex_any"
+    ),
 }
 
 # 参数名 → `VenueSpec.identifiers` 的键：adapter 真正读的字段通道（`quirks` 之外）。
@@ -297,6 +350,8 @@ class AdapterFetcher:
         stubs: list[PaperStub] = []
         for ref in adapter.discover_timeline(venue, request.since):
             stubs.extend(adapter.enumerate_issue(venue, ref))
+        if request.source in _SKIP_RESULT_SIDE_WINDOW:
+            return stubs
         return [stub for stub in stubs if _within_since(stub, request.since)]
 
     def _warn_undeliverable(self, request: SourceRequest) -> None:
@@ -304,18 +359,22 @@ class AdapterFetcher:
 
         不静默丢弃是本条的全部意义：早期版本注入真实 venue 时整份扔掉 `params`，日报
         看起来一切正常，实际枚举的是 venue 全量面（审查 P1-A#2）。
+
+        措辞按源如实：**只有真的有本地补偿时才说"由本地过滤兜底"**。arxiv 的
+        `search_query` 既没下推也没有对应谓词（`filter.PREDICATE_REGISTRY` 里没有它），
+        实际生效的只有订阅级 `filters:` 三谓词——早期版本对所有源统一写"其余条件由本地
+        过滤兜底"，那句话在 arxiv 上是假的（F7 列账）。
         """
         deliverable = _DELIVERABLE_PARAMS.get(request.source, frozenset())
         dropped = sorted({name for name, _ in request.params if name not in deliverable})
         if not dropped or request.source in self._warned_sources:
             return
         self._warned_sources.add(request.source)
-        window = f"；增量窗已在结果面按 since={request.since} 客户端收窄" if request.since else ""
         log_event(
             "WARNING",
             f"watch[{request.subscription}]: 编译产物参数 {dropped} 无法下达到源 "
             f"{request.source} 的请求面（该 adapter 的 DISCOVER/ENUMERATE 无对应接缝）"
-            f"{window}，其余条件由本地过滤兜底",
+            f"{_UNDELIVERABLE_FALLBACK.get(request.source, _FALLBACK_LOCAL_FILTER)}",
             stage="watch",
             venue=request.source,
         )
@@ -354,11 +413,14 @@ class AdapterFetcher:
 
 
 def _within_since(stub: PaperStub, since: str | None) -> bool:
-    """条目是否落在增量窗内（结果面收窄；模块 docstring"日期窗单独一档"段）。
+    """条目是否落在增量窗内（结果面收窄；模块 docstring"日期窗"段）。
 
     `since` 为空、或条目没有 `pub_date`（大量源不产该字段）→ **保留**：无法证明它在
     窗外时不丢，与 watermark 的"宁可重看不可漏看"同向；重复由对库去重与 identifier
     主键兜底。字符串比较即可——两端都是 ISO `YYYY-MM-DD[...]`，字典序 == 时间序。
+
+    调用前提是**同轴**：`stub.pub_date` 与该源窗参数须描述同一条时间轴。不同轴的源走
+    `_SKIP_RESULT_SIDE_WINDOW` 豁免（当前 ssrn），别在这里加"猜哪个轴"的分支。
     """
     if since is None or not stub.pub_date:
         return True
@@ -432,14 +494,45 @@ def _lower_bound_of(source: str, window: Sequence[tuple[str, str]]) -> str | Non
     """增量窗的下界日期（ISO `YYYY-MM-DD`）——`SourceRequest.since` 的取值来源。
 
     取窗里**第一个**参数的值并剥掉形态修饰：s2 的 `2026-07-19:`（单参数区间语法）剥
-    尾冒号；arxiv 的 `[202607190000 TO 202607262359]` 不是 ISO 日期，故 arxiv 恒 None
-    （其窗只以 `search_query` 内的范围项形态存在，adapter 从查询式自取）。无窗的源
-    （nber）同样 None。
+    尾冒号；arxiv 的 `[YYYYMMDDHHMM TO YYYYMMDDHHMM]` 闭区间取前一端的日期段（见
+    `_arxiv_lower_bound`）。无窗的源（nber）→ None。
+
+    **arxiv 曾恒返回 None**，理由是"其窗只以 `search_query` 内的范围项形态存在"——但
+    `search_query` 根本下达不到 OAI 通道（`_DELIVERABLE_PARAMS['arxiv']` 是空集），
+    净效果是 `discover_timeline(venue, since=None)` 从 venue 的 `quirks.inception`
+    （`1998-01`）起逐月枚举，被 arXiv 官方 OAI-PMH 以 `badArgument`/"start date too
+    early" 确定性拒绝——**任何含 arxiv 源的订阅在真实网络下恒失败**（T9 在线冒烟实证）。
+    窗的语义（"从哪天起"）与它的宿主形态无关，故此处一律解回 ISO 下界（F7）。
     """
-    if source == "arxiv" or not window:
+    if not window:
         return None
-    raw = window[0][1].rstrip(":")
-    return raw or None
+    raw = window[0][1]
+    if source == "arxiv":
+        return _arxiv_lower_bound(raw)
+    return raw.rstrip(":") or None
+
+
+# arxiv 窗值的形态（`watermark.DateUpperBound.window_params` 产出）：
+# `[YYYYMMDDHHMM TO YYYYMMDDHHMM]`（GMT，两端分别钉 0000/2359）。只取下界的日期段。
+_ARXIV_WINDOW_LOWER = re.compile(r"^\[(\d{4})(\d{2})(\d{2})\d{4} TO ")
+
+
+def _arxiv_lower_bound(raw: str) -> str:
+    """arxiv 窗值 → ISO 下界日期；形态不认识 → `CrawlerError(CONFIG)` 响亮拒绝。
+
+    不"认不出就退回 None"：那正是本卡修掉的那条静默路径（None → 1998 起点 → 服务端
+    拒绝），再留一个同形的回退口等于给同一个 bug 留后门。窗值来自本仓库自己的 T4 而非
+    网络，形态对不上就是编程错误——报错落在 `_run_source` 的 `except CrawlerError` 里，
+    只让 arxiv 这一个源记 `FailureEvent`，不会掀掉整轮 watch。
+    """
+    match = _ARXIV_WINDOW_LOWER.match(raw)
+    if match is None:
+        raise CrawlerError(
+            ErrorClass.CONFIG,
+            f"arxiv 增量窗值形态无法解析下界: {raw!r}"
+            "（期望 watermark.DateUpperBound 的 `[YYYYMMDDHHMM TO YYYYMMDDHHMM]`）",
+        )
+    return "-".join(match.groups())
 
 
 def _compose_arxiv(
