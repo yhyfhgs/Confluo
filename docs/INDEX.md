@@ -46,7 +46,7 @@
 | [design/02-plugin-framework.md](design/02-plugin-framework.md) | 可插拔框架（Adapter × VenueSpec） | implemented | 2026-07-21 |
 | [design/03-open-access-module.md](design/03-open-access-module.md) | Open-Access 获取模块 | approved | 2026-07-20 |
 | [design/04-auth-gated-module.md](design/04-auth-gated-module.md) | Auth-Gated 获取模块 | implemented | 2026-07-23 |
-| [design/05-pipeline.md](design/05-pipeline.md) | 六阶段 Pipeline 与任务系统 | implemented | 2026-07-21 |
+| [design/05-pipeline.md](design/05-pipeline.md) | 六阶段 Pipeline 与任务系统 | implemented | 2026-07-26 |
 | [design/06-data-model.md](design/06-data-model.md) | 数据模型与入库设计 | implemented | 2026-07-26 |
 | [design/07-auth-session.md](design/07-auth-session.md) | 认证与会话管理 | implemented | 2026-07-23 |
 | [design/08-venue-tracking.md](design/08-venue-tracking.md) | Venue 时间轴与年度追踪 | approved | 2026-07-20 |
