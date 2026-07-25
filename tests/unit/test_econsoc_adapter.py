@@ -120,6 +120,46 @@ def test_enumerate_historical_year_keeps_only_te_2006_records() -> None:
     assert all("from=" not in u for u in seen)
 
 
+# --- 当前年回看窗完整性缺口可观测性（F4 清账，S3-P2 审计，与 aaai_ojs:176 同构）------------------
+
+
+def test_enumerate_current_year_window_logs_completeness_warning(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # 首次收割该刊/年时，回看窗外（今年早些时候发表）的论文本次不会被覆盖——此前零
+    # 日志、纯静默；现须经 obslog 显式 WARNING 可观测（不改变加窗本身的既有增量语义）。
+    events: list[dict[str, object]] = []
+    monkeypatch.setattr(
+        "paper_crawler.adapters.econsoc.adapter.log_event",
+        lambda level, msg, **kw: events.append({"level": level, "msg": msg, **kw}),
+    )
+    list(
+        _adapter(_oai_handler()).enumerate_issue(
+            make_econsoc_teqe_venue("te"), _te_issue(2024, "20")
+        )
+    )
+    warnings = [e for e in events if "windowed to from=" in str(e["msg"])]
+    assert len(warnings) == 1
+    assert warnings[0]["level"] == "WARNING"
+    assert warnings[0]["lookback_days"] == 30
+
+
+def test_enumerate_historical_year_does_not_log_completeness_warning(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    events: list[dict[str, object]] = []
+    monkeypatch.setattr(
+        "paper_crawler.adapters.econsoc.adapter.log_event",
+        lambda level, msg, **kw: events.append({"level": level, "msg": msg, **kw}),
+    )
+    list(
+        _adapter(_oai_handler()).enumerate_issue(
+            make_econsoc_teqe_venue("te"), _te_issue(2006, "1")
+        )
+    )
+    assert [e for e in events if "windowed to from=" in str(e["msg"])] == []
+
+
 def test_enumerate_paper_stub_carries_meta() -> None:
     papers = list(
         _adapter(_oai_handler()).enumerate_issue(

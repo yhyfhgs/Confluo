@@ -131,9 +131,13 @@ def test_missing_token_element_returns_none() -> None:
     assert _page(_NO_TOKEN).resumption_token is None
 
 
-def test_no_list_records_yields_empty_page() -> None:
-    page = _page(_NO_LIST_RECORDS)
-    assert page == _oai.OaiListPage(records=(), resumption_token=None, skipped_tombstones=0)
+def test_no_list_records_and_no_error_is_malformed_response_not_empty_page() -> None:
+    # F4 清账（S1 审计"OAI 空信封"）：响应既无 <error> 也无 <ListRecords>（如误配成
+    # Identify 端点响应体）此前静默产空页，与合法 noRecordsMatch 空态不可区分——现响亮
+    # PARSE。见 test_no_records_match_is_legal_empty_state 对照合法空态仍不受影响。
+    with pytest.raises(CrawlerError) as exc:
+        _page(_NO_LIST_RECORDS)
+    assert exc.value.error_class is ErrorClass.PARSE
 
 
 def test_body_layer_parse_error_propagates_not_swallowed_as_tombstone() -> None:

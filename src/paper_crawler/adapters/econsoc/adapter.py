@@ -191,12 +191,31 @@ class EconsocAdapter(AdapterBase):
 
         目标/窗口在此**急切**求值（非法 issue 早失败为 CONFIG）；翻页与网络在返回的生成器
         惰性执行。当前刊（volume_map 最大年）加 `from=<今日−回看天数>` datestamp 窗做增量，
-        历史刊无窗全量收割；去重由下游 `identifier('doi')` 主键天然保证（§4）。
+        历史刊无窗全量收割；去重由下游 `identifier('doi')` 主键天然保证（§4）。**完整性
+        缺口响亮化**（F4 清账，S3-P2 审计，与 aaai_ojs 同构）：加窗时经 obslog 显式
+        WARNING——若这是该刊/年**首次**收割，窗口外（今年早些时候发表）的论文本次不会
+        被收割覆盖，须等年份滚出为历史年后由无窗历史收割补齐、或手动跑一次无窗全量
+        收割；adapter 层无状态无法判定"是否首次"，故每次加窗都记录，交人工据此判断——
+        此前该缺口零日志、纯静默，仅测试断言 URL 含 `from=`，未触及语义完整性。
         """
         year = _issue_year(issue, venue)
         code = _ojs_code(venue)
         oai_base = _oai_endpoint(venue, code)
         frm = _lookback_from() if year == max(_volume_map(venue)) else None
+        if frm is not None:
+            log_event(
+                "WARNING",
+                f"econsoc {venue.id} {issue.label}: current-year harvest windowed to "
+                f"from={frm} (last {_LOOKBACK_DAYS}d only) — if this is the first-ever "
+                f"harvest of this venue/year, papers published earlier in {year} are NOT "
+                "covered by this run and will only be backfilled once the year rolls "
+                "into history (window-less) or via a manual full re-harvest",
+                venue=venue.id,
+                stage="enumerate",
+                bucket=issue.label,
+                lookback_days=_LOOKBACK_DAYS,
+                lookback_from=frm,
+            )
         url = _oai_list_url(oai_base, frm)
         return self._enumerate_pages(venue, issue, code, year, oai_base, url)
 

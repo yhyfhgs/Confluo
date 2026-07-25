@@ -47,6 +47,7 @@ from paper_crawler.adapter import AdapterBase, AdapterFamily
 from paper_crawler.adapters.pmlr import parse
 from paper_crawler.errors import CrawlerError, ErrorClass
 from paper_crawler.http import HttpClient
+from paper_crawler.obslog import log_event
 from paper_crawler.types import (
     AssetKind,
     AssetPlan,
@@ -163,7 +164,14 @@ class PmlrAdapter(AdapterBase):
     def enumerate_issue(self, venue: VenueSpec, issue: IssueRef) -> Iterable[PaperStub]:
         """单请求卷级抓取（pmlr.md §3.2）：HTML>0 单请求信任；HTML=0 时抓 bib 消歧。
 
-        - HTML div 数 >0：不抓 bib，直接产出（常态单请求）。
+        - HTML div 数 >0：不抓 bib，直接产出（常态单请求）。**全卷 0 个 pdf_url 时响亮
+          WARNING**（F4 清账，S1 审计"链接正则对标记漂移静默退化为 0 资产"）：单篇缺
+          `[Download PDF]` 链接容忍为 None（非错误，见 `resolve_assets` docstring），
+          但 PMLR 每篇必有 PDF——若解析出的**全部**论文都缺 pdf_url，大概率是
+          `_LINK_RE`（parse.py）对该卷 markup 漂移（如属性顺序/引号风格变化）判其为
+          "Download PDF" 锚文本全体失配，而非恰好全卷都没有 PDF；此前零日志、纯静默
+          退化为整卷 0 资产，现经 obslog 显式 WARNING 可观测（不改变"单篇缺失非错误"
+          的既有设计，故不升级为异常——只加可观测性）。
         - HTML div 数 ==0 且 bib entry 数 ==0：**合法空卷**，正常完成、产 0 stub
           （非错误——占位/未上传完的卷）。
         - HTML div 数 ==0 且 bib entry 数 >0：HTML 解析器在非空卷读出 0，判定
@@ -175,6 +183,20 @@ class PmlrAdapter(AdapterBase):
         data = self._client().get_bytes(f"{SITE_ROOT}{_VOLUME_PATH_TMPL.format(volume=volume)}")
         papers = parse.parse_volume_index(data)
         if papers:
+            if all(p.pdf_url is None for p in papers):
+                log_event(
+                    "WARNING",
+                    f"pmlr v{volume}: parsed {len(papers)} paper(s) but none have a "
+                    "pdf_url — PMLR volumes normally have a PDF for every paper; this "
+                    "likely means the [Download PDF] link markup drifted and the "
+                    "extraction regex stopped matching for the whole volume (not that "
+                    "every paper legitimately lacks a PDF)",
+                    venue=venue.id,
+                    stage="enumerate",
+                    domain=self.domains[0],
+                    volume=volume,
+                    paper_count=len(papers),
+                )
             return [parse.to_paper_stub(p, volume=volume, year=issue.year) for p in papers]
 
         bib_count = self._bib_entry_count(volume)

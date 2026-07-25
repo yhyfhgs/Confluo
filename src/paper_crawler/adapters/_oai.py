@@ -129,10 +129,24 @@ def _iter_records[T](
     墓碑（``status="deleted"`` 或整条缺 ``<metadata>``）计入跳过数而非静默丢弃；存在
     ``<metadata>`` 的记录交 ``record_parser``——"``<metadata>`` 存在但缺本 schema 体
     元素"由 ``record_parser`` 判 `PARSE`（非墓碑）。调用前须已过 `raise_if_oai_error`。
+
+    调用到这里时若顶层原本有 `<error>`，必为 `noRecordsMatch`（其余 code 已在
+    `raise_if_oai_error` 响亮抛出）——这类响应体本就没有 `<ListRecords>`（错误码响应
+    的合法形态），缺 `<ListRecords>` 是**预期之内**的合法空窗口/空桶，故仍返回空页。
+    但若 `<error>` 与 `<ListRecords>` **两者皆无**（如误配成 `Identify` 端点响应体、
+    代理返回了非预期页面等），说明响应形态本身不合规——**不是**合法空页，静默
+    `return [], 0` 会把这类结构性异常伪装成"本页恰好没有记录"（S1 审计"OAI 空信封"
+    发现），故改为响亮 `PARSE`。
     """
     list_records = root.find(oai("ListRecords"))
     if list_records is None:
-        return [], 0
+        if root.find(oai("error")) is not None:
+            return [], 0  # 已确认是 noRecordsMatch 吸收后的合法空态（见上）
+        raise CrawlerError(
+            ErrorClass.PARSE,
+            "OAI-PMH ListRecords response has neither <error> nor <ListRecords> "
+            "(malformed/unexpected response shape, not a legitimate empty page)",
+        )
     records: list[T] = []
     skipped = 0
     for record in list_records.findall(oai("record")):

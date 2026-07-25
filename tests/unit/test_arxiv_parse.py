@@ -574,8 +574,12 @@ def test_parse_oai_list_records_malformed_xml_is_parse_error() -> None:
     assert exc_info.value.error_class is ErrorClass.PARSE
 
 
-def test_parse_oai_list_records_neither_error_nor_list_records_yields_nothing() -> None:
-    assert list(parse_oai_list_records(OAI_NEITHER_ERROR_NOR_LIST_RECORDS)) == []
+def test_parse_oai_list_records_neither_error_nor_list_records_is_parse_error() -> None:
+    # F4 清账（S1 审计"OAI 空信封"，_oai.py 共享核修复）：既无 <error> 也无 <ListRecords>
+    # 此前静默 yield 空序列，与合法 noRecordsMatch 空态不可区分——现响亮 PARSE。
+    with pytest.raises(CrawlerError) as exc_info:
+        list(parse_oai_list_records(OAI_NEITHER_ERROR_NOR_LIST_RECORDS))
+    assert exc_info.value.error_class is ErrorClass.PARSE
 
 
 def test_parse_oai_list_records_minimal_record_has_empty_optional_fields() -> None:
@@ -606,8 +610,11 @@ def test_oai_resumption_token_missing_element_returns_none() -> None:
     assert oai_resumption_token(OAI_LIST_RECORDS_NO_TOKEN_ELEMENT) is None
 
 
-def test_oai_resumption_token_neither_error_nor_list_records_returns_none() -> None:
-    assert oai_resumption_token(OAI_NEITHER_ERROR_NOR_LIST_RECORDS) is None
+def test_oai_resumption_token_neither_error_nor_list_records_is_parse_error() -> None:
+    # 同上：thin wrapper 经 parse_oai_page 传导同一响亮 PARSE，不再返回 None 掩盖异常形态。
+    with pytest.raises(CrawlerError) as exc_info:
+        oai_resumption_token(OAI_NEITHER_ERROR_NOR_LIST_RECORDS)
+    assert exc_info.value.error_class is ErrorClass.PARSE
 
 
 def test_oai_resumption_token_raises_same_as_parser_on_error_response() -> None:

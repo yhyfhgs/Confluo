@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import json
 from collections.abc import Callable
+from urllib.parse import parse_qs, urlsplit
 
 import httpx
 import pytest
@@ -274,6 +275,125 @@ def test_direct_replies_rule_selects_accept_meta_reviews() -> None:
     stubs = list(rule.iter_accepted(_ctx(fetch, venueid="ICLR.cc/2019/Conference", year=2019)))
     assert _forums(stubs) == ["m_accept"]  # 缺陷 C-D：由 0 修为 1
     assert dict(stubs[0].meta).get(parse.META_PDF_PATH)
+
+
+# --- 多页翻页专测（F4 清账，S1 审计"2018/2019 规则多页翻页无专属测试"）-----------------------
+#
+# 上面两条端到端用例的 fixture 均为「count == 单页条数」的单页响应——`_iter_raw_pages` 的
+# offset 翻页循环从未在 2018/2019 规则下被真正跑过两轮。这里用 count 大于单页条数的
+# 构造响应，逐 offset 分派不同页体，钉死跨页聚合（决定帖 `accepted_forums` 的 `|=` 累积、
+# 提交帖 join 覆盖全部页）确实正确，而不仅仅是"资源恰好一页装得下"的偶然巧合。
+
+
+def _offset_of(url: str) -> int:
+    return int(parse_qs(urlsplit(url).query).get("offset", ["0"])[0])
+
+
+def test_decision_invitation_rule_aggregates_accepted_forums_across_multiple_pages() -> None:
+    """2018 规则：决定帖查询与提交帖查询**各自**跨两页，聚合/join 结果与单页时逐字一致。"""
+    decision_pages = {
+        0: _bytes(
+            {
+                "notes": [
+                    {"id": "d1", "forum": "sub_a", "content": {"decision": "Accept (Oral)"}},
+                    {"id": "d2", "forum": "sub_b", "content": {"decision": "Reject"}},
+                ],
+                "count": 4,
+            }
+        ),
+        2: _bytes(
+            {
+                "notes": [
+                    {"id": "d3", "forum": "sub_c", "content": {"decision": "Accept (Poster)"}},
+                    {"id": "d4", "forum": "sub_d", "content": {"decision": "Reject"}},
+                ],
+                "count": 4,
+            }
+        ),
+    }
+    submission_pages = {
+        0: _bytes(
+            {
+                "notes": [
+                    {"id": "sub_a", "forum": "sub_a", "content": {"title": "A"}},
+                    {"id": "sub_b", "forum": "sub_b", "content": {"title": "B"}},
+                ],
+                "count": 4,
+            }
+        ),
+        2: _bytes(
+            {
+                "notes": [
+                    {"id": "sub_c", "forum": "sub_c", "content": {"title": "C"}},
+                    {"id": "sub_d", "forum": "sub_d", "content": {"title": "D"}},
+                ],
+                "count": 4,
+            }
+        ),
+    }
+
+    def fetch(url: str) -> bytes:
+        offset = _offset_of(url)
+        if "Acceptance_Decision" in url:
+            return decision_pages[offset]
+        if "Blind_Submission" in url:
+            return submission_pages[offset]
+        raise AssertionError(f"unexpected url in test fetch: {url}")
+
+    rule = acceptance.rule_for(make_openreview_venue(), 2018)
+    stubs = list(rule.iter_accepted(_ctx(fetch, venueid="ICLR.cc/2018/Conference", year=2018)))
+    # sub_a（页1接收）+ sub_c（页2接收）跨两页聚合命中；sub_b/sub_d（各自页内 Reject）排除。
+    assert _forums(stubs) == ["sub_a", "sub_c"]
+
+
+def test_direct_replies_rule_aggregates_accepted_across_multiple_submission_pages() -> None:
+    """2019 规则：单一 submission+directReplies 查询跨两页，接收判定逐页独立生效。"""
+
+    def _submission(forum: str, *, recommendation: str | None) -> dict[str, object]:
+        replies: list[dict[str, object]] = []
+        if recommendation is not None:
+            replies.append(
+                {
+                    "id": f"r-{forum}",
+                    "invitation": f"x/-/Paper/{forum}/Meta_Review",
+                    "content": {"recommendation": recommendation},
+                }
+            )
+        return {
+            "id": forum,
+            "forum": forum,
+            "content": {"title": forum},
+            "details": {"directReplies": replies},
+        }
+
+    pages = {
+        0: _bytes(
+            {
+                "notes": [
+                    _submission("s1", recommendation="Accept (Poster)"),
+                    _submission("s2", recommendation="Reject"),
+                ],
+                "count": 4,
+            }
+        ),
+        2: _bytes(
+            {
+                "notes": [
+                    _submission("s3", recommendation="Accept (Oral)"),
+                    _submission("s4", recommendation=None),  # 无 Meta_Review 回帖 → 非接收
+                ],
+                "count": 4,
+            }
+        ),
+    }
+
+    def fetch(url: str) -> bytes:
+        return pages[_offset_of(url)]
+
+    rule = acceptance.rule_for(make_openreview_venue(), 2019)
+    stubs = list(rule.iter_accepted(_ctx(fetch, venueid="ICLR.cc/2019/Conference", year=2019)))
+    # s1（页1接收）+ s3（页2接收）跨两页聚合命中；s2/s4 排除。
+    assert _forums(stubs) == ["s1", "s3"]
 
 
 def test_venueid_rule_matches_default_behavior() -> None:

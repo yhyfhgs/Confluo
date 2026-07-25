@@ -285,6 +285,78 @@ def test_enumerate_dual_hosted_pdf_urls_pass_through_domain_agnostic() -> None:
     assert pdf_urls[1].startswith("https://proceedings.mlr.press/")
 
 
+# --- 全卷 pdf_url 缺失的可观测性（F4 清账，S1 审计"链接正则对标记漂移静默退化为 0 资产"）------
+
+
+def _paper_div_without_pdf_link(slug: str, *, title: str = "T") -> str:
+    """模拟 `[Download PDF]` 锚文本漂移：abs 链接仍在（slug 仍可解析），但没有任何锚
+    文本恰好等于 "Download PDF"（如站点改渲染成纯 "PDF"）——`_extract_link_href` 找不到
+    该文本，pdf_url 解析为 None（单篇层面这是既有设计容忍的非错误态）。
+    """
+    return (
+        '<div class="paper">'
+        f'<p class="title">{title}</p>'
+        '<p class="details"><span class="authors">A Author</span><br>PMLR 235:1-10, 2024.</p>'
+        f'<p class="links">[<a href="v235/{slug}.html">abs</a>]'
+        f'[<a href="https://proceedings.mlr.press/v235/{slug}/{slug}.pdf">PDF</a>]</p>'
+        "</div>"
+    )
+
+
+def test_enumerate_all_papers_missing_pdf_url_logs_warning_for_markup_drift(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # 单篇缺 pdf_url 是既有设计容忍的非错误态（resolve_assets 产 0 pdf plan）；但 PMLR
+    # 每篇必有 PDF——若解析出的论文全部缺 pdf_url，大概率是链接正则对该卷 markup 漂移
+    # 判其失配（而非全卷恰好都没有 PDF）。此前零日志、纯静默退化为整卷 0 资产；现须
+    # 经 obslog 显式 WARNING 可观测。
+    events: list[dict[str, object]] = []
+    monkeypatch.setattr(
+        "paper_crawler.adapters.pmlr.adapter.log_event",
+        lambda level, msg, **kw: events.append({"level": level, "msg": msg, **kw}),
+    )
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(
+            200,
+            content=_volume_page(
+                _paper_div_without_pdf_link("x24a"), _paper_div_without_pdf_link("y24b")
+            ),
+        )
+
+    stubs = list(_adapter(handler).enumerate_issue(make_pmlr_venue(), _issue()))
+    assert len(stubs) == 2  # 解析仍成功产出 stub（title/authors/abs 均不受影响）
+    assert all("pdf_url" not in dict(s.meta) for s in stubs)  # 确认漂移场景确实全 None
+
+    warnings = [e for e in events if "none have a pdf_url" in str(e["msg"])]
+    assert len(warnings) == 1
+    assert warnings[0]["level"] == "WARNING"
+    assert warnings[0]["paper_count"] == 2
+    assert warnings[0]["volume"] == "235"
+
+
+def test_enumerate_partial_pdf_url_coverage_does_not_log_drift_warning(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # 反证：卷内至少一篇仍有 pdf_url（漂移只影响部分论文，或该论文本身就是孤例缺失）
+    # 时不触发"全卷疑似漂移"告警——保持既有"单篇缺失非错误"的宽松判定不变。
+    events: list[dict[str, object]] = []
+    monkeypatch.setattr(
+        "paper_crawler.adapters.pmlr.adapter.log_event",
+        lambda level, msg, **kw: events.append({"level": level, "msg": msg, **kw}),
+    )
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(
+            200,
+            content=_volume_page(_paper_div("x24a"), _paper_div_without_pdf_link("y24b")),
+        )
+
+    stubs = list(_adapter(handler).enumerate_issue(make_pmlr_venue(), _issue()))
+    assert len(stubs) == 2
+    assert [e for e in events if "none have a pdf_url" in str(e["msg"])] == []
+
+
 # --- fetch（流式）------------------------------------------------------------------------------
 
 
