@@ -2,7 +2,7 @@
 title: 项目进度跟踪
 status: approved
 owner: fable5
-updated: 2026-07-23
+updated: 2026-07-24
 ---
 
 # 项目进度
@@ -10,15 +10,14 @@ updated: 2026-07-23
 > 本文件是"当前状态"的单一事实来源。每次工作 session 结束时更新。
 > 历史细节见 `docs/logs/`；阶段总结见 `docs/reports/`。
 
-## 当前快照（2026-07-23）
+## 当前快照（2026-07-24）
 
-- **当前 Phase**：4（认证框架 + 出版社 adapters）**T8 收尾中**（DoD 离线口径达成，待 controller 终验签署 + `tag phase-4`）——AuthProvider 四实现（APIKey/CookieSession/SSOFlow/EZProxy）+ AES-GCM 凭证库（D-023）+ `crawler auth login/status/logout` CLI + `ChallengeDetector` 四态判定器（纯防御，AC-0.2）；config 分层加载 + 敏感键护栏 + `crawler config show`（D-025）；三平台 adapter 落地（`elsevier_sd` API 档 429 熔断、`oup_silverchair` cookie/SSO 档 + QJE fulltext_source 收敛、`wiley` TDM 档双窗口限速）；pipeline OA-fallback 全链 + 健康门 + 日配额 + 冷却 + 工作时段窗（T5）；`crawler grab` 单篇命令。验收：[AC-4 离线汇总记录](../testing/records/2026-07-23-ac4-acceptance.md)（T7a draft，AC-4.2~4.6 **PASS（离线口径）**；AC-4.1 真实 key/token 冒烟按 D-018 分层归 T7b，不阻塞离线 DoD）；AC-0 系统性扫描见 [phase4-report](../reports/2026-07-23-phase4-report.md) §AC-0（五条全 PASS）。终态门禁 **2712 passed / 21 skipped / 98.84%**（21 skip 全为 contract 层能力缺口预期 skip，零凭证门控 skip 混入 offline 套件）。→ 下一 Phase：5（SSRN 与特殊源），检查单见报告 §Phase 5 开工检查单
-- **Phase 3 已完成**（2026-07-23，tag `phase-3` @ `35c79a6`）：合并引擎（AC-3.1/3.2/3.4）、verify 三类检出（AC-3.3）、五源 adapter、五刊 VenueSpec + AC-3.5 在线实跑双层 PASS。验收：[Phase 3 汇总记录](../testing/records/2026-07-23-phase3-acceptance.md)（最终签署：**达成**）；报告：[phase3-report](../reports/2026-07-23-phase3-report.md)。
-- **Phase 2 遗留 C-C/C-D 已修复**：C-C（大 venue pull 可用性——零网络 resolve 豁免限速闸 + `--limit` 前置圈选，D-022，`eeef820`/`7d3424d`）、C-D（openreview venueid 异构缺陷——2018/2019 逐年 accepted 规则，`8cc2a75`/`3b9e332`/`45c8250`）均已合并；openreview AC-2.1/2.2 在线层随之转 PASS（用户 token 已配置并建立自动刷新脚本）。Phase 2 报告检查单 #1（用户 token）与终检增补置顶 C-C/C-D 两项均已清零。
-- **待补验（不阻塞进行中状态，如实记录）**：S2 API key 未到（enrich/canary 在线层 SKIP 门控，D-021）；elsevier API key 未到（BLOCKER-1，AC-4.1 真实取回归 T7b）；wiley token 未到（在线层 SKIP 门控，D-024）；AC-3.1/3.2/3.3/3.4 尚无独立汇总验收记录文档（T8 Phase 3 残项，本次 Phase 4 收尾未处理，随 Phase 5 一并考虑）；D-019 锚点表 openalex 正锚点、s2 锚点仍 `[PENDING]`（需 key/credit）；`test_cli_canary.py` 断言列表遗漏 `oup_silverchair`/`wiley`（本次复核新发现，功能不受影响——二者无凭证时清洁 SKIP，同 openalex/s2 先例，仅断言列表与 `pyproject.toml` 一条注释文字滞后，详见模块状态表"canary"行与 phase4-report 检查单）。**aaai_ojs 全库 OAI 补跑已完成**（2026-07-23，Phase 2 检查单 #3 → Phase 3 报告 §6 检查单 #8 跨 3 Phase 清账：234/262 页/22352 条活记录，D-019 锚点表 8 行 `oai_count` 已回填，UNRESOLVED①③已闭合——详见 research/site-survey/aaai-ojs.md §11 与 design/adapters/aaai-ojs.md §10）；**新增待裁决项**：实测确认 Vol.24–32（2010–2018，9 个届）同构可收割，是否扩容 `volume_map` 纳入需主 agent 裁决（design/adapters/aaai-ojs.md §10 ★F）。
-- **总体进度**：Phase 0/1/2/3 = 100%；Phase 4 = **DoD 达成（离线口径），T8 收尾中**（待 controller 终验签署 + `tag phase-4`，遗留细项移交 Phase 5，见 phase4-report §Phase 5 开工检查单）。新 ADR：D-023/D-024/D-025。
-- **待用户执行**：①S2 API key 申请（`config.toml [auth.s2] api_key`，enrich/canary 在线层补验前提）；②Elsevier API key 申请（BLOCKER-1，`config.toml [auth.elsevier] api_key`，AC-4.1 真实 JFE 取回前提，外部依赖 1–2 周）；③Wiley TDM token 申请（自助 click-through，`config.toml [auth.wiley] token`）；④oup SSO/campus cookie 首登 runbook（T7b）；⑤`config.toml [identity].email` 补配（AC-3.5 验收记录 C5 延续，默认 home 缺 email 会掉出 Crossref polite pool）；⑥Kaggle key 状态复核（Phase 2 检查单 #2 残项，跨 3 个 Phase 未清）。
-- **阻塞**：无（BLOCKER-1 elsevier key 为外部依赖已计划内，不阻塞离线 DoD/tag）
+- **当前 Phase**：5（SSRN 与特殊经济学源）**已完成**（2026-07-24，tag `phase-5` @ `c577d6c`；controller 合并裁决判定**达成**——opus 独立全分支终审「放行附条件」，附条件 D-028 catalog 两处残留修正已随收尾链闭合，终审七项清单全 PASS）。8 卡 4 波次全交付：T1 crossref 两轴参数化枚举扩展（enum-key `issn` XOR `prefix` + date-field `published|created`，本 Phase 唯一动 implemented 冻结件、既有消费者零回归）；T3 `nber`（prefix 10.3386 枚举 + >18 月开放窗离线全文 + www/back 双域分桶）；T4 `ssrn`（prefix 10.2139 聚合元数据主路径、站点零接触，D-029 案 B 全文 defer Phase 6）；T5 `aea`（prefix 10.1257 八刊路由，全文域 CF deferred）；T6 `econsoc`（TE/QE OJS-OAI 自枚举 + ECMA 年代分段路由，D-028）+ wiley 10.3982 移除联动；T7 AC-5 正式化 + 离线汇总验收（[AC-5.1a/5.2/5.3/5.4 四条 PASS + 5.1b N/A defer Phase 6](../testing/records/2026-07-24-ac5-acceptance.md)，controller 终验 approved）；M1 在线批（SSRN OpenAlex 覆盖率 census 86.9% 实测 + aea 4 刊 ISSN 升 [LIVE] + ssrn healthcheck golden 双源确认转正）；T8 收尾。门禁 2721→**3056 passed / 28 skipped**（+335 测试），coverage **98.78%**，EXIT=0；adapter **16→20**（+4）、venue **45→58**（+13，`venues/econ/`）。新 ADR：D-027/D-028/D-029。报告：[phase5-report](../reports/2026-07-24-phase5-report.md)。→ 下一 Phase：6（订阅与搜索）**待用户令**，开工检查单见 phase5-report §6（10 项）+ 审计处置建议（见下条）
+- **2026-07-24 终审后独立全库审计**（tag 后当日执行，8 subagent：4 Opus 4.8 深审 + 4 Sonnet 5 面审，全程只读零改动）：**八域全部「附条件达标」，零 P0**。AC-0 五条红线复核全 PASS；28-skip 台账逐行核对干净（凭证 skip 零混入，三层网络隔离确认）；ssrn 零接触/D-028 三方一致性代码层成立；openreview C-D 修复与 pmlr/cvf 两历史 HIGH 修复确认真修。发现 **P1×3**（AC-3.4 注入顺序无关静默破坏[fail-safe 方向，隔离脚本实测复现]、config 畸形 TOML 逃逸 CONFIG 错误分类、aaai_ojs 历史卷冷回填全库重扫）+ **P2×12** + P3 若干，全数登记 [post-phase5-audit](../reports/2026-07-24-post-phase5-audit.md) §3/§6 并纳入 Phase 6 开工检查单，**无需回滚或紧急修复**；门禁基线审计当日亲跑复现 3056/28/98.78%/EXIT=0
+- **待补验（不阻塞，如实记录）**：S2 API key 未到（enrich/canary 在线层 SKIP 门控，D-021）；elsevier API key 未到（BLOCKER-1，AC-4.1 真实取回归 T7b，跨 Phase 3/4/5 三阶段）；wiley TDM token 未到（在线层 SKIP 门控，D-024，到位后执行 wiley_runbook——已含 ECMA DOI 选取注记）；D-019 锚点表 openalex 正锚点、s2 锚点仍 `[PENDING]`（需 key/credit）；`test_cli_canary.py` 断言列表滞后项**易主**——oup_silverchair/wiley 已补齐（Phase 4 遗留清账，审计确认），但 Phase 5 新增 `aea` 又漏（19/20 列举 vs 注释「现 20 个」自相矛盾，「注册了却没验证」反模式第三次复现，审计 O4-P2，建议补集合等值自断言根治）；aaai `volume_map` 扩容纳入 2010–2018 九届仍待主 agent 裁决（★F）——**审计新增前置**：扩容前须先修历史卷冷回填全库重扫（审计 S1-P1，否则扩容将放大重扫成本）；econsoc 在线闭合批 [UNRESOLVED①②③④] 与 aea `aeri`/`jel` ISSN 核实见 phase5-report 检查单 #5/#9
+- **总体进度**：Phase 0/1/2/3/4/5 = 100%（tag `phase-0`…`phase-5` 全落）；Phase 6（订阅与搜索）planned **待用户令**；Phase 7（全文抽取与库增强）planned。新 ADR（Phase 5）：D-027/D-028/D-029
+- **待用户执行**：①S2 API key 申请（`config.toml [auth.s2] api_key`，enrich/canary 在线层补验前提）；②Elsevier API key 申请（BLOCKER-1，`config.toml [auth.elsevier] api_key`，AC-4.1 真实 JFE 取回前提，外部依赖）；③Wiley TDM token 申请（自助 click-through，`config.toml [auth.wiley] token`）；④oup SSO/campus cookie 首登 runbook（T7b）；⑤`config.toml [identity].email` 补配（默认 home 缺 email 会掉出 Crossref polite pool）；⑥Kaggle key 状态复核（Phase 2 检查单 #2 残项，跨 4 个 Phase 未清）；⑦Phase 6 开工令（届时按 phase5-report §6 检查单 + [post-phase5-audit §6](../reports/2026-07-24-post-phase5-audit.md) 处置建议开工）
+- **阻塞**：无（elsevier key 为计划内外部依赖；审计发现均非阻断、已全数登记）
 
 ## Phase 进度板
 
@@ -29,7 +28,7 @@ updated: 2026-07-23
 | 2 Open-Access MVP | **done** | 100% | 报告：reports/2026-07-22-phase2-report.md；tag phase-2；openreview 在线层已于 Phase 3 期间补验 PASS（用户 token 到位，见下） |
 | 3 聚合元数据层 | **done** | 100%（tag phase-3） | 全部任务卡合并+汇总验收最终签署（AC-3 全 PASS/AC-0 全 PASS/预算零超支）；验收：testing/records/2026-07-23-phase3-acceptance.md |
 | 4 认证框架+出版社 | **done**（tag `phase-4`） | 100% | 全部任务卡合并；AC-4.2~4.6 离线 DoD PASS（T7a）+ controller 终验签署；AC-4.1 真实凭证归 T7b（D-018，不阻塞，跨 Phase 遗留见下）；验收：testing/records/2026-07-23-ac4-acceptance.md；报告：reports/2026-07-23-phase4-report.md |
-| 5 SSRN 与特殊源 | **T8 收尾中** | ~100%（8 卡全交付，DoD 离线口径达成，待 opus 全分支终审+tag） | 全部任务卡合并（T1 crossref 两轴扩展/T3 nber/T4 ssrn/T5 aea/T6 econsoc+wiley 联动/T7 AC-5 正式化/M1 census）；AC-5 四条 PASS + 5.1b N/A defer（T7 draft→controller 终验 approved）；4 新 adapter（16→20）+ 13 新 venue（45→58）；验收：testing/records/2026-07-24-ac5-acceptance.md；报告：reports/2026-07-24-phase5-report.md（判定：待终审） |
+| 5 SSRN 与特殊源 | **done**（tag `phase-5` @ `c577d6c`） | 100% | 8 卡 4 波次全交付（T1 crossref 两轴扩展/T3 nber/T4 ssrn/T5 aea/T6 econsoc+wiley 联动/T7 AC-5 正式化/M1 census/T8 收尾）；AC-5 四条 PASS + 5.1b N/A defer Phase 6；4 新 adapter（16→20）+ 13 新 venue（45→58）；门禁 3056/28/98.78%；验收：testing/records/2026-07-24-ac5-acceptance.md；报告：reports/2026-07-24-phase5-report.md（终审判定：**达成**）；终审后独立全库审计：reports/2026-07-24-post-phase5-audit.md（八域附条件达标、零 P0，发现入 Phase 6 检查单） |
 | 6 订阅与搜索 | planned | 0% | |
 | 7 全文抽取与库增强 | planned | 0% | |
 
@@ -53,6 +52,15 @@ updated: 2026-07-23
 > miss）**，`make check` exit 0（21 skip 全为 `test_adapter_contract.py` 能力缺口
 > 预期 skip：8 例 openalex/s2 duck-typed enrich 不参与协议 + 13 例各 adapter 缺
 > DISCOVER/ENUMERATE/RESOLVE/FETCH 之一，零凭证门控 skip 混入本离线套件）。
+>
+> **2026-07-24 三次刷新**（Phase 5 收尾 + 终审后独立全库审计）：新增 Phase 5 四
+> adapter 行（`ssrn`/`nber`/`aea`/`econsoc`，16→20）；`crossref` 行随 T1 两轴扩展
+> 刷新（覆盖率回升 99%，`lookup()` 已补直测）；`canary` 行 adapter 计数 16→20。
+> 覆盖率数字取自审计基线亲跑（`make check`：**3056 passed / 28 skipped，TOTAL
+> 98.78%**，9154 stmts/69 miss，EXIT=0；28 skip 全为 contract 能力缺口型，审计 S4
+> 逐行核对台账干净）。审计发现的模块级问题以
+> [post-phase5-audit](../reports/2026-07-24-post-phase5-audit.md) §3 为权威台账，
+> 本表备注仅摘 P1/P2 级要点。
 
 ### 核心模块
 
@@ -65,7 +73,7 @@ updated: 2026-07-23
 | storage（db / migrations / repo） | stable | 100% | schema v2（`0002_title_norm` 迁移，Phase 3 新增）；`db.py`/`repo.py` 均 100% |
 | pipeline（fetchio / report / runner / stages） | stable | 96–100% | `runner.py` 96%/`stages.py` 97%/`fetchio.py`/`report.py` 100%；Phase 4 新增 OA-fallback 全链（no_entitlement→unpaywall 派生+直取落盘）、批级健康门（`_BatchGate`）、日配额对账、挑战冷却持久化、工作时段窗（T5，auth-framework §8 全接线） |
 | verify（对账三类检出） | stable | 100% | AC-1.3/AC-3.3 口径；canonical dump 辅助另见 `tests/helpers/dbdump.py`（测试代码，不入本覆盖率统计） |
-| canary（healthcheck 三态分类 + `--record`） | stable | 100% | 16 个已注册 adapter（Phase 4 新增 `elsevier_sd`[stub 转真实]/`oup_silverchair`/`wiley`）；**本次复核新发现**：`test_cli_canary.py::test_canary_without_filter_checks_all_registered_adapters` 断言列表（第 146–161 行）与内联注释仍写"现 14 个"，未随 T4/T-wiley 合并补上 `oup_silverchair`/`wiley` 两个新 adapter_id——功能不受影响（二者 `healthcheck()` 无凭证时清洁 `raise NotImplementedError`→SKIP，同 openalex/s2 先例，故测试仍绿），纯断言列表滞后，同 Phase 3 检查单 #15d 模式（同类问题第二次出现）；另 `pyproject.toml:28` 注释仍称"`stubs（elsevier_sd）`"，T3 已转真实 entry point（见 44 行），注释文字未跟上——均登记 Phase 5 检查单，不阻塞 tag |
+| canary（healthcheck 三态分类 + `--record`） | stable | 100% | **20 个已注册 adapter**（Phase 5 新增 `ssrn`/`nber`/`aea`/`econsoc`）；Phase 4 记录的断言列表滞后（缺 `oup_silverchair`/`wiley`）**已清账**（审计 O4 确认），但 Phase 5 新增 `aea` 又漏——`test_cli_canary.py:159-179` 列举 19 个 vs 同函数注释「现 20 个」自相矛盾，「注册了却没验证」反模式**第三次复现**（审计 O4-P2）；功能不受影响（aea `healthcheck()` 结构性 `NotImplementedError`→SKIP，同 openalex/s2 先例，测试仍绿），建议补集合等值自断言根治，登记 Phase 6 检查单 |
 | ids + merge（Phase 3 归并层） | stable | 100% | `ids.py` DOI/title 归一；`merge.py` `MergeEngine`（强合并/字段优先级收敛/弱信号候审/跨 paper 冲突裁决，AC-3.1/3.2/3.4） |
 | cli（命令层） | stable | 95% | `pull`/`enrich`/`oa-report`/`canary`/`verify`/`venues`/`auth login,status,logout`/`grab`（Phase 4 新增单篇精取，T5）/`config show`（D-025）等；退出码 0/1/2/3 契约 |
 
@@ -81,7 +89,7 @@ updated: 2026-07-23
 | browser.py（Playwright 薄封装） | stable | 100% | 首登有头启动/storage_state 导出/浏览器上下文下载；`[auth-browser]` extra 惰性 import，本 Phase 未触真实浏览器（`PC_BROWSER_TESTS` 手动门） |
 | cli.py（`auth login/status/logout`） | stable | 100% | 薄接线，纯逻辑在 manager/store |
 
-### Adapter（16 个已注册，`crawler venues lint`/`load_adapters()` 口径；stub 清零）
+### Adapter（20 个已注册，`crawler venues lint`/`load_adapters()` 口径；stub 清零）
 
 | 模块 | 状态 | 覆盖 | 备注 |
 |---|---|---|---|
@@ -94,14 +102,18 @@ updated: 2026-07-23
 | cvf（open_access） | stable | 99–100% | flat / day-landing 双形态；`parse.py` 99% |
 | aaai_ojs（open_access） | stable | 99% | OAI 收割；全库补跑已完成（2026-07-23，见"待补验"新增待裁决项：2010–2018 覆盖扩容） |
 | neurips_proceedings（open_access） | stable | 100% | legacy/modern 后缀边界 |
-| crossref（aggregator，Phase 3 T3） | stable | 92–95% | facet 逐年 + cursor 深翻断点续拉（检查单 #15a 补端到端窗口重建去重用例）；healthcheck golden 已转正；**本次复核覆盖率较 Phase 3 报告的 98–100% 下降**——`grab`（T5）新用的 `lookup()` 方法（`adapter.py:226-241`）与 healthcheck `[PENDING golden]` 分支（`:265`）未被任何单测直接命中（`test_cli_grab.py` 走 mock 而非真实 `CrossrefAdapter.lookup`），非回归、纯增量代码缺直接单测，不阻塞（模块整体仍 stable，聚合覆盖率门禁 ≥80% 达标） |
+| crossref（aggregator，Phase 3 T3；Phase 5 T1 两轴扩展） | stable | 99% | facet 逐年 + cursor 深翻断点续拉；**T1 参数化枚举扩展**（enum-key `issn` XOR `prefix` + date-field `published|created`，nber/aea/econsoc-ECMA/ssrn 四消费方，既有 by-ISSN venue 零回归——本 Phase 唯一动 implemented 冻结件的改动）；Phase 4 记录的 `lookup()` 无直测**已清账**（审计 S2 确认有直接单测，覆盖率回升）；healthcheck golden 已转正；审计 P3 备忘：cursor 深翻无「游标不推进」哨兵（服务端异常回放可无限循环，无防御无测试） |
 | dblp（aggregator，Phase 3 T4） | stable | 100% | conf 索引发现 + 单请求整卷；线上 `<bht>` 真实 schema 已修（`c144573`） |
 | unpaywall（aggregator，Phase 3 T5） | stable | 100% | RESOLVE only；`oa-report` CLI 限速链路已补直接证明（检查单 #15b）；Phase 4 起兼任 pipeline OA-fallback 的 OA 副本来源（T5，AC-4.3 载体） |
 | openalex（aggregator/enrich，Phase 3 T6） | stable | 98–100% | duck-typed `enrich_batch`；日预算熔断（`budget.py` 100%，`add_spend` 跨进程 `fcntl.flock` 加固已落地，检查单 #10；Windows 无 fcntl 降级为加固前现状） |
 | s2（aggregator/enrich，Phase 3 T6） | stable | 98–100% | key 门控批查；无 key → SKIP（D-021 产品取舍，非缺陷） |
 | elsevier_sd（auth_gated，Phase 4 T3） | **stable**（stub 已退役） | 100% | `RESOLVE\|FETCH`，domains=`api.elsevier.com`（非 `www.sciencedirect.com`，页面路线不走——elsevier robots 全禁）；`ApiKeyProvider`；429 保守熔断（自限 2 req/s，官方 10 req/s 留余量）+ 当日 circuit breaker；无 key → `NotImplementedError`→SKIP；BLOCKER-1（真实 key 未到）AC-4.1 在线冒烟归 T7b |
 | oup_silverchair（auth_gated，Phase 4 T4） | **stable**（新增） | 100% | `RESOLVE\|FETCH`，domains=`academic.oup.com`；`CookieSessionProvider`/`SSOFlowProvider`（`oup@campus`/`oup@shib` 双 profile）；`ChallengeDetector` 四类判定接线；QJE `fulltext_source` 收敛完成（不再借用 `elsevier_sd` 占位，Phase 3 检查单 #2 清零）；限速 1 req/6s（robots 无声明，保守默认） |
-| wiley（auth_gated，Phase 4 T-wiley） | **stable**（新增） | 100% | `RESOLVE\|FETCH`，domains=`api.wiley.com`（TDM 主干；页面兜底 `onlinelibrary.wiley.com` deferred）；`ApiKeyProvider`（TDM token）；双窗口限速单桶表达 `RatePolicy(rpm=5,burst=3)`（D-024）；`resolve_offline=True`（纯 URL 构造零网络）；无 token → SKIP |
+| wiley（auth_gated，Phase 4 T-wiley） | **stable** | 100% | `RESOLVE\|FETCH`，domains=`api.wiley.com`（TDM 主干；页面兜底 `onlinelibrary.wiley.com` deferred）；`ApiKeyProvider`（TDM token）；双窗口限速单桶表达 `RatePolicy(rpm=5,burst=3)`（D-024）；`resolve_offline=True`（纯 URL 构造零网络）；无 token → SKIP；Phase 5 T6 联动：`parse.py` 移除 `10.3982`（ECMA 归 econsoc 分段路由，D-028，审计 S3 三方一致性核实） |
+| ssrn（Phase 5 T4，**新增**） | stable | 97–100% | prefix `10.2139` 聚合元数据主路径（domains 仅 `api.crossref.org`），**站点零接触**（D-029 案 B，审计 S3 核实代码层面成立——`landing_url` 纯字符串构造，无任何 `*.ssrn.com` 请求路径）；`FETCH` 未声明（AC-5.1b defer Phase 6 browser-fetch 横切件）；econ/fin `topic_filter` 静态声明待 P6 Selector 下推；healthcheck golden 已双源确认转正（M1） |
+| nber（Phase 5 T3，**新增**） | stable | 97–100% | prefix `10.3386` 枚举 + >18 月开放窗离线全文（D-014 软门不绕过，fetch 阶段 `_soft_gate_guarded_stream` 兜底）+ `www`/`back` 双域分桶（`route_for` alias 陷阱专测规避）；program RSS watch 通道 P6 转主；审计 P3 备忘：`_today` 用本地时区（项目内唯一未 UTC 化的时间敏感点，±1 日边界由软门兜底、不可被利用） |
+| aea（Phase 5 T5，**新增**） | stable | 100% | prefix `10.1257` 八刊 `CODE_TO_VENUE` 路由（8 venue ISSN 审计三方核对一致）；RESOLVE 结构性恒空、healthcheck 结构性 `NotImplementedError`→canary SKIP（均设计内，契约 skip 台账收录）；全文域 pubs 全域 CF deferred（P6 browser-fetch + D-006 机构认证届时立专属 AC）；`aeri`/`jel` ISSN 仍 `[DOC]` 待 [LIVE] 核实（M1 仅转正 4 刊） |
+| econsoc（Phase 5 T6，**新增**） | stable | 92–94% | TE/QE OJS-OAI 自枚举 + ECMA crossref 枚举 + 运行时年代分段路由（D-028）；审计 P2×2：①CF-403 挑战冷却缺口——冻结 `HttpClient` 把 403 统一映射 `NO_ENTITLEMENT`、仅 `CHALLENGE` 触发 24h 冷却，`ChallengeDetector` 嗅探只对 200 挑战页生效（Phase 2/4 冻结架构系统性边界，wiley/oup 同受限，P6 browser-fetch 同批评估）；②当前年 30 天回看窗完整性缺口（与 aaai_ojs 同构，首拉当年漏收超 30 天论文）——均登记 Phase 6 检查单 |
 
 AC 验收记录不再随本表逐条列出（AC-1/AC-2/AC-3 分散在多个 Phase，条目已超出"模块状态"
 的粒度）——权威清单见 [acceptance-criteria.md](../testing/acceptance-criteria.md)，
@@ -117,3 +129,4 @@ AC 验收记录不再随本表逐条列出（AC-1/AC-2/AC-3 分散在多个 Phas
 | 2026-07-21 | [logs/2026-07-21-session-004.md](../logs/2026-07-21-session-004.md) | 深度审计第 2 轮：10 项修复；GLOSSARY+INDEX 导航+FR→AC 映射表（D-016） |
 | 2026-07-21 | [logs/2026-07-21-session-005.md](../logs/2026-07-21-session-005.md) | **Phase 1 全程**：实施计划+D-017；多 agent 并行开发 10 任务（fable/opus/sonnet 分档）；10 轮审查+终审；AC-1 全过；文档 implemented；tag phase-1/schema-v1 |
 | 2026-07-21/22 | [logs/2026-07-22-session-006.md](../logs/2026-07-22-session-006.md) | **Phase 2 全程**：W0 门禁+D-018/019/020；7 站 LIVE 勘察（~185 只读请求）；6 详设重写门禁；7 adapter 实现+审查+真实交叉验证；6 站在线冒烟实跑；终审放行；tag phase-2 |
+| 2026-07-24/26 | [logs/2026-07-26-session-007.md](../logs/2026-07-26-session-007.md) | **Phase 5 终审后全库独立审计**：8 subagent（4 Opus 深审 + 4 Sonnet 面审）复审 Phase 1–5 存量代码——八域附条件达标、零 P0，P1×3/P2×12 登记 [post-phase5-audit](../reports/2026-07-24-post-phase5-audit.md)；progress/INDEX Phase 5 终态同步（快照重写 + 进度板 done + 模块表 20 adapter） |

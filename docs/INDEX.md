@@ -1,7 +1,7 @@
 # 文档索引（唯一权威清单）
 
 > 本表是全仓库文档的单一事实来源（D-008）。任何新增/改名/废弃文档必须同一提交内更新本表（AGENTS.md §4）。
-> status 取值与流转见 [process/status-workflow.md](process/status-workflow.md)。最后盘点：2026-07-24（Phase 5 收尾）。
+> status 取值与流转见 [process/status-workflow.md](process/status-workflow.md)。最后盘点：2026-07-26（Phase 5 终审后独立全库审计 + progress/INDEX 终态同步）。
 
 ## 按意图导航（先于逐目录清单）
 
@@ -33,7 +33,7 @@
 | [plan/phase3-implementation-plan.md](plan/phase3-implementation-plan.md) | Phase 3 实施计划（聚合元数据层：五源 adapter + 合并引擎任务切分） | approved | 2026-07-22 |
 | [plan/phase4-implementation-plan.md](plan/phase4-implementation-plan.md) | Phase 4 实施计划（认证框架 + 出版社 adapters 任务切分） | approved | 2026-07-23 |
 | [plan/phase5-implementation-plan.md](plan/phase5-implementation-plan.md) | Phase 5 实施计划（SSRN 与特殊经济学源 adapters 任务切分） | approved | 2026-07-24 |
-| [plan/progress.md](plan/progress.md) | 项目进度跟踪 | approved | 2026-07-23 |
+| [plan/progress.md](plan/progress.md) | 项目进度跟踪 | approved | 2026-07-24 |
 | [plan/decision-log.md](plan/decision-log.md) | 架构决策记录（D-001…D-029） | approved | 2026-07-24 |
 
 ## design/ — 核心设计（00–09）
@@ -158,7 +158,7 @@
 
 | 路径 | 内容 |
 |---|---|
-| logs/ | 每 session 工作日志（YYYY-MM-DD-session-NNN.md，现有 001–006） |
+| logs/ | 每 session 工作日志（YYYY-MM-DD-session-NNN.md，现有 001–007） |
 | [reports/2026-07-20-phase0-report.md](reports/2026-07-20-phase0-report.md) | Phase 0 阶段报告（DoD 判定） |
 | [reports/2026-07-20-consistency-review.md](reports/2026-07-20-consistency-review.md) | 一致性审查第 1 轮（需求矩阵 + 13 项修复，D-015） |
 | [reports/2026-07-21-audit-round2.md](reports/2026-07-21-audit-round2.md) | 深度审计第 2 轮（语义级 + 可读性增强，D-016） |
@@ -166,4 +166,5 @@
 | [reports/2026-07-22-phase2-report.md](reports/2026-07-22-phase2-report.md) | Phase 2 阶段报告（DoD 判定 + 终审 + Phase 3 检查单） |
 | [reports/2026-07-23-phase3-report.md](reports/2026-07-23-phase3-report.md) | Phase 3 阶段报告（DoD 判定 + 收尾中草稿，判定列待 controller 终验签署 + Phase 4 检查单） |
 | [reports/2026-07-23-phase4-report.md](reports/2026-07-23-phase4-report.md) | Phase 4 阶段报告（DoD 判定 + AC-0 系统性扫描 + 收尾中草稿，判定列待 controller 终验签署 + Phase 5 检查单） |
-| [reports/2026-07-24-phase5-report.md](reports/2026-07-24-phase5-report.md) | Phase 5 阶段报告（8 卡 4 波次交付 + D-027/028/029 + AC-5 引用 + 事件教训 + Phase 6 检查单，判定：待终审） |
+| [reports/2026-07-24-phase5-report.md](reports/2026-07-24-phase5-report.md) | Phase 5 阶段报告（8 卡 4 波次交付 + D-027/028/029 + AC-5 引用 + 事件教训 + Phase 6 检查单，判定：**达成**——controller 合并裁决签署，tag `phase-5`） |
+| [reports/2026-07-24-post-phase5-audit.md](reports/2026-07-24-post-phase5-audit.md) | Phase 5 终审后独立全库审计报告（8 subagent：4 Opus 深审+4 Sonnet 面审；八域附条件达标、零 P0；P1×3/P2×12 台账 + AC-0 复核全 PASS + Phase 6 处置建议） |
