@@ -11,8 +11,9 @@ import dataclasses
 
 import pytest
 
-from paper_crawler.subs.model import LocalFilter
+from paper_crawler.subs.model import SOURCE_FIELDS, LocalFilter
 from paper_crawler.subs.types import (
+    DATE_WINDOW_PARAMS,
     LOCAL_PREDICATE_EXCLUDE_REGEX,
     LOCAL_PREDICATE_MIN_YEAR,
     LOCAL_PREDICATE_TITLE_REGEX_ANY,
@@ -22,6 +23,7 @@ from paper_crawler.subs.types import (
     ReportEntry,
     RunSummary,
     WatchOutcome,
+    is_source_scoped_predicate,
 )
 
 
@@ -33,6 +35,48 @@ def test_local_predicate_constants_track_local_filter_fields() -> None:
         LOCAL_PREDICATE_MIN_YEAR,
     }
     assert constants == {f.name for f in dataclasses.fields(LocalFilter)}
+
+
+@pytest.mark.parametrize(
+    ("name", "expected"),
+    [
+        ("ssrn.topic_filter", True),  # 唯一登记的源专属谓词（T2 产 / T3 收）
+        ("arxiv.some_future_quirk", True),
+        (LOCAL_PREDICATE_TITLE_REGEX_ANY, False),
+        (LOCAL_PREDICATE_EXCLUDE_REGEX, False),
+        (LOCAL_PREDICATE_MIN_YEAR, False),
+        ("title_regex_any[0]", False),  # T3 的命中记录形态，不含点 → 不误判
+        (".leading", False),  # 两侧必须非空，半截名不算
+        ("trailing.", False),
+        ("", False),
+    ],
+)
+def test_is_source_scoped_predicate_discriminates_dotted_names(name: str, expected: bool) -> None:
+    """分流契约的单一同源判别式（T2 产 / T3 收 / T5 分流，三方不各写一份 `"." in`）。"""
+    assert is_source_scoped_predicate(name) is expected
+
+
+def test_local_predicate_constants_are_never_source_scoped() -> None:
+    """通用谓词与源专属谓词天然不重叠（判别式对全部通用标记恒 False）。"""
+    for constant in (
+        LOCAL_PREDICATE_TITLE_REGEX_ANY,
+        LOCAL_PREDICATE_EXCLUDE_REGEX,
+        LOCAL_PREDICATE_MIN_YEAR,
+    ):
+        assert not is_source_scoped_predicate(constant)
+
+
+def test_date_window_params_cover_exactly_the_dsl_source_set() -> None:
+    """槽位名表与 DSL 源词表同集——表住叶子模块，T2/T4/T5 三方消费同一份。"""
+    assert set(DATE_WINDOW_PARAMS) == set(SOURCE_FIELDS)
+
+
+def test_date_window_params_re_exported_from_compile_is_the_same_object() -> None:
+    """compile.py 保留 re-export：既有 `from ...compile import DATE_WINDOW_PARAMS` 不变。"""
+    from paper_crawler.subs import compile as compile_module
+
+    assert compile_module.DATE_WINDOW_PARAMS is DATE_WINDOW_PARAMS
+    assert "DATE_WINDOW_PARAMS" in compile_module.__all__
 
 
 def test_plan_step_defaults_and_params_view() -> None:

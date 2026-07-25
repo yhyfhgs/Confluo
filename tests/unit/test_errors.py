@@ -12,6 +12,7 @@ from paper_crawler.errors import (
     IllegalTransition,
     RetrySpec,
     SubscriptionInvalid,
+    WatermarkInvalid,
 )
 
 EXPECTED_ERROR_VALUES = {
@@ -177,6 +178,9 @@ _ERROR_CLASS_MATRIX: list[tuple[type[CrawlerError], ErrorClass]] = [
     (AuthRequired, ErrorClass.AUTH_EXPIRED),
     (Challenged, ErrorClass.CHALLENGE),
     (SubscriptionInvalid, ErrorClass.CONFIG),
+    # P6-T4：watermark 文档损坏 = 运行期状态问题，与 DSL 手写错误分立（处置动作不同：
+    # 重置游标 vs 改 YAML），但同归 CONFIG——与 `read_watermark` 对畸形 JSON 的分类一致。
+    (WatermarkInvalid, ErrorClass.CONFIG),
 ]
 
 

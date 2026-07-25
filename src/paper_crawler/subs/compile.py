@@ -59,6 +59,7 @@ from typing import NoReturn
 from paper_crawler.errors import CrawlerError, ErrorClass, SubscriptionInvalid
 from paper_crawler.subs.model import LocalFilter, SourceSelector, Subscription
 from paper_crawler.subs.types import (
+    DATE_WINDOW_PARAMS,
     LOCAL_PREDICATE_EXCLUDE_REGEX,
     LOCAL_PREDICATE_MIN_YEAR,
     LOCAL_PREDICATE_TITLE_REGEX_ANY,
@@ -69,29 +70,10 @@ from paper_crawler.types import VenueSpec
 
 # --- T4/T5 接缝：各源日期窗参数名 -------------------------------------------
 
-# 本模块不产日期值（接缝裁决①）；这里只声明**槽位名**供 T4 产值、T5 合成。
-# 出处逐源：
-# - arxiv：`submittedDate:[YYYYMMDDTTTT TO YYYYMMDDTTTT]`（GMT）——不是独立 URL 参数，
-#   而是拼进**同一个 `search_query`** 的范围项（site-survey/arxiv.md 关键机制段）。
-# - crossref：`filter=from-pub-date:…,until-pub-date:…`（published 轴的 filter 名是 `pub`
-#   缩写；见 `adapters/crossref/adapter.py::_DATE_FIELD_FILTER`）。
-# - openalex：`filter=from_publication_date:…,to_publication_date:…`（免费轴；
-#   `from_created/updated_date` 是 Premium 门控，site-survey/metadata-apis.md）。
-# - s2：bulk search 顶层参数 `publicationDateOrYear`（亦可用 `year=2016-2020`）。
-# - nber：**无日期参数**——RSS 通道按 id 集合差分推进（出处 = plan §4 的 T4/T7 两卡 +
-#   nber.md §3.4「RSS 增量 watch 通道」/§7；design/09 §5 未列 nber，勿引）。
-# - ssrn：内部 crossref 走 created 轴 → `from-created-date`/`until-created-date`
-#   （ssrn.md §4.2 登记年轴）。**维持 created 窗不变**（controller 确认 2026-07-26）：
-#   T4 将改为 DateCursor 对齐，plan T4 卡与 design/09 §5 的联动修正由 controller 落，
-#   本表不先行改，免得两处各改一半。
-DATE_WINDOW_PARAMS: dict[str, tuple[str, ...]] = {
-    "arxiv": ("submittedDate",),
-    "ssrn": ("from-created-date", "until-created-date"),
-    "openalex": ("from_publication_date", "to_publication_date"),
-    "s2": ("publicationDateOrYear",),
-    "nber": (),
-    "crossref": ("from-pub-date", "until-pub-date"),
-}
+# 本模块不产日期值（接缝裁决①），也不再**持有**槽位名表：`DATE_WINDOW_PARAMS` 已迁至
+# 叶子模块 `subs/types.py`（T2/T4/T5 三方消费，住在任一消费方都会让另两方反向依赖）。
+# 此处保留 re-export，既有 `from paper_crawler.subs.compile import DATE_WINDOW_PARAMS`
+# 的调用面逐字不变（`__all__` 亦不变）。表的逐源出处注释随表一并迁走，见 types.py。
 
 # --- 取值域校验（DSL/venue 值进 URL 前的最后一道关）--------------------------
 

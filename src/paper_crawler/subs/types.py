@@ -29,6 +29,59 @@ LOCAL_PREDICATE_TITLE_REGEX_ANY = "title_regex_any"
 LOCAL_PREDICATE_EXCLUDE_REGEX = "exclude_regex"
 LOCAL_PREDICATE_MIN_YEAR = "min_year"
 
+# 源专属补偿谓词的命名约定：`"<source>.<name>"`（如 `"ssrn.topic_filter"`）。
+_SOURCE_SCOPED_SEPARATOR = "."
+
+
+def is_source_scoped_predicate(name: str) -> bool:
+    """该谓词标记是否**源专属**（点分名）而非全源通用（`LOCAL_PREDICATE_*`）。
+
+    分流契约的**单一同源**判别式，三方消费（T2 产 / T3 收 / T5 分流），谁都不再
+    自己写 `"." in name`：
+
+    - **T2**（`compile.py`）按此约定**产**标记（`PREDICATE_SSRN_TOPIC_FILTER`）；
+    - **T3**（`filter.py`）**收**——通用谓词走 `LocalFilter` 三件套，源专属的走
+      各自的补偿实现（当前仅 `ssrn.topic_filter`）；
+    - **T5**（`watch.py`）按此**分流**：把源专属谓词只喂给对应源的结果流，不误伤别源。
+
+    判据是"含点分隔符且两侧非空"——`LOCAL_PREDICATE_*` 三个名字都不含点，故二者
+    天然不重叠；`"title_regex_any[0]"` 这类 T3 产的**命中记录**同样不含点，不会被
+    误判为源专属。
+    """
+    source, separator, predicate = name.partition(_SOURCE_SCOPED_SEPARATOR)
+    return bool(separator) and bool(source) and bool(predicate)
+
+
+# --- T2/T4/T5 接缝：各源日期窗参数名（单一同源，不必再翻文档）----------------
+#
+# **只声明槽位名**：值由 T4（`watermark.py`）按增量语义产出，T5 与 T2 的静态参数合成。
+# 本表住在叶子模块 `types.py` 而非 `compile.py`——三方消费（T2 反查"用户不许手写日期
+# 窗"的禁名单、T4 自断言产出键 ⊆ 本表、T5 合成），住在任一消费方里都会让另两方反向
+# 依赖它。出处逐源：
+#
+# - arxiv：`submittedDate:[YYYYMMDDTTTT TO YYYYMMDDTTTT]`（GMT）——不是独立 URL 参数，
+#   而是拼进**同一个 `search_query`** 的范围项（site-survey/arxiv.md 关键机制段）。
+# - crossref：`filter=from-pub-date:…,until-pub-date:…`（published 轴的 filter 名是 `pub`
+#   缩写；见 `adapters/crossref/adapter.py::_DATE_FIELD_FILTER`）。
+# - openalex：`filter=from_publication_date:…,to_publication_date:…`（免费轴；
+#   `from_created/updated_date` 是 Premium 门控，site-survey/metadata-apis.md）。
+# - s2：bulk search 顶层参数 `publicationDateOrYear`（site-survey/metadata-apis.md 首列项；
+#   `year=` 是同轴的年粒度替代，T4 取前者以保住日粒度——见 `watermark.py` s2 条）。
+# - nber：**无日期参数**——RSS 通道按 id 集合差分推进（出处 = plan §4 的 T4/T7 两卡 +
+#   nber.md §3.4「RSS 增量 watch 通道」/§7；design/09 §5 未列 nber，勿引）。
+# - ssrn：内部 crossref 走 created 轴 → `from-created-date`/`until-created-date`
+#   （ssrn.md §4.2 登记年轴）。**两端必须成对**：`CrossrefAdapter._works_url` 无条件
+#   拼 `from-…,until-…`，缺 until 端就是半截 filter。design/09 §5 的 D-029 联动修订
+#   （2026-07-26）已把 SSRN 行从"id 集合差分"改判为本游标。
+DATE_WINDOW_PARAMS: dict[str, tuple[str, ...]] = {
+    "arxiv": ("submittedDate",),
+    "ssrn": ("from-created-date", "until-created-date"),
+    "openalex": ("from_publication_date", "to_publication_date"),
+    "s2": ("publicationDateOrYear",),
+    "nber": (),
+    "crossref": ("from-pub-date", "until-pub-date"),
+}
+
 
 # ---------------------------------------------------------------------------
 # 编译计划（T2 产出 → T5 执行）
@@ -196,6 +249,7 @@ class RunSummary:
 
 
 __all__ = [
+    "DATE_WINDOW_PARAMS",
     "LOCAL_PREDICATE_EXCLUDE_REGEX",
     "LOCAL_PREDICATE_MIN_YEAR",
     "LOCAL_PREDICATE_TITLE_REGEX_ANY",
@@ -205,4 +259,5 @@ __all__ = [
     "ReportEntry",
     "RunSummary",
     "WatchOutcome",
+    "is_source_scoped_predicate",
 ]

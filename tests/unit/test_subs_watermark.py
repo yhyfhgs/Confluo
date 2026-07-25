@@ -18,7 +18,7 @@
 from __future__ import annotations
 
 import json
-from collections.abc import Iterator
+from collections.abc import Callable, Iterator
 from datetime import UTC, date, datetime, timedelta
 from pathlib import Path
 
@@ -30,6 +30,7 @@ from paper_crawler.errors import CrawlerError, ErrorClass, WatermarkInvalid
 from paper_crawler.storage.db import Database
 from paper_crawler.storage.repo import SubscriptionRepo
 from paper_crawler.subs.model import SOURCE_FIELDS, Subscription, parse_subscription
+from paper_crawler.subs.types import DATE_WINDOW_PARAMS
 from paper_crawler.subs.watermark import (
     DEFAULT_INITIAL_LOOKBACK_DAYS,
     DEFAULT_MAX_IDS,
@@ -51,8 +52,12 @@ from paper_crawler.subs.watermark import (
 TODAY = date(2026, 7, 26)
 FIRST_RUN_FLOOR = "2026-07-19"
 
-DATE_SOURCES = ("arxiv", "crossref", "openalex", "s2")
-ID_SET_SOURCES = ("ssrn", "nber")
+# D-029 联动后（design/09 §5 修订 2026-07-26）：ssrn 归日期游标族，id 差分只剩 nber。
+DATE_SOURCES = ("arxiv", "crossref", "openalex", "s2", "ssrn")
+ID_SET_SOURCES = ("nber",)
+
+# 各源窗口下界相对水位的回退天数（`overlap_days`；含端天然重扫之外的**额外**容忍）。
+OVERLAP_DAYS = {"arxiv": 1, "crossref": 2, "ssrn": 1, "openalex": 0, "s2": 0}
 
 
 def _date_state(source: str, day: str) -> Watermark:
@@ -70,10 +75,13 @@ def test_strategies_cover_exactly_the_dsl_source_set() -> None:
 
 
 def test_strategy_kinds_match_design_09_assignment() -> None:
-    """design/09 §5 的源→策略分派：arxiv 上界窗、三聚合源游标、ssrn/nber id 差分。"""
+    """design/09 §5 的源→策略分派（含 D-029 联动修订）：arxiv 上界窗、四源游标、nber id 差分。"""
     assert isinstance(STRATEGIES["arxiv"], DateUpperBound)
-    assert all(isinstance(STRATEGIES[s], DateCursor) for s in ("openalex", "s2", "crossref"))
+    assert all(
+        isinstance(STRATEGIES[s], DateCursor) for s in ("crossref", "openalex", "s2", "ssrn")
+    )
     assert all(isinstance(STRATEGIES[s], IdSetDiff) for s in ID_SET_SOURCES)
+    assert set(DATE_SOURCES) | set(ID_SET_SOURCES) == set(SOURCE_FIELDS)  # 两族无缺无重
 
 
 @pytest.mark.parametrize(
@@ -83,15 +91,36 @@ def test_strategy_kinds_match_design_09_assignment() -> None:
         ("arxiv", (("submittedDate", "[202607190000 TO 202607262359]"),)),
         ("crossref", (("from-pub-date", "2026-07-19"),)),
         ("openalex", (("from_publication_date", "2026-07-19"),)),
-        ("s2", (("year", "2026-"),)),  # s2 只有年粒度 → 降级为开区间年窗
-        # id 差分类：无日期下推面，首跑 = 空 id 集（最近 N 页全算新增）
-        ("ssrn", ()),
+        # s2 日粒度（`year=` 的年粒度会把 7 天初窗放大成整年 → 首跑必熔断死循环）
+        ("s2", (("publicationDateOrYear", "2026-07-19:"),)),
+        # ssrn 成对产出：crossref `_works_url` 无条件拼 from/until 两端（D-029）
+        ("ssrn", (("from-created-date", "2026-07-19"), ("until-created-date", "2026-07-26"))),
+        # id 差分类：无日期轴，首跑 = 空 id 集（最近一轮 RSS 全算新增）
         ("nber", ()),
     ],
 )
 def test_first_run_window_params_per_source(source: str, expected: object) -> None:
     """每源的窗口参数名 + 首跑语义（T5 与 T2 静态参数合成的输入面）。"""
     assert window_params(Watermark(), source, now=TODAY) == expected
+
+
+@pytest.mark.parametrize("source", sorted(SOURCE_FIELDS))
+@pytest.mark.parametrize("first_run", [True, False], ids=["first-run", "with-watermark"])
+def test_window_param_keys_are_subset_of_the_shared_slot_table(
+    source: str, first_run: bool
+) -> None:
+    """⊆ 自断言：本层产出的键恒 ⊆ `types.DATE_WINDOW_PARAMS[source]`（单一同源不漂移）。
+
+    T2 与 T4 各产一半窗口参数、T5 合成——槽位名表若与本层实际产出脱节，错就落在
+    "参数拼进 URL 之后"，离线测不出来。首跑与已有水位两种状态都查。
+    """
+    strategy = STRATEGIES[source]
+    state: DateState | IdSetState = (
+        IdSetState(("w30000",)) if isinstance(strategy, IdSetDiff) else DateState("2026-07-22")
+    )
+    watermark = Watermark() if first_run else Watermark().with_state(source, state)
+    produced = {key for key, _ in window_params(watermark, source, now=TODAY)}
+    assert produced <= set(DATE_WINDOW_PARAMS[source])
 
 
 def test_first_run_floor_tracks_the_declared_lookback() -> None:
@@ -166,20 +195,61 @@ def test_arxiv_window_overlaps_exactly_one_day_below_the_watermark() -> None:
     assert strategy.overlap_days == DEFAULT_OVERLAP_DAYS == 1
 
 
-@pytest.mark.parametrize("source", ["crossref", "openalex"])
-def test_date_cursor_window_starts_at_the_watermark_itself(source: str) -> None:
-    """游标含端 → 下界 == 水位本身：边界日天然重扫，无须再额外回退一天。"""
+@pytest.mark.parametrize(
+    ("source", "expected"),
+    [
+        # openalex：`overlap_days=0` → 下界 == 水位本身（含端天然重扫那一天即可）
+        ("openalex", (("from_publication_date", "2026-07-22"),)),
+        # crossref：`overlap_days=2` —— pub-date 是刊期非入库时刻，记录陆续沉积
+        ("crossref", (("from-pub-date", "2026-07-20"),)),
+        # ssrn：`overlap_days=1`（created ~1 日延迟）+ until 端成对到今天
+        ("ssrn", (("from-created-date", "2026-07-21"), ("until-created-date", "2026-07-26"))),
+        # s2：日粒度开区间，`<起>:` 单参数区间语法
+        ("s2", (("publicationDateOrYear", "2026-07-22:"),)),
+    ],
+)
+def test_date_cursor_window_shape_per_source(source: str, expected: object) -> None:
+    """游标含端 → 下界 = 水位 − `overlap_days`；上界形态三选一（无 / 成对 / 区间后缀）。"""
+    assert window_params(_date_state(source, "2026-07-22"), source, now=TODAY) == expected
+
+
+@pytest.mark.parametrize("source", DATE_SOURCES)
+def test_overlap_days_match_the_documented_per_source_table(source: str) -> None:
+    """`overlap_days` 逐源取值 = 模块 docstring 的分工表（常量与行为同源）。"""
     strategy = STRATEGIES[source]
-    assert isinstance(strategy, DateCursor)
-    assert window_params(_date_state(source, "2026-07-22"), source, now=TODAY) == (
-        (strategy.param, "2026-07-22"),
+    assert isinstance(strategy, DateUpperBound | DateCursor)
+    assert strategy.overlap_days == OVERLAP_DAYS[source]
+    assert _lower_bound(source, DateState("2026-07-22")) == date(2026, 7, 22) - timedelta(
+        days=OVERLAP_DAYS[source]
     )
 
 
-def test_s2_cursor_degrades_to_open_ended_year_window() -> None:
-    """s2 bulk search 只有年粒度：游标按日存，下推降级为 `YYYY-`（窗只会更宽）。"""
-    assert window_params(_date_state("s2", "2026-07-22"), "s2", now=TODAY) == (("year", "2026-"),)
-    assert window_params(_date_state("s2", "2025-12-31"), "s2", now=TODAY) == (("year", "2025-"),)
+def test_s2_uses_day_granularity_not_year() -> None:
+    """s2 必须保住**日**粒度：年窗会把 7 天初窗放大成整年 → 首跑必超护栏 → 熔断死循环。
+
+    审查裁定的 P1：`year=` 与 `publicationDateOrYear` 同轴（metadata-apis.md 同列），
+    取后者。⚠ `<起>:` 开区间值语法待 T9 在线冒烟确认。
+    """
+    strategy = STRATEGIES["s2"]
+    assert isinstance(strategy, DateCursor)
+    assert strategy.param == "publicationDateOrYear" and strategy.range_suffix == ":"
+    # 跨年也不塌成年份：值里保留完整日期
+    assert window_params(_date_state("s2", "2025-12-31"), "s2", now=TODAY) == (
+        ("publicationDateOrYear", "2025-12-31:"),
+    )
+
+
+def test_ssrn_uses_created_axis_cursor_with_paired_until() -> None:
+    """ssrn D-029 联动：created 轴游标（非 id 差分），且 until 端必须成对。
+
+    `CrossrefAdapter._works_url` 无条件拼 `from-…,until-…`——只给 from 就是半截 filter。
+    """
+    strategy = STRATEGIES["ssrn"]
+    assert isinstance(strategy, DateCursor)
+    assert (strategy.param, strategy.until_param) == ("from-created-date", "until-created-date")
+    keys = [key for key, _ in window_params(Watermark(), "ssrn", now=TODAY)]
+    assert keys == ["from-created-date", "until-created-date"]
+    assert set(keys) == set(DATE_WINDOW_PARAMS["ssrn"])  # 成对 = 槽位名用满
 
 
 def test_arxiv_advance_uses_max_seen_not_today() -> None:
@@ -203,7 +273,7 @@ def test_unparseable_seen_date_is_fail_loud() -> None:
 
 @pytest.mark.parametrize("source", ID_SET_SOURCES)
 def test_id_set_first_run_treats_everything_as_new(source: str) -> None:
-    """首跑：空 id 集 → 最近 N 页全是新增；窗口参数恒空（无日期下推面）。"""
+    """首跑：空 id 集 → 最近一轮 RSS 全是新增；窗口参数恒空（无日期轴）。"""
     strategy = STRATEGIES[source]
     assert isinstance(strategy, IdSetDiff)
     assert strategy.new_ids(None, ["a", "b"]) == ("a", "b")
@@ -213,15 +283,15 @@ def test_id_set_first_run_treats_everything_as_new(source: str) -> None:
 
 def test_id_set_diff_reports_only_unseen_ids() -> None:
     """正常差分：与上次集合的交集不再算新增（保序，按候选到达序）。"""
-    strategy = STRATEGIES["ssrn"]
+    strategy = STRATEGIES["nber"]
     assert isinstance(strategy, IdSetDiff)
     assert strategy.new_ids(IdSetState(("b", "a")), ["b", "c", "a", "d"]) == ("c", "d")
 
 
 def test_id_set_advance_puts_this_run_first_and_keeps_the_old_tail() -> None:
     """推进：本次置前（最新）+ 旧集合补后 —— 截断只砍最旧的那一段。"""
-    after = advance(Watermark().with_state("ssrn", IdSetState(("b", "a"))), "ssrn", ["c", "b"])
-    assert after.state_for("ssrn") == IdSetState(("c", "b", "a"))
+    after = advance(Watermark().with_state("nber", IdSetState(("b", "a"))), "nber", ["c", "b"])
+    assert after.state_for("nber") == IdSetState(("c", "b", "a"))
 
 
 def test_id_set_advance_dedupes_within_one_run() -> None:
@@ -233,15 +303,15 @@ def test_id_set_advance_dedupes_within_one_run() -> None:
 
 def test_id_set_advance_truncates_at_max_ids_dropping_the_oldest() -> None:
     """边界：N 上限生效时砍掉最旧的（掉出去的下次重报 → 去重兜底，不会漏看）。"""
-    strategy = IdSetDiff(source="ssrn", max_ids=3)
+    strategy = IdSetDiff(source="nber", max_ids=3)
     assert strategy.advance(IdSetState(("c", "b", "a")), ["e", "d"]) == IdSetState(("e", "d", "c"))
 
 
 def test_default_max_ids_actually_bounds_the_document() -> None:
     """缺省上限真的咬得住（防 watermark_json 无限膨胀）。"""
-    strategy = STRATEGIES["ssrn"]
+    strategy = STRATEGIES["nber"]
     assert isinstance(strategy, IdSetDiff)
-    after = strategy.advance(None, [f"ssrn-{n}" for n in range(DEFAULT_MAX_IDS + 25)])
+    after = strategy.advance(None, [f"w{n}" for n in range(DEFAULT_MAX_IDS + 25)])
     assert len(after.ids) == DEFAULT_MAX_IDS == strategy.max_ids
 
 
@@ -314,11 +384,33 @@ def test_property_id_set_retains_this_run_and_stops_reporting_it(
     old: list[str], seen: list[str]
 ) -> None:
     """id 差分的对应单调性：本次见到的 id 推进后必在集合内，下一轮不再报为新增。"""
-    strategy = IdSetDiff(source="ssrn", max_ids=64)  # 远大于样本量，避开截断路径
+    strategy = IdSetDiff(source="nber", max_ids=64)  # 远大于样本量，避开截断路径
     after = strategy.advance(IdSetState(tuple(dict.fromkeys(old))), seen)
     assert set(seen) <= set(after.ids)
     assert strategy.new_ids(after, seen) == ()
     assert len(after.ids) == len(set(after.ids))  # 无重复
+
+
+@settings(derandomize=True, deadline=None, max_examples=200)
+@given(
+    max_ids=st.integers(min_value=1, max_value=8),
+    old=st.lists(st.text(alphabet="abcdefgh", min_size=1, max_size=3), max_size=14),
+    seen=st.lists(st.text(alphabet="abcdefgh", min_size=1, max_size=3), max_size=14),
+)
+def test_property_id_set_truncation_keeps_a_bounded_ordered_prefix(
+    max_ids: int, old: list[str], seen: list[str]
+) -> None:
+    """截断路径的不变量：长度恒 ≤ `max_ids`，且结果 == 「本次+旧集」保序去重的**前缀**。
+
+    前缀语义 = 砍的永远是最旧的一段（`IdSetState` 的"新→旧"序约定），不会打乱顺序、
+    也不会先砍新的——否则刚见过的 id 下轮又被报成新增，重叠窗就白开了。
+    """
+    strategy = IdSetDiff(source="nber", max_ids=max_ids)
+    state = IdSetState(tuple(dict.fromkeys(old))[:max_ids])
+    after = strategy.advance(state, seen)
+    expected_full = list(dict.fromkeys([*seen, *state.ids]))
+    assert len(after.ids) <= max_ids
+    assert list(after.ids) == expected_full[:max_ids]  # 保序前缀，非任意子集
 
 
 # ---------------------------------------------------------------------------
@@ -349,11 +441,11 @@ def test_overlap_window_repeats_are_returned_as_is_dedupe_belongs_downstream() -
     assert run2 == run1
     assert not hasattr(STRATEGIES["arxiv"], "new_ids")
 
-    # 对照：id 差分类**才**在策略层去重——这是它的定义行为（无可靠时间过滤的替代品）。
-    ssrn = STRATEGIES["ssrn"]
-    assert isinstance(ssrn, IdSetDiff)
-    seen_once = ssrn.advance(None, ["ssrn-1"])
-    assert ssrn.new_ids(seen_once, ["ssrn-1", "ssrn-2"]) == ("ssrn-2",)
+    # 对照：id 差分类（nber）**才**在策略层去重——这是它的定义行为（无日期轴的替代品）。
+    nber = STRATEGIES["nber"]
+    assert isinstance(nber, IdSetDiff)
+    seen_once = nber.advance(None, ["w30000"])
+    assert nber.new_ids(seen_once, ["w30000", "w30001"]) == ("w30001",)
 
 
 # ---------------------------------------------------------------------------
@@ -370,7 +462,7 @@ def test_document_round_trip_through_dict() -> None:
         Watermark()
         .with_state("arxiv", DateState("2026-07-22"))
         .with_state("crossref", DateState("2026-07-21"))
-        .with_state("ssrn", IdSetState(("a", "b")))
+        .with_state("nber", IdSetState(("w30000", "w30001")))
     )
     payload = watermark.to_dict()
     assert payload == {
@@ -378,7 +470,7 @@ def test_document_round_trip_through_dict() -> None:
         "sources": {
             "arxiv": {"kind": "date_upper_bound", "date": "2026-07-22"},
             "crossref": {"kind": "date_cursor", "date": "2026-07-21"},
-            "ssrn": {"kind": "id_set", "ids": ["a", "b"]},
+            "nber": {"kind": "id_set", "ids": ["w30000", "w30001"]},
         },
     }
     assert json.loads(json.dumps(payload, ensure_ascii=False)) == payload
@@ -393,9 +485,9 @@ def test_empty_document_is_first_run() -> None:
 
 
 def test_with_state_replaces_in_place_and_keeps_order() -> None:
-    watermark = _date_state("arxiv", "2026-07-20").with_state("ssrn", IdSetState(("a",)))
+    watermark = _date_state("arxiv", "2026-07-20").with_state("nber", IdSetState(("w1",)))
     updated = watermark.with_state("arxiv", DateState("2026-07-24"))
-    assert [name for name, _ in updated.states] == ["arxiv", "ssrn"]  # 原位替换，不挪到末尾
+    assert [name for name, _ in updated.states] == ["arxiv", "nber"]  # 原位替换，不挪到末尾
     assert updated.state_for("arxiv") == DateState("2026-07-24")
     assert watermark.state_for("arxiv") == DateState("2026-07-20")  # 原文档不被改
 
@@ -407,27 +499,63 @@ def test_with_state_rejects_unknown_source() -> None:
 
 def test_restrict_to_drops_ghost_cursors_of_unsubscribed_sources() -> None:
     """退订的源不留幽灵游标（`write_watermark` 整体覆盖，留谁删谁归本层裁决）。"""
-    watermark = _date_state("arxiv", "2026-07-20").with_state("ssrn", IdSetState(("a",)))
+    watermark = _date_state("arxiv", "2026-07-20").with_state("nber", IdSetState(("w1",)))
     kept = watermark.restrict_to(["arxiv"])
     assert [name for name, _ in kept.states] == ["arxiv"]
-    assert kept.state_for("ssrn") is None  # 重新订阅 = 首跑（保守方向：重看不漏看）
+    assert kept.state_for("nber") is None  # 重新订阅 = 首跑（保守方向：重看不漏看）
+
+
+@pytest.mark.parametrize(
+    "factory",
+    [
+        pytest.param(
+            lambda: DateUpperBound(source="x", param="p", overlap_days=-1), id="ub-overlap"
+        ),
+        pytest.param(
+            lambda: DateUpperBound(source="x", param="p", initial_lookback_days=-1),
+            id="ub-lookback",
+        ),
+        pytest.param(
+            lambda: DateCursor(source="x", param="p", overlap_days=-3), id="cursor-overlap"
+        ),
+        pytest.param(
+            lambda: DateCursor(source="x", param="p", initial_lookback_days=-7),
+            id="cursor-lookback",
+        ),
+        pytest.param(lambda: IdSetDiff(source="x", max_ids=0), id="idset-zero"),
+        pytest.param(lambda: IdSetDiff(source="x", max_ids=-5), id="idset-negative"),
+    ],
+)
+def test_strategy_construction_rejects_out_of_domain_parameters(
+    factory: Callable[[], object],
+) -> None:
+    """构造参数取值域：负天数/非正上限一律拒（负 overlap 会让水位往回走且静默生效）。"""
+    with pytest.raises(WatermarkInvalid):
+        factory()
+
+
+def test_date_cursor_rejects_both_upper_bound_forms_at_once() -> None:
+    """`until_param`（独立 until 参数）与 `range_suffix`（单参数区间）互斥。"""
+    with pytest.raises(WatermarkInvalid) as excinfo:
+        DateCursor(source="x", param="p", until_param="u", range_suffix=":")
+    assert "互斥" in str(excinfo.value)
 
 
 def test_state_type_mismatch_is_fail_loud_on_every_surface() -> None:
     """状态与策略不配对（编程错误）在三个面上都响亮拒绝，不静默当首跑。"""
-    arxiv, ssrn = STRATEGIES["arxiv"], STRATEGIES["ssrn"]
+    arxiv, nber = STRATEGIES["arxiv"], STRATEGIES["nber"]
     with pytest.raises(WatermarkInvalid):
         arxiv.advance(IdSetState(("a",)), [], now=TODAY)
     with pytest.raises(WatermarkInvalid):
-        ssrn.advance(DateState("2026-07-20"), [])
+        nber.advance(DateState("2026-07-20"), [])
     with pytest.raises(WatermarkInvalid):
-        window_params(Watermark().with_state("ssrn", DateState("2026-07-20")), "ssrn", now=TODAY)
+        window_params(Watermark().with_state("nber", DateState("2026-07-20")), "nber", now=TODAY)
     with pytest.raises(WatermarkInvalid):
         Watermark().with_state("arxiv", IdSetState(("a",))).to_dict()
     with pytest.raises(WatermarkInvalid):
-        Watermark().with_state("ssrn", DateState("2026-07-20")).to_dict()
+        Watermark().with_state("nber", DateState("2026-07-20")).to_dict()
     with pytest.raises(WatermarkInvalid):
-        STRATEGIES["crossref"].advance(IdSetState(("a",)), [], now=TODAY)
+        STRATEGIES["ssrn"].advance(IdSetState(("a",)), [], now=TODAY)
 
 
 @pytest.mark.parametrize(
@@ -449,8 +577,10 @@ def test_state_type_mismatch_is_fail_loud_on_every_surface() -> None:
             "必须是字符串",
         ),
         ({"schema_ver": 1, "sources": {"arxiv": {"kind": "id_set", "ids": []}}}, "不符"),
+        # D-029 前的旧格式（ssrn 曾是 id_set）现在必须响亮拒载，不能拿旧语义喂新策略
+        ({"schema_ver": 1, "sources": {"ssrn": {"kind": "id_set", "ids": ["1"]}}}, "不符"),
         (
-            {"schema_ver": 1, "sources": {"ssrn": {"kind": "date_cursor", "date": "2026-07-22"}}},
+            {"schema_ver": 1, "sources": {"nber": {"kind": "date_cursor", "date": "2026-07-22"}}},
             "不符",
         ),
         ({"schema_ver": 1, "sources": {"arxiv": {"kind": "date_upper_bound"}}}, "date"),
@@ -465,10 +595,10 @@ def test_state_type_mismatch_is_fail_loud_on_every_surface() -> None:
             },
             "未知字段",
         ),
-        ({"schema_ver": 1, "sources": {"ssrn": {"kind": "id_set"}}}, "ids"),
-        ({"schema_ver": 1, "sources": {"ssrn": {"kind": "id_set", "ids": "a"}}}, "必须是列表"),
-        ({"schema_ver": 1, "sources": {"ssrn": {"kind": "id_set", "ids": [1]}}}, "必须是字符串"),
-        ({"schema_ver": 1, "sources": {"ssrn": {"kind": "id_set", "ids": ["  "]}}}, "空字符串"),
+        ({"schema_ver": 1, "sources": {"nber": {"kind": "id_set"}}}, "ids"),
+        ({"schema_ver": 1, "sources": {"nber": {"kind": "id_set", "ids": "a"}}}, "必须是列表"),
+        ({"schema_ver": 1, "sources": {"nber": {"kind": "id_set", "ids": [1]}}}, "必须是字符串"),
+        ({"schema_ver": 1, "sources": {"nber": {"kind": "id_set", "ids": ["  "]}}}, "空字符串"),
     ],
 )
 def test_parse_is_fail_loud(raw: dict[str, object], needle: str) -> None:
@@ -482,9 +612,9 @@ def test_parse_is_fail_loud(raw: dict[str, object], needle: str) -> None:
 
 def test_parse_rejects_id_set_beyond_the_cap() -> None:
     """外部改坏/旧版本写入的超长 id 集也拒载（上限是不变量，不是"尽力而为"）。"""
-    ids = [f"ssrn-{n}" for n in range(DEFAULT_MAX_IDS + 1)]
+    ids = [f"w{n}" for n in range(DEFAULT_MAX_IDS + 1)]
     with pytest.raises(WatermarkInvalid) as excinfo:
-        Watermark.parse({"schema_ver": 1, "sources": {"ssrn": {"kind": "id_set", "ids": ids}}})
+        Watermark.parse({"schema_ver": 1, "sources": {"nber": {"kind": "id_set", "ids": ids}}})
     assert "超出上限" in str(excinfo.value)
 
 
@@ -527,7 +657,7 @@ def test_repo_round_trip_of_the_watermark_document(repo: SubscriptionRepo) -> No
     repo.upsert(subscription)
     assert Watermark.parse(repo.read_watermark(subscription.name)) == Watermark()  # 首跑
 
-    watermark = _date_state("arxiv", "2026-07-22").with_state("ssrn", IdSetState(("a", "b")))
+    watermark = _date_state("arxiv", "2026-07-22").with_state("ssrn", DateState("2026-07-21"))
     repo.write_watermark(subscription.name, watermark.to_dict())
     assert Watermark.parse(repo.read_watermark(subscription.name)) == watermark
 

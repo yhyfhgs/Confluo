@@ -8,32 +8,48 @@
 | 策略 | 源 | 语义 |
 |---|---|---|
 | `DateUpperBound` | arxiv | `submittedDate` 上界推进 + **重叠 1 天窗**防 announce 延迟 |
-| `DateCursor` | openalex / s2 / crossref | `from_*_date` 游标（含端，边界日天然重扫） |
-| `IdSetDiff` | ssrn / nber | 最近 N 个 id 集合差分（无可靠时间过滤时的通用法） |
+| `DateCursor` | crossref / openalex / s2 / ssrn | `from_*_date` 游标（含端，边界日天然重扫） |
+| `IdSetDiff` | nber | 最近 N 个 id 集合差分（RSS 通道无日期轴，唯一适用者） |
 
-**为什么只有 arxiv 要显式重叠一天**：其余源的游标参数是**含端**的（`from-pub-date:D`
-含 D 当天），把游标设到"已见最大日期 D"本身就等于下次重扫整个 D 日；而 arxiv 的窗是
-显式闭区间，announce 延迟会让"提交日 = D 的论文"在 D+1、D+2 才出现在 API 结果里——
-此时若下界已随其他论文推到 D+1，那篇就永远进不了任何窗。故对 arxiv **额外**回退一天。
+**含端与 `overlap_days` 的分工**：游标参数是**含端**的（`from-pub-date:D` 含 D 当天），
+把游标停在"已见最大日期 D"本身就重扫整个 D 日——这已经是**一天的迟到容忍**。
+`overlap_days` 是在此之上**再额外**回退的天数，按各源迟到分布单独定（见下表），
+不是用来"补齐"含端的：
+
+- arxiv `overlap_days=1`：announce 延迟常跨日，提交日 = D 的论文可能 D+1/D+2 才出现在
+  API 结果里；若下界已随其他论文推到 D+1，那篇就永远进不了任何窗。
+- crossref `overlap_days=2`：`pub-date` 是**刊期**而非入库时刻，同一刊期的记录会陆续
+  沉积数日（online-first 尤甚）——含端只保住 D 当天，故再宽两天。
+- ssrn `overlap_days=1`：`created` ≈ 新投稿入 crossref 时刻，**~1 日延迟**（ssrn.md §4.2）。
+- openalex / s2 `overlap_days=0`：含端重扫已足；两者都无已知的系统性入库滞后。
 
 ## 窗口参数的宿主形态（`window_params` 产出 → T5 合成）
 
-产出与 `types.PlanStep.pushdown` 同构（有序 k-v 串），但**键的宿主因源而异**，T5
-按源分派合成（本模块只负责语义正确的键值对，不拼 URL）：
+产出与 `types.PlanStep.pushdown` 同构（有序 k-v 串），键取自
+`types.DATE_WINDOW_PARAMS`（**单一同源**，本模块产出恒 ⊆ 该源的槽位名，有自断言测试），
+但**键的宿主因源而异**，T5 按源分派合成（本模块只负责语义正确的键值对，不拼 URL）：
 
 | 源 | 键 | 值形态 | 宿主 |
 |---|---|---|---|
 | arxiv | `submittedDate` | `[A TO B]` 闭区间 | `search_query` 字段前缀（AND 进布尔式） |
 | crossref | `from-pub-date` | `YYYY-MM-DD` | `filter=` 逗号串的一项 |
 | openalex | `from_publication_date` | `YYYY-MM-DD` | `filter=` 逗号串的一项 |
-| s2 | `year` | `YYYY-`（开区间年窗） | 真 URL 查询参数 |
-| ssrn / nber | —（恒空） | — | 无日期下推，增量靠 id 差分 |
+| s2 | `publicationDateOrYear` | `YYYY-MM-DD:` 开区间 | 真 URL 查询参数 |
+| ssrn | `from-created-date` + `until-created-date` | `YYYY-MM-DD` ×2 | `filter=` 逗号串**成对** |
+| nber | —（恒空） | — | 无日期轴，增量靠 RSS id 差分 |
 
 arxiv 的 `A`/`B` 是 `YYYYMMDDHHMM`（GMT），两端分别钉 `0000`/`2359` 覆盖整日。
 
-s2 只有**年**粒度（bulk search `year=2016-2020` / `year=2019-`，site-survey
-metadata-apis.md）——游标仍按日存，下推时降级为 `年-` 开区间：窗只会更宽不会更窄，
-多出来的重复交去重兜底，`filters.min_year` 另做本地补偿。
+**s2 用 `publicationDateOrYear` 而非 `year`**（两者 site-survey/metadata-apis.md 同列，
+前者是首列项）：`year=` 只有**年**粒度，会把 7 天保守初窗放大成**整年窗**——首跑必然
+超护栏 → 熔断 → 不推进 → 永久死循环（且订阅级熔断连带冻结其他源）。
+`publicationDateOrYear` 保住日粒度，开区间上界写作 `<起>:`（单参数区间语法）。
+⚠ **该值语法未经在线确认**——site-survey 只列了参数名；`<起>:` 形态待 T9 在线冒烟
+（plan §3 T9-online）实测捕获后回填确认或订正。
+
+**ssrn 的 until 端必须成对产出**：ssrn 元数据枚举经 `CrossrefAdapter` 的 prefix 模式
+（D-029），而 `_works_url` 无条件拼 `from-…,until-…` 两端——只给 from 就是半截 filter。
+其余走 `filter=` 的源（crossref/openalex）由各自枚举路径给上界，本层只推下界。
 
 ## 首跑（无 watermark）= **保守初窗**，不是全量首拉
 
@@ -48,14 +64,20 @@ design/09 §5 未给首跑口径，本卡裁决为"回看 `initial_lookback_days
    也不支持"一窗拉全史"。
 3. **有先例**：ssrn.md §增量 watch 即 `from-created-date:{今-N}` 整窗收割。
 
-`IdSetDiff` 的首跑是空 id 集（最近 N 页全算新增）——它本来就没有日期窗可收窄，
-拉取面由 T5 的页预算（最近 N 页 / RSS feed）限定，入库面由护栏限定。
+`IdSetDiff`（nber）的首跑是空 id 集（最近一轮 RSS 全算新增）——它本来就没有日期轴
+可收窄，拉取面由 T5 的 feed 预算限定（19 个 program feed × 周更 ~39 item），入库面
+由护栏限定。
 
 ## 推进纪律：候选生成与提交**分离**（design/09 §5 + plan §4 T4）
 
 `advance()` 只产出**候选** `Watermark`（纯函数，不碰 DB）；真正落库是调用方在 run
 成功后自己调 `SubscriptionRepo.write_watermark(name, wm.to_dict())`。熔断/失败路径
 只要**不调**那一行，水位自然停在旧值——不需要回滚，也不可能"推进了一半"。
+
+**dry-run 亦不提交**：`crawler watch --dry-run` 只报数不动库（design/09 §6.2，plan §4
+T5 已裁决"不入库、不派生任务、不推 watermark、不写 run 记录"）。它是**成功路径**，
+却不在"run 成功才提交"的覆盖面内——三条不提交的理由各自独立（失败、熔断、dry-run），
+调用方须逐条判，别把"没熔断没失败"当成"该提交"。
 
 方向性偏好是**反的**（宁可重看不可漏看）：
 
@@ -83,10 +105,10 @@ design/09 §5 未给首跑口径，本卡裁决为"回看 `initial_lookback_days
 的事，纯函数才好做 property 测试。
 """
 
-from collections.abc import Iterable, Mapping
+from collections.abc import Iterable, Mapping, Sequence
 from dataclasses import dataclass
 from datetime import UTC, date, datetime, timedelta
-from typing import ClassVar, Literal, NoReturn
+from typing import ClassVar, NoReturn
 
 from paper_crawler.errors import WatermarkInvalid
 from paper_crawler.subs.model import SOURCE_FIELDS
@@ -229,7 +251,13 @@ def _opt_id_set_state(state: SourceState | None, *, path: str) -> IdSetState | N
     return None if state is None else _as_id_set_state(state, path=path)
 
 
-def _advance_date(base: date, seen: Iterable[str], *, today: date, path: str) -> date:
+def _require_non_negative(value: int, *, field: str, source: str) -> None:
+    """策略构造参数的取值域把关（负天数 = 水位往回走，静默生效会长期多拉窗）。"""
+    if value < 0:
+        _fail(f"strategy.{source}.{field}", f"不得为负: {value}")
+
+
+def _advance_date(base: date, seen: Sequence[str], *, today: date, path: str) -> date:
     """日期水位推进的公共算法（两个日期类策略共用）。
 
     `max(base, max(已见日期 ∩ (-∞, today]))`——三条纪律都在这一行里：取 max 故乱序
@@ -267,6 +295,12 @@ class DateUpperBound:
     initial_lookback_days: int = DEFAULT_INITIAL_LOOKBACK_DAYS
     kind: ClassVar[str] = KIND_DATE_UPPER_BOUND
 
+    def __post_init__(self) -> None:
+        _require_non_negative(self.overlap_days, field="overlap_days", source=self.source)
+        _require_non_negative(
+            self.initial_lookback_days, field="initial_lookback_days", source=self.source
+        )
+
     def lower_bound(self, state: SourceState | None, *, now: date | None = None) -> date:
         """本次窗的下界（诊断/日报可读；`window_params` 的取值来源）。"""
         today = now if now is not None else _today()
@@ -286,7 +320,7 @@ class DateUpperBound:
         return ((self.param, f"[{lower:%Y%m%d}0000 TO {today:%Y%m%d}2359]"),)
 
     def advance(
-        self, state: SourceState | None, seen: Iterable[str], *, now: date | None = None
+        self, state: SourceState | None, seen: Sequence[str], *, now: date | None = None
     ) -> DateState:
         """候选新水位（**未提交**）；`seen` = 本次已见条目的提交日期文本。"""
         today = now if now is not None else _today()
@@ -309,39 +343,63 @@ class DateUpperBound:
 
 @dataclass(frozen=True)
 class DateCursor:
-    """openalex / s2 / crossref：`from_*_date` 游标（design/09 §5 第三条）。
+    """crossref / openalex / s2 / ssrn：`from_*_date` 游标（design/09 §5 第三条）。
 
-    与 `DateUpperBound` 的唯一差别是**不额外回退重叠天**——这些源的 from 参数含端，
-    把游标停在"已见最大日期"本身就重扫了那一整天（模块 docstring 已展开）。
+    与 `DateUpperBound` 的差别只在**上界怎么写**：本策略的 from 参数含端，下界 =
+    水位 − `overlap_days`（缺省 0 = 只靠含端天然重扫那一天），上界形态三选一：
 
-    `granularity="year"` 供 s2：游标仍按日存，下推时降级为 `YYYY-` 开区间年窗
-    （bulk search 只有年粒度）。
+    - `until_param=None` + `range_suffix=""`（crossref/openalex）：只推下界，上界由
+      各自枚举路径给（openalex `to_publication_date` / crossref `until-pub-date`）；
+    - `until_param="until-created-date"`（ssrn）：**成对**产出，上界 = 今天——
+      `CrossrefAdapter._works_url` 无条件拼两端，缺 until 就是半截 filter（D-029）；
+    - `range_suffix=":"`（s2）：单参数区间语法 `publicationDateOrYear=<起>:`，上界留空
+       表示开区间（⚠ 值语法待 T9 在线冒烟确认，模块 docstring s2 段）。
+
+    三者互斥（`__post_init__` 拒同时设 `until_param` 与 `range_suffix`）。
     """
 
     source: str
     param: str
-    granularity: Literal["day", "year"] = "day"
+    overlap_days: int = 0
+    until_param: str | None = None
+    range_suffix: str = ""
     initial_lookback_days: int = DEFAULT_INITIAL_LOOKBACK_DAYS
     kind: ClassVar[str] = KIND_DATE_CURSOR
 
+    def __post_init__(self) -> None:
+        _require_non_negative(self.overlap_days, field="overlap_days", source=self.source)
+        _require_non_negative(
+            self.initial_lookback_days, field="initial_lookback_days", source=self.source
+        )
+        if self.until_param is not None and self.range_suffix:
+            _fail(
+                f"strategy.{self.source}",
+                "`until_param` 与 `range_suffix` 互斥（独立 until 参数 vs 单参数区间语法）",
+            )
+
     def lower_bound(self, state: SourceState | None, *, now: date | None = None) -> date:
-        """本次窗的下界 = 水位本身（含端）；首跑 = 今天 − `initial_lookback_days`。"""
+        """本次窗的下界 = 水位 − `overlap_days`（含端）；首跑 = 今天 − 初窗回看天数。"""
         today = now if now is not None else _today()
         current = _opt_date_state(state, path=f"sources.{self.source}")
         if current is None:
             return _initial_lower_bound(self.initial_lookback_days, today)
-        return _parse_date(current.date, path=f"sources.{self.source}.date")
+        return _parse_date(current.date, path=f"sources.{self.source}.date") - timedelta(
+            days=self.overlap_days
+        )
 
     def window_params(
         self, state: SourceState | None, *, now: date | None = None
     ) -> tuple[tuple[str, str], ...]:
-        """`((param, "YYYY-MM-DD"),)`；`granularity="year"` 时 `((param, "YYYY-"),)`。"""
-        lower = self.lower_bound(state, now=now)
-        value = f"{lower.year}-" if self.granularity == "year" else lower.isoformat()
-        return ((self.param, value),)
+        """`((param, "YYYY-MM-DD"),)`，另按 `until_param`/`range_suffix` 补上界形态。"""
+        today = now if now is not None else _today()
+        lower = self.lower_bound(state, now=today)
+        params = [(self.param, f"{lower.isoformat()}{self.range_suffix}")]
+        if self.until_param is not None:
+            params.append((self.until_param, today.isoformat()))
+        return tuple(params)
 
     def advance(
-        self, state: SourceState | None, seen: Iterable[str], *, now: date | None = None
+        self, state: SourceState | None, seen: Sequence[str], *, now: date | None = None
     ) -> DateState:
         """候选新游标（**未提交**）；`seen` = 本次已见条目的发表/登记日期文本。"""
         today = now if now is not None else _today()
@@ -364,12 +422,16 @@ class DateCursor:
 
 @dataclass(frozen=True)
 class IdSetDiff:
-    """ssrn / nber：最近 N 个 id 集合差分（design/09 §5 第二条）。
+    """nber：最近 N 个 id 集合差分（design/09 §5 第二条的"无可靠时间过滤"通用法）。
 
-    无日期下推能力的源的通用法：把"最近见过哪些 id"记下来，下次拉最近 N 页/RSS feed
-    后做差集。`new_ids()` 是**唯一**做去重语义的地方（日期类策略一概不去重）——但它
-    去的是"与上次窗的重叠"，与护栏 `dedupe_against_library`（对全库）、入库层
-    identifier 主键（最终防线）是三道独立的网，谁都不替代谁。
+    **当前唯一适用者是 nber**：其增量通道是 program RSS（`back.nber.org/rss/new{code}.xml`，
+    nber.md §3.4），feed 只给"最近一批"，没有任何日期轴可下推。ssrn 曾用本策略，
+    D-029 后其元数据主路径改经 crossref prefix 枚举、created 轴时间过滤已可靠，故改判
+    `DateCursor`（design/09 §5 联动修订 2026-07-26）——"最近 N 页"的前提本身消失了。
+
+    `new_ids()` 是策略层**唯一**做去重语义的地方（日期类一概不去重）——但它去的只是
+    "与上次窗的重叠"，与护栏 `dedupe_against_library`（对全库）、入库层 identifier
+    主键（最终防线）是三道独立的网，谁都不替代谁。
 
     `max_ids` 上限见 `DEFAULT_MAX_IDS` 的取值依据注释。
     """
@@ -378,21 +440,25 @@ class IdSetDiff:
     max_ids: int = DEFAULT_MAX_IDS
     kind: ClassVar[str] = KIND_ID_SET
 
+    def __post_init__(self) -> None:
+        if self.max_ids < 1:
+            _fail(f"strategy.{self.source}.max_ids", f"须 ≥ 1（实际 {self.max_ids}）")
+
     def window_params(
         self, state: SourceState | None, *, now: date | None = None
     ) -> tuple[tuple[str, str], ...]:
-        """恒空：本策略无日期下推面（拉取范围 = T5 的页/feed 预算，非查询参数）。"""
+        """恒空：本策略无日期下推面（拉取范围 = T5 的 feed 预算，非查询参数）。"""
         _opt_id_set_state(state, path=f"sources.{self.source}")
         return ()
 
-    def new_ids(self, state: SourceState | None, candidates: Iterable[str]) -> tuple[str, ...]:
+    def new_ids(self, state: SourceState | None, candidates: Sequence[str]) -> tuple[str, ...]:
         """差分：`candidates` 里**上次没见过**的部分（保序去重）。首跑 = 全是新的。"""
         current = _opt_id_set_state(state, path=f"sources.{self.source}")
         known = frozenset(current.ids) if current is not None else frozenset()
         return tuple(value for value in _dedupe(candidates) if value not in known)
 
     def advance(
-        self, state: SourceState | None, seen: Iterable[str], *, now: date | None = None
+        self, state: SourceState | None, seen: Sequence[str], *, now: date | None = None
     ) -> IdSetState:
         """候选新 id 集（**未提交**）：本次 `seen` 置前 + 旧集合补后，截到 `max_ids`。
 
@@ -455,13 +521,24 @@ def _parse_date_payload(payload: Mapping[str, object], *, kind: str, path: str) 
 
 # --- 源 → 策略注册表（design/09 §3/§5 能力表）--------------------------------
 
+# 键与值的参数名恒 ⊆ `types.DATE_WINDOW_PARAMS`（自断言测试锁），`overlap_days` 的逐源
+# 依据见模块 docstring "含端与 overlap_days 的分工"段。
 STRATEGIES: dict[str, WatermarkStrategy] = {
     "arxiv": DateUpperBound(source="arxiv", param="submittedDate"),
-    "ssrn": IdSetDiff(source="ssrn"),
+    "ssrn": DateCursor(
+        source="ssrn",
+        param="from-created-date",
+        until_param="until-created-date",  # crossref `_works_url` 强制两端成对
+        overlap_days=1,  # created ≈ 入 crossref 时刻，~1 日延迟（ssrn.md §4.2）
+    ),
     "openalex": DateCursor(source="openalex", param="from_publication_date"),
-    "s2": DateCursor(source="s2", param="year", granularity="year"),
+    "s2": DateCursor(source="s2", param="publicationDateOrYear", range_suffix=":"),
     "nber": IdSetDiff(source="nber"),
-    "crossref": DateCursor(source="crossref", param="from-pub-date"),
+    "crossref": DateCursor(
+        source="crossref",
+        param="from-pub-date",
+        overlap_days=2,  # pub-date 是刊期非入库时刻，记录陆续沉积
+    ),
 }
 
 
@@ -573,12 +650,18 @@ def window_params(
 
 
 def advance(
-    watermark: Watermark, source: str, seen: Iterable[str], *, now: date | None = None
+    watermark: Watermark, source: str, seen: Sequence[str], *, now: date | None = None
 ) -> Watermark:
     """产出推进后的**候选**文档——纯函数，**不提交**。
 
-    提交是调用方的事：run 成功才 `repo.write_watermark(name, candidate.to_dict())`；
-    熔断/失败路径不调这一行，水位自然停在旧值（模块 docstring "推进纪律"段）。
+    提交是调用方的事：run 成功才 `repo.write_watermark(name, candidate.to_dict())`。
+    **三条不提交的理由各自独立**——失败、熔断、以及 `--dry-run`（只报数不动库，
+    design/09 §6.2；它是成功路径却同样不提交）——调用方须逐条判，别把"没熔断没失败"
+    当成"该提交"（模块 docstring "推进纪律"段）。
+
+    `seen` 取 `Sequence` 而非 `Iterable`：本函数会**多次遍历**（解析 + 取 max / 去重
+    合并），传生成器会被一次性消耗，第二遍拿到空序列 → 水位静默不推进或 id 静默丢失。
+    调用方先物化成 list/tuple，类型上就挡住这条陷阱。
 
     `seen` 的含义随策略而异：日期类 = 本次已见条目的日期文本；id 差分类 = 本次窗内
     见到的**全部** id。
