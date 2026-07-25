@@ -60,28 +60,15 @@ crawler subs watch --all              # 全部订阅串行跑，合并出一份�
 controller 裁决并落档 [design/05 §6](../docs/design/05-pipeline.md) 命令面表，两条
 命令长期并存。
 
-## `presets/`（后续到位）
+## `presets/`
 
-`subscriptions/presets/` 将放 design/09 §4 的 9 个预置 topic 包（`llm-agents`、
-`rl-theory`、`causal-inference`、`econometrics-methods`、`asset-pricing`、
-`market-microstructure`、`corporate-finance`、`mechanism-design`、`optimization-ml`），
-每件头部注明其 precision/recall 取向。
+`subscriptions/presets/` 已落地 design/09 §4 清单的 9 个预置 topic 包（Phase 6 T8
+交付），每件头部注明其 precision/recall 取向与改造建议，逐字段解析校验见
+`tests/unit/test_subs_presets.py`。
 
 **preset 是模板，不是活订阅**：加载器只扫本目录**顶层**的 `*.yaml`，不递归进
 `presets/`——想启用某个 preset，复制一份到顶层再按需改造，这样 `watch --all` 不会
 把 9 个模板当成你的真实订阅跑掉。
-
-## 不入 git 的东西
-
-订阅文件本身可以入 git（不含凭证）。watch 的运行产物——日报、watermark、下载的
-PDF——都不入 git（见仓库 `.gitignore` 与 AGENTS.md §6.4）。日报落在
-`docs/reports/watch/daily-YYYY-MM-DD.md`（多订阅当天合并一份，同日重跑覆盖），
-该子目录已在 `.gitignore` 内。
-
-## presets 索引（Phase 6 T8 交付）
-
-`subscriptions/presets/` 9 件已到位（design/09 §4 清单）；每件头部注释 precision/
-recall 取向与改造建议，逐字段解析校验见 `tests/unit/test_subs_presets.py`。
 
 | 文件 | 领域 | 源组合 | 取向 |
 |---|---|---|---|
@@ -94,3 +81,10 @@ recall 取向与改造建议，逐字段解析校验见 `tests/unit/test_subs_pr
 | `corporate-finance.yaml` | 公司金融（econ/fin） | arxiv + ssrn + nber | 宽召回 |
 | `mechanism-design.yaml` | 机制设计（CS/理论经济学） | arxiv + openalex | 高精确 |
 | `optimization-ml.yaml` | 机器学习优化（CS） | arxiv + openalex | 宽召回 |
+
+## 不入 git 的东西
+
+订阅文件本身可以入 git（不含凭证）。watch 的运行产物——日报、watermark、下载的
+PDF——都不入 git（见仓库 `.gitignore` 与 AGENTS.md §6.4）。日报落在
+`docs/reports/watch/daily-YYYY-MM-DD.md`（多订阅当天合并一份，同日重跑覆盖），
+该子目录已在 `.gitignore` 内。

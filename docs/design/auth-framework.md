@@ -510,7 +510,11 @@ OA 第三方 host 未注册限速桶即 CONFIG fail-fast）由**通用 direct �
 不改六阶段 handler 签名**（`_stage_oa_fallback` 是第七 handler，非六阶段之一）。故取主方向，不降级。
 
 **接线点 A = `runner._route_error` 的 NO_ENTITLEMENT 分支**（runner.py line 371–372 现只 `mark_asset(no_entitlement)`）。
-新增编排（受 `StageContext.oa_fallback: bool` 门控，默认 False；auth_gated venue 或 VenueSpec 声明 OA-fallback 时置 True）：
+新增编排（受 `StageContext.oa_fallback: bool` 门控，`StageContext` 直接构造时默认 False；实况订正
+2026-07-26：`cli.py::_assemble_auth_seam`——`pull`/`grab` 唯二的装配路径——对该门控**无条件**置
+`True`，不按 venue 是否 auth_gated、也不按任何 VenueSpec 声明区分；`VenueSpec`（`types.py`）schema
+本身**无**任何 OA-fallback 相关字段，"auth_gated venue 或 VenueSpec 声明 OA-fallback 时置 True"
+一句为此前的幻影字段表述，本次订正为实况）：
 ```
 NO_ENTITLEMENT（fetch 失败 或 resolve entitlement 预检否）:
   1. mark_asset(asset_id, state="no_entitlement")            # 现有保留；no_entitlement 终态不计 failures（A-m5/§8.5）
@@ -819,6 +823,7 @@ class ChallengeDetector:
 | 4 | 2026-07-24 | **可测性 backlog 登记（非缺陷，非设计变更）**：`AuthManager.resolve`/`get`（§2 编排入口）走 provider 默认构造，**不支持**注入 `http_factory`/`login_flow` 测试 seam——T6 全生命周期集成测试因此须绕过 `AuthManager` 直接构造 `SSOFlowProvider(...)`（`_make_sso_provider`；仅 `logout` 经 `AuthManager` 驱动）。生产路径无影响（默认构造即真实路径），但集成测试无法端到端经 manager 装配 mock 平台。登记为可测性改进 backlog，本条不改动既有 `AuthManager` 接口设计。 | Phase 4 T6 发现；[2026-07-23-phase4-report.md §5「AuthManager DI 缺口」](../reports/2026-07-23-phase4-report.md) + [AC-4 离线汇总记录 §5「AuthManager DI 缺口（T6 发现 → T8 登记）」](../testing/records/2026-07-23-ac4-acceptance.md)；phase4-report §6 开工检查单 #1③ 移交 |
 | 5 | 2026-07-26 | **§8.3 文档滞后修正（非设计变更）**：日配额 `cap` 表述由"VenueSpec `rate_limit`（若声明日上限）> `Config.auth_daily_cap`"改为"`Config.auth_daily_cap` 单一来源"——`VenueRateLimit` schema 无日上限字段、runner 只读 `Config.auth_daily_cap`（P6-F2，审计 §5 文档滞后处置） |
 | 6 | 2026-07-26 | **§8.4 冷却规格随 D-030 E-1 落地同步**（F6 实现卡）：冷却落盘键 `<platform>.json`→`<domain>.json`（键 = asset URL host，无 asset 时如实退回 `<adapter_id>`；读时新旧两键都查，向前兼容；过期文件顺手清理）；"冷却内该平台全队列 BLOCKED"→"该域全队列"；冷却门**先于 OA-fallback 旁路**对全部 fetch 生效（F6-2）。一并订正两处既有失准：`_challenge_cooldown` 实为**键→until**（非 venue→until）；"均在 `_new_report` 重置"与实码矛盾——冷却跨运行有效、**不重置**（重置的只有 `_auth_blocked_venues`/`_auth_batch`） | [D-030](../plan/decision-log.md) 裁决③ + F6 实现卡（`fix/cf403-cooldown`）+ F6 审查裁决 F6-1/F6-2 |
+| 7 | 2026-07-26 | **§8.1 幻影字段清账（非设计变更）**：删"auth_gated venue 或 VenueSpec 声明 OA-fallback 时置 True"一句——`VenueSpec`（`types.py`）schema 从未有过任何 OA-fallback 相关字段；实况是 `cli.py::_assemble_auth_seam`（`pull`/`grab` 唯二装配路径）对 `StageContext.oa_fallback` **无条件**置 `True`，不按 venue 区分。同批订正 [ssrn.md §4.4](adapters/ssrn.md)、[aggregators.md §5.5](adapters/aggregators.md) 两处同源幻影表述 | P6-T10 收尾盘点发现（三处文档同一幻影字段的独立表述） |
 
 > **[已裁决]**（P0b，2026-07-23）：①`cryptography` optional extra → **D-023**（含 `types.SessionHandle` 具体化系 types.py:128 预留的计划内变更之附注）；②健康门 N=20/15min、日配额 200、challenge 冷却 24h **确认沿 04 §4/§5 原文**；③异常子类 + status_code **归 T2 权威版**（plan §5）；④wiley **纳入本 Phase + token 门控** → **D-024**（acm_dl 维持出列、全文改道 unpaywall 一并入 D-024）。
 > **[待双评审]**：elsevier entitlement 语义、`X-RateLimit-*` 真值、全文/attachment 字段名——R0 keyless 429 拦在 auth 层前无法活验，留 T3 实现期真实 key 核验（BLOCKER-1，见 elsevier-sd.md §2/§5）。

@@ -303,7 +303,7 @@ openalex/s2 **不承担枚举**（capabilities 已收回 ENUMERATE，§1；两�
 |---|---|---|
 | 单 DOI resolve | `GET /v2/{doi}?email=<addr>`（**email 必填**，网关 422 兜底） | 无 key；勘察 [LIVE] 2026-07-22 已验证端点 |
 
-- **无搜索端点**：必须先有 DOI 清单（来自 crossref/dblp）。**触发条件**：`no_entitlement` 兜底，或 VenueSpec 声明 OA-fallback 优先。
+- **无搜索端点**：必须先有 DOI 清单（来自 crossref/dblp）。**触发条件**：`no_entitlement` 兜底——实况订正 2026-07-26：`cli.py::_assemble_auth_seam`（`pull`/`grab` 唯二装配路径）对该总开关（`StageContext.oa_fallback`）**无条件**置 `True`，不存在"按 venue 声明优先"的第二触发路径；`VenueSpec`（`types.py`）schema 无任何 OA-fallback 相关字段，此前"或 VenueSpec 声明 OA-fallback 优先"为幻影字段表述，本次订正为实况（同批订正 [auth-framework.md §8.1](../auth-framework.md)、[ssrn.md §4.4](ssrn.md) 两处同源表述）。
 
 **请求头**：UA + mailto（email 走查询参数 `?email=`）。
 
@@ -453,6 +453,7 @@ openalex/s2 **不承担枚举**（capabilities 已收回 ENUMERATE，§1；两�
 | 12 | 2026-07-23 | **§5.3/§5.4 healthcheck 措辞对齐 T6 实现**：openalex healthcheck 门控收紧为与 s2 统一"无 key → `NotImplementedError`→canary SKIP"，废止原"匿名即可探测"表述（★裁决 2026-07-23；理由=防 `crawler canary` 周期性高频调用时静默消耗 openalex 每日 credit 配额） | T6 实现（`adapters/openalex/adapter.py` 模块 docstring 自述"收紧于设计稿 §5.3"） |
 | 13 | 2026-07-23 | **文档转正**：front matter `status: approved`→`implemented`（T1~T7 五源 adapter + 合并引擎全部合并落地；AC-3.5 在线实跑 PASS 建议，待 controller 终签） | Phase 3 收尾（[records/2026-07-23-ac35-acceptance.md](../../testing/records/2026-07-23-ac35-acceptance.md)） |
 | 14 | 2026-07-26 | **§5.2 回填 dblp 真实枚举卷响应 schema**：在线卷页根元素 `<bht>`（记录嵌 `<dblpcites>/<r>` 两层包装）vs 历史 dump `<dblp>`（`proceedings`/`inproceedings` 为直接子元素）两形态并存，此前仅 `dblp/parse.py` 模块 docstring 与测试 fixture 记录该真实结构，本文档未同步回填（文档滞后修正，非实质设计变更） | Phase 6 F2（[2026-07-24-post-phase5-audit.md §5](../../reports/2026-07-24-post-phase5-audit.md)） |
+| 15 | 2026-07-26 | **§5.5 幻影字段清账（非设计变更）**：删"或 VenueSpec 声明 OA-fallback 优先"——`VenueSpec` schema 从无该字段；实况是 `cli.py::_assemble_auth_seam` 对 OA-fallback 总开关无条件置位。同批订正 [auth-framework.md §8.1](../auth-framework.md)、[ssrn.md §4.4](ssrn.md) 两处同源表述 | P6-T10 收尾盘点发现 |
 
 ## 10. 风险与维护
 

@@ -87,7 +87,7 @@ updated: 2026-07-26
 ### 4.4 `resolve_assets(venue, paper, session)`（RESOLVE，landing-only 零网络）
 
 - **纯 URL 构造（`resolve_offline=True`，免限速闸 D-022）**：由 `identifier(ssrn)` 产 landing 引用 `papers.ssrn.com/sol3/papers.cfm?abstract_id={id}`（`AssetPlan(kind=LANDING, url_strategy=direct, auth_needed=none)` 或仅入 `meta.landing_url`——**不产 PDF asset**）。
-- **PDF 全文**：默认交 pipeline **unpaywall OA-fallback**（§8.1，VenueSpec 声明 `oa_fallback=true`）——按 DOI 查 unpaywall。**如实低预期**（勘察 §5）：SSRN 的 unpaywall `oa_location` 指回 SSRN 自身、`url_for_pdf=None` ⇒ `_oa_pdf_url_and_version` 返 None ⇒ `_stage_oa_fallback` 返 `done`**无 asset**（auth-framework §8.1 line 532：landing-only 不产 asset）。**净效果：SSRN 元数据层论文 = 元数据 + landing 链接，实际 PDF 命中 ≈ 0**（少数 econ WP 可经 RePEc/NBER/作者主页 OA 副本替代——Phase 5 联动 repec/nber adapter，非本 adapter 职责）。
+- **PDF 全文**：默认交 pipeline **unpaywall OA-fallback**（§8.1；实况订正 2026-07-26：`cli.py::_assemble_auth_seam` 装配 `pull`/`grab` 时对该兜底**无条件**置位，非按某个 `VenueSpec` 声明区分——`VenueSpec` schema 无 `oa_fallback` 字段，此前"VenueSpec 声明 `oa_fallback=true`"为幻影字段表述）——按 DOI 查 unpaywall。**如实低预期**（勘察 §5）：SSRN 的 unpaywall `oa_location` 指回 SSRN 自身、`url_for_pdf=None` ⇒ `_oa_pdf_url_and_version` 返 None ⇒ `_stage_oa_fallback` 返 `done`**无 asset**（auth-framework §8.1 line 532：landing-only 不产 asset）。**净效果：SSRN 元数据层论文 = 元数据 + landing 链接，实际 PDF 命中 ≈ 0**（少数 econ WP 可经 RePEc/NBER/作者主页 OA 副本替代——Phase 5 联动 repec/nber adapter，非本 adapter 职责）。
 - 模式 B 启用时（§11）：resolve 追加浏览器门 Delivery.cfm 计划（`url_strategy=render_page`、标 `volatile`、resolve/fetch 必须同批），此路径 Phase 5 默认不实现。
 
 ### 4.5 OpenAlex enrich（交叉核对 / 补摘要，非枚举）
@@ -233,6 +233,7 @@ updated: 2026-07-26
 | 3 | 2026-07-24 | W0 双评审（A/B 独立实例，2026-07-24）Approve-with-fixes → 修订轮闭合 → controller approved | controller W0 收口 |
 | 4 | 2026-07-24 | **§4.3 DISCOVER 改纯生成零网络年桶**（controller 发现①仲裁令，T4 实现随卡联动）：T1 在线实测真实 Crossref `facet=created:*` 返 **HTTP 400**（`created` 非合法 facet，活体哨兵 XFAIL），原「1 请求 created facet 产年桶」**不可实现** → 纯本地生成 1990..今年（clock 注入上界，`paper_count_claimed=None`，规模锚移交 M1 census）；`enumerate` 的 `from/until-created-date` **filter** 不受影响。§4.1 DISCOVER 行「桶计数」联动改 `None`；联动 nber.md §3.1 facet 限定注记 | T1 [LIVE 2026-07-24] 冒烟实证 + controller 发现①仲裁 |
 | 5 | 2026-07-26 | **Phase 6 M1-d 抽样**：§9.1 追加 OpenAlex 无-DOI works 可枚举性抽样附录——为 R2 候补路径 (a) 评估供数（可枚举量级 primary_location 口径 229,102 / locations 口径 285,262；字段完整度含 `abstract_id` 可经 `landing_page_url` 正则提取；`cursor` 标准分页验证有效）。**只记录数据，不改代码、不动 ENUMERATE 能力声明** | Phase 6 M1-d [LIVE 2026-07-26]，5 请求，独立脚本 |
+| 6 | 2026-07-26 | **§4.4 幻影字段清账（非设计变更）**：删"VenueSpec 声明 `oa_fallback=true`"表述——`VenueSpec` schema 从无该字段；实况是 `cli.py::_assemble_auth_seam` 对 OA-fallback 总开关无条件置位，不按 venue 区分。同批订正 [auth-framework.md §8.1](../auth-framework.md)、[aggregators.md §5.5](aggregators.md) 两处同源表述 | P6-T10 收尾盘点发现 |
 
 ## 11. 横切件专章：browser fetch 通道两案评估（评审后 controller 终裁）
 

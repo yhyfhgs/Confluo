@@ -2,7 +2,7 @@
 title: 术语表（Glossary）
 status: review
 owner: fable5
-updated: 2026-07-22
+updated: 2026-07-26
 ---
 
 # 术语表
@@ -45,6 +45,7 @@ updated: 2026-07-22
 | 术语 | 定义 |
 |---|---|
 | **HttpFetcher / BrowserFetcher** | L2 两种取回基建：httpx 直连 / Playwright 浏览器上下文（adapter 不自选，按 AssetPlan 路由） |
+| **browser-fetch 横切件** | 三消费方（ssrn 模式 B 全文 / aea pubs 全文 / wiley 页面兜底）共用的浏览器上下文取回通道，[design/11](design/11-browser-fetch.md)（`status: approved`，D-030 定稿：形态采**案 A** 薄接缝最小件——单模块 `fetch_one` + 一 fetch 分支 + 一 CLI flag，一次性上下文用完即毁，不建上下文池）。**Phase 6 仅完成详设定稿，实现未落地**（落地 Phase 待 controller 裁决，草案验收标准 `AC-BF.x` 待转正）；同批裁决的两项既有 httpx 路径缺口（CF-403 头级判定 S-c、冷却键粒度 E-1）已随 F6 卡独立实现，不依赖本横切件本体 |
 | **url_strategy** | AssetPlan 的取回方式声明：`direct`（直链）/ `render_page`（需渲染或一次性 token）/ `api_call`（官方 API） |
 | **AuthProvider** | 认证服务四实现：CookieSession（首登人工→复用）/ EZProxy（URL 重写）/ SSOFlow（Shibboleth 等）/ APIKey |
 | **AuthProfile** | 一套具体认证配置（如 `elsevier@campus` 与 `elsevier@ezproxy`）；运行时按 active_profile 选择 |
@@ -68,8 +69,11 @@ updated: 2026-07-22
 | **error_class** | 统一错误分类九类（transient/rate_limited/auth_expired/no_entitlement/challenge/gone/parse/integrity/config）——决定重试与升级路径 |
 | **dry-run** | 只跑到 resolve 为止，报"将下载 N 篇"不落盘（FR-05）；新订阅上线前必跑 |
 | **backfill** | 历史全量回填（低优先级队列）；**bulk 数据优先**，绝不在线翻爬全史 |
-| **watch** | 订阅增量运行（cron 触发一次性进程）；游标见 watermark |
-| **watermark** | 订阅的增量游标，亦称"水位线"（arXiv=submittedDate 上界+重叠 1 天窗；SSRN=近 N 页 id 差分）；Phase 2 arxiv 以"当月桶+整窗收割"隐式表达，显式游标随 Phase 6 |
+| **Subscription DSL** | 声明式 YAML（`subscriptions/*.yaml`，[design/09 §2](design/09-search-filter.md)）：`sources`（各源专属查询字段）+ `filters`（本地二次过滤）+ `guard`（护栏）+ `actions`（入库/自动下载）+ `schedule_hint`（仅记录不调度）。解析校验入口 `subs/model.py`；未知字段/非法取值一律**报错拒载**（fail-loud），不静默丢弃 |
+| **preset** | 官方预置的 Subscription DSL 模板（`subscriptions/presets/*.yaml`，design/09 §4，9 件：`llm-agents`/`rl-theory`/`causal-inference`/`econometrics-methods`/`asset-pricing`/`market-microstructure`/`corporate-finance`/`mechanism-design`/`optimization-ml`），每件头注 precision/recall 取向。**模板非活订阅**——加载器只扫 `subscriptions/` 顶层，不递归进 `presets/`，需复制到顶层再启用 |
+| **watch** | 增量运行，cron/launchd 触发的一次性进程；本仓库**两条命令并存、语义不同**（design/05 §6 命令面表）：① `crawler watch <venue>`（Phase 2）= 单个 preprint venue 的当月桶元数据增量；② `crawler subs watch <name>\|--all [--dry-run]`（Phase 6，`subs/watch.py`）= 订阅（Subscription DSL）驱动的多源合并增量——编译→per-source 拉取→批内去重→本地过滤→护栏熔断判定→入库/派生取回任务→watermark 推进→日报。`--all` 的含义因命令而异（"全部 venue" vs "全部订阅"），不可混用 |
+| **批内去重** | `subs/watch.py::_dedupe_within_batch`（T5 P1 修复）：同一次 watch run 内多源/多请求撞同一篇（如同一 DOI 经两个 ISSN 各来一次）时，先按归一 identifier 去重，保留声明序首个来源，被合并来源记入幸存条目的 `matched_rules`（`merged_from:<source>`），不重复占候选名额——防"新增计数虚高"凭空触发 `guard` 熔断，与跨 run 的 `dedupe_against_library`（对库去重）是两层独立机制 |
+| **watermark** | 订阅的增量游标，亦称"水位线"；Phase 6 `subs/watermark.py` 三策略（按 `WatermarkStrategy` 类型区分，序列化进 `subscription.watermark_json`）：①**日期上界+重叠窗**（arXiv `submittedDate`，重叠 1 天防 announce 延迟）；②**日期游标**（`DateCursor`，openalex/s2/crossref/ssrn 用 `from_*_date`；ssrn 经 D-029 改走 crossref `from-created-date` 后由此策略承接，取代早期"id 集合差分"设想）；③**id 集合差分**（`IdSetDiff`，仅 nber program RSS 适用——RSS 无日期轴，前缀截断只砍最旧）。**推进纪律**：run 成功才推进，熔断/失败不推进（宁可重看不可漏看，id 去重兜底重复） |
 | **收割 / harvest** | OAI-PMH 场景的批量元数据拉取（`ListRecords` + resumptionToken 翻页）；见 design/adapters/arxiv.md §3 |
 | **forum（OpenReview）** | OpenReview 讨论主帖 id；顶层论文帖 `id == forum`，回帖的 forum 指回主帖——本系统以 forum id 作 `identifier(openreview)` 锚点 |
 | **venueid（OpenReview）** | note 的归属场次字段；`content.venueid.value == 主会 venue id` 即接收（accepted）判定源；被拒/撤稿落 `*_venue_id` 类字段 |

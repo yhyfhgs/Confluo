@@ -1,7 +1,7 @@
 # 文档索引（唯一权威清单）
 
 > 本表是全仓库文档的单一事实来源（D-008）。任何新增/改名/废弃文档必须同一提交内更新本表（AGENTS.md §4）。
-> status 取值与流转见 [process/status-workflow.md](process/status-workflow.md)。最后盘点：2026-07-26（Phase 6 T9 AC-6 离线端到端验收 + 在线冒烟记录登记）。
+> status 取值与流转见 [process/status-workflow.md](process/status-workflow.md)。最后盘点：2026-07-26（Phase 6 T10 收尾：phase6-report + 幻影字段清账 + design/09 转 implemented 登记）。
 
 ## 按意图导航（先于逐目录清单）
 
@@ -12,7 +12,7 @@
 | 设计/实现一个新 adapter | [design/02 框架](design/02-plugin-framework.md) → [adapters/README 模板](design/adapters/README.md) → 同族样例（Atypon 看 [informs](design/adapters/informs.md)，Silverchair 看 [oup](design/adapters/oup-silverchair.md)，OA 看 [pmlr](design/adapters/pmlr.md)）→ [test-plan fixture 规范](testing/test-plan.md) |
 | 理解认证与合规边界 | [design/04](design/04-auth-gated-module.md) → [design/07](design/07-auth-session.md) → [decision-log](plan/decision-log.md) D-006/D-014 → [AC-0 红线](testing/acceptance-criteria.md) |
 | 开始 Phase 1 开发 | [development-plan §Phase 1](plan/development-plan.md) → design/01/02/05/06 → [status-workflow 开工门禁](process/status-workflow.md) |
-| 查"为什么这样设计" | [plan/decision-log.md](plan/decision-log.md)（D-001…D-030） |
+| 查"为什么这样设计" | [plan/decision-log.md](plan/decision-log.md)（D-001…D-031） |
 | 了解某站点的实测事实 | research/site-survey/ 对应勘察（各 adapter 文档 §2 已内联引用） |
 
 ## 根文档
@@ -50,7 +50,7 @@
 | [design/06-data-model.md](design/06-data-model.md) | 数据模型与入库设计 | implemented | 2026-07-26 |
 | [design/07-auth-session.md](design/07-auth-session.md) | 认证与会话管理 | implemented | 2026-07-23 |
 | [design/08-venue-tracking.md](design/08-venue-tracking.md) | Venue 时间轴与年度追踪 | approved | 2026-07-20 |
-| [design/09-search-filter.md](design/09-search-filter.md) | 主题订阅与精确搜索 | approved | 2026-07-26 |
+| [design/09-search-filter.md](design/09-search-filter.md) | 主题订阅与精确搜索 | implemented | 2026-07-26 |
 | [design/auth-framework.md](design/auth-framework.md) | 认证框架实现级详设（07/04 的实现级扩展：四 Provider + 凭证库 + CLI + pipeline 接缝） | implemented | 2026-07-26 |
 | [design/10-config-layout.md](design/10-config-layout.md) | 配置归集与分层规范（D-025：config/ 文件夹 + 加载链 + 敏感键护栏） | implemented | 2026-07-23 |
 | [design/11-browser-fetch.md](design/11-browser-fetch.md) | Browser-Fetch 横切件详设（三消费方统一浏览器取回通道 + CF-403 冷却缺口方案；D-029 案 B 承接，D-030 定稿） | approved | 2026-07-26 |
@@ -108,7 +108,7 @@
 | [testing/records/2026-07-23-ac4-acceptance.md](testing/records/2026-07-23-ac4-acceptance.md) | AC-4 离线端到端验收汇总记录（AC-4.2~4.6 离线 DoD 达成，T7a draft；AC-4.1 真实凭证归 T7b） | approved | 2026-07-23 |
 | [testing/records/2026-07-24-ac3-acceptance.md](testing/records/2026-07-24-ac3-acceptance.md) | AC-3.1~3.4 独立汇总验收记录（数据模型与合并引擎，Phase 3 判据补记收口） | approved | 2026-07-24 |
 | [testing/records/2026-07-24-ac5-acceptance.md](testing/records/2026-07-24-ac5-acceptance.md) | AC-5 离线端到端汇总验收记录（AC-5.1a/5.2/5.3/5.4 离线 DoD 达成，T7 draft；AC-5.1b defer Phase 6） | approved | 2026-07-24 |
-| [testing/records/2026-07-26-ac6-acceptance.md](testing/records/2026-07-26-ac6-acceptance.md) | AC-6 离线端到端验收 + 在线冒烟记录（订阅与搜索，AC-6.1~6.4 离线 DoD 建议 PASS，T9 draft；§4 已知限制 #1 arxiv 恒失败 / #2 ssrn 整年枚举经 F7 修复并在线复验，§4.1a 台账；F7 期新发现 #6 arxiv search_query 无本地补偿待排期） | draft | 2026-07-26 |
+| [testing/records/2026-07-26-ac6-acceptance.md](testing/records/2026-07-26-ac6-acceptance.md) | AC-6 离线端到端验收 + 在线冒烟记录（订阅与搜索，AC-6.1~6.4 离线 DoD 四条 PASS，fable 亲验签署"达成"；§4 已知限制 #1 arxiv 恒失败 / #2 ssrn 整年枚举经 F7 修复并在线复验，§4.1a 台账；F7 期新发现 #6 arxiv search_query 无本地补偿转 Phase 7 检查单） | approved | 2026-07-26 |
 | [testing/records/canary/README.md](testing/records/canary/README.md) | Canary 健康矩阵记录目录（`crawler canary --record` 落盘，按日覆盖；+周跑 launchd/cron 模板说明） | approved | 2026-07-26 |
 
 ## process/ — 流程规范
@@ -162,7 +162,7 @@
 
 | 路径 | 内容 |
 |---|---|
-| logs/ | 每 session 工作日志（YYYY-MM-DD-session-NNN.md，现有 001–007） |
+| logs/ | 每 session 工作日志（YYYY-MM-DD-session-NNN.md，现有 001–009） |
 | [reports/2026-07-20-phase0-report.md](reports/2026-07-20-phase0-report.md) | Phase 0 阶段报告（DoD 判定） |
 | [reports/2026-07-20-consistency-review.md](reports/2026-07-20-consistency-review.md) | 一致性审查第 1 轮（需求矩阵 + 13 项修复，D-015） |
 | [reports/2026-07-21-audit-round2.md](reports/2026-07-21-audit-round2.md) | 深度审计第 2 轮（语义级 + 可读性增强，D-016） |
@@ -172,3 +172,4 @@
 | [reports/2026-07-23-phase4-report.md](reports/2026-07-23-phase4-report.md) | Phase 4 阶段报告（DoD 判定 + AC-0 系统性扫描 + 收尾中草稿，判定列待 controller 终验签署 + Phase 5 检查单） |
 | [reports/2026-07-24-phase5-report.md](reports/2026-07-24-phase5-report.md) | Phase 5 阶段报告（8 卡 4 波次交付 + D-027/028/029 + AC-5 引用 + 事件教训 + Phase 6 检查单，判定：**达成**——controller 合并裁决签署，tag `phase-5`） |
 | [reports/2026-07-24-post-phase5-audit.md](reports/2026-07-24-post-phase5-audit.md) | Phase 5 终审后独立全库审计报告（8 subagent：4 Opus 深审+4 Sonnet 面审；八域附条件达标、零 P0；P1×3/P2×12 台账 + AC-0 复核全 PASS + Phase 6 处置建议） |
+| [reports/2026-07-26-phase6-report.md](reports/2026-07-26-phase6-report.md) | Phase 6 阶段报告（订阅与搜索：主线 T1–T9 + 修复批 F1–F7 + 设计批 R1/R2 + 在线批 M1 交付清单 + D-030/D-031 + 事件教训 + Phase 7 开工检查单，判定：待 controller 终审裁决） |
