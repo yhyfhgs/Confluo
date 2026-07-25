@@ -2,7 +2,7 @@
 title: Adapter 设计 · AEA（AER + AEJ 四系 + AER:Insights + JEL/JEP，实现级）
 status: implemented
 owner: D2
-updated: 2026-07-24
+updated: 2026-07-26
 ---
 
 # Adapter · `aea`(实现级详设)
@@ -165,9 +165,9 @@ updated: 2026-07-24
 | `jel` | Journal of Economic Literature | 0022-0515 | T2 | none（免费） | crossref | aea（deferred/OA） |
 | `jep` | Journal of Economic Perspectives | 0895-3309 | T2 | none（gold OA） | crossref | aea（deferred/OA） |
 
-- **⚠ ISSN 出处分级**（P5-M1 更新，2026-07-24）：上表 8 ISSN 中 **AER(`0002-8282`)/JEP(`0895-3309`) 经勘察 [LIVE 2026-07-24] 实证**（crossref 枚举实跑）；
+- **ISSN 出处分级**（Phase 6 M1-c 更新，2026-07-26；全 8 刊现均 [LIVE]）：上表 8 ISSN 中 **AER(`0002-8282`)/JEP(`0895-3309`) 经勘察 [LIVE 2026-07-24] 实证**（crossref 枚举实跑）；
   **aej_macro(`1945-7707`)/aej_micro(`1945-7669`)/aej_applied(`1945-7782`)/aej_policy(`1945-7731`) 经 P5-M1 在线核实 [LIVE 2026-07-24] 转正**（`GET api.crossref.org/journals/{issn}` 逐刊 200 + title 吻合，4 请求，详见对应 venues/econ/*.yaml notes）；
-  余 2（`aeri` 2640-205X / `jel` 0022-0515）**仍仅 catalog [DOC] 来源**——`tests/online/test_aea_smoke.py` 已写入 ISSN 存在性断言但**未实跑**（待 controller T7/T8 批次统一执行，见该文件 docstring）。
+  余 2（`aeri` 2640-205X / `jel` 0022-0515）经 **Phase 6 M1-c 在线闭合批 [LIVE 2026-07-26] 转正**——`tests/online/test_aea_smoke.py::test_partial_doc_sourced_issns_are_registered_in_crossref` 实跑 PASS（2 请求：`aeri` facet 逐年计数之和=265＞0、`jel`=1840＞0，确认两 ISSN 均在 Crossref 确有注册，非验证刊名文本，详见对应 venues/econ/*.yaml notes）。
 - 字段设计（YAML 属实现期交付，本文只给字段）：`kind: journal`；`field: [econ]`；`identifiers.issn: [<上表>]`；`metadata_source: crossref`；
   `fulltext_source: aea`；`auth.level`（上表，`provider_hint: aea` 备用）；`quirks: {ai_bot_sensitive: true, doi_forms: [submission, vol_issue_page, pnp]}`；`status: active`。
 - **P&P 注（A-3 裁决）**：AEA Papers & Proceedings（`aer.p*`/`pandp.*` 形态）**独立 venue 暂缓**——不入本 Phase 8 刊清单（年刊特刊、
@@ -213,3 +213,4 @@ updated: 2026-07-24
 | 2 | 2026-07-24 | **W0 双评审修订轮**（Approve-with-fixes）：③ §7 补注 **ISSN 出处分级**（唯 AER/JEP [LIVE] 实证、余 6 仅 catalog [DOC]，实现期在线冒烟负核实）+ **A-3 裁决** pandp 独立 venue 暂缓（不入 8 刊清单，同步 §3.2 路由表/§10 风险条）；④ §1 **auth 层次澄清**（venue `auth.level: institutional` 前瞻声明 vs adapter 本期 `auth_requirement=none`；不触 registry.py:234 lint——仅 venue 低于 adapter 要求时报错） | controller W0 回派 + registry.py:234 实证 |
 | 3 | 2026-07-24 | W0 双评审（A/B 独立实例，2026-07-24）Approve-with-fixes → 修订轮闭合 → controller approved | controller W0 收口 |
 | 4 | 2026-07-24 | **P5-M1 在线核实**：§7 ISSN 出处分级更新——`aej_macro`/`aej_micro`/`aej_applied`/`aej_policy` 经 `api.crossref.org/journals/{issn}` 逐刊核实（200 + title 吻合，4 请求）[DOC]→[LIVE 2026-07-24] 转正（对应 venues/econ/*.yaml notes 同步）；余 `aeri`/`jel` 仍 [DOC]（T5 遗留缺口的另一半，`test_aea_smoke.py` 断言已写未跑，非本批次范围） | P5-M1 crossref journals API [LIVE 2026-07-24]（本 T5 遗留缺口收口批次） |
+| 5 | 2026-07-26 | **Phase 6 M1-c 在线闭合**：§7 ISSN 出处分级更新——余下 `aeri`/`jel` 经 `test_aea_smoke.py::test_partial_doc_sourced_issns_are_registered_in_crossref` 实跑 PASS（2 请求：facet 逐年计数之和 265/1840，均＞0）[DOC]→[LIVE 2026-07-26] 转正（对应 venues/econ/aeri.yaml、jel.yaml notes 同步）——全 8 刊 ISSN 出处至此全部 [LIVE]，T5 遗留缺口彻底清零 | Phase 6 M1-c crossref facet API [LIVE 2026-07-26] |

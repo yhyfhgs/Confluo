@@ -7,9 +7,10 @@ names:
 field: [econ]
 tier: T2                      # catalog/economics-journals.md AEA 系列
 identifiers:
-  issn: ["2640-205X"]         # 期刊必填（D-015）；⚠ [DOC] catalog 来源，未经站点勘察逐一
-                               # 实证（aea.md §7 出处分级）——实现期在线冒烟核实义务
-                               # （UPDATE_GOLDEN，沿 D-019 锚点先例）
+  issn: ["2640-205X"]         # 期刊必填（D-015）；[DOC]→[LIVE 2026-07-26]（Phase 6 M1-c 在线
+                               # 核实：`test_aea_smoke.py::test_partial_doc_sourced_issns_are_
+                               # registered_in_crossref` 实跑 PASS——crossref facet 逐年计数之
+                               # 和=265＞0，确认该 ISSN 在 Crossref 确有注册，非验证刊名文本）
 metadata_source: crossref     # D-005 元数据主干（AEA 100% crossref，DOI 前缀 10.1257）
 fulltext_source: aea
 auth:
@@ -24,5 +25,6 @@ notes: >
   季刊（AEJ 四系同节奏）。全文/认证形态同 aer.yaml（pubs.aeaweb.org 全文层 Cloudflare
   BLOCKED，本 Phase resolve 离线判 no_entitlement，FETCH 待 browser-fetch 通道 + D-006
   机构认证）；adapter 本期 auth_requirement=none，此处 auth.level=institutional 为前瞻
-  声明，不触 registry.py:234 lint。ISSN 出处：本文件为 aea.md §7 表中标注"仅 catalog
-  [DOC] 来源"的 6 刊之一，唯 AER(0002-8282)/JEP(0895-3309) 经站点勘察 [LIVE] 实证。
+  声明，不触 registry.py:234 lint。ISSN 出处：原为 aea.md §7 表中"仅 catalog [DOC] 来源"
+  的 6 刊之一，2026-07-26 Phase 6 M1-c 在线闭合批经 crossref facet 请求核实转正 [LIVE]
+  （aea.md §7 同步更新）。

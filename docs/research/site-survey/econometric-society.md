@@ -2,7 +2,7 @@
 title: 勘察：Econometric Society 三刊（ECMA/TE/QE）——平台迁移实测与 adapter 路线
 status: approved
 owner: fable5
-updated: 2026-07-24
+updated: 2026-07-26
 ---
 
 # 站点勘察 · Econometric Society 三刊（Econometrica / Theoretical Economics / Quantitative Economics）
@@ -102,7 +102,23 @@ updated: 2026-07-24
 4. **落库拆分**：`ecma` 单一 venue，`fulltext_source` 年代分段（econsoc 当前 / wiley 过刊 / jstor pre-DOI）；`te`、`qe` → `econsoc`，OA、优先级最高最省心（catalog "Phase 5 早做"判断成立且被本次强化）。
 5. **须回改的既有件（交 controller/详设）**：catalog `ecma` 行 fulltext 分段；`wiley.md §1/§2` 去除裸 10.3982 路由键并加迁移注记；`economics-journals.md` TE/QE 平台注记从 "econsoc（自营 econtheory/qeconomics）" 更新为 "econsoc（OJS@econtheory.org/ojs + 合并前端 econometricsociety.org；qeconomics.org 证书过期停用）"。
 
-**[UNRESOLVED] 汇总**：① 当前 ECMA 是否 journal-wide OA（§3，强信号未终证）；② Wiley→自营 的 DOI 切换日历日/区间分界（§2，实现期二分）；③ TE completeListSize 656 vs crossref 735 差额来源（§4，实现期对账）。三者均 [PENDING·实现期]，不阻塞路线判定。
+**[UNRESOLVED] 汇总**：① 当前 ECMA 是否 journal-wide OA（§3，强信号未终证，2026-07-26 M1-a 尝试 BLOCKED，见 §7）；② Wiley→自营 的 DOI 切换日历日/区间分界（§2——**方向 a 域名判归属法本身已 [已解决][LIVE 2026-07-24]**，仅切换日历日数字未 pin down，非阻塞，见 §7）；③ TE completeListSize 656 vs crossref 735 差额来源（§4，2026-07-26 M1-a 抽样部分推进——排除类型异构假说，真实成因仍未定位，见 §7）；④ ECMA 过刊运行期终态在线验证（design/adapters/econsoc.md §8，2026-07-26 M1-a 尝试 BLOCKED，见 §7）。四者中②的路由方法层面已解决，①③④如实维持 [PENDING]/部分推进，均不阻塞路线判定。
+
+## 7. 在线闭合复核 [LIVE 2026-07-26 M1-a]（Phase 6 M1-a 在线闭合批，预算 3/15 请求）
+
+> 执行：Phase 6 M1 在线闭合批执行 agent（sonnet）。UA 恒为 `PaperCrawler/0.1.0 (personal research; mailto:yhyfhgs@gmail.com)`；econsoc 域请求间隔 sleep(5s)，crossref 间隔 sleep(2s)；本节 3 次请求全部通过项目 `EconsocAdapter`/`HttpClient`（econsoc 两次）与独立 httpx 脚本（crossref 一次）发出，逐请求记账见下。
+
+**结果摘要**：
+
+| 项 | 方法 | 目标 | 结果 |
+|---|---|---|---|
+| ①（HEAD 判定 OA） | `resolve_assets(ecma, doi=10.3982/ecta23709)`→`GET https://www.econometricsociety.org/doi/10.3982/ecta23709` | 判定当前段 galley 匿名可下否 | **Cloudflare 交互质询页**（`_guard_challenge`→`CHALLENGE`/BLOCKED），未取得 galley 链，未能 HEAD 判定——**维持 UNRESOLVED** |
+| ④（过刊段终态） | `resolve_assets(ecma, doi=10.3982/ecta12058, meta 无 primary_url_domain)`→`GET https://www.econometricsociety.org/doi/10.3982/ecta12058`（复现生产乐观路径） | econsoc 自营域对过刊 DOI 的真实响应（404/redirect/其它） | **同样命中 Cloudflare 交互质询页**（`CHALLENGE`/BLOCKED），非 404/410——未取得清晰终态答案，但确认现有 adapter 挑战处置代码路径正确工作——**维持 UNRESOLVED** |
+| ③（TE 差额抽样） | `GET https://api.crossref.org/journals/1933-6837/works?rows=0&facet=type-name:*` | TE 656(OAI) vs 735(crossref) 差额成因 | 200；`total-results=735`，`type-name` facet = `{"Journal Article": 735}`——**735 条全部同质为 Journal Article，排除类型异构假说**；真实成因仍未定位（编辑部记录/OAI 窗口/DOI 粒度差异等候选未逐一验证，预算所限）——**部分推进，非阻塞** |
+
+**新增关键发现（供 R1 browser-fetch 通道与 canary 建设参考）**：本文档 §5/§6 原判"当前对 stateless PaperCrawler UA 无挑战"（2026-07-24 R0c，curl 客户端实测）**已被本次复核证伪**——同一 UA 字符串、同域路径，仅客户端库由 curl 换为项目生产用的 httpx（`HttpClient`），两次请求均触发 Cloudflare 交互质询页（"Just a moment" 类型，200 状态 + body 特征，非头级 403）。差异成因未定性，候选：①CF 策略在两日内主动收紧；②CF 对不同 TLS/HTTP 客户端指纹的差异化处置（curl 与 httpx 的 JA3/JA4 指纹不同，是已知的 CF 启发式判据之一）；③间歇性/概率性质询。**三者均未排除，如实记录不臆断**。按 AC-0.2 红线，本次遇质询后立即停手，未更换客户端、未重试、未尝试任何形式的规避——两次质询已构成"该子批遇挑战即终止"的触发条件，故②的重新在线核实（doi.org HEAD 二次确认）与①④的进一步探测均未再尝试，`test_econsoc_smoke.py` 全量重跑（含 TE 健康检查/OAI 收割等 7 请求）本次未执行（超出本次子批必要范围，且同域已现质询风险）。
+
+**建议留痕**：①canary 监测应提高优先级（原风险条"未来若加质询"已是当下现实）；②econsoc.md §5/§8 已同步更新此发现；③下次窗口期重试建议前置一次 `GET /robots.txt` 轻量探活确认站点当前对本项目 UA 的质询状态，而非直接对 `/doi/` 落地页发起请求。
 
 ## 附. 请求台账（26 次完成请求；[LIVE] 2026-07-24）
 
@@ -135,3 +151,13 @@ updated: 2026-07-24
 | 25 | HEAD-L | econometricsociety.org TE galley .PDF | **200 application/pdf, accept-ranges**（匿名 OA 确认） |
 
 （另有 1 次拼错的 galley URL 被 curl 客户端拒绝、未发出，不计入。）
+
+### 附录（2026-07-26 M1-a 追加，3 次完成请求；总计 26+3=29）
+
+| # | 方法 | 目标 | 结果 |
+|---|---|---|---|
+| 27 | GET（经 `resolve_assets`） | `www.econometricsociety.org/doi/10.3982/ecta23709`（ECMA 当前段） | **Cloudflare 交互质询页**（`CHALLENGE`/BLOCKED，§7①） |
+| 28 | GET（经 `resolve_assets`） | `www.econometricsociety.org/doi/10.3982/ecta12058`（ECMA 过刊段，无域名提示乐观路径） | **Cloudflare 交互质询页**（`CHALLENGE`/BLOCKED，§7④） |
+| 29 | GET | `api.crossref.org/journals/1933-6837/works?rows=0&facet=type-name:*` | 200；`total-results=735`，facet `{"Journal Article": 735}`（§7③） |
+
+零 PDF 正文下载、零登录、零表单；econsoc 域两次请求均触发质询后立即停手，未重试、未换客户端。

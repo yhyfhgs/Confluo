@@ -2,7 +2,7 @@
 title: Adapter 设计 · Econometric Society（econsoc，实现级）
 status: implemented
 owner: D3
-updated: 2026-07-24
+updated: 2026-07-26
 ---
 
 # Adapter · `econsoc`（Econometric Society 三刊 · 实现级详设）
@@ -162,12 +162,12 @@ ECMA(ECTA) 的 `10.3982` DOI 跨三个托管年代，**fulltext 分三段**：
 
 ## 8. 风险与维护
 
-- **[UNRESOLVED① 当前 ECMA 是否全刊 OA]**（survey §3）：最新样本 CC BY 4.0 + 匿名 200 是强信号，但 Econometrica 历史订阅制、学会自营后可能 diamond/subscribe-to-open，单篇 license 不足断全刊。**实现期 HEAD 一篇当前 ECMA galley 判匿名可下否**（T5 冒烟闭合）；若非全刊 OA→当前 ECMA 走 no_entitlement + OA fallback（§6）。**不阻塞 TE/QE 主路径**（TE/QE OA 已 [LIVE] 确认）。
-- **[UNRESOLVED② Wiley→自营切换日]**（survey §2）：方向 a（域名判归属）**不依赖切换日**故此项不阻塞路由；仅方向 b pre-filter 需边界年，实现期 doi.org HEAD 二分核实。
-- **[UNRESOLVED③ TE 656 vs crossref 735 差额]**（survey §4）：编辑部记录/DOI 粒度差，实现期对账；不阻塞——DOI 后缀过滤 + `identifier('doi')` 去重使两源差额自然收敛。
-- **[UNRESOLVED④ ECMA 过刊运行期终态验证]**（T6 审查 F1 移交，2026-07-24）：生产 resolve 中 crossref 无 `primary_url_domain` 信号 → ECMA 过刊 DOI 恒乐观归当前段 → GET econometricsociety.org 自营域。**实现期已加固**：仅 ecma 当前段落地 404/410 从 `GONE` 改归 `no_entitlement`（存在但此路径不可取、触发 OA-fallback、不污染合并引擎存在性判断；F1）。**待在线闭合**：econometricsociety.org 对过刊 DOI 的真实响应实测（究竟 404 / 302→Wiley / 其它）+ 评估 doi.org HEAD `-L` 权威域名检查是否 wire 进生产 resolve（当前仅在线冒烟核对、生产靠乐观默认+F1 兜底）——**ECMA 投产前闭合**。不阻塞 TE/QE 主路径。
+- **[UNRESOLVED① 当前 ECMA 是否全刊 OA]**（survey §3）：最新样本 CC BY 4.0 + 匿名 200 是强信号，但 Econometrica 历史订阅制、学会自营后可能 diamond/subscribe-to-open，单篇 license 不足断全刊。**实现期 HEAD 一篇当前 ECMA galley 判匿名可下否**（T5 冒烟闭合）；若非全刊 OA→当前 ECMA 走 no_entitlement + OA fallback（§6）。**不阻塞 TE/QE 主路径**（TE/QE OA 已 [LIVE] 确认）。**[LIVE 2026-07-26 M1-a 尝试，维持 UNRESOLVED]**：`resolve_assets(ecma, doi=10.3982/ecta23709)` 触发的落地页 GET（`https://www.econometricsociety.org/doi/10.3982/ecta23709`）命中 Cloudflare 交互质询页（`_guard_challenge` 正确判定 `CHALLENGE`/BLOCKED），未取得 galley 链、未能 HEAD 判定 OA 性——按 AC-0.2 不对抗，当批立即停手未续探。**未解决**，且新增一条重要证据：2026-07-24 R0c 勘察（curl 客户端）该请求路径是畅通 200，本次（httpx 客户端）同域同类请求变为质询——差异成因未定性（候选：CF 策略两日内收紧 / 站点对不同客户端指纹的差异化处置 / 间歇性质询），**不得再假设"当前对本项目 UA 无挑战"**（呼应下方风险条修正）。建议：留待冷却窗口期重试，或纳入 R1 browser-fetch 通道评估范围。
+- **[UNRESOLVED② Wiley→自营切换日]**（survey §2）：方向 a（域名判归属）**不依赖切换日**故此项不阻塞路由；仅方向 b pre-filter 需边界年，实现期 doi.org HEAD 二分核实。**[已解决][LIVE 2026-07-24，核验日期 2026-07-26 M1-a 复核确认]**：方向 a 的域名判归属法已由 2026-07-24 R0c 勘察实测验证（`doi.org` HEAD `-L`：当前段 DOI `ecta23709`→`econometricsociety.org` 200；过刊段 DOI `ecta12058`→`doi.wiley.com` 403 CF）且已固化为 `tests/online/test_econsoc_smoke.py::test_ecma_current_doi_domain_route_is_econsoc`/`test_ecma_backfile_doi_domain_route_is_wiley` 两条在线断言。2026-07-26 M1-a 本欲重跑该两条断言作新鲜度复核，但同批已在 econometricsociety.org 域遇到 Cloudflare 质询（见①/④）——按红线"该子批遇挑战即停手"未再对同域发起请求（doi.org HEAD `-L` 的终点仍落该域，大概率复现同一质询、且属对同一受阻站点的重复探测），故采信 2026-07-24 证据延续为准。**切换日历日本身仍未 pin down（非阻塞——方向 a 不依赖它，仅方向 b pre-filter 需要，可留待未来窗口顺带二分）**。
+- **[UNRESOLVED③ TE 656 vs crossref 735 差额]**（survey §4）：编辑部记录/DOI 粒度差，实现期对账；不阻塞——DOI 后缀过滤 + `identifier('doi')` 去重使两源差额自然收敛。**[LIVE 2026-07-26 M1-a 抽样，部分推进/维持 UNRESOLVED]**：`GET api.crossref.org/journals/1933-6837/works?rows=0&facet=type-name:*` → `total-results=735`、`type-name` facet = `{"Journal Article": 735}`——**735 条在 crossref 侧全部同质为 "Journal Article" 类型，排除"类型异构（如 journal-issue/correction 混入总数）"这一假说**。真实成因仍未定位（候选：编辑部 OJS 侧未收录/撤稿记录、DOI 粒度差异、OAI harvest 窗口/礼貌性截断），**预算限制下未做逐 DOI 集合差分**（需完整分页两源约 40+ 请求，超出本次经济分配），如实记录为非阻塞未决项，留待未来专项预算或结合 F4/审计工作查清。
+- **[UNRESOLVED④ ECMA 过刊运行期终态验证]**（T6 审查 F1 移交，2026-07-24）：生产 resolve 中 crossref 无 `primary_url_domain` 信号 → ECMA 过刊 DOI 恒乐观归当前段 → GET econometricsociety.org 自营域。**实现期已加固**：仅 ecma 当前段落地 404/410 从 `GONE` 改归 `no_entitlement`（存在但此路径不可取、触发 OA-fallback、不污染合并引擎存在性判断；F1）。**待在线闭合**：econometricsociety.org 对过刊 DOI 的真实响应实测（究竟 404 / 302→Wiley / 其它）+ 评估 doi.org HEAD `-L` 权威域名检查是否 wire 进生产 resolve（当前仅在线冒烟核对、生产靠乐观默认+F1 兜底）——**ECMA 投产前闭合**。不阻塞 TE/QE 主路径。**[LIVE 2026-07-26 M1-a 尝试，维持 UNRESOLVED]**：复现生产乐观路径——构造过刊 DOI `10.3982/ecta12058`（meta 无 `primary_url_domain`，`classify_ecma_segment(landing_domain=None)` 预演确认落 `CURRENT` 乐观默认）后调用 `resolve_assets`，触发 `GET https://www.econometricsociety.org/doi/10.3982/ecta12058`，**同样命中 Cloudflare 交互质询页**（`Challenged`/`CHALLENGE`，非 404/410/其它）——未取得"究竟 404 / 302→Wiley / 其它"的清晰答案。**新结论（如实记录，非清晰终态但有效）**：①现有 adapter 代码对该路径的挑战场景处置**正确**（`_guard_challenge` 命中即 `CHALLENGE`/BLOCKED，不误判为 `GONE`/存在性问题，F1 加固与本场景不冲突——挑战优先于 404 判定，因请求在拿到 404/410 状态码之前就已在 200-body 层被拦截）；②econometricsociety.org 当前对**本项目请求**存在质询风险，且该风险不区分 DOI 段（当前段①与过刊段④同批同样触发）——真实的"clean path" 404/redirect 响应本次未能观测到，**评估 doi.org 域名检查是否 wire 进生产 resolve 一事本身的紧迫性因此提高**（质询已是比 404 更常见的实际路障，生产 resolve 需将 `CHALLENGE` 作为常规预期分支而非边缘情况）。**未解决**，建议留待冷却期重试或并入 R1 browser-fetch 通道评估。不阻塞 TE/QE 主路径（TE/QE 本次未重测，无新证据反驳其 OA 结论）。
 - **qeconomics.org TLS 证书过期**（survey §5 [LIVE]）：**adapter 绝不直连该域、绝不关校验绕过**；QE 一切经 OAI（econtheory.org/ojs/index.php/qe）+ crossref + econometricsociety.org 落地。风险节明记：若 QE 独立域证书长期不修，QE 路径完全不受影响（不依赖该域）。
-- **CF 策略/反 AI 收紧**：econometricsociety.org 具名封 ClaudeBot、当前对 stateless PaperCrawler UA 无挑战——若未来对 `*` 组加挑战，canary 首触即 BLOCKED + catalog 降级为仅元数据（crossref）。canary 周检。
+- **CF 策略/反 AI 收紧**：econometricsociety.org 具名封 ClaudeBot；~~当前对 stateless PaperCrawler UA 无挑战~~——**该假设已被 2026-07-26 M1-a 证伪**：同一 UA/同域的 `/doi/{DOI}` 落地页请求（httpx 客户端）在本次两次尝试（当前段+过刊段 DOI）中**均命中 Cloudflare 交互质询页**，而 2026-07-24 R0c 勘察（curl 客户端）同类请求是畅通 200——差异成因未定性（CF 策略两日内收紧 / 客户端指纹差异化处置 / 间歇性质询，三者均未排除）。**不再假设"当前无挑战"**；canary 首触即 BLOCKED + catalog 降级为仅元数据（crossref）的既定预案保持有效，且优先级应提升——canary 应尽快建立并周检（呼应 §8 UNRESOLVED①④ 附注）。
 - **前向迁移持续**（学会可能继续把 Wiley 过刊迁自营）：方向 a 域名路由自动跟随，无需改 config；方向 b 会静默误路由——**再证方向 a 优越**。
 - **OJS/前端平台升级改 URL/schema**：fixture+canary 覆盖；oai_dc 标准协议较 HTML 稳；galley 链抽取选择器（`/publications/.../file/*.PDF`）是 HTML 依赖面、canary 监。
 
@@ -203,10 +203,11 @@ ECMA(ECTA) 的 `10.3982` DOI 跨三个托管年代，**fulltext 分三段**：
   - **代码（实现期卡，本次只报告不改）**：`src/paper_crawler/adapters/wiley/parse.py` **`_WILEY_DOI_PREFIXES` 移除 `10.3982/`**（仅留 10.1111/10.1002）——W0 评审 B 实证 `is_wiley_doi(doi:str)` 单入参无域名/年代信息、无法判过刊段，**取移除非收窄**；ECMA 过刊→wiley 归属由 econsoc 域名路由（方向 a）承担、wiley 侧不持 10.3982。`wiley/adapter.py`+`wiley/__init__.py` docstring 同步。**联动 test**：`tests/unit/test_wiley_parse.py:21,32` 断言 `is_wiley_doi("10.3982/…") is True` 随移除**同卡翻转**（移入非 Wiley 组）。**实现顺序**：`parse.py` 移除 + `ecma/te/qe` venue YAML 落地**同一实现卡**（`is_wiley_doi` 现**零 runtime 调用=休眠**，落地前无活风险）。**venues/ 无 10.3982 硬编码**（grep 空、无 ecma/te/qe YAML）。
 - **理由**：R0c [LIVE] 实测 = 前缀所有权（Econometric Society）+ 三刊共用 + ECMA 前向迁移三事实叠加，裸前缀路由在 TE/QE 上系统性误路由、在当前 ECMA 上系统性漏取（Wiley TDM 对自营新 DOI 大概率 no_entitlement）。
 - **影响**：catalog `ecma` 行 `fulltext_source: econsoc`（单值）+ 域名路由分段（当前 OA / 过刊·pre-DOI 段 no_entitlement/skip），`enumerate` 仍 crossref；wiley.md 修正（本次已落）；wiley `parse.py` 移除 10.3982 + `test_wiley_parse.py` 断言翻转（实现期同卡）；econsoc.md §3.3 承载 ECMA 分段主设计。`economics-journals.md` catalog TE/QE 平台注记更新为"econsoc（OJS@econtheory.org/ojs + 合并前端 econometricsociety.org；qeconomics.org 证书过期停用）"。
-- **[UNRESOLVED]**（不阻塞）：① 当前 ECMA 是否全刊 OA（§8 [UNRESOLVED①]，实现期 HEAD 判）；② Wiley→自营切换日（§8 [UNRESOLVED②]，方向 a 不依赖）。
+- **[UNRESOLVED]**（不阻塞）：① 当前 ECMA 是否全刊 OA（§8 [UNRESOLVED①]，2026-07-26 M1-a 尝试 BLOCKED，维持 UNRESOLVED）；② Wiley→自营切换日历日（§8 [UNRESOLVED②]，方向 a 不依赖——方向 a 本身已 [已解决][LIVE 2026-07-24]，仅切换日历日数字本身未 pin down，非阻塞）。
 
 ## 10. 修订记录
 
 | # | 日期 | 修订 | 依据 |
 |---|---|---|---|
 | 1 | 2026-07-24 | W0 双评审（A/B 独立实例，2026-07-24）Approve-with-fixes → 修订轮闭合 → controller approved | controller W0 收口 |
+| 2 | 2026-07-26 | **Phase 6 M1-a 在线闭合批**（预算 3/15 请求，obslog 见 site-survey 附录）：§8 UNRESOLVED①②③④ 逐条回填——②已解决（方向 a 域名判归属复用 2026-07-24 证据确认有效）；③部分推进（crossref type-name facet 排除类型异构假说，真实成因仍未定位，非阻塞）；①④尝试但触发 Cloudflare 交互质询页，维持 UNRESOLVED（新增：econometricsociety.org 对本项目 httpx 客户端的挑战风险证据，与 2026-07-24 curl 勘察畅通结果不一致，§8 CF 风险条同步修正） | M1-a 执行 agent（sonnet），[research/site-survey/econometric-society.md](../../research/site-survey/econometric-society.md) §7 在线复核记录 |

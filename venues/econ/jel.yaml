@@ -7,9 +7,10 @@ names:
 field: [econ]
 tier: T2                      # catalog/economics-journals.md AEA 系列
 identifiers:
-  issn: ["0022-0515"]         # 期刊必填（D-015）；⚠ [DOC] catalog 来源（免费刊，站点
-                               # journals 页列名 "免费" 但未经本次勘察逐一实证 ISSN，
-                               # aea.md §7 出处分级）——实现期在线冒烟核实义务
+  issn: ["0022-0515"]         # 期刊必填（D-015）；[DOC]→[LIVE 2026-07-26]（Phase 6 M1-c 在线
+                               # 核实：`test_aea_smoke.py::test_partial_doc_sourced_issns_are_
+                               # registered_in_crossref` 实跑 PASS——crossref facet 逐年计数之
+                               # 和=1840＞0，确认该 ISSN 在 Crossref 确有注册，非验证刊名文本）
 metadata_source: crossref
 fulltext_source: aea
 auth:
@@ -26,5 +27,6 @@ notes: >
   的计划，仅记 deferred 全文 URL 观测（供未来 browser-fetch 通道消费），不 raise
   no_entitlement（无认证问题——auth.level=none 本身已如实反映免费属性，该错误类
   留给真正的机构订阅场景）。OA-fallback（unpaywall）对本刊实质产出预期同样低
-  （best_oa host 落 CF 域）。ISSN 出处：本文件为 aea.md §7 表中"仅 catalog [DOC]
-  来源"的 6 刊之一，唯 AER/JEP 经站点勘察 [LIVE] 实证。
+  （best_oa host 落 CF 域）。ISSN 出处：原为 aea.md §7 表中"仅 catalog [DOC] 来源"
+  的 6 刊之一，2026-07-26 Phase 6 M1-c 在线闭合批经 crossref facet 请求核实转正
+  [LIVE]（aea.md §7 同步更新）。

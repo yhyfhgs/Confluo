@@ -61,10 +61,10 @@
 |---|---|---|---|
 | [design/adapters/README.md](design/adapters/README.md) | 模板 + 索引 + 勘察清单 | approved | 2026-07-20 |
 | [design/adapters/arxiv.md](design/adapters/arxiv.md) | arXiv | implemented | 2026-07-22 |
-| [design/adapters/ssrn.md](design/adapters/ssrn.md) | Adapter 设计 · SSRN（聚合主路径/browser-fetch defer） | implemented | 2026-07-24 |
+| [design/adapters/ssrn.md](design/adapters/ssrn.md) | Adapter 设计 · SSRN（聚合主路径/browser-fetch defer） | implemented | 2026-07-26 |
 | [design/adapters/nber.md](design/adapters/nber.md) | Adapter 设计 · NBER Working Papers（crossref prefix 枚举扩展 + www/back 双域） | implemented | 2026-07-24 |
-| [design/adapters/aea.md](design/adapters/aea.md) | Adapter 设计 · AEA（AER+AEJ 四系+Insights+JEL/JEP，crossref ISSN 枚举） | implemented | 2026-07-24 |
-| [design/adapters/econsoc.md](design/adapters/econsoc.md) | Adapter 设计 · Econometric Society（ECMA/TE/QE，OAI-PMH + ECMA 年代分段路由） | implemented | 2026-07-24 |
+| [design/adapters/aea.md](design/adapters/aea.md) | Adapter 设计 · AEA（AER+AEJ 四系+Insights+JEL/JEP，crossref ISSN 枚举） | implemented | 2026-07-26 |
+| [design/adapters/econsoc.md](design/adapters/econsoc.md) | Adapter 设计 · Econometric Society（ECMA/TE/QE，OAI-PMH + ECMA 年代分段路由） | implemented | 2026-07-26 |
 | [design/adapters/openreview.md](design/adapters/openreview.md) | OpenReview | implemented | 2026-07-22 |
 | [design/adapters/pmlr.md](design/adapters/pmlr.md) | PMLR | implemented | 2026-07-23 |
 | [design/adapters/cvf.md](design/adapters/cvf.md) | CVF Open Access | implemented | 2026-07-23 |
@@ -88,7 +88,7 @@
 | [catalog/publishers-platforms.md](catalog/publishers-platforms.md) | 平台→Adapter 映射总表 | approved | 2026-07-23 |
 | [catalog/cs-ai-conferences.md](catalog/cs-ai-conferences.md) | CS/AI 顶会 | approved | 2026-07-23 |
 | [catalog/ai-ml-journals.md](catalog/ai-ml-journals.md) | AI/ML/CS 期刊 | review | 2026-07-20 |
-| [catalog/economics-journals.md](catalog/economics-journals.md) | 经济学期刊 | approved | 2026-07-24 |
+| [catalog/economics-journals.md](catalog/economics-journals.md) | 经济学期刊 | approved | 2026-07-26 |
 | [catalog/finance-journals.md](catalog/finance-journals.md) | 金融学期刊 | approved | 2026-07-20 |
 | [catalog/or-ms-journals.md](catalog/or-ms-journals.md) | OR/MS 期刊 | approved | 2026-07-20 |
 | [catalog/preprint-platforms.md](catalog/preprint-platforms.md) | 预印本/WP 平台与订阅范围 | review | 2026-07-24 |
@@ -129,14 +129,14 @@
 | [research/site-survey/cvf.md](research/site-survey/cvf.md) | 勘察：CVF Open Access（列表形态/双代路径） | approved | 2026-07-22 |
 | [research/site-survey/acl-anthology.md](research/site-survey/acl-anthology.md) | 勘察：ACL Anthology（GitHub bulk/Findings/许可二分） | approved | 2026-07-22 |
 | [research/site-survey/neurips-proceedings.md](research/site-survey/neurips-proceedings.md) | 勘察：NeurIPS Proceedings（格式边界/hash id） | approved | 2026-07-24 |
-| [research/site-survey/aaai-ojs.md](research/site-survey/aaai-ojs.md) | 勘察：AAAI OJS（OAI-PMH 主路径/分页/覆盖边界） | approved | 2026-07-24 |
+| [research/site-survey/aaai-ojs.md](research/site-survey/aaai-ojs.md) | 勘察：AAAI OJS（OAI-PMH 主路径/分页/覆盖边界） | approved | 2026-07-26 |
 | [research/site-survey/metadata-apis.md](research/site-survey/metadata-apis.md) | 勘察：Crossref/OpenAlex/S2 | approved | 2026-07-22 |
 | [research/site-survey/cs-ai-conferences.md](research/site-survey/cs-ai-conferences.md) | 勘察：CS/AI 顶会渠道 | approved | 2026-07-20 |
 | [research/site-survey/econ-fin-preprints.md](research/site-survey/econ-fin-preprints.md) | 勘察：SSRN/RePEc/NBER/CEPR | approved | 2026-07-20 |
 | [research/site-survey/ssrn.md](research/site-survey/ssrn.md) | 勘察：SSRN（聚合主路径/CF 门界定） | approved | 2026-07-24 |
 | [research/site-survey/nber.md](research/site-survey/nber.md) | 勘察：NBER（crossref 主干/开放全文窗） | approved | 2026-07-24 |
 | [research/site-survey/aea.md](research/site-survey/aea.md) | 勘察：AEA（crossref 元数据/订阅墙边界） | approved | 2026-07-24 |
-| [research/site-survey/econometric-society.md](research/site-survey/econometric-society.md) | 勘察：Econometric Society 三刊（ECMA 迁移分段/TE-QE OJS-OAI） | approved | 2026-07-24 |
+| [research/site-survey/econometric-society.md](research/site-survey/econometric-society.md) | 勘察：Econometric Society 三刊（ECMA 迁移分段/TE-QE OJS-OAI） | approved | 2026-07-26 |
 | [research/site-survey/repec.md](research/site-survey/repec.md) | 勘察：RePEc 生态（enrich 定位/JEL 独家） | approved | 2026-07-24 |
 | [research/site-survey/aggregators-unpaywall-dblp-core.md](research/site-survey/aggregators-unpaywall-dblp-core.md) | 勘察：Unpaywall/DBLP/CORE/Scholar | approved | 2026-07-22 |
 | [research/site-survey/ai-journals-preprints-verification.md](research/site-survey/ai-journals-preprints-verification.md) | 核验：AI 期刊+预印本分类 | approved | 2026-07-20 |

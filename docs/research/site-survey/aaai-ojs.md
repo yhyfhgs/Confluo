@@ -2,7 +2,7 @@
 title: 勘察：AAAI OJS（OAI-PMH 主路径/分页/覆盖边界）
 status: approved
 owner: fable5
-updated: 2026-07-24
+updated: 2026-07-26
 ---
 
 # AAAI OJS（ojs.aaai.org）LIVE 勘察报告
@@ -498,7 +498,14 @@ Disallow: /cache/
 > - **项②**：「AAAI-38」式**届序号**命名 vs 站点 `Vol.N`/`AAAI-YY` 品牌名对应关系（§0/§2.4，`site-survey:29,166`）——原为 `[UNRESOLVED，高置信推断]`（Vol.38↔2024↔站点品牌 `AAAI-24`）。
 > - **项④**：`ListSets` 展示的 setSpec 与 `ListIdentifiers`/`ListRecords` 实际可查询 setSpec 的层级/命名差异（§5.2，`site-survey:284`）——原 `set=AAAI:2023-11` 单独过滤返回 `noRecordsMatch`，疑 ListSets 名与可查询名不一致。
 
-**结论：两项均 `[UNRESOLVED 维持]`——2026-07-24 核实窗内 `ojs.aaai.org` 应用层持续性故障，判 BLOCKED，如约停手、未对抗。**
+**结论（2026-07-24 判定）：两项均 `[UNRESOLVED 维持]`——2026-07-24 核实窗内 `ojs.aaai.org` 应用层持续性故障，判 BLOCKED，如约停手、未对抗。**
+
+**[已闭合，LIVE 2026-07-26，Phase 6 M1-b 在线闭合批]**：`ojs.aaai.org` 已恢复（`GET /robots.txt`→200），按下方"移交 controller"段落方法以 5/6 请求闭合两项——
+
+- **项②**：`OAI ListIdentifiers set=AAAI:2024-149` 取 Vol.38(2024) 记录 identifier，`GetRecord` 直取 `dc:source` = `"...Vol. 38 No. 9: AAAI-24 Technical Tracks 9; 10280-10287"`——**逐字串确认 Vol.38↔2024↔品牌名 `AAAI-24`**，`Vol=年份−1986` 公式（38=2024−1986）吻合，此前"低风险但未直接实测"的缺口已补齐。
+- **项④**：重测 `set=AAAI:2023-11` 仍 `noRecordsMatch`（复现，非瞬时）；但 `set=AAAI:2024-149`（同为数字型 `AAAI:{year}-{trackId}`）**成功返回 16 条记录**。结论：`set=` 过滤机制本身正常工作，`ListSets`/`ListIdentifiers` 之间**不存在系统性命名或层级不一致**；`AAAI:2023-11` 的 `noRecordsMatch` 是该 setSpec 自身的数据问题（该 track 编号在 2023 年可能零挂载/已改号），非 API 缺陷。原"不假设 ListSets 名字均可查询、需逐个探测"的保守建议依然有效，予以保留。
+
+详细请求台账与结论回填见 [design/adapters/aaai-ojs.md §11](../../design/adapters/aaai-ojs.md)（本文档按红线不重复记录同一台账，仅此处引用状态更新）。
 
 **实测证据（隔离脚本，UA `PaperCrawler/0.1.0 (personal research; mailto:yhyfhgs@gmail.com)`，串行 ≥2s）**：
 

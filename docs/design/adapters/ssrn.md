@@ -2,7 +2,7 @@
 title: Adapter 设计 · SSRN（实现级 · 聚合元数据主路径）
 status: implemented
 owner: D1
-updated: 2026-07-24
+updated: 2026-07-26
 ---
 
 # Adapter · `ssrn`(实现级详设)
@@ -172,6 +172,15 @@ updated: 2026-07-24
 - **请求台账**：本项共 7 请求（2 次前置连通性/`sample`+分页形态探测 + 5 次正式采样页 page=1..5），均 200 OK、零 429/5xx、`api.openalex.org` 单域、串行间隔 ≥1.2s。原始响应（5 页 JSON + 汇总统计）存 scratchpad，不入 git。
 - **固有天花板复述**：本次实测口径同 §9.1 原定义——测「OpenAlex 收录 works 中 DOI 挂载率」，非「crossref 相对 SSRN 真实全库」；OpenAlex 自身对 SSRN 覆盖上界未知仍是开放问题，不因本次实测而消解。
 
+**[LIVE] 2026-07-26 M1-d 抽样**（Phase 6 M1-d，独立脚本 httpx，非 CI；为 R2 候补路径 (a) "OpenAlex 补枚举无-DOI works" 评估供数，只记录数据、不改代码/不动 ENUMERATE 能力声明）：
+
+- **方法**：`GET api.openalex.org/works`，构造 3 个代表性 filter 查询（`mailto=yhyfhgs@gmail.com`，UA `PaperCrawler/0.1.0 (personal research; mailto:yhyfhgs@gmail.com)`，`api.openalex.org` 单域串行间隔 ≥2s）——① `primary_location.source.id:S4210172589,has_doi:false`（SSRN 为主位置且无 DOI）；② 同 filter① 加 `select=` 精简字段做小样本抽查（`per-page=5`，不限 `select`，看全字段）；③ `locations.source.id:S4210172589,has_doi:false`（放宽到"任一位置"，含 SSRN 非主位置托管副本）。另做 cursor 分页连续性验证（`cursor=*` 翻页两次）。共 5 请求。
+- **可枚举数量级**：filter①（`primary_location`）`meta.count=`**229,102** 条无 DOI works；filter③（`locations`，更宽口径）`meta.count=`**285,262** 条——比①多 56,160 条（+24.5%），差值来自 SSRN 作为**非主位置**托管副本的 works（如已在其它期刊正式发表、SSRN 只留预印本副本的条目）。两数量级均与 §9.1 主census（86.9% DOI 覆盖率 → 推算无 DOI 占比 13.1%，对 1.63M 全量则 ≈213K）**数量级吻合**（229,102 略高于 213K 推算值，合理，因 primary_location 口径与"全量×(1-86.9%)"口径本身有细微统计定义差异），交叉验证一致、无矛盾。
+- **字段完整度**（filter① `per-page=5` 全字段样本，5/5 条逐一检查）：`title`/`display_name` **5/5 非空完整**；`authorships`（作者）**5/5 非空**（1–4 人）；`publication_date` **5/5 非空**（样本年代跨 1934–1998，历史 WP 回填与近期条目均有）；`doi` 恒 null（过滤条件本身）；`ids` 对象**仅含 `openalex`+`mag`，无 SSRN 专属 id 键**；**`abstract_id`（SSRN 特有编号）可从 `locations[].landing_page_url` 间接解析得到**——5/5 样本均含形如 `https://papers.ssrn.com/sol3/papers.cfm?abstract_id=1496199` 的 URL（2 个变体：`autopapers.ssrn.com` 子域 1 例、`Delivery.cfm/...?abstractid=` 参数名变体 1 例），故 `abstract_id` **非结构化字段直给，但可靠可由 URL 正则提取**（覆盖率本样本 5/5=100%，n 太小仅供定性参考）；`abstract_inverted_index`（摘要倒排索引）**5/5 存在**（OpenAlex 对此子集有摘要覆盖）。
+- **翻页机制可用性**：标准 `cursor=*` 分页**验证有效**——首页 `per-page=25` 返回 25 条 + `next_cursor`；跟随 `next_cursor` 取第二页，再返回 25 条且与首页**零 ID 重叠**（去重/连续性正常）。系统性全量枚举該子集技术上可行（标准游标翻页到 `next_cursor=null` 为止），229,102 条按 OpenAlex 单页上限 200 估算约需 ~1,146 次分页请求。
+- **成本参考**（非正式计费确认，仅响应体 `cost_usd` 字段的 advisory 数值）：本次 5 次请求（含 `per-page=1/5/25` 不同页大小）响应体均报告 `cost_usd=0.0001`/请求，**似为按请求数计费而非按返回记录数计费**（未独立核实计费模型，仅转述响应体自报数值）——若属实，全量枚举该子集（~1,146 请求）advisory 成本量级 ≈ $0.11，量级上并不高；但 `aggregators.md §1` 既有记录"OpenAlex 已收回 ENUMERATE 能力声明+ 信用计费"这一约束本身（**是否/如何恢复该能力声明**）不在本次抽样范围内，需 R2 单独评估。
+- **请求台账**：5 请求（filter①探测 1 + 全字段小样本 1 + cursor 翻页 2 + filter③探测 1），全 200 OK，零 429/5xx，单域 `api.openalex.org`，串行间隔 ≥2s。原始响应存 scratchpad，不入 git。
+
 ### 9.2 其他风险与开放问题
 
 - **开放问题**（勘察 §8 清单，标注触发层）：① 重取 SSRN `robots.txt` 全文（Disallow 面 + crawl-delay 复核）——**仅模式 B 前置**，元数据层不触；② SSRN RSS/sitemap 作 crossref 外新鲜度源——今日不可验证；③ DOI 覆盖率量化（§9.1）；④ FEN network→聚合过滤映射（§3 子网近似）；⑤ crossref `journal-article` vs `posted-content` 语义差异是否可利用；⑥ 换非-CF-阻断网络对 SSRN 挑战门真实复测（确认 2026-07-20 结论现状）——**模式 B 前置**。
@@ -223,6 +232,7 @@ updated: 2026-07-24
 | 2 | 2026-07-24 | **重写至实现级**（status draft，owner D1）：模式 A 升主路径（crossref 前缀枚举 + openalex enrich，零 SSRN 接触）/ 模式 B 降 opt-in；单 venue + 主题近似过滤 venue 建模；capabilities 集合论证；AC-5 分层草案；DOI 覆盖率量化任务；browser fetch 两案评估。**旧稿浏览器枚举路线作废** | R0a [LIVE 2026-07-24] + controller 预裁决 |
 | 3 | 2026-07-24 | W0 双评审（A/B 独立实例，2026-07-24）Approve-with-fixes → 修订轮闭合 → controller approved | controller W0 收口 |
 | 4 | 2026-07-24 | **§4.3 DISCOVER 改纯生成零网络年桶**（controller 发现①仲裁令，T4 实现随卡联动）：T1 在线实测真实 Crossref `facet=created:*` 返 **HTTP 400**（`created` 非合法 facet，活体哨兵 XFAIL），原「1 请求 created facet 产年桶」**不可实现** → 纯本地生成 1990..今年（clock 注入上界，`paper_count_claimed=None`，规模锚移交 M1 census）；`enumerate` 的 `from/until-created-date` **filter** 不受影响。§4.1 DISCOVER 行「桶计数」联动改 `None`；联动 nber.md §3.1 facet 限定注记 | T1 [LIVE 2026-07-24] 冒烟实证 + controller 发现①仲裁 |
+| 5 | 2026-07-26 | **Phase 6 M1-d 抽样**：§9.1 追加 OpenAlex 无-DOI works 可枚举性抽样附录——为 R2 候补路径 (a) 评估供数（可枚举量级 primary_location 口径 229,102 / locations 口径 285,262；字段完整度含 `abstract_id` 可经 `landing_page_url` 正则提取；`cursor` 标准分页验证有效）。**只记录数据，不改代码、不动 ENUMERATE 能力声明** | Phase 6 M1-d [LIVE 2026-07-26]，5 请求，独立脚本 |
 
 ## 11. 横切件专章：browser fetch 通道两案评估（评审后 controller 终裁）
 

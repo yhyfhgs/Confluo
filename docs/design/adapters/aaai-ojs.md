@@ -31,7 +31,7 @@ updated: 2026-07-26
 | PDF 路由 | `article/view/{id}/{galley}` →302→ `article/download/{id}/{galley}`（`application/pdf`）；详情页 `citation_pdf_url` 直给 download 终态 URL（可省一跳） | [LIVE] §3/§4 |
 | archive 分页 | 路径段 `/index.php/{CODE}/issue/archive/{n}`（非 query string），每页固定 **25 个 issue** 倒序，翻页仅 `Next`（无页码、无跳末页）——**仅作对账辅助**，主路径不依赖 | [LIVE] §2.1 |
 | 单届拆分 | AAAI-26/Vol.40 拆 **48 个 OJS issue**（Vol.40 No.1..48）；单 issue（No.1 = 子 track "Application Domains I"）94 篇/840 页；**拆分粒度逐年逐 venue 可变**（ICWSM 历史 1 issue/年，仅最新届才拆 "No."）——enumerate 不得硬编码"一年 N issue" | [LIVE] §2.3/§1 |
-| Vol↔年 | Vol.40=2026（"Fortieth"，站点品牌 `AAAI-26`）、Vol.33=2019（`AAAI-19`）；近 7 年 `Vol = 年份 − 1986`；站点用 2 位年份品牌名 `AAAI-YY`，≠ 旧稿"AAAI-38"届序号命名 | [LIVE]/[LIVE-推断] §2.4 |
+| Vol↔年 | Vol.40=2026（"Fortieth"，站点品牌 `AAAI-26`）、Vol.33=2019（`AAAI-19`）、**Vol.38=2024（`AAAI-24`，[LIVE] 2026-07-26 直取 `dc:source` 逐字串确认，§12 项②闭合）**；近 7 年 `Vol = 年份 − 1986`；站点用 2 位年份品牌名 `AAAI-YY`，≠ 旧稿"AAAI-38"届序号命名 | [LIVE] §2.4/§12 |
 | robots | `User-agent: * / Disallow: /cache/`（全文两行）；无 `Crawl-delay`、无 sitemap；`/cache/` 与本 adapter 路径无关 | [LIVE] §7 |
 | 反爬 | 无 Cloudflare、无 CAPTCHA、无 429/`Retry-After`；`OJSSID` cookie 下发但匿名读取无需携带 | [LIVE] §8 |
 | 版权 | open access to read + 版权 AAAI 全持、转载需许可（非 CC-BY） | [LIVE] §7 |
@@ -90,7 +90,7 @@ updated: 2026-07-26
   - **字段映射（每记录→PaperStub）**：`title=dc:title`、`abstract=dc:description`、`authors=(dc:creator, …)`、`year=int(dc:date[:4])`、`pub_date=dc:date`、`identifiers=(('doi', doi_lower),)`、`meta` 见 §3.3。
   - **空态**：OAI `noRecordsMatch` = **非错误**（空记录序列正常完成——arxiv 先例，parse.py 已落地）；空届/空卷同理。
   - **墓碑**：`deletedRecord=persistent`（[LIVE]），`<header status="deleted">` 记录跳过并计数 → obslog debug（arxiv `OaiListPage.skipped_tombstones` 先例，复用）。
-  - **⚠ set 过滤不可靠**：`ListSets` 列出 386 个 set（`AAAI:{year}-{trackId}` 或 slug 如 `AAAI:IAAI-DEP`），但 `set=AAAI:2023-11` 单独查返回 `noRecordsMatch`（survey §5.2）——**不假设 ListSets 里的名字都能拿来单独过滤**；实现期若要用 set，先 `ListIdentifiers` 探测某已知 setSpec 是否真的挂记录（⚠ 实现期复核）。
+  - **set 过滤：非全局不可靠，须逐 setSpec 探测（[LIVE] 2026-07-26 §12 项④闭合，细化原判断）**：`ListSets` 列出的 setSpec **并非全部不可查询**——`set=AAAI:2023-11` 单独查仍复现 `noRecordsMatch`（2026-07-26 重测，与 survey §5.2 原发现一致、非瞬时），但 `set=AAAI:2024-149`（同为 `AAAI:{year}-{trackId}` 数字型）**单独查返回 16 条正确记录**（`ListIdentifiers` 全部标 `setSpec=AAAI:2024-149`）。**结论**：`set=` 过滤机制本身工作正常，`AAAI:2023-11` 的 `noRecordsMatch` 是该 setSpec 特定的（该 track 在 2023 年可能确实零挂载记录/已改名改号，非 API 层级/命名规范性的系统性故障）——**原"不假设 ListSets 里的名字都能拿来单独过滤"的保守结论依然成立且是唯一稳妥做法**：实现期若要用 set，仍须先 `ListIdentifiers` 逐个探测目标 setSpec 是否真的挂记录，不能仅凭 `ListSets` 出现过而假设可查询。
   - **IAAI/EAAI 归属**：全库 26185 条含 AAAI 主会 + IAAI + EAAI + symposium；`dc:source` 形如 "…AAAI-19, IAAI-19, EAAI-20…"。**`[UNRESOLVED] 已闭合，LIVE 2026-07-23`**（research/site-survey/aaai-ojs.md §11.4，17 个届 `dc:source` issue 描述穷尽枚举）：IAAI/EAAI **确实占用独立于主赛道的 issue 号**，但编排方式随时代 4 次演变——①2010–2014（Vol.24–28）三分体制：No.1=AAAI/No.2=IAAI/No.3=EAAI 各自独立；②2015–2017（Vol.29–31）二分体制：仅 No.2=IAAI 独立，EAAI 并入 No.1；③2018–2019（Vol.32–33）归并体制：全部并入同一 issue 号，个体记录不可由 issue 号区分；④2020–2025（Vol.34–39，现行）多 Track + 尾部合并 issue：主赛道拆 10–25 个"Technical Tracks N"，末尾追加 1 个专属 issue 打包 IAAI+EAAI+Special+Student（尾号逐年后移，Vol.39→No.28）。**主会 venue 当前不排除 IAAI/EAAI**（enumerate_issue 的 DOI-卷号过滤本就不区分 track，两者天然随卷号一并收割入库）——若未来要单独排除/标注，需在 §3.3 `meta` 新增 track 归属字段（识别信号：`dc:source` issue 描述文本含 "IAAI"/"EAAI"子串，比 OAI `<header><setSpec>` 更可靠——已实测 576 条 issue 描述含 IAAI/EAAI 但 setSpec 未打标签的反例）。
 - **resolve_assets**（零网络）：读 `paper.meta['pdf_url']`（enumerate 从 `dc:relation` 捕获的 galley view URL）→ 路径 `/view/`→`/download/` 直接构造 download 终态 URL（survey §4：view 302→download，预换可省一跳）→ 单个 `AssetPlan(kind=pdf, url_strategy=direct, auth_needed=none, version=None)`。landing = `article/view/{articleId}`（不物化为 asset，与 arxiv 一致）。**⚠ 多 galley 消歧（复审后修订——resolve 保持真零网络）**：个别文章挂第二 galley（Video/Poster/Slides），oai_dc `dc:relation` 无类型标注——取首个 relation（通常为 PDF）+ 记录级 `dc:format=application/pdf` 佐证；**消歧失败的偶发非 PDF 由 pipeline `%PDF` 魔数校验拦截 → `integrity` 路由（fails-safe，不牵连批次）**。详情页 `citation_pdf_url` 仅作 fixture 对账参考，**不作运行时兜底**（否则违反 resolve 零网络断言——pmlr-B3 同款教训）。实现期核验 relation 顺序（⚠）。
 - **fetch_asset**（流式）：`HttpClient.stream` → `io.write_stream`；`%PDF` 权威校验归 pipeline（冻结分工）。**adapter 职责**：把"PDF url 却回了 HTML 页"嗅探为 `GONE`——覆盖两态：撤稿/不存在，以及**未发布 issue/galley 的 302→`/login` 落地页**（survey §9，见 §6）。复用 arxiv `_gone_guarded_stream` 的 HTML 首字节嗅探模式。
@@ -186,6 +186,25 @@ Vol.33–40 同构可收割**（同一 OAI 端点、同一 DOI 形态 `10.1609/a
 要求区分/过滤/单独标注 track 归属（现状：不区分，全部随卷号收割），需在 §3.3 `meta` 新增字段
 （如 `('track', 'iaai'|'eaai'|'main')`，从 `dc:source` 正则抽取）并补测试；本次不产生此实现，
 仅记录信号来源供未来实现参考。
+
+## 11. A⑥⑦ 重跑闭合（2026-07-26，Phase 6 M1-b 在线闭合批，预算 5/6 请求）
+
+> 承接 [research/site-survey/aaai-ojs.md §12](../../research/site-survey/aaai-ojs.md#12-unresolved-专项在线核实尝试-live-2026-07-24--站点侧持续性故障blocked) 2026-07-24 的 BLOCKED 移交（`ojs.aaai.org` 应用层持续性故障，未获结论）。本次前置 1 次 `GET /robots.txt` 确认站点已恢复（200），随后按该节"移交 controller"段落的既定方法执行，5 请求内两项全部闭合。
+
+- **项②（"AAAI-38"届序号 vs 站点 `Vol.N`/`AAAI-YY` 品牌名对应关系）——[已闭合，LIVE 2026-07-26]**：`OAI ListIdentifiers set=AAAI:2024-149` 取得 Vol.38(2024) 记录 identifier `oai:ojs.aaai.org:article/28894`，`GetRecord` 直取其 `dc:source` = `"Proceedings of the AAAI Conference on Artificial Intelligence; Vol. 38 No. 9: AAAI-24 Technical Tracks 9; 10280-10287"`——**逐字串直接确认 Vol.38↔2024↔站点品牌 `AAAI-24`**，与 `Vol=年份−1986` 公式（38=2024−1986）完全吻合。本表§2.4 已同步更新为 [LIVE]（原 `[LIVE-推断]` 转正）。
+- **项④（`ListSets` setSpec vs 实际可查询 setSpec 的命名/层级差异）——[已闭合，LIVE 2026-07-26]**：`ListSets` 返回的 setSpec 既有数字型（`AAAI:{year}-{trackId}`，如 `AAAI:2023-11`/`AAAI:2024-149`）也有语义型（如 `AAAI:IAAI-DEP`）。重测 `set=AAAI:2023-11` 仍 `noRecordsMatch`（与 2026-07-24 原发现一致、可复现非瞬时故障）；但 `set=AAAI:2024-149` 单独查询**成功返回 16 条记录**（`ListIdentifiers` 响应逐条 `<setSpec>AAAI:2024-149</setSpec>` 与请求一致）。**结论**：`set=` 过滤功能本身工作正常，不存在 `ListSets`/`ListIdentifiers` 之间系统性的命名或层级不一致问题；`AAAI:2023-11` 的 `noRecordsMatch` 是该特定 setSpec 的数据/生命周期问题（该 track 编号在 2023 年可能未挂载任何记录，或已改名/改号），而非 API 设计缺陷。§3.2 现有"不假设 ListSets 名字都可单独过滤、实现期先探测"的保守建议依然是唯一稳妥做法，本次予以保留并强化措辞（见 §3.2 本次同步修正）。
+
+**请求台账**（5/6，UA 恒 `PaperCrawler/0.1.0 (personal research; mailto:yhyfhgs@gmail.com)`，间隔 ≥2s，站点声明限速 30rpm）：
+
+| # | 方法 | 目标 | 结果 |
+|---|---|---|---|
+| 1 | GET | `ojs.aaai.org/robots.txt` | 200（应用层恢复确认） |
+| 2 | GET | `oai?verb=ListSets` | 200（386+ setSpec 全量，含数字型与语义型） |
+| 3 | GET | `oai?verb=ListIdentifiers&set=AAAI:2024-149` | 200，16 条记录（项④正例） |
+| 4 | GET | `oai?verb=GetRecord&identifier=oai:ojs.aaai.org:article/28894` | 200，`dc:source` 含 "AAAI-24"（项②闭合） |
+| 5 | GET | `oai?verb=ListIdentifiers&set=AAAI:2023-11` | `noRecordsMatch`（复现，项④反例，确认非瞬时） |
+
+第 6 请求预算未使用（两项已用 5 请求充分闭合，经济收尾）。零 PDF 下载、零登录、零表单；[research/site-survey/aaai-ojs.md](../../research/site-survey/aaai-ojs.md) §12 同步更新结论状态。
 
 **规模注记**：AAAI-26/Vol.40 本身仍在扫描中途（No.1–24/预期 48+），其活记录数 2136 是**下限
 非终值**；补完预算 ≤30 请求（§11.5）。
