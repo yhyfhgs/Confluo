@@ -22,7 +22,6 @@ from helpers import make_ssrn_venue
 from paper_crawler.errors import CrawlerError, ErrorClass, SubscriptionInvalid
 from paper_crawler.subs.compile import (
     DATE_WINDOW_PARAMS,
-    PREDICATE_OPENALEX_CONCEPTS,
     PREDICATE_SSRN_TOPIC_FILTER,
     SUPPORTED_SOURCES,
     compile_subscription,
@@ -151,9 +150,47 @@ def test_arxiv_unbalanced_parentheses_are_left_alone() -> None:
     )
 
 
+def test_arxiv_unpaired_quote_is_normalized_as_if_unquoted() -> None:
+    """已知行为：引号落单时那截按引号外处理（照样折空白、照样大写操作符）。
+
+    钉住而非"修复"：引号配不上本就是写错了，猜用户想在哪闭合只会把显式错误变成隐式错误。
+    """
+    assert _search_query(query='ti:"agent   and  abs:x') == '(ti:"agent AND abs:x)'
+
+
 def test_arxiv_empty_selector_yields_no_pushdown() -> None:
     """兜底：绕过解析器直构的空选择器不产 `search_query=`（空查询串会拉回全站）。"""
     assert _step("arxiv", {}).pushdown == ()
+
+
+@pytest.mark.parametrize(
+    "query",
+    [
+        'ti:"agent" AND submittedDate:[202601010000 TO 202601310000]',
+        'ti:"agent" AND SUBMITTEDDATE:[202601010000 TO 202601310000]',
+        'ti:"agent" AND from-pub-date:2026-01-01',
+    ],
+)
+def test_arxiv_handwritten_date_window_is_rejected(query: str) -> None:
+    """DSL 里手写日期窗 → CONFIG 拒载：它会与 T4 注入的增量窗相与，订阅在跑却一直漏收。"""
+    with pytest.raises(SubscriptionInvalid) as excinfo:
+        _step("arxiv", {"query": query})
+    assert excinfo.value.error_class is ErrorClass.CONFIG
+    assert excinfo.value.detail == "sources.arxiv.query"
+
+
+def test_arxiv_query_without_date_window_compiles_fine() -> None:
+    """反例：正常查询式不受日期窗守卫影响（守卫不能宽到误伤普通检索词）。"""
+    assert _search_query(query='ti:"submitted manuscript"') == 'ti:"submitted manuscript"'
+
+
+def test_date_window_guard_names_are_derived_from_the_seam_table() -> None:
+    """守卫名单与 `DATE_WINDOW_PARAMS` 同源——新增源自动多守一个名字，两处不各记一份。"""
+    names = {name for names in DATE_WINDOW_PARAMS.values() for name in names}
+    assert len(names) == 8
+    for name in names:
+        with pytest.raises(SubscriptionInvalid):
+            _step("arxiv", {"query": f'ti:"agent" AND {name}:X'})
 
 
 # --- crossref：issns → 每刊一条（期刊 watch 通道）-----------------------------
@@ -201,6 +238,20 @@ def test_crossref_note_points_at_the_date_window_seam() -> None:
     assert "from-pub-date" in _step("crossref", {"issns": ("0033-5533",)}).note
 
 
+@pytest.mark.parametrize("issn", ["0033553X3", "0033–5533", "issn:0033-5533", "0033-55", ""])
+def test_crossref_malformed_issn_is_rejected(issn: str) -> None:
+    """ISSN 进的是 URL path——形态不把关，笔误就变成一条查不出所以然的 404。"""
+    with pytest.raises(SubscriptionInvalid) as excinfo:
+        _step("crossref", {"issns": (issn,)})
+    assert excinfo.value.error_class is ErrorClass.CONFIG
+    assert excinfo.value.detail == "sources.crossref.issns[0]"
+
+
+@pytest.mark.parametrize("issn", ["0033-5533", "1050-465X", "1050-465x"])
+def test_crossref_accepts_valid_issn_forms_including_check_digit_x(issn: str) -> None:
+    assert _step("crossref", {"issns": (issn,)}).pushdown == (("issn", issn),)
+
+
 # --- openalex：concepts + from_source_types → filter 轴 -----------------------
 
 
@@ -215,18 +266,30 @@ def test_openalex_concept_entity_url_is_normalized_to_short_id() -> None:
     assert step.pushdown == (("filter", "concepts.id:C41008148"),)
 
 
-def test_openalex_concept_names_fall_back_to_local_compensation() -> None:
-    """名称型概念无离线 id 解析路径 → 不臆造下推，记本地补偿并把名称写进 note。"""
+def test_openalex_concept_names_are_note_only_not_a_predicate() -> None:
+    """名称型概念：既不臆造下推，**也不标补偿谓词**——该谓词全仓无实现（P1 出列裁决）。
+
+    标一条 T3 registry 里没有的谓词，T5 组装执行链时会直接崩掉整轮 watch；降级 note-only
+    才是如实说法："这条现在没生效"。与 `ssrn.topic_filter`（有实现、只缺信号）区别对待。
+    """
     step = _step("openalex", {"concepts": ("large language model",)})
     assert step.pushdown == ()
-    assert step.local_predicates == (PREDICATE_OPENALEX_CONCEPTS,)
+    assert step.local_predicates == ()
     assert "large language model" in step.note
+    assert "未下推亦未本地补偿" in step.note
 
 
 def test_openalex_mixed_ids_and_names_split_by_form() -> None:
     step = _step("openalex", {"concepts": ("C41008148", "large language model")})
     assert step.pushdown == (("filter", "concepts.id:C41008148"),)
-    assert step.local_predicates == (PREDICATE_OPENALEX_CONCEPTS,)
+    assert step.local_predicates == ()
+
+
+def test_openalex_source_type_containing_pipe_is_rejected() -> None:
+    """`|` 是 filter 轴内的 OR 分隔符——混进取值会被 OpenAlex 读成两个类型。"""
+    with pytest.raises(SubscriptionInvalid) as excinfo:
+        _step("openalex", {"from_source_types": ("preprint|article",)})
+    assert excinfo.value.detail == "sources.openalex.from_source_types[0]"
 
 
 def test_openalex_source_types_become_type_filter() -> None:
@@ -248,6 +311,7 @@ def test_openalex_two_axes_emit_two_filter_entries_in_field_order() -> None:
 def test_openalex_empty_selector_yields_no_pushdown_and_no_concept_predicate() -> None:
     step = _step("openalex", {})
     assert step.pushdown == () and step.local_predicates == ()
+    assert "未下推亦未本地补偿" not in step.note
 
 
 # --- s2：venues / fields_of_study / query → bulk search 参数 ------------------
@@ -288,6 +352,18 @@ def test_s2_without_query_emits_no_query_param() -> None:
 
 def test_s2_empty_selector_yields_no_pushdown() -> None:
     assert _step("s2", {}).pushdown == ()
+
+
+@pytest.mark.parametrize(
+    ("field", "value"),
+    [("venues", "Journal of Finance, Series B"), ("fields_of_study", "Economics, Finance")],
+)
+def test_s2_value_containing_comma_is_rejected(field: str, value: str) -> None:
+    """逗号是 venue/fieldsOfStudy 的分隔符——混进取值会被 S2 静默拆成两项、多收一堆。"""
+    with pytest.raises(SubscriptionInvalid) as excinfo:
+        _step("s2", {field: (value,)})
+    assert excinfo.value.error_class is ErrorClass.CONFIG
+    assert excinfo.value.detail == f"sources.s2.{field}[0]"
 
 
 def test_s2_note_flags_fuzzy_venue_matching() -> None:
@@ -355,6 +431,16 @@ def test_ssrn_topic_filter_from_shipped_venue_yaml_enters_local_predicates() -> 
     assert "econ_fin" in step.note
 
 
+def test_ssrn_topic_filter_note_carries_the_enrich_signal_precondition() -> None:
+    """谓词有实现但**缺信号**（`stub.meta['openalex_field']` 当前无人产）——note 必须说破。
+
+    不说破，用户会以为自己已经拿到了 econ/fin 收窄；实际 T3 兜底是 pass-through 放行。
+    """
+    note = _ssrn_step({"networks": ("FEN",)}, _load_repo_ssrn_venue()).note
+    assert "openalex_field" in note
+    assert "LocalFilter-only" in note
+
+
 def test_ssrn_topic_filter_absent_when_venue_not_supplied() -> None:
     step = _ssrn_step({"networks": ("FEN",)}, None)
     assert step.local_predicates == ()
@@ -367,9 +453,24 @@ def test_ssrn_topic_filter_absent_when_venue_declares_none() -> None:
     assert _ssrn_step({"networks": ("FEN",)}, venue).local_predicates == ()
 
 
-@pytest.mark.parametrize("bad", [123, "", "   ", ["econ_fin"]])
+@pytest.mark.parametrize(
+    "bad",
+    [
+        123,
+        "",
+        "   ",
+        ["econ_fin"],
+        None,  # `topic_filter:`（YAML 空值）= 写了键没给值，与 "" 同类笔误
+        "bogus_topic_set",  # 臆造的集合名：全库无实现
+        "econ-fin",  # 拼错分隔符：与唯一合法值 econ_fin 一字之差
+    ],
+)
 def test_ssrn_topic_filter_illegal_value_fails_loud_as_config(bad: object) -> None:
-    """quirks 类型写错当场 CONFIG 报错——静默当"没声明"会让订阅悄悄少一层过滤。"""
+    """quirks 写错当场 CONFIG 报错——静默当"没声明"会让订阅悄悄少一层过滤。
+
+    取值域也把关（唯一合法值 `econ_fin`）：写一个没实现的集合名不该换来一份空清单。
+    `None` 与 `""` 在此**对称**——两者都是"写了键但没给有效值"，不该一个静默一个响亮。
+    """
     venue = make_ssrn_venue(topic_filter=bad)
     with pytest.raises(CrawlerError) as excinfo:
         _ssrn_step({"networks": ("FEN",)}, venue)
@@ -567,7 +668,6 @@ def test_llm_agents_example_compiles_to_expected_plan() -> None:
                 LOCAL_PREDICATE_TITLE_REGEX_ANY,
                 LOCAL_PREDICATE_EXCLUDE_REGEX,
                 LOCAL_PREDICATE_MIN_YEAR,
-                PREDICATE_OPENALEX_CONCEPTS,
             ),
         ),
     )
@@ -601,5 +701,20 @@ def test_examples_expose_their_local_compensation_union() -> None:
         LOCAL_PREDICATE_TITLE_REGEX_ANY,
         LOCAL_PREDICATE_EXCLUDE_REGEX,
         LOCAL_PREDICATE_MIN_YEAR,
-        PREDICATE_OPENALEX_CONCEPTS,
     )
+
+
+def test_every_emitted_predicate_has_an_execution_layer() -> None:
+    """**只标有实现的谓词**（controller 裁决）：并集必须落在已知白名单内。
+
+    T5 会按谓词标记去 T3 registry 取执行器——多标一条没实现的，整轮 watch 直接崩。
+    此断言是那条纪律的守门人：新增源专属谓词必须同时落实现，否则此处红。
+    """
+    implemented = {
+        LOCAL_PREDICATE_TITLE_REGEX_ANY,
+        LOCAL_PREDICATE_EXCLUDE_REGEX,
+        LOCAL_PREDICATE_MIN_YEAR,
+        PREDICATE_SSRN_TOPIC_FILTER,  # 实现在 adapters/ssrn/parse.py（缺信号由 T3 兜底）
+    }
+    plan = compile_subscription(_all_sources_subscription(), venues={"ssrn": make_ssrn_venue()})
+    assert set(plan.all_local_predicates()) <= implemented
