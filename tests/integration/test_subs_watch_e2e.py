@@ -16,18 +16,23 @@ from dataclasses import dataclass
 from datetime import date
 from pathlib import Path
 
+import httpx
 import pytest
 import yaml
 
+from helpers.nber_fixtures import fixture_bytes
 from paper_crawler.adapters.mock_platform import MockPlatformAdapter
 from paper_crawler.errors import CrawlerError, ErrorClass, SubscriptionInvalid
+from paper_crawler.http import HttpClient
 from paper_crawler.registry import VenueRegistry
 from paper_crawler.storage.db import Database
 from paper_crawler.storage.repo import Repo, SubscriptionRepo
 from paper_crawler.subs.model import Subscription
 from paper_crawler.subs.types import RunSummary, WatchOutcome
 from paper_crawler.subs.watch import (
+    MERGED_SOURCE_RULE_PREFIX,
     AdapterFetcher,
+    NberRssFetcher,
     SourceRequest,
     WatchContext,
     daily_report_path,
@@ -216,10 +221,20 @@ def test_truncation_blocks_ingest_but_still_records_the_run(env: _Env) -> None:
     assert ("source", "crossref", CORPUS_SIZE) in summary.distribution
     assert {axis for axis, _, _ in summary.distribution} <= {"source", "category"}
     assert summary.narrowing_hints == ()  # 收窄句归 T6 现算，T5 恒留空
-    # 熔断仍落 run 记录（truncated=1），但 watermark 不推进。
+    # 熔断仍落 run 记录（truncated=1）且计数如实（P3：不是空壳行），但 watermark 不推进。
     (run_row,) = env.runs(subscription.name)
     assert run_row["truncated"] == 1
+    assert run_row["new_count"] == CORPUS_SIZE  # 记的是"本会新增多少"，不是 0
+    assert run_row["fetched_count"] == 0  # 零入库 → 零派生
+    assert run_row["report_path"] == str(path)
     assert env.subs_repo.read_watermark(subscription.name) == {}
+    # `last_run_at` 与 run 记录同口径："跑过就算跑过"（熔断也 touch，审查 P2③）。
+    assert (
+        env.db.query("SELECT last_run_at FROM subscription WHERE name = ?", (subscription.name,))[
+            0
+        ]["last_run_at"]
+        == summary.started_at
+    )
     assert exit_code_for([summary]) == 3
 
 
@@ -610,6 +625,22 @@ def test_metadata_plus_pdf_derives_resolve_tasks_within_the_limit(
     assert int(bound[0]["n"]) == 2
 
 
+def test_dry_run_derives_no_tasks_even_with_a_live_queue(env: _Env, tmp_path: Path) -> None:
+    """判别力用例（审查 P2①）：真 registry + 真 queue + metadata+pdf，dry-run 下队列仍为空。
+
+    此前的"dry-run 不派生"断言在 `queue=None` 的上下文里跑，即便实现漏判 dry-run 也照样
+    绿——那不是在测 dry-run，是在测"没有队列就派不出任务"。
+    """
+    registry = _registry_with(tmp_path, _mock_venue("crossref_backed", fulltext_source="crossref"))
+    subscription = _load_one(env, actions={"ingest": "metadata+pdf", "auto_fetch_limit": 5})
+
+    summary = run_watch(env.context(registry=registry), subscription, dry_run=True, now=DAY)
+
+    assert summary.fetched_count == 0
+    assert env.queue.by_state("PENDING") == []  # 真队列在场，仍然一条都没派
+    assert env.papers() == 0
+
+
 def test_metadata_only_derives_nothing(env: _Env, tmp_path: Path) -> None:
     registry = _registry_with(tmp_path, _mock_venue("crossref_backed", fulltext_source="crossref"))
     subscription = _load_one(env, actions={"ingest": "metadata", "auto_fetch_limit": 5})
@@ -618,6 +649,227 @@ def test_metadata_only_derives_nothing(env: _Env, tmp_path: Path) -> None:
 
     assert summary.fetched_count == 0
     assert env.queue.by_state("PENDING") == []
+
+
+def test_quota_is_not_eaten_by_unroutable_sources(env: _Env, tmp_path: Path) -> None:
+    """审查 P2④：配额在"能路由的条目"上切——排在前面的无 venue 源不吃名额。
+
+    ssrn 声明在前但 registry 里没有以它为 `fulltext_source` 的 venue；crossref 有。
+    `auto_fetch_limit=2` 应当派出 2 个 crossref 任务，而不是被前两条 ssrn 条目吃掉。
+    """
+    registry = _registry_with(tmp_path, _mock_venue("crossref_backed", fulltext_source="crossref"))
+    fetcher = _StubFetcher(
+        {
+            "ssrn": [_stub(f"S{i}", f"10.2139/ssrn.{i}") for i in range(3)],
+            "crossref": [_stub(f"C{i}", f"10.1/c{i}") for i in range(3)],
+        }
+    )
+    # 声明序 crossref→ssrn 由 YAML 键序决定；这里要 ssrn 在前，故直接构造 DSL 文本。
+    (env.subs_dir / "mixed.yaml").write_text(
+        "name: mixed\n"
+        "sources:\n"
+        "  ssrn: {networks: [FEN]}\n"
+        "  crossref: {issns: ['0000-0000']}\n"
+        "actions: {ingest: metadata+pdf, auto_fetch_limit: 2}\n",
+        encoding="utf-8",
+    )
+    subscription = load_subscriptions(env.subs_dir, env.subs_repo)[0]
+    assert subscription.source_names() == ("ssrn", "crossref")
+
+    summary = run_watch(env.context(registry=registry, fetcher=fetcher), subscription, now=DAY)
+
+    assert summary.ingested_count == 6
+    assert summary.fetched_count == 2  # 名额全给了能路由的 crossref
+    assert {row["venue_id"] for row in env.queue.by_state("PENDING")} == {"crossref_backed"}
+
+
+# ---------------------------------------------------------------------------
+# 批内重复计数（审查 P1-A#1）：同一 run 内多源/多请求撞同一 identifier
+# ---------------------------------------------------------------------------
+
+
+class _PerRequestFetcher:
+    """按 `(源, 首个参数值)` 给语料——覆盖同源多请求（多 issn / 多 program）的场景。"""
+
+    def __init__(self, corpus: dict[tuple[str, str | None], list[PaperStub]]) -> None:
+        self.corpus = corpus
+        self.requests: list[SourceRequest] = []
+
+    def fetch(self, request: SourceRequest) -> list[PaperStub]:
+        self.requests.append(request)
+        key = (request.source, request.params[0][1] if request.params else None)
+        return list(self.corpus.get(key, []))
+
+
+def _assert_deduped(summary: RunSummary, expected: int) -> None:
+    """去重基数一致性：new_count / entries / ingested 三者同数，且 paper_id 互不重复。"""
+    assert summary.new_count == expected
+    assert len(summary.entries) == expected
+    assert summary.ingested_count == expected
+    paper_ids = [entry.paper_id for entry in summary.entries]
+    assert len(set(paper_ids)) == expected
+    assert all(paper_ids)
+
+
+def test_batch_dedupe_crossref_two_issns_hitting_the_same_doi(env: _Env) -> None:
+    """场景一：两个 ISSN 各拉回同一篇（合刊/转载）——一篇就是一篇。"""
+    shared = _stub("Shared across journals", "10.1/shared")
+    fetcher = _PerRequestFetcher(
+        {
+            ("crossref", "0304-405X"): [shared, _stub("Only in A", "10.1/a")],
+            ("crossref", "0022-1082"): [shared, _stub("Only in B", "10.1/b")],
+        }
+    )
+    subscription = _load_one(env, sources={"crossref": {"issns": ["0304-405X", "0022-1082"]}})
+
+    summary = run_watch(env.context(fetcher=fetcher), subscription, now=DAY)
+
+    assert len(fetcher.requests) == 2  # 重复键确实逐条展开了
+    assert summary.seen_count == 4  # 拉回 4 条
+    _assert_deduped(summary, 3)  # 去重后 3 篇
+    assert env.papers() == 3
+    # 同源合并不记 merged_from（那是给"另一个源也看到了"用的）。
+    assert all(
+        not any(rule.startswith(MERGED_SOURCE_RULE_PREFIX) for rule in entry.matched_rules)
+        for entry in summary.entries
+    )
+
+
+def test_batch_dedupe_within_a_single_request(env: _Env) -> None:
+    """场景二：同一个请求内部就出现重复（源侧翻页重叠等）。"""
+    dup = _stub("Twice in one page", "10.1/dup")
+    fetcher = _PerRequestFetcher({("crossref", "0000-0000"): [dup, dup, _stub("X", "10.1/x")]})
+    subscription = _load_one(env)
+
+    summary = run_watch(env.context(fetcher=fetcher), subscription, now=DAY)
+
+    assert summary.seen_count == 3
+    _assert_deduped(summary, 2)
+
+
+def test_batch_dedupe_nber_two_programs_sharing_a_working_paper(env: _Env) -> None:
+    """场景三：一篇 WP 同时挂在两个 program 的 feed 下。"""
+    shared = _stub("Cross-listed WP", "10.3386/w40001")
+    fetcher = _PerRequestFetcher(
+        {
+            ("nber", "AP"): [shared],
+            ("nber", "CF"): [shared, _stub("CF only", "10.3386/w40002")],
+        }
+    )
+    subscription = _load_one(env, sources={"nber": {"programs": ["AP", "CF"]}})
+
+    summary = run_watch(
+        env.context(fetcher=fetcher, venues={"nber": _mock_venue()}), subscription, now=DAY
+    )
+
+    assert summary.seen_count == 3
+    _assert_deduped(summary, 2)
+
+
+def test_batch_dedupe_across_sources_records_the_merged_origin(env: _Env) -> None:
+    """场景四：arxiv 与 openalex 给出同一个 DOI——保留声明序首个源，另一个记进命中规则。"""
+    shared_arxiv = _stub("Same paper, arxiv view", "10.48550/arxiv.2601.1")
+    shared_openalex = _stub("Same paper, openalex view", "10.48550/arxiv.2601.1")
+    fetcher = _StubFetcher(
+        {
+            "arxiv": [shared_arxiv, _stub("arxiv only", "10.48550/arxiv.2601.2")],
+            "openalex": [shared_openalex],
+        }
+    )
+    subscription = _load_one(
+        env,
+        sources={"arxiv": {"categories": ["cs.AI"]}, "openalex": {"concepts": ["C41008148"]}},
+    )
+
+    summary = run_watch(env.context(fetcher=fetcher), subscription, now=DAY)
+
+    assert summary.seen_count == 3
+    _assert_deduped(summary, 2)
+    survivor = next(e for e in summary.entries if e.title == "Same paper, arxiv view")
+    assert survivor.source == "arxiv"  # 声明序在前者胜
+    assert f"{MERGED_SOURCE_RULE_PREFIX}openalex" in survivor.matched_rules
+    assert "Same paper, openalex view" not in [entry.title for entry in summary.entries]
+
+
+def test_batch_dedupe_does_not_merge_identifier_less_stubs(env: _Env) -> None:
+    """零 identifier 的条目无从证明重复 → 一律保留（同 guard 的保守判新口径）。"""
+    fetcher = _StubFetcher(
+        {
+            "crossref": [
+                PaperStub(title="anon A", identifiers=()),
+                PaperStub(title="anon B", identifiers=()),
+            ]
+        }
+    )
+    subscription = _load_one(env)
+    summary = run_watch(env.context(fetcher=fetcher), subscription, now=DAY)
+    assert summary.new_count == 2
+
+
+def test_batch_dedupe_prevents_a_spurious_truncation(env: _Env) -> None:
+    """批内重复曾把 `new_count` 顶过阈值——去重后不该再熔断（虚高计数的真实后果）。"""
+    dup = _stub("Repeated", "10.1/rep")
+    fetcher = _PerRequestFetcher(
+        {("crossref", "0304-405X"): [dup], ("crossref", "0022-1082"): [dup]}
+    )
+    subscription = _load_one(
+        env,
+        sources={"crossref": {"issns": ["0304-405X", "0022-1082"]}},
+        guard={"max_new_per_run": 1},
+    )
+
+    summary = run_watch(env.context(fetcher=fetcher), subscription, now=DAY)
+
+    assert summary.outcome is WatchOutcome.OK
+    assert summary.new_count == 1
+
+
+# ---------------------------------------------------------------------------
+# nber RSS 通道端到端（P1-B；T7 `adapters/nber/rss.py` fixture 驱动）
+# ---------------------------------------------------------------------------
+
+
+def _nber_rss_fetcher(urls: list[str]) -> NberRssFetcher:
+    def handler(request: httpx.Request) -> httpx.Response:
+        urls.append(str(request.url))
+        return httpx.Response(200, content=fixture_bytes("06_rss_program_cf_synth.xml"))
+
+    client = HttpClient(user_agent="PaperCrawler/test", transport=httpx.MockTransport(handler))
+    return NberRssFetcher(client, now=DAY)
+
+
+def test_nber_subscription_runs_through_the_rss_channel(env: _Env) -> None:
+    urls: list[str] = []
+    fetcher = _nber_rss_fetcher(urls)
+    subscription = _load_one(
+        env, sources={"nber": {"programs": ["CF"]}}, filters={"min_year": 2026}
+    )
+
+    summary = run_watch(env.context(fetcher=fetcher), subscription, now=DAY)
+
+    assert urls == ["https://back.nber.org/rss/newcf.xml"]  # 走 RSS，绝不触 crossref
+    # proxy year 生效：3 条里 2 条没有可用 pubDate，若不传 default_year 会被 min_year 全灭。
+    assert summary.new_count == 3
+    assert summary.ingested_count == 3
+    assert {entry.categories for entry in summary.entries} == {("CF",)}  # program → 分类轴
+    assert all(entry.url.startswith("https://www.nber.org/papers/") for entry in summary.entries)
+    # watermark 走 id 集合差分（T4 `IdSetDiff`），而非日期游标。
+    stored = env.subs_repo.read_watermark(subscription.name)
+    assert stored["sources"]["nber"]["kind"] == "id_set"  # type: ignore[index]
+
+
+def test_nber_second_run_is_all_diffed_away(env: _Env) -> None:
+    urls: list[str] = []
+    fetcher = _nber_rss_fetcher(urls)
+    subscription = _load_one(env, sources={"nber": {"programs": ["CF"]}})
+    context = env.context(fetcher=fetcher)
+
+    run_watch(context, subscription, now=DAY)
+    second = run_watch(context, subscription, now=DAY)
+
+    assert second.seen_count == 3  # feed 照拉整份快照
+    assert second.new_count == 0  # id 差分把重叠部分全摘掉
+    assert env.papers() == 3
 
 
 def test_zero_auto_fetch_limit_derives_nothing(env: _Env, tmp_path: Path) -> None:

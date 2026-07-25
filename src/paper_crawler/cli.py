@@ -82,6 +82,8 @@ from paper_crawler.adapter import (
     load_adapters,
 )
 from paper_crawler.adapters.crossref.adapter import CrossrefAdapter
+from paper_crawler.adapters.nber import adapter as nber_adapter
+from paper_crawler.adapters.nber.adapter import NberAdapter
 from paper_crawler.adapters.openalex import budget as openalex_budget
 from paper_crawler.adapters.openalex.adapter import OpenAlexAdapter
 from paper_crawler.adapters.unpaywall import report as oa_report
@@ -110,6 +112,8 @@ from paper_crawler.subs.report import render_daily
 from paper_crawler.subs.types import RunSummary
 from paper_crawler.subs.watch import (
     AdapterFetcher,
+    NberRssFetcher,
+    RoutingFetcher,
     SourceFetcher,
     WatchContext,
     exit_code_for,
@@ -845,13 +849,11 @@ def _watch_summary_line(venue_id: str, report: RunReport) -> str:
 
 # -- subs watch（订阅增量；Phase 6 T5）------------------------------------------
 #
-# 命名说明（合并期须知）：design/05 §6 的命令面写作 `crawler watch <subscription-name>`，
-# 但 `watch` 这个名字在 Phase 2 T6 已被 **preprint venue 的当月桶元数据增量**占用（上一节，
-# 有 AC-2.3/D-018 的 7 日 runbook 依赖）。两者语义不同、`--all` 的含义更是互斥（"全部
-# preprint venue" vs "全部订阅"），把订阅 watch 直接挂成 `watch` 会静默改掉既有命令的行为。
-# 故订阅增量落在 `crawler subs watch`——沿 `venues`/`config`/`auth` 三个既有子命令组的
-# house style；既有 `crawler watch <venue>` 逐字不变。命令名归属的最终裁决（是否让订阅
-# watch 收编 `watch`、venue watch 另迁）留给 controller，本卡不擅自定夺（plan §1-7）。
+# 命名（**已裁决**，controller 2026-07-26，落档 design/05 §6 命令面表）：订阅增量是
+# `crawler subs watch`，不是顶层 `crawler watch`——后者自 Phase 2 T6 起是 **preprint
+# venue 的当月桶元数据增量**（上一节，带 AC-2.3/D-018 的 7 日 runbook 依赖），两者语义
+# 不同、`--all` 的含义更是互斥（"全部 preprint venue" vs "全部订阅"）。子命令组形态沿
+# `venues`/`config`/`auth` 的 house style；既有 `crawler watch <venue>` 逐字不变。
 
 subs_app = typer.Typer(no_args_is_help=True, help="主题订阅（design/09）的增量运行。")
 app.add_typer(subs_app, name="subs")
@@ -891,11 +893,23 @@ def _watch_fetcher_factory(env: CliEnv) -> SourceFetcher:
     使订阅拉取与 pipeline 走同一份限速预算，不另开一条绕过限速的通道。限速域登记复用
     `_register_rate_domains`（canary 侧同款需求：注入了带 limiter 的共享 client 后，
     未登记域会让逐请求 `acquire(host)` 撞 CONFIG fail-fast）——不在此另写一份同形循环。
+
+    **nber 走专属 RSS 通道**（T7 `adapters/nber/rss.py`，nber.md §3.4）：`NberRssFetcher`
+    用共享 `env.http` 打 `back.nber.org` 的 program feed。该域**刻意不在 nber adapter 的
+    `domains` 里**（否则会被 `route_for` 别名到 `www.nber.org` 桶，错享宽松预算并违反
+    robots `Crawl-delay:10`——nber/adapter.py §4 的 alias 陷阱注记），故 `_register_rate_domains`
+    登记不到它；此处按"域出现即 register 保守桶"的既有惯例（`stages._fetch_oa_direct`
+    的 OA-host 先例）显式登记 `NberAdapter.BACK_RATE_POLICY`（1 req/10s）。漏了这一步，
+    RSS 的第一次请求就会撞 `RateLimiter` 的未注册域 CONFIG fail-fast。
     """
     adapters = load_adapters()
     bind_http_client(adapters, env.http)
     _register_rate_domains(env, adapters)
-    return AdapterFetcher(adapters, venues=_watch_source_venues(env))
+    env.ctx.limiter.register(nber_adapter.BACK_HOST, NberAdapter.BACK_RATE_POLICY)
+    return RoutingFetcher(
+        {"nber": NberRssFetcher(env.http)},
+        AdapterFetcher(adapters, venues=_watch_source_venues(env)),
+    )
 
 
 def _subs_summary_line(summary: RunSummary) -> str:

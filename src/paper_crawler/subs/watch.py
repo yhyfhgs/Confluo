@@ -14,6 +14,7 @@
   → SourceFetcher.fetch               per-source 拉取（默认实现复用 adapter DISCOVER/ENUMERATE）
   → T4 IdSetDiff.new_ids              仅 id 差分类源：窗内先做增量差分
   → T3 filter_papers                  LocalFilter 三谓词 + 源专属补偿谓词（分流见下）
+  → _dedupe_within_batch              **批内**去重（同一 run 多源/多请求撞同一 identifier）
   → T3 dedupe_against_library         对库去重（guard.dedupe_against_library）
   → T3 is_truncated                   护栏熔断判定
   → 入库 / 派生取回链任务 / 推进 watermark / 落 subscription_run   ← 三条"不做"的分岔在此
@@ -60,17 +61,37 @@ dry-run 走"早退"捷径，那些只在遍历时才触发的校验（解析异�
 `SourceAdapter` 冻结协议是 venue/issue 轴的（`discover_timeline`/`enumerate_issue`），
 没有"按查询参数搜索"的方法，Phase 6 也不动冻结件。故本模块定义一个**订阅域自己的**
 拉取接缝 `SourceFetcher`（同 `EnrichmentSource` 的先例：立于冻结协议之外的 duck-typed
-可选接口），并给出默认实现 `AdapterFetcher`——把一条 `SourceRequest` 映射为该源
-adapter 的 DISCOVER→ENUMERATE 两步，`since=` 传增量窗下界，查询参数落合成 `VenueSpec`
-的 `quirks`。真源的查询式枚举（arxiv `search_query`、s2 bulk search 等）随各自 adapter
-的 watch 通道落地时经 `watch_incremental` 钩子接入，本模块不替 adapter 写 HTTP。
+可选接口），三件实现按源路由（`RoutingFetcher`）：
 
-**nber 接线点（plan §4 T5 已裁决歧义⑪）**：本卡合并时 `adapters/nber/` 下**无**
-`rss.py`——nber 源因此仍走 crossref 前缀枚举通道（`AdapterFetcher` 的
-DISCOVER→ENUMERATE 默认路径），watermark 侧照旧是 `IdSetDiff`（T4 冻结的策略表）。
-T7（`subs/nber-rss`）合并后，nber adapter 会带上 `discover_incremental`——届时
-`AdapterFetcher._incremental_hook` 会自动优先走它（钩子名见 `_INCREMENTAL_HOOKS`），
-本模块无需再改。
+- `NberRssFetcher`——nber 走 T7 的 program RSS 增量主通道
+  （`adapters/nber/rss.py::discover_incremental`，nber.md §3.4）；
+- `AdapterFetcher`——其余源退到该源 adapter 的 DISCOVER→ENUMERATE 两步；
+- 测试可直接换成任意实现（端到端四场景就是这么控制语料的）。
+
+## 参数下达面（P1-A#2 修复：编译产物到底有没有进真实请求）
+
+`AdapterFetcher` 早期版本在"注入了真实 venue"时**整份丢弃** `request.params`——
+编译出的 issn/search_query/filter 一个都没进请求，订阅照跑、日报照出，实际枚举的是
+venue 自己的全量面。现在改为按下表**逐参数**处置，并对下达不了的参数每源一条
+WARNING（响亮降级，不静默）：
+
+| 源 | 能下达的参数 | 通道 | 下达不了的部分 |
+|---|---|---|---|
+| crossref | `issn` | 写进 `VenueSpec.identifiers.issn`（`_enum_key_of` 读它） | 日期窗（见下） |
+| nber | `program` | 专属 RSS fetcher 直接消费 | — |
+| ssrn | — | 元数据经 crossref 前缀枚举，选择器本就无下推面（design/09 §3） | 日期窗 |
+| arxiv | — | adapter 是 OAI 按月桶枚举，无 `search_query` 接缝 | `search_query` |
+| openalex / s2 | — | 二者 `capabilities` 空集（`EnrichmentSource`），无 DISCOVER/ENUMERATE | 全部 |
+
+**日期窗单独一档：降级为"请求面按年、结果面按日"**。crossref 的 `enumerate_issue`
+从 `IssueRef.year` 自算 `YYYY-01-01..YYYY-12-31`，而 DISCOVER 的 `since` 经
+`_since_year` 只取前 4 位——把 7 天窗交给它就退化成整年枚举（审查 P3-3）。日粒度窗
+的正确接缝在 enumerate 的 filter 上，那是冻结协议之外的改动，不属本卡。故本模块在
+**结果面**按 `SourceRequest.since` 客户端收窄（`pub_date < since` 的条目丢弃；
+`pub_date` 缺失一律保留——保守侧，同 watermark"宁可重看不可漏看"）。这不是省流量的
+优化，是**正确性必需**：不收窄的话一次 7 天 watch 会拿回整年记录 → 必然超护栏 →
+熔断 → 水位不推进 → 下次仍是整年，永久熔断死循环。请求量的那一半缺口如实留在上表
+与本段，等 adapter 侧开出日粒度枚举接缝再闭合。
 
 ## 与既有 pipeline 队列的接缝（plan §7 风险②："T5 只派生任务不改 runner"）
 
@@ -97,13 +118,16 @@ CLI 层归 2。
 from __future__ import annotations
 
 from collections.abc import Callable, Iterable, Mapping, Sequence
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from datetime import UTC, date, datetime
 from pathlib import Path
-from typing import Protocol, cast, runtime_checkable
+from typing import Protocol, runtime_checkable
 
 from paper_crawler.adapter import SourceAdapter
+from paper_crawler.adapters.nber import rss
 from paper_crawler.errors import CrawlerError, ErrorClass
+from paper_crawler.http import HttpClient
+from paper_crawler.ids import normalize_identifier
 from paper_crawler.merge import MergeEngine
 from paper_crawler.obslog import log_event
 from paper_crawler.registry import VenueRegistry
@@ -141,28 +165,38 @@ DEFAULT_REPORT_ROOT = Path("docs") / "reports" / "watch"
 #   对官方 proceedings 的最高优先处置）；
 # - ssrn → `crossref`：D-029 后 ssrn 元数据主路径是 crossref 前缀 10.2139 枚举，站点
 #   零接触——字节确实来自 crossref；
-# - nber → `crossref`：本卡合并时 nber 仍走 crossref 前缀 10.3386 枚举（模块 docstring
-#   "nber 接线点"）。T7 的 RSS 通道落地后，RSS 来的记录是 nber.org 官方一手，届时该
-#   行应随 T7 一并改判 `official`——**不在本卡预先改**，否则会给当前真实走 crossref
-#   的记录挂上一个更高的优先级，静默压过 crossref 自己的值。
+# - nber → `official`：T7 落地后 watch 增量走 `back.nber.org` 的 program RSS
+#   （`NberRssFetcher`），字节来自 nber.org 官方一手——改判条件（"RSS 通道落地"）已
+#   成立，本卡随 T7 合并一并 fire。注意这只影响 **watch 通道**产出的记录；backfill 主
+#   干仍是 crossref 前缀 10.3386 枚举，走的是 pipeline 而非本模块。
 MERGE_SOURCE: dict[str, str] = {
     "arxiv": "official",
     "ssrn": "crossref",
     "openalex": "openalex",
     "s2": "s2",
-    "nber": "crossref",
+    "nber": "official",
     "crossref": "crossref",
 }
 
 # `stub.meta` 的读取约定（本模块是唯一消费点，故约定写在这里）：
-# - `categories`：源侧分类，逗号分隔（arXiv cat / NBER program / SSRN 网络）——喂
-#   `ReportEntry.categories` → 过载报告的"按分类分布"。不产该键的源分布只有来源轴，
-#   如实为空，不臆造分类。
+# - `categories`：源侧分类，逗号分隔（arXiv cat / SSRN 网络）——喂 `ReportEntry.categories`
+#   → 过载报告的"按分类分布"。
+# - `program`：NBER program 代码（`rss.NberWatchEntry.to_paper_stub` 产出，其 docstring
+#   明写"供日报 `ReportEntry.categories` 取用"）——`categories` 缺失时的第二顺位来源。
+#   两个键都没有的源分布只有来源轴，如实为空，不臆造分类。
 # - `url`：条目链接；缺失时退回 `https://doi.org/{doi}`，再缺则空串（日报渲染成 "-"）。
 META_KEY_CATEGORIES = "categories"
+META_KEY_PROGRAM = "program"
 META_KEY_URL = "url"
 
+# 按序探测的分类来源键（前者优先；命中即止，不做并集——两者语义重叠时取更通用的那个）。
+_CATEGORY_META_KEYS: tuple[str, ...] = (META_KEY_CATEGORIES, META_KEY_PROGRAM)
+
 _DOI_RESOLVER = "https://doi.org/"
+
+# 同一 run 内批内去重时，被合并掉的来源记进幸存条目的 `matched_rules`（前缀 + 源 id）。
+# 记在这里而不是另占一个 entry 名额：合并掉的是**同一篇论文的另一次观测**，不是新增。
+MERGED_SOURCE_RULE_PREFIX = "merged_from:"
 
 
 # ---------------------------------------------------------------------------
@@ -202,32 +236,42 @@ class SourceFetcher(Protocol):
     def fetch(self, request: SourceRequest) -> Iterable[PaperStub]: ...
 
 
-# adapter 侧"增量拉取"钩子的候选名（duck-typed，按序探测；命中即优先于
-# DISCOVER→ENUMERATE 默认路径）。`discover_incremental` 是 T7 nber RSS 的接线点
-# （plan §4 T5 已裁决歧义⑪）；`watch_incremental` 留给后续源的查询式 watch 通道。
-_INCREMENTAL_HOOKS: tuple[str, ...] = ("watch_incremental", "discover_incremental")
+# 编译产物参数的**下达面**现状表（模块 docstring "参数下达面"段是同一张表的散文版）。
+# 值 = 该源 adapter 真正会读到的参数名；不在表内的参数进不了真实请求 → 每源一条
+# WARNING（响亮降级，不静默丢弃）。表按源穷举而非缺省放行：新增源时必须显式回答
+# "它的编译产物能不能下达"，忘了填就会被 `test_subs_watch` 的集合等值自断言抓住。
+_DELIVERABLE_PARAMS: dict[str, frozenset[str]] = {
+    "crossref": frozenset({"issn"}),  # → identifiers.issn（`_enum_key_of` 读它）
+    "nber": frozenset({"program"}),  # → NberRssFetcher 直接消费（feed 路由）
+    "ssrn": frozenset(),  # 聚合源无下推面（design/09 §3），本就无参数可下达
+    "arxiv": frozenset(),  # adapter 是 OAI 按月桶枚举，无 search_query 接缝
+    "openalex": frozenset(),  # capabilities 空集（EnrichmentSource），无 DISCOVER
+    "s2": frozenset(),  # 同上
+}
 
-# 增量钩子的调用形态：参数 dict（合成后的请求参数）→ stub 流。
-_IncrementalHook = Callable[[dict[str, str]], Iterable[PaperStub]]
+# 参数名 → `VenueSpec.identifiers` 的键：adapter 真正读的字段通道（`quirks` 之外）。
+# 值一律写成单元素 list——`_enum_key_of` 对 `identifiers.issn` 取 `[0]`。
+_PARAM_TO_IDENTIFIER: dict[str, str] = {"issn": "issn"}
 
 
 class AdapterFetcher:
-    """默认 `SourceFetcher`：把 `SourceRequest` 映射到该源 adapter 的既有能力。
+    """退化路径的 `SourceFetcher`：把 `SourceRequest` 映射到该源 adapter 的既有能力。
 
-    两条路径，按序：
+    **DISCOVER→ENUMERATE**：`discover_timeline(venue, since)` 圈出窗内的期/桶，逐个
+    `enumerate_issue(venue, ref)` 取 stub。这是 plan §4 T5"复用各 adapter 的
+    DISCOVER/ENUMERATE"的字面落地——不新写一套 HTTP/翻页/解析，限速与 UA 由 CLI 装配期
+    注入 adapter 的共享 `HttpClient` 承担（`cli._build_env` 既有装配，本模块不碰）。
 
-    1. **增量钩子**（`_INCREMENTAL_HOOKS`）——adapter 若已实现订阅域的增量通道
-       （T7 nber RSS 的 `discover_incremental`），直接交给它，参数以 `dict` 形态传入。
-    2. **DISCOVER→ENUMERATE**（默认）——`discover_timeline(venue, since)` 圈出窗内的
-       期/桶，逐个 `enumerate_issue(venue, ref)` 取 stub。这正是 plan §4 T5"复用各
-       adapter 的 DISCOVER/ENUMERATE"的字面落地：不新写一套 HTTP/翻页/解析，限速与
-       UA 由 CLI 装配期注入 adapter 的共享 `HttpClient` 承担（`cli._build_env` 既有
-       装配，本模块不碰）。
+    参数与日期窗的下达情况见模块 docstring"参数下达面"段（那张表是本类行为的规格）：
+    能下达的写进 venue 的对应字段，下达不了的每源一条 WARNING，日期窗在**结果面**按
+    `since` 客户端收窄。
 
     `venues` 按**源 id** 索引，给真实的 `VenueSpec`（如 ssrn 走 `venues/econ/ssrn.yaml`
-    以带上 `quirks.topic_filter`）；缺该键时合成一份最小 spec，把请求参数塞进 `quirks`
-    ——adapter 读配置的既有入口就是 quirks，这样测试用 `mock_platform` 也能被同一条
-    路径驱动（`volumes`/`papers_per_issue`/`seed` 等直接从 venue 覆盖传入）。
+    以带上 `quirks.topic_filter`）；缺该键时合成一份最小 spec。两种情形下请求参数**都**
+    会并进 `quirks`（adapter 读配置的既有入口就是 quirks；真实 venue 走 `model_copy`
+    并进，不再整份丢弃），这也让测试用 `mock_platform` 能被同一条路径驱动。
+
+    警告去重是**实例级**的（CLI 每次运行新建一个 fetcher = 每 run 每源一条）。
     """
 
     def __init__(
@@ -238,6 +282,7 @@ class AdapterFetcher:
     ) -> None:
         self._adapters = dict(adapters)
         self._venues = dict(venues or {})
+        self._warned_sources: set[str] = set()
 
     def fetch(self, request: SourceRequest) -> Iterable[PaperStub]:
         adapter = self._adapters.get(request.source)
@@ -247,42 +292,120 @@ class AdapterFetcher:
                 f"订阅源 {request.source!r} 无已注册 adapter"
                 f"（已注册: {', '.join(sorted(self._adapters))}）",
             )
-        hook = self._incremental_hook(adapter)
-        if hook is not None:
-            return list(hook(dict(request.params)))
+        self._warn_undeliverable(request)
         venue = self.venue_for(request)
         stubs: list[PaperStub] = []
         for ref in adapter.discover_timeline(venue, request.since):
             stubs.extend(adapter.enumerate_issue(venue, ref))
-        return stubs
+        return [stub for stub in stubs if _within_since(stub, request.since)]
 
-    @staticmethod
-    def _incremental_hook(adapter: SourceAdapter) -> _IncrementalHook | None:
-        """按 `_INCREMENTAL_HOOKS` 探测 adapter 的增量通道；无则 None（走默认路径）。"""
-        for name in _INCREMENTAL_HOOKS:
-            hook = getattr(adapter, name, None)
-            if callable(hook):
-                return cast("_IncrementalHook", hook)
-        return None
+    def _warn_undeliverable(self, request: SourceRequest) -> None:
+        """下达不了的参数每源一条 WARNING（模块 docstring"参数下达面"段）。
+
+        不静默丢弃是本条的全部意义：早期版本注入真实 venue 时整份扔掉 `params`，日报
+        看起来一切正常，实际枚举的是 venue 全量面（审查 P1-A#2）。
+        """
+        deliverable = _DELIVERABLE_PARAMS.get(request.source, frozenset())
+        dropped = sorted({name for name, _ in request.params if name not in deliverable})
+        if not dropped or request.source in self._warned_sources:
+            return
+        self._warned_sources.add(request.source)
+        window = f"；增量窗已在结果面按 since={request.since} 客户端收窄" if request.since else ""
+        log_event(
+            "WARNING",
+            f"watch[{request.subscription}]: 编译产物参数 {dropped} 无法下达到源 "
+            f"{request.source} 的请求面（该 adapter 的 DISCOVER/ENUMERATE 无对应接缝）"
+            f"{window}，其余条件由本地过滤兜底",
+            stage="watch",
+            venue=request.source,
+        )
 
     def venue_for(self, request: SourceRequest) -> VenueSpec:
-        """该请求使用的 `VenueSpec`：注入的真实 spec 优先，否则按请求参数合成一份。
+        """该请求使用的 `VenueSpec`：注入的真实 spec 为底，请求参数并进去。
 
-        合成 spec 的 `id` 取 `subs_<source>`（`^[a-z][a-z0-9_]*$` 合法），`quirks` =
-        请求参数（值一律字符串，adapter 侧的 quirk 取值器自行转型）。它**不入库、不
-        进 registry**，只是喂给 adapter 方法的一个值对象。
+        - 注入了真实 spec → `model_copy` 出一份副本，`quirks` 取 `{**venue, **params}`
+          （参数在同名键上取胜——参数来自本次订阅的编译产物，比 venue 的静态声明更贴近
+          "这次要拉什么"），`identifiers` 按 `_PARAM_TO_IDENTIFIER` 覆盖。**不改原对象**
+          （registry 里的 spec 是共享的）。
+        - 没有注入 → 合成一份最小 spec，`id` 取 `subs_<source>`（`^[a-z][a-z0-9_]*$`
+          合法）。它不入库、不进 registry，只是喂给 adapter 方法的一个值对象。
         """
+        params: dict[str, object] = dict(request.params)
+        identifiers: dict[str, object] = {
+            key: [params[name]] for name, key in _PARAM_TO_IDENTIFIER.items() if name in params
+        }
         existing = self._venues.get(request.source)
         if existing is not None:
-            return existing
+            return existing.model_copy(
+                update={
+                    "quirks": {**existing.quirks, **params},
+                    "identifiers": {**existing.identifiers, **identifiers},
+                }
+            )
         return VenueSpec(
             id=f"subs_{request.source}",
             kind="preprint_channel",
             names=VenueNames(full=f"subscription source {request.source}"),
             field=["cs_ai"],
             fulltext_source=request.source,
-            quirks=dict(request.params),
+            identifiers=dict(identifiers),
+            quirks=params,
         )
+
+
+def _within_since(stub: PaperStub, since: str | None) -> bool:
+    """条目是否落在增量窗内（结果面收窄；模块 docstring"日期窗单独一档"段）。
+
+    `since` 为空、或条目没有 `pub_date`（大量源不产该字段）→ **保留**：无法证明它在
+    窗外时不丢，与 watermark 的"宁可重看不可漏看"同向；重复由对库去重与 identifier
+    主键兜底。字符串比较即可——两端都是 ISO `YYYY-MM-DD[...]`，字典序 == 时间序。
+    """
+    if since is None or not stub.pub_date:
+        return True
+    return stub.pub_date[:10] >= since[:10]
+
+
+class NberRssFetcher:
+    """nber 专属 `SourceFetcher`：program RSS 增量主通道（T7 `adapters/nber/rss.py`）。
+
+    `PlanStep.pushdown` 的 `program` 条目已由 `build_requests` 逐条展开成独立请求，故
+    这里每次拿到一个 program、对应一个 feed 一次请求（`discover_incremental` 的"严格
+    一 feed 一请求"语义）。未知 program 代码在**调用瞬间**就 `CrawlerError(CONFIG)`
+    ——该函数刻意拆成"立即执行的校验外壳 + 内部生成器"，不依赖调用方是否消费返回值
+    （其 docstring 原话）；本类照样把结果物化成 list，让惰性流的解析异常也落在这里被
+    编排层记成该源的 `FailureEvent`。
+
+    **`default_year=entry.fetch_year` 不可省**（controller 方案 c 的消费端）：NBER 的
+    RSS 常态缺 `<pubDate>`，`to_paper_stub()` 不传该参数时 `year` 恒 None，而订阅一旦
+    声明 `filters.min_year` 就会把"年份未知"整批排除（`subs/filter.py` 的刻意取舍）
+    ——proxy year 的缓解正是在这一行生效，省掉它等于 T7 那半张卡白做。
+    """
+
+    def __init__(self, client: HttpClient, *, now: date | None = None) -> None:
+        self._client = client
+        self._now = now
+
+    def fetch(self, request: SourceRequest) -> Iterable[PaperStub]:
+        programs = [value for name, value in request.params if name == "program"]
+        entries = rss.discover_incremental(programs, self._client, now=self._now)
+        return [entry.to_paper_stub(default_year=entry.fetch_year) for entry in entries]
+
+
+class RoutingFetcher:
+    """按源路由到专属 `SourceFetcher`，其余交给 `fallback`。
+
+    存在的理由：不同源的 watch 通道形态差别很大（nber 是 RSS、其余退到 adapter 的
+    DISCOVER/ENUMERATE），把这个分派塞进 `AdapterFetcher` 会让它同时持有 adapter 表和
+    `HttpClient` 两套依赖。路由表是显式的——新增专属通道只加一行，`AdapterFetcher`
+    不动。
+    """
+
+    def __init__(self, routes: Mapping[str, SourceFetcher], fallback: SourceFetcher) -> None:
+        self._routes = dict(routes)
+        self._fallback = fallback
+
+    def fetch(self, request: SourceRequest) -> Iterable[PaperStub]:
+        return self._routes.get(request.source, self._fallback).fetch(request)
 
 
 # ---------------------------------------------------------------------------
@@ -484,6 +607,15 @@ class _SourceOutcome:
     failure: FailureEvent | None = None
 
 
+@dataclass(frozen=True)
+class _Candidate:
+    """一条跨过本地过滤的候选：它属于哪个源 + 批内被合并掉的其他源（编排内部件）。"""
+
+    source: str
+    paper: FilteredPaper
+    merged_from: tuple[str, ...] = ()
+
+
 # ---------------------------------------------------------------------------
 # 编排主体
 # ---------------------------------------------------------------------------
@@ -517,23 +649,71 @@ def _entry_url(stub: PaperStub) -> str:
 
 
 def _entry_categories(stub: PaperStub) -> tuple[str, ...]:
-    """源侧分类（`meta['categories']` 逗号分隔）；不产该键的源如实为空，不臆造分类。"""
-    for key, value in stub.meta:
-        if key == META_KEY_CATEGORIES:
+    """源侧分类：按 `_CATEGORY_META_KEYS` 顺序探测（逗号分隔）；都没有 → 如实为空。"""
+    meta = dict(stub.meta)
+    for key in _CATEGORY_META_KEYS:
+        value = meta.get(key)
+        if value:
             return tuple(part.strip() for part in value.split(",") if part.strip())
     return ()
 
 
-def _to_entry(source: str, kept: FilteredPaper) -> ReportEntry:
-    stub = kept.stub
+def _to_entry(candidate: _Candidate) -> ReportEntry:
+    """候选 → 日报条目；批内被合并掉的来源记进 `matched_rules`（不另占条目名额）。"""
+    stub = candidate.paper.stub
+    merged = tuple(f"{MERGED_SOURCE_RULE_PREFIX}{source}" for source in candidate.merged_from)
     return ReportEntry(
         title=stub.title,
         authors=stub.authors,
         url=_entry_url(stub),
-        matched_rules=kept.matched_rules,
-        source=source,
+        matched_rules=candidate.paper.matched_rules + merged,
+        source=candidate.source,
         categories=_entry_categories(stub),
     )
+
+
+def _dedupe_within_batch(candidates: Sequence[_Candidate]) -> list[_Candidate]:
+    """**批内**按归一 identifier `(scheme,value)` 去重（P1-A#1；对库去重之前先做这一道）。
+
+    同一次 run 里，同一篇论文可能从多处各来一遍：crossref 两个 ISSN 命中同一篇（合刊/
+    转载）、nber 两个 program 共享一篇 WP、arxiv 与 openalex 给出同一个 DOI……对库去重
+    （`guard.dedupe_against_library`）只挡"库里已经有"，挡不住"这一批里出现了两次"——
+    结果是 `new_count` 虚高（可能凭空触发熔断）、日报里同一篇列两行、`MergeEngine.ingest`
+    对同一 identifier 跑两次（第二次 merge 到同一 paper，`entries` 里出现重复
+    `paper_id`）。
+
+    规则：
+    - 归一走 `ids.normalize_identifier`——与 `guard.dedupe_against_library`、
+      `Repo.upsert_paper` 是**同一个**归一入口，三处口径不会漂移；
+    - 任一 identifier 撞上已认领的键即判同一篇（同 guard 的"任一命中即已有"口径：
+      identifier 是全局唯一强合并锚点，design/06 §3）；
+    - 保留**先到**的那条——遍历序 = `sources:` 声明序 → 该源内的请求序 → 请求内的条目
+      序，全程确定性，故"先到"就是"声明序最前的源"；
+    - 被合并掉的源记进幸存者的 `merged_from`（→ `matched_rules` 的 `merged_from:` 标记），
+      不另占一个条目名额；同源重复只去重、不重复记同一个源名。
+    - 零 identifier 的条目（`PaperStub.identifiers` 契约"至少 1 个"，理论上不出现）
+      不参与认领、一律保留：无法证明重复时不合并（同 guard 对零 identifier 的保守判新）。
+    """
+    owner: dict[tuple[str, str], int] = {}
+    survivors: list[_Candidate] = []
+    for candidate in candidates:
+        keys = [
+            normalize_identifier(scheme, value)
+            for scheme, value in candidate.paper.stub.identifiers
+        ]
+        hit = next((owner[key] for key in keys if key in owner), None)
+        if hit is not None:
+            winner = survivors[hit]
+            if candidate.source != winner.source and candidate.source not in winner.merged_from:
+                survivors[hit] = replace(
+                    winner, merged_from=(*winner.merged_from, candidate.source)
+                )
+            continue
+        index = len(survivors)
+        survivors.append(candidate)
+        for key in keys:
+            owner.setdefault(key, index)
+    return survivors
 
 
 def _scoped_predicates(step: PlanStep) -> tuple[str, ...]:
@@ -686,6 +866,11 @@ def _derive_fetch_tasks(
     的 venue（`_stage_resolve` 读 `paper.venue_id` 路由）；找不到 venue 或未注入
     registry/queue → WARNING + 跳过该源（响亮，不静默产出永远 BLOCKED 的任务）。
     只计 `enqueued`：`duplicate`/`fresh_skip` 是既有任务，不是本次新派生的工作。
+
+    **配额在"能路由的条目"上切，不在原始入库序上切**（审查 P2④）：先滤掉无 venue 可
+    路由的源，再取前 `limit` 条。否则一个排在前面、没有 venue 的源会把 `auto_fetch_limit`
+    的名额白白吃掉——用户写 `auto_fetch_limit: 20` 却只派生出 3 个任务，且日报上看不出
+    原因。`limit` 的语义是"最多下载这么多篇"，不是"最多考虑这么多篇"。
     """
     limit = subscription.actions.auto_fetch_limit
     if subscription.actions.ingest != "metadata+pdf" or limit <= 0:
@@ -699,10 +884,10 @@ def _derive_fetch_tasks(
         )
         return 0
 
-    derived = 0
+    routable: list[tuple[str, str]] = []  # (venue_id, paper_id)，保持入库序
     warned: set[str] = set()
     venue_ids: dict[str, str | None] = {}
-    for source, paper_id in ingested[:limit]:
+    for source, paper_id in ingested:
         if source not in venue_ids:
             spec = _venue_for_source(context.registry, source)
             if spec is not None:
@@ -720,6 +905,10 @@ def _derive_fetch_tasks(
                     venue=source,
                 )
             continue
+        routable.append((venue_id, paper_id))
+
+    derived = 0
+    for venue_id, paper_id in routable[:limit]:
         context.repo.bind_paper_venue(paper_id, venue_id)
         if context.queue.enqueue("resolve", venue_id, {"paper": paper_id}).status == "enqueued":
             derived += 1
@@ -746,14 +935,14 @@ def run_watch(
     """
     started_at = utcnow_iso()
     day = _today(now)
-    reset_predicate_warnings()  # "每 run 每源一条"提示的记账复位（T3 兜底提示）
+    reset_predicate_warnings()  # T3 兜底提示的记账复位：每 run 一次，此后每谓词最多一条
 
     plan: CompiledPlan = compile_subscription(subscription, venues=dict(context.venues))
     watermark = Watermark.parse(context.subs_repo.read_watermark(subscription.name))
 
     seen_count = 0
     failures: list[FailureEvent] = []
-    kept_by_source: list[tuple[str, FilteredPaper]] = []
+    candidates: list[_Candidate] = []
     advanced = watermark
     succeeded_sources = 0
 
@@ -764,17 +953,19 @@ def run_watch(
             continue
         succeeded_sources += 1
         seen_count += outcome.seen
-        kept_by_source.extend((step.source, item) for item in outcome.kept)
+        candidates.extend(_Candidate(source=step.source, paper=item) for item in outcome.kept)
         advanced = advance(advanced, step.source, outcome.watermark_seen, now=day)
 
-    # 对库去重（`guard.dedupe_against_library` 为假时整批直通——用户显式要重复看）。
-    kept_items = [item for _, item in kept_by_source]
+    # ① 批内去重（同一 run 内多源/多请求撞同一 identifier）——必须先于对库去重，
+    #    否则批内重复会虚高 `new_count`（凭空触发熔断）并让日报列出重复条目。
+    candidates = _dedupe_within_batch(candidates)
+    # ② 对库去重（`guard.dedupe_against_library` 为假时整批直通——用户显式要重复看）。
     if subscription.guard.dedupe_against_library:
-        survivors = _dedupe_keeping_rules(kept_items, context.db)
+        survivors = _dedupe_keeping_rules([item.paper for item in candidates], context.db)
         alive = {id(item) for item in survivors}
-        kept_by_source = [pair for pair in kept_by_source if id(pair[1]) in alive]
+        candidates = [item for item in candidates if id(item.paper) in alive]
 
-    entries = tuple(_to_entry(source, item) for source, item in kept_by_source)
+    entries = tuple(_to_entry(candidate) for candidate in candidates)
     new_count = len(entries)
     guard_limit = subscription.guard.max_new_per_run
     truncated = is_truncated(new_count, guard_limit)
@@ -796,23 +987,20 @@ def run_watch(
     ingested_count = 0
     fetched_count = 0
     if outcome_kind is WatchOutcome.OK and not dry_run:
+        # **逐条事务的保守边界（P3）**：`MergeEngine.ingest` 每条各自成事务（`Repo.
+        # merge_ingest` 自带 tx，不可外层再包——嵌套事务不是 sqlite 的语义），故本循环
+        # **没有**"整批同进同退"。中途异常（坏 stub、DB 故障）会让前 k 条已经入库、
+        # 后面的没有，且异常向上冒泡 → 本轮不写 watermark、不落 run 记录。这是刻意的
+        # 保守方向：已入库的部分不回滚（数据没错，只是不完整），水位停在旧值 → 下次
+        # 整窗重看，已入库的那 k 条由对库去重/identifier 主键挡掉，最终收敛到全量。
+        # 反过来做（整批一个大事务）会让一条坏数据丢掉整窗的正常收获。
         engine = MergeEngine(context.repo)
         ingested: list[tuple[str, str]] = []
         entries_with_ids: list[ReportEntry] = []
-        for entry, (source, item) in zip(entries, kept_by_source, strict=True):
-            result = engine.ingest(item.stub, source=MERGE_SOURCE[source])
-            ingested.append((source, result.paper_id))
-            entries_with_ids.append(
-                ReportEntry(
-                    title=entry.title,
-                    authors=entry.authors,
-                    url=entry.url,
-                    matched_rules=entry.matched_rules,
-                    source=entry.source,
-                    categories=entry.categories,
-                    paper_id=result.paper_id,
-                )
-            )
+        for entry, candidate in zip(entries, candidates, strict=True):
+            result = engine.ingest(candidate.paper.stub, source=MERGE_SOURCE[candidate.source])
+            ingested.append((candidate.source, result.paper_id))
+            entries_with_ids.append(replace(entry, paper_id=result.paper_id))
         entries = tuple(entries_with_ids)
         ingested_count = len(ingested)
         fetched_count = _derive_fetch_tasks(context, subscription, ingested)
@@ -821,7 +1009,6 @@ def run_watch(
         context.subs_repo.write_watermark(
             subscription.name, advanced.restrict_to(subscription.source_names()).to_dict()
         )
-        context.subs_repo.touch_last_run(subscription.name, at=started_at)
 
     summary = RunSummary(
         subscription=subscription.name,
@@ -850,6 +1037,12 @@ def run_watch(
             truncated=summary.truncated,
             report_path=report_path,
         )
+        # `last_run_at` 与 `subscription_run` **同一口径：跑过就算跑过**（审查 P2③ 裁决）
+        # ——熔断、整体失败同样 touch。它回答的是"上次什么时候跑的"（运维/调度视角：
+        # 一个每天熔断的订阅，`last_run_at` 停在一周前会让人误判 cron 挂了），不是
+        # "上次什么时候成功入库"（那个问题由 `subscription_run` 的 truncated/new_count
+        # 回答）。dry-run 不 touch——演习不留任何痕迹，与不落 run 记录同因。
+        context.subs_repo.touch_last_run(subscription.name, at=started_at)
     return summary
 
 
@@ -920,9 +1113,12 @@ def exit_code_for(summaries: Sequence[RunSummary]) -> int:
 
 __all__ = [
     "DEFAULT_REPORT_ROOT",
+    "MERGED_SOURCE_RULE_PREFIX",
     "MERGE_SOURCE",
     "SUPPORTED_SOURCES",
     "AdapterFetcher",
+    "NberRssFetcher",
+    "RoutingFetcher",
     "SourceFetcher",
     "SourceRequest",
     "WatchContext",

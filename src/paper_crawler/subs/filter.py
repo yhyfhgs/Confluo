@@ -48,8 +48,9 @@ ssrn 订阅会被这个谓词**清零**：用户看到的是一份永远空白�
 过滤没生效"的提示。故本层包一道兜底——
 
 - `stub_topic_field(stub) is None` → **放行**（pass-through），并经 obslog 记一条
-  一次性 WARNING（每次 watch 运行每个源一条，由 `reset_predicate_warnings()` 在
-  run 起点复位）；
+  一次性 WARNING（**每次 watch 运行每个谓词一条**——记账是谓词名粒度，由
+  `reset_predicate_warnings()` 在 run 起点复位一次；同一谓词只可能挂在一个源上，
+  故实际效果等同"每 run 每源一条"）；
 - 非 None → 照走 `topic_field_matches`（信号一旦接线，语义立刻回到精确判定，本层
   自动退场，无需再改一次代码）。
 
@@ -84,10 +85,11 @@ _SIGNAL_WARNED: set[str] = set()
 
 
 def reset_predicate_warnings() -> None:
-    """复位"信号缺失"一次性提示的记账（每次 watch 运行的每个源起点调用一次）。
+    """复位"信号缺失"一次性提示的记账——**每次 watch 运行起点调用一次**（不是每源一次）。
 
-    `subs/watch.py` 在逐源执行前调用，使"每 run 每源一条"成立；不调用亦不影响过滤
-    结果，只是提示退化为"进程内一条"。
+    `subs/watch.py::run_watch` 在编译计划之前调用一次，此后整轮运行内每个谓词最多提示
+    一条。不调用亦不影响过滤结果，只是提示退化为"进程内一条"（长驻进程里第二次 run
+    就看不到提示了；watch 是 cron 单次运行，实际不受影响）。
     """
     _SIGNAL_WARNED.clear()
 

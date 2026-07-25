@@ -56,9 +56,9 @@ crawler subs watch --all              # 全部订阅串行跑，合并出一份�
 
 命令名注记：订阅增量落在 **`crawler subs watch`**，而不是顶层的 `crawler watch`
 ——后者自 Phase 2 起是 **preprint venue 的当月桶元数据增量**（`crawler watch <venue>`），
-两者语义不同、`--all` 的含义更是互斥（"全部 preprint venue" vs "全部订阅"）。
-design/05 §6 的命令面写的是 `crawler watch <subscription-name>`；名字归属待裁决，
-在此之前两条命令并存、各自逐字不变。
+两者语义不同、`--all` 的含义更是互斥（"全部 preprint venue" vs "全部订阅"）。已由
+controller 裁决并落档 [design/05 §6](../docs/design/05-pipeline.md) 命令面表，两条
+命令长期并存。
 
 ## `presets/`（后续到位）
 

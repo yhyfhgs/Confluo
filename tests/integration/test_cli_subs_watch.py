@@ -21,7 +21,13 @@ from paper_crawler import cli as cli_module
 from paper_crawler.adapters.mock_platform import MockPlatformAdapter
 from paper_crawler.cli import app
 from paper_crawler.subs.types import FailureEvent, RunSummary
-from paper_crawler.subs.watch import AdapterFetcher, SourceFetcher, SourceRequest
+from paper_crawler.subs.watch import (
+    AdapterFetcher,
+    NberRssFetcher,
+    RoutingFetcher,
+    SourceFetcher,
+    SourceRequest,
+)
 from paper_crawler.types import VenueNames, VenueSpec
 
 runner = CliRunner()
@@ -275,10 +281,16 @@ def test_real_fetcher_factory_registers_rate_domains_and_injects_the_shared_clie
         fetcher = _REAL_FETCHER_FACTORY(env)
         # arxiv 是多域 adapter：主域已登记、副域已别名到主域（不放宽速率）。
         assert env.ctx.limiter.acquire("export.arxiv.org") >= 0
-        assert isinstance(fetcher, AdapterFetcher)
+        # nber 走专属 RSS 通道，其余退到 AdapterFetcher（P1-B 路由）。
+        assert isinstance(fetcher, RoutingFetcher)
+        assert isinstance(fetcher._routes["nber"], NberRssFetcher)
+        fallback = fetcher._fallback
+        assert isinstance(fallback, AdapterFetcher)
         # 合成 venue 兜底可用（registry 里没有以 crossref 为 fulltext_source 的 venue）。
-        spec = fetcher.venue_for(SourceRequest(subscription="s", source="crossref"))
+        spec = fallback.venue_for(SourceRequest(subscription="s", source="crossref"))
         assert spec.fulltext_source == "crossref"
+        # back.nber.org 已登记限速桶（RSS 请求走共享 limiter，不绕过限速）。
+        assert env.ctx.limiter.acquire("back.nber.org") >= 0
     finally:
         env.http.close()
         env.ctx.db.close()

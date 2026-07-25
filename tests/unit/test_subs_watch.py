@@ -6,14 +6,18 @@ CLI 层在 `tests/integration/test_cli_subs_watch.py`。本文件只测不需要
 
 from __future__ import annotations
 
+import logging
 from collections.abc import Iterable
 from datetime import date
 from pathlib import Path
 
+import httpx
 import pytest
 
+from helpers.nber_fixtures import fixture_bytes
 from paper_crawler.adapter import AdapterBase, AdapterFamily
 from paper_crawler.errors import CrawlerError, ErrorClass
+from paper_crawler.http import HttpClient
 from paper_crawler.subs.compile import compile_subscription
 from paper_crawler.subs.model import SOURCE_FIELDS, parse_subscription
 from paper_crawler.subs.types import PlanStep, ReportEntry, RunSummary, WatchOutcome
@@ -21,6 +25,8 @@ from paper_crawler.subs.watch import (
     MERGE_SOURCE,
     SUPPORTED_SOURCES,
     AdapterFetcher,
+    NberRssFetcher,
+    RoutingFetcher,
     SourceRequest,
     build_requests,
     daily_report_path,
@@ -211,22 +217,28 @@ class _TwoIssueAdapter(AdapterBase):
         ]
 
 
-class _HookAdapter(AdapterBase):
-    """带 `discover_incremental` 钩子的 adapter（T7 nber RSS 的接线形态）。"""
+class _DatedAdapter(AdapterBase):
+    """DISCOVER/ENUMERATE adapter：产出带 `pub_date` 的条目（客户端窗收窄的被测面）。"""
 
-    adapter_id = "hooked"
+    adapter_id = "dated"
     family: AdapterFamily = "open_access"
-    capabilities = Capability.DISCOVER
+    capabilities = Capability.DISCOVER | Capability.ENUMERATE
     default_rate = RatePolicy(600)
     auth_requirement = AuthLevel.NONE
-    domains: tuple[str, ...] = ("hooked.local",)
+    domains: tuple[str, ...] = ("dated.local",)
 
-    def __init__(self) -> None:
-        self.calls: list[dict[str, str]] = []
+    def discover_timeline(self, venue: VenueSpec, since: str | None = None) -> Iterable[IssueRef]:
+        del since
+        return [IssueRef(venue_id=venue.id, volume="1", number="1", year=2026)]
 
-    def discover_incremental(self, params: dict[str, str]) -> Iterable[PaperStub]:
-        self.calls.append(dict(params))
-        return [PaperStub(title="from hook", identifiers=(("doi", "10.1/hook"),))]
+    def enumerate_issue(self, venue: VenueSpec, issue: IssueRef) -> Iterable[PaperStub]:
+        del venue, issue
+        return [
+            PaperStub(title="早于窗", identifiers=(("doi", "10.1/a"),), pub_date="2026-01-15"),
+            PaperStub(title="窗内", identifiers=(("doi", "10.1/b"),), pub_date="2026-07-20"),
+            PaperStub(title="窗下界当天", identifiers=(("doi", "10.1/c"),), pub_date="2026-07-19"),
+            PaperStub(title="无日期", identifiers=(("doi", "10.1/d"),)),
+        ]
 
 
 def test_adapter_fetcher_drives_discover_then_enumerate() -> None:
@@ -243,19 +255,24 @@ def test_adapter_fetcher_drives_discover_then_enumerate() -> None:
     assert adapter.seen_quirks == [{"issn": "0304-405X"}]  # 请求参数落合成 venue 的 quirks
 
 
-def test_adapter_fetcher_prefers_the_incremental_hook_when_present() -> None:
-    adapter = _HookAdapter()
-    fetcher = AdapterFetcher({"nber": adapter})
+def test_deliverable_table_covers_every_dsl_source() -> None:
+    """下达面表按源穷举——新增源忘了回答"参数能不能下达"会被这条抓住。"""
+    from paper_crawler.subs.watch import _DELIVERABLE_PARAMS
 
-    stubs = list(
-        fetcher.fetch(SourceRequest(subscription="s", source="nber", params=(("program", "AP"),)))
+    assert set(_DELIVERABLE_PARAMS) == set(SOURCE_FIELDS)
+
+
+def test_crossref_issn_param_reaches_the_venue_identifiers() -> None:
+    """P1-A#2：编译出的 issn 必须真的进请求——crossref adapter 读的是 identifiers.issn。"""
+    fetcher = AdapterFetcher({"crossref": _TwoIssueAdapter()})
+    spec = fetcher.venue_for(
+        SourceRequest(subscription="s", source="crossref", params=(("issn", "0304-405X"),))
     )
-
-    assert [stub.title for stub in stubs] == ["from hook"]
-    assert adapter.calls == [{"program": "AP"}]
+    assert spec.identifiers["issn"] == ["0304-405X"]
 
 
-def test_adapter_fetcher_uses_injected_venue_when_available() -> None:
+def test_injected_venue_keeps_its_own_config_and_gains_the_request_params() -> None:
+    """P1-A#2 回归：注入真实 venue 时**不再整份丢弃** params，且原对象不被改写。"""
     adapter = _TwoIssueAdapter()
     injected = VenueSpec(
         id="ssrn",
@@ -267,10 +284,61 @@ def test_adapter_fetcher_uses_injected_venue_when_available() -> None:
     )
     fetcher = AdapterFetcher({"ssrn": adapter}, venues={"ssrn": injected})
 
-    request = SourceRequest(subscription="s", source="ssrn")
-    assert fetcher.venue_for(request) is injected
+    request = SourceRequest(
+        subscription="s", source="ssrn", params=(("from-created-date", "2026-07-18"),)
+    )
+    spec = fetcher.venue_for(request)
+
+    assert spec is not injected  # 副本，不改 registry 共享的那份
+    assert injected.quirks == {"topic_filter": "econ_fin"}
+    assert spec.quirks == {"topic_filter": "econ_fin", "from-created-date": "2026-07-18"}
     list(fetcher.fetch(request))
-    assert adapter.seen_quirks == [{"topic_filter": "econ_fin"}]
+    assert adapter.seen_quirks == [spec.quirks]
+
+
+def test_undeliverable_params_warn_once_per_source(caplog: pytest.LogCaptureFixture) -> None:
+    """下达不了的参数响亮降级（每源一条），而不是静默丢弃。"""
+    fetcher = AdapterFetcher({"arxiv": _TwoIssueAdapter()})
+    request = SourceRequest(
+        subscription="s",
+        source="arxiv",
+        params=(("search_query", "cat:cs.AI AND submittedDate:[A TO B]"),),
+        since=None,
+    )
+    with caplog.at_level(logging.WARNING, logger="paper_crawler"):
+        list(fetcher.fetch(request))
+        list(fetcher.fetch(request))
+
+    warnings = [r for r in caplog.records if "无法下达" in r.getMessage()]
+    assert len(warnings) == 1
+    assert "search_query" in warnings[0].getMessage()
+
+
+def test_deliverable_params_do_not_warn(caplog: pytest.LogCaptureFixture) -> None:
+    fetcher = AdapterFetcher({"crossref": _TwoIssueAdapter()})
+    with caplog.at_level(logging.WARNING, logger="paper_crawler"):
+        list(
+            fetcher.fetch(
+                SourceRequest(subscription="s", source="crossref", params=(("issn", "1234-5678"),))
+            )
+        )
+    assert [r for r in caplog.records if "无法下达" in r.getMessage()] == []
+
+
+def test_result_side_window_narrowing_keeps_undated_entries() -> None:
+    """P3-3 降级补偿：请求面退化为整年时，结果面按 since 收窄；无 pub_date 者保留。"""
+    fetcher = AdapterFetcher({"crossref": _DatedAdapter()})
+    request = SourceRequest(subscription="s", source="crossref", since="2026-07-19")
+
+    titles = [stub.title for stub in fetcher.fetch(request)]
+
+    assert titles == ["窗内", "窗下界当天", "无日期"]  # "早于窗"被丢；含端；缺日期保留
+
+
+def test_no_since_means_no_narrowing() -> None:
+    fetcher = AdapterFetcher({"crossref": _DatedAdapter()})
+    stubs = fetcher.fetch(SourceRequest(subscription="s", source="crossref"))
+    assert len(list(stubs)) == 4
 
 
 def test_adapter_fetcher_rejects_unregistered_source() -> None:
@@ -285,6 +353,65 @@ def test_synthesized_venue_id_is_registry_legal() -> None:
     spec = AdapterFetcher({}).venue_for(SourceRequest(subscription="s", source="openalex"))
     assert spec.id == "subs_openalex"
     assert spec.fulltext_source == "openalex"
+
+
+# ---------------------------------------------------------------------------
+# nber 专属 RSS fetcher + 路由（P1-B）
+# ---------------------------------------------------------------------------
+
+
+def _rss_client(recorder: list[str]) -> HttpClient:
+    def handler(request: httpx.Request) -> httpx.Response:
+        recorder.append(str(request.url))
+        return httpx.Response(200, content=fixture_bytes("06_rss_program_cf_synth.xml"))
+
+    return HttpClient(user_agent="PaperCrawler/test", transport=httpx.MockTransport(handler))
+
+
+def test_nber_fetcher_uses_the_rss_channel_and_the_proxy_year() -> None:
+    """走 `rss.discover_incremental`，且 `default_year=entry.fetch_year` 必须传（方案 c）。"""
+    urls: list[str] = []
+    fetcher = NberRssFetcher(_rss_client(urls), now=date(2026, 7, 26))
+
+    stubs = list(
+        fetcher.fetch(SourceRequest(subscription="s", source="nber", params=(("program", "CF"),)))
+    )
+
+    assert urls == ["https://back.nber.org/rss/newcf.xml"]  # 一 program 一 feed 一请求
+    assert [stub.title for stub in stubs][:1] == ["Synthetic Capital Structure Adjustment Speeds"]
+    years = [stub.year for stub in stubs]
+    assert years[0] == 2026  # pub_date 派生（权威路径）
+    assert all(year == 2026 for year in years)  # 缺/畸形 pubDate 者退回 proxy fetch_year
+    assert dict(stubs[0].meta)["program"] == "CF"  # 日报分类轴的来源
+
+
+def test_nber_fetcher_rejects_unknown_program_loudly() -> None:
+    fetcher = NberRssFetcher(_rss_client([]))
+    with pytest.raises(CrawlerError) as excinfo:
+        list(
+            fetcher.fetch(
+                SourceRequest(subscription="s", source="nber", params=(("program", "NOPE"),))
+            )
+        )
+    assert excinfo.value.error_class is ErrorClass.CONFIG
+
+
+def test_routing_fetcher_sends_each_source_to_its_own_channel() -> None:
+    calls: list[str] = []
+
+    class _Recorder:
+        def __init__(self, tag: str) -> None:
+            self.tag = tag
+
+        def fetch(self, request: SourceRequest) -> list[PaperStub]:
+            calls.append(f"{self.tag}:{request.source}")
+            return []
+
+    router = RoutingFetcher({"nber": _Recorder("rss")}, _Recorder("adapter"))
+    list(router.fetch(SourceRequest(subscription="s", source="nber")))
+    list(router.fetch(SourceRequest(subscription="s", source="crossref")))
+
+    assert calls == ["rss:nber", "adapter:crossref"]
 
 
 # ---------------------------------------------------------------------------
