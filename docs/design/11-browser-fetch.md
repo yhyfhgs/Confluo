@@ -1,14 +1,14 @@
 ---
 title: Browser-Fetch 横切件（浏览器上下文取回通道）实现级详设
-status: draft
+status: approved
 owner: fable5
 updated: 2026-07-26
 ---
 
 # 11 · Browser-Fetch 横切件详设
 
-> **状态**：`draft`（Phase 6 R1 起草稿）。**本文交付设计，不承诺实现**——实现立卡权在 controller，
-> 落地 Phase（Phase 6 末 stretch 或 Phase 7）由 fable 定稿时裁决（[phase6-plan §4 R1 边界](../plan/phase6-implementation-plan.md)）。
+> **状态**：`approved`（fable 定稿 2026-07-26，裁决记录 [D-030](../plan/decision-log.md)；§12 表已回填八项裁决结果）。**本文交付设计，不承诺实现**——
+> 实现立卡权在 controller（S-c/E-1 两项缺口修复已立 F6 卡先行；横切件本体落地 Phase 6 末 stretch 或 Phase 7 另裁）。
 > **承接**：[ssrn.md §11](adapters/ssrn.md) 设计种子（案 A/B + 评估维度）、[D-029](../plan/decision-log.md) 案 B 终裁、
 > [phase5-report §6 检查单 #2/#9](../reports/2026-07-24-phase5-report.md)、[post-phase5-audit §3 S3-P2 + §6 处置 #2](../reports/2026-07-24-post-phase5-audit.md)（CF-403 冷却缺口）。
 > **接缝**：[auth-framework §8.3/§8.4/§9/§10/§11](auth-framework.md)（日配额/BLOCKED 冷却/假 seam/Playwright extra/ChallengeDetector）、
@@ -600,19 +600,20 @@ BudgetGate.check_or_raise(venue_id, domain):
 
 ## 12. 裁决点小结（供 fable 定稿）
 
-| # | 裁决点 | 起草建议案 | 依据 | 需仲裁？ |
-|---|---|---|---|---|
-| ① | **横切件形态** | **案 A（薄接缝最小件）** | §3.4 量化表 10 维（A 胜 8、平 1、负 1）；决定性 = AC-0 合规面（维度 5） | 定稿确认 |
-| ② | **CF-403 缺口方案** | **S-c 契约演进案**（403+`cf-mitigated`→CHALLENGE，`http.py` 3 行）；降级 S-b + 集合等值自断言 | §5.4 + S-c 兼容性论证（改判面 = 三处文档已声明应改的场景） | **是**（触 Phase 2 冻结映射表） |
-| ③ | **冷却键粒度缺口** | **E-1**（冷却判定上移至 family 判别前 + 域级键，向前兼容读旧键） | §5.6（写而不读的实证：`runner.py:456` 早返回先于 `:461` 冷却判定） | **是**（触 implemented 件行为） |
-| ④ | **`crawler cooldown status\|clear` 新 CLI** | 建议提供（否则用户只能手删 JSON） | §6.2 | **是**（新 CLI 面） |
-| ⑤ | **★接缝 A-1**（aea 移交） | `url_strategy` 用既有 `RENDER_PAGE`（不新增枚举）；不新增 `asset.state=deferred`（改门控表达）；aea 落地卡内改产计划 + 校正 `BROWSER` 字面 | §4.6 | 定稿确认 |
-| ⑥ | **配额口径统一** | `browser_daily_cap=50` 默认 + VenueSpec 可收窄；与 ssrn.md §5 的"100/日"取 min | §7.5 | 定稿确认 |
-| ⑦ | **AC 编号归属** | 临时 `AC-BF.x`；落地 Phase 定后转正 `AC-<phase>.x` + 回填 FR→AC 映射（D-016）；AC-5.1b 加承接指针 | §10 | 定稿确认 |
-| ⑧ | **是否同时落 S-a**（`get_with_meta`） | **不落**（§7.1 决定不做 HEAD 预判 ⇒ S-a 无必要消费方） | §5.5 | 定稿确认 |
+| # | 裁决点 | 起草建议案 | 依据 | 需仲裁？ | **裁决结果（fable 2026-07-26，D-030）** |
+|---|---|---|---|---|---|
+| ① | **横切件形态** | **案 A（薄接缝最小件）** | §3.4 量化表 10 维（A 胜 8、平 1、负 1）；决定性 = AC-0 合规面（维度 5） | 定稿确认 | **采纳案 A** |
+| ② | **CF-403 缺口方案** | **S-c 契约演进案**（403+`cf-mitigated`→CHALLENGE，`http.py` 3 行）；降级 S-b + 集合等值自断言 | §5.4 + S-c 兼容性论证（改判面 = 三处文档已声明应改的场景） | **是**（触 Phase 2 冻结映射表） | **采纳 S-c**（受控演进入 D-030；实现归 F6 卡，附全库 fixture 扫描） |
+| ③ | **冷却键粒度缺口** | **E-1**（冷却判定上移至 family 判别前 + 域级键，向前兼容读旧键） | §5.6（写而不读的实证：`runner.py:456` 早返回先于 `:461` 冷却判定） | **是**（触 implemented 件行为） | **采纳 E-1**（实现归 F6 卡；E-2 列后续清账候选） |
+| ④ | **`crawler cooldown status\|clear` 新 CLI** | 建议提供（否则用户只能手删 JSON） | §6.2 | **是**（新 CLI 面） | **缓议**（登记 Phase 7 检查单候选，横切件实现卡时重估） |
+| ⑤ | **★接缝 A-1**（aea 移交） | `url_strategy` 用既有 `RENDER_PAGE`（不新增枚举）；不新增 `asset.state=deferred`（改门控表达）；aea 落地卡内改产计划 + 校正 `BROWSER` 字面 | §4.6 | 定稿确认 | **采纳**（RENDER_PAGE 复用/不新增 state/aea 归实现卡） |
+| ⑥ | **配额口径统一** | `browser_daily_cap=50` 默认 + VenueSpec 可收窄；与 ssrn.md §5 的"100/日"取 min | §7.5 | 定稿确认 | **采纳**（50 默认与 VenueSpec 取 min） |
+| ⑦ | **AC 编号归属** | 临时 `AC-BF.x`；落地 Phase 定后转正 `AC-<phase>.x` + 回填 FR→AC 映射（D-016）；AC-5.1b 加承接指针 | §10 | 定稿确认 | **采纳**（AC-BF.x 临时；落地转正+承接指针） |
+| ⑧ | **是否同时落 S-a**（`get_with_meta`） | **不落**（§7.1 决定不做 HEAD 预判 ⇒ S-a 无必要消费方） | §5.5 | 定稿确认 | **采纳**（不落 S-a） |
 
 ## 13. 修订记录
 
 | # | 日期 | 修订 | 依据 |
 |---|---|---|---|
+| 2 | 2026-07-26 | **fable 定稿（draft→approved）**：§12 八项裁决回填（①案 A ②S-c ③E-1 ④CLI 缓议 ⑤A-1 三合一 ⑥配额 min ⑦AC-BF 临时编号 ⑧不落 S-a）；D-030 ADR 落 decision-log；S-c/E-1 立 F6 实现卡（phase6-plan 增补） | fable 通读全文 + [D-030](../plan/decision-log.md) |
 | 1 | 2026-07-26 | 初稿（Phase 6 R1，status draft，opus 起草）：三消费方需求归纳；ssrn.md §11 时序两案**重铸为形态两案** + 10 维量化取舍表 + 推荐案 A；AC-0.2 红线段前置；`ChallengeDetector` 接线（判定器传输无关的正面结论）+ **CF-403 冷却缺口三方案量化比较与 S-c 契约演进案**；**新发现第二缺口：冷却键粒度 + open_access family 写而不读**；BLOCKED 人工介入流；四层预算护栏（唯一事实源 = FetchLog，零新表）；上下文接缝伪代码（含 §3.6 演进缝预留）；★接缝 A-1 裁决建议；11 项测试方法 + 6 类测试类型 + AC-BF.1~6 草案 | [ssrn.md §11](adapters/ssrn.md) 设计种子 + [D-029](../plan/decision-log.md) + [phase5-report §6 #2/#9](../reports/2026-07-24-phase5-report.md) + [post-phase5-audit §3 S3-P2/§6 #2](../reports/2026-07-24-post-phase5-audit.md) + [auth-framework §8/§9/§10/§11](auth-framework.md) + 实码核对（`http.py:89-90`、`runner.py:456/461/663/589-608`、`auth/browser.py`、`auth/challenge.py`、`0001_init.sql:152-185`） |

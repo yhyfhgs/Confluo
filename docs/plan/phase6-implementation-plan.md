@@ -176,6 +176,18 @@ updated: 2026-07-26
   （audit P2，与 aaai 同构）若属台账内一并修，不属则登记不扩scope。
 - **DoD**：六项逐条有失败路径专测（异常/警告可断言）；全量零回归。
 
+#### F6 CF-403 判定演进 + 冷却键粒度修复（`fix/cf403-cooldown`，**opus/opus**，零依赖；**R1 定稿增补卡**，D-030）
+
+- **范围**：R1 详设定稿（[11-browser-fetch §5.4/§5.6](../design/11-browser-fetch.md)，D-030 裁决②③）的两项
+  httpx 路径既有缺口修复（不依赖横切件实现，闭合审计处置 #2）：**S-c**——`http.py` 403 分支新增
+  `cf-mitigated: challenge` 头判别 → CHALLENGE（特征判别复用 `ChallengeDetector` 单一权威源/只读常量，
+  不复制特征串；403 无该头 → NO_ENTITLEMENT 逐字不变）；**E-1**——`runner.py` 冷却判定上移至 family
+  判别之前（修复 open_access family 冷却"写而不读"）+ 挑战场景冷却键改域级（向前兼容读旧
+  `<adapter_id>.json`）。
+- **DoD**：11-browser-fetch §8 T-6（改判三形态 + **全库 fixture 扫描零翻转断言**）与 T-7（open_access
+  冷却修复前必失败、修复后 BLOCKED）落地；wiley TDM 403/elsevier 封套行为回归锁定；全量零回归。
+- **测试**：unit（http 映射）+ integration（runner 冷却链路走真 sqlite + 冷却 JSON）。
+
 #### F5 测试基建（`fix/test-infra`，**sonnet/sonnet**，零依赖）
 
 - **范围**：审计 S4 两项 + O4-P2：①`test_cli_canary.py` 断言列表补 `aea` + **集合等值自断言**

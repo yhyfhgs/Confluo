@@ -278,3 +278,15 @@ updated: 2026-07-24
 - **理由**：browser fetch 通道（ssrn 模式 B / aea 全文域 pubs Cloudflare / wiley deferred 页面兜底三处共需）评估两案：案 A（Phase 5 落地最小件）在线验收因**本机环境对 CF 前置域 TLS 层阻断**而大概率不可行（curl/httpx [LIVE] 实测，浏览器上下文 [推断] 同源本机代理同样受阻）；案 B（defer 至 Phase 6 横切件）离线逻辑（challenge 判定/BLOCKED/预算护栏）可全覆盖、defer 全文不丢元数据价值、与 aea/wiley 两消费方一并做横切件设计避免逐 adapter 重复。**controller 已正式采纳案 B**。
 - **影响**：ssrn.md 实现级详设据此；AC-5.1 分层改写（元数据 CI 可判 / 全文 opt-in，ssrn.md §8）；development-plan Phase 5 DoD「按 FEN 子网…下载」相应收窄为「近 7 天新 WP 元数据 + econ/fin 近似过滤」；browser fetch 横切件（案 B）Phase 6 与 aea pubs CF / wiley deferred 页面兜底一并设计。
 - **落款**：W0 双评审（A/B 独立实例）2026-07-24 通过，详见 [ssrn.md §10.1](../design/adapters/ssrn.md)。
+
+## D-030 Browser-Fetch 横切件形态定稿（案 A）+ CF-403 挑战判定契约演进（S-c）+ 冷却键粒度修复（E-1）
+
+- 状态：accepted · 日期：2026-07-26 · 依据：[design/11-browser-fetch.md](../design/11-browser-fetch.md)（R1 详设，fable 定稿）+ [post-phase5-audit §3 S3-P2/§6 #2](../reports/2026-07-24-post-phase5-audit.md)
+- **背景**：D-029 把 browser-fetch 横切件统一设计 defer 至 Phase 6；R1 详设起草完成，量化评估形态两案并新发现冷却键粒度缺口（open_access family 冷却"写而不读"——`runner.py` family 早返回先于冷却判定，实证）。
+- **决策**（三项，对应 11-browser-fetch §12 裁决点①②③）：
+  1. **横切件形态采案 A（薄接缝最小件）**：单模块 `fetch_one` + 一 fetch 分支 + 一 CLI flag，一次性上下文用完即毁；不建上下文池/批量入口/独立账本。决定性理由＝**能力面恰好等于 AC-0 合规面**（D-029"非批量非默认"红线下，案 B 的核心增量恰是不允许行使的能力）；预算唯一事实源＝FetchLog（per-venue 维度 join 派生，零新表）。演进缝（调用方作用域 context 复用）已预留，`fetch_one` 签名零破坏。
+  2. **CF-403 挑战判定契约演进采 S-c**：`http.py` 403 分支新增 `cf-mitigated: challenge` 头判别 → CHALLENGE（此前统一映射 NO_ENTITLEMENT）。这是对 Phase 2 T2 冻结映射表的**受控演进**：改判面经论证恰好＝wiley.md §5/aea.md §6/auth-framework §11 三处文档**已声明应改**的场景（wiley TDM 403 无 CF 头、elsevier JSON 封套均不受影响）——让实现追上文档，非语义变更。特征判别复用 `ChallengeDetector` 单一权威源，不复制特征串。实现卡必须附全库 fixture 扫描断言（零既有用例翻转）。
+  3. **冷却键粒度采 E-1（最小修复）**：冷却判定上移至 family 判别之前（修复 open_access family"写而不读"）；`RENDER_PAGE`/挑战场景冷却键改**域级**（修复 aea 双域异质连坐），向前兼容读旧 `<adapter_id>.json` 键。E-2（全量域键统一）列后续清账候选。
+- **同批定稿确认**（§12 裁决点④–⑧）：④ `crawler cooldown` CLI 缓议（登记 Phase 7 检查单候选）；⑤ ★接缝 A-1＝`RENDER_PAGE` 复用既有枚举、不新增 asset state（门控表达 deferred 语义）、aea 产计划改动归实现卡；⑥ 配额口径＝`browser_daily_cap=50` 默认与 VenueSpec 声明取 min；⑦ AC 编号＝临时 AC-BF.x，落地 Phase 转正并回填 FR→AC 映射 + AC-5.1b 承接指针；⑧ S-a（`get_with_meta`）不落。
+- **影响**：11-browser-fetch.md 转 `approved`（实现仍未承诺——落地卡权在 controller，Phase 6 末 stretch 或 Phase 7）；**S-c + E-1 属既有 httpx 路径缺口修复、不依赖横切件实现，立即立卡 F6**（Phase 6 修复批增补，闭合审计处置 #2 CF-403 缺口）；wiley.md §5 与 http.py 的文档/实现漂移随 S-c 自动收口。
+- **落款**：fable 定稿裁决 2026-07-26（R1 opus 起草 + fable 通读全文签署）。
