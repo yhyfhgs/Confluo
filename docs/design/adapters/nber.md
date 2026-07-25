@@ -2,7 +2,7 @@
 title: Adapter 设计 · NBER Working Papers（实现级）
 status: implemented
 owner: D2
-updated: 2026-07-24
+updated: 2026-07-26
 ---
 
 # Adapter · `nber`(实现级详设)
@@ -101,7 +101,7 @@ NBER **无 ISSN**，现 `discover_timeline`/`enumerate_issue` 硬走 `/journals/
 - 301 重定向：老论文 `www.nber.org/papers/w1`→`www2.nber.org`；PDF host 亦可能 301 至 www2——`www2.nber.org` 经 `domains[1]`
   别名共享 `www` 桶（§4），实际请求 host `acquire` 不 fail-fast。
 
-### 3.4 RSS 增量 watch 通道（`DISCOVER`；Phase 5 可选，Phase 6 订阅转主）
+### 3.4 RSS 增量 watch 通道（`DISCOVER`；Phase 5 可选设计，**Phase 6 T7 watch 主通道已落地**）
 
 - `discover_timeline` 备用实现：GET `back.nber.org/rss/new.xml`（或 program `new{code}.xml`）→ 解析 `<item>`
   （`title`（含 `-- by <作者>`）/`description`（**完整摘要**）/`guid`（`/papers/w{n}` → 反解 DOI `10.3386/w{n}`））→ 近周新论文 stub。
@@ -109,6 +109,20 @@ NBER **无 ISSN**，现 `discover_timeline`/`enumerate_issue` 硬走 `/journals/
   免费得（`<description>`），是 OpenAlex 超预算时的 abstract 降级源。**须在 `back.nber.org` 独立桶下发**（≥10s，§4）。
 - Phase 5 交付以 AC-5.2（`pull nber --year` = prefix enumerate + fetch）为准；RSS watch 与订阅 DSL 联动的**完整 7 日增量**
   验收随 Phase 6（沿 D-018 arxiv AC-2.3 分层先例）——本详设给通道设计，不在 Phase 5 判 watch 完整性。
+- **[落地 2026-07-26，Phase 6 T7，检查单 #3]**：program watch 通道实现于
+  [`adapters/nber/rss.py`](../../../src/paper_crawler/adapters/nber/rss.py)——`PROGRAM_FEEDS`
+  program 代码→feed URL 映射表（大小写归一入口 `normalize_program`）、`discover_incremental`
+  （duck-typed 条目流，供 `subs/watch.py` T5 消费）、`to_paper_stub` 字段映射（RSS 字段薄，
+  尽力而为——pub_date 非权威，18 月开放窗判定仍恒经 crossref 侧 pub_date，与本通道解耦）、
+  id 集合差分桥接（`ids_of`/`new_entries`，`subs/watermark.py` T4 正式 `IdSetDiff` 策略落地
+  前的占位，接口形状保持一致）。**证据缺口如实标注（不臆造满 19 个）**：NBER 官方声称 19 个
+  program，本项目文档（[catalog/preprint-platforms.md](../../catalog/preprint-platforms.md)
+  §4）只对 5 个给出 `[VERIFIED]` 代码 + 语义（`AP`/`CF`/`EFG`/`IFM`/`ME`）——`PROGRAM_FEEDS`
+  只收录这 5 个；官方 `PE` 代码因两义（Public/Political Economy）未核验被明确排除，其余
+  ~13 个未点名代码同样排除而非按命名模式硬猜（猜错代码悄悄产出 404/空 feed，属"看似能跑
+  实为静默失效"，违反响亮失败纪律）；如需扩展先补勘察证据，不改此表。backfill/全量枚举
+  **不变**，仍恒走 §3.1 crossref prefix（本次落地零改动该主干、零改动 `NberAdapter`/
+  `AdapterBase` 既有公开签名）。
 
 ### 3.5 healthcheck(session)
 
@@ -203,5 +217,6 @@ register/alias` 单调收紧取 min。故若把 `back.nber.org` 放进 `domains`
 | 1 | 2026-07-24 | 初稿（实现级，status draft）：crossref prefix 模式扩展（enumerate 主干）+ 零网络 resolve（18 月离线窗谓词）+ www/back 双域分桶（back 独立桶避 alias 陷阱）+ 软门 `no_entitlement` 双守卫（红线不绕过）+ RSS watch 通道 + venue 字段设计 + AC-5.2 载体 + JEL/`t`-path 开放题 | [research/site-survey/nber.md](../../research/site-survey/nber.md) [LIVE 2026-07-24] + crossref/unpaywall adapter + auth-framework §8 + elsevier-sd.md 模板 |
 | 2 | 2026-07-24 | **W0 双评审修订轮**（Approve-with-fixes）：§3.1 升格为**全谱参数化枚举扩展规范出处**（★N-1 裁决=YES：crossref 升通用 prefix 枚举源；两轴 enum-key〔issn XOR prefix〕+ date-field〔published\|created，评审实证 parse.py:114 硬绑 published 须泛化〕；消费方 nber〔published〕/ssrn〔created〕）；§6/§9 **N-4 收口**（现码零变更：registry `_lint_issn` 仅 journal 必填 issn、preprint_channel 豁免、identifiers 自由 dict——arxiv 31 venue 实证）+ JEL 缺口相碰号改 N-5 | controller W0 回派（双评审收敛）+ registry.py/types.py/parse.py 实证 |
 | 3 | 2026-07-24 | W0 双评审（A/B 独立实例，2026-07-24）Approve-with-fixes → 修订轮闭合 → controller approved | controller W0 收口 |
+| 4 | 2026-07-26 | **Phase 6 T7 落地**：§3.4 状态行同步"watch 主通道已落地"——`adapters/nber/rss.py` 新增（program feed 映射表 5/19 如实标注证据缺口 + `discover_incremental` + id 集合差分桥接）；backfill/crossref 主干零改动 | [phase6-implementation-plan.md](../../plan/phase6-implementation-plan.md) T7 + [catalog/preprint-platforms.md](../../catalog/preprint-platforms.md) §4 |
 
 Co-Authored-By: Claude Fable 5 <noreply@anthropic.com>

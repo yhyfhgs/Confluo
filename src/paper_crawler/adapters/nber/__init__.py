@@ -11,6 +11,10 @@ elsevier_sd 同构；venue `identifiers.crossref_prefix` 驱动 CrossrefAdapter 
 - `adapter`：`NberAdapter`——resolve（零网络 18 月窗 → 开放 PDF 计划 / <窗 no_entitlement 不产计划）
   + fetch（匿名直取 + `%PDF` 魔数双守卫，软门返非 PDF → no_entitlement 非 integrity）
   + healthcheck（w30000 PDF 首 chunk `%PDF` 结构性探测）。
+- `rss`（Phase 6 T7）：program RSS watch 增量主通道——`back.nber.org/rss/new{code}.xml`
+  program 代码归一 + feed 映射表（只收录有证据的 5/19，见模块 docstring）+
+  `discover_incremental`（duck-typed，供 T5 消费）+ id 集合差分桥接（`subs/watermark.py`
+  T4 落地前的独立占位）。backfill/全量枚举不变，仍恒走 crossref（本模块零改动主干）。
 
 **双域分桶**（§4）：`www.nber.org` 1 req/5s（domains[0]，www2 别名共享）；`back.nber.org`
 （RSS/sitemap，Crawl-delay:10）**独立桶** 1 req/10s（`NberAdapter.BACK_RATE_POLICY`，

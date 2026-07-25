@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- SYNTHETIC：故意破坏的 XML（未闭合标签）——program feed 网络传输截断/站点故障返回
+     半截响应体的边界模拟。parse 侧须 fail-loud PARSE（同 parse.parse_rss_items 既有
+     红线口径），不得静默返回空列表掩盖真实故障。 -->
+<rss version="2.0">
+  <channel>
+    <title>NBER New Working Papers</title>
+    <item>
+      <title>Truncated response body simulation
+</rss>

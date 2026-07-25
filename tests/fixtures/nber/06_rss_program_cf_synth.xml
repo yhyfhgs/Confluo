@@ -1,0 +1,31 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- SYNTHETIC：手工构造，结构对齐 back.nber.org/rss/newcf.xml 的 [LIVE] 实测
+     （2026-07-24，200/3-item，nber.md §2 请求清单 #13）——真实字段值未知（勘察只验证
+     状态码/条数，未留存 body），标题/作者/摘要/pubDate 均为构造脱敏值，非抓取自真实
+     feed。用于 Phase 6 T7 program RSS watch 通道解析回归（rss.py `_parse_feed_entries`）：
+     3 item 覆盖三种标题形态（逗号作者 / and-连接无逗号作者 / 无 by-作者尾巴）+
+     一个缺 pubDate + 一个畸形 pubDate，w/t 两种 series 前缀都覆盖。 -->
+<rss version="2.0">
+  <channel>
+    <title>NBER Corporate Finance Working Papers</title>
+    <link>https://www.nber.org/</link>
+    <description>Recently posted NBER working papers in Corporate Finance</description>
+    <item>
+      <title>Synthetic Capital Structure Adjustment Speeds -- by Alice Adams, Bob Brown</title>
+      <description>A synthetic abstract about capital structure adjustment, for CF program fixture coverage.</description>
+      <guid isPermaLink="true">https://www.nber.org/papers/w40001</guid>
+      <pubDate>Mon, 20 Jul 2026 00:00:00 GMT</pubDate>
+    </item>
+    <item>
+      <title>Synthetic Study of Board Composition and Leverage -- by Carol Cooper and Dave Diaz</title>
+      <description>A synthetic abstract about board composition, for CF program fixture coverage.</description>
+      <guid isPermaLink="true">https://www.nber.org/papers/t0150</guid>
+    </item>
+    <item>
+      <title>Synthetic Note Without An Author Tail</title>
+      <description>A synthetic abstract with no "-- by" author tail in its title, to exercise the no-tail fallback.</description>
+      <guid isPermaLink="true">https://www.nber.org/papers/w40002</guid>
+      <pubDate>not-a-valid-date</pubDate>
+    </item>
+  </channel>
+</rss>
