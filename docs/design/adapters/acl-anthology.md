@@ -2,7 +2,7 @@
 title: Adapter 设计 · ACL Anthology
 status: implemented
 owner: fable5
-updated: 2026-07-23
+updated: 2026-07-26
 ---
 
 # Adapter · `acl_anthology`
@@ -93,7 +93,7 @@ updated: 2026-07-23
 ### resolve_assets（PaperStub → AssetPlan*）——纯构造零网络
 
 - **PDF**：`https://aclanthology.org/{anthology_id}.pdf`（勘察 §4 同域直挂）；`kind=PDF`、`url_strategy=direct`、`auth_needed=none`、`version=None`。anthology_id 直接读 stub 的 `identifier('anthology')`，**不重新发请求**（真零网络，无 pmlr B3 式"零网络断言与实际矛盾"）。
-- **附件 SI**：XML `<attachment>`（如 `D19-1001.Attachment.pdf`）→ `kind=SI`，URL **拟** `https://aclanthology.org/attachments/{local-filename}`。⚠ **[UNRESOLVED]**：勘察未验证 attachment URL 前缀（§1 记附件不在仓库、托管站点，但未 HEAD 确认路径）；**实现期首个 SI fetch 前须 HEAD 核实前缀**，未证实前该 plan 标注实验性、不计入 AC-2.5 判定。
+- **附件 SI**：XML `<attachment>`（如 `D19-1001.Attachment.pdf`）→ `kind=SI`，URL `https://aclanthology.org/attachments/{local-filename}`。✅ **已核实 [LIVE 2026-07-26]**：HEAD `attachments/D19-1001.Attachment.pdf`（样本 = 勘察 §1 真实 `D19.xml` 数据）→ **200**，`Content-Type: application/pdf`、`Content-Length: 956360`、`Last-Modified: 2019-11-03` 与 D19 卷 `ingest-date` 精确吻合（排除软 404/占位页）、Apache 直挂 0 重定向；完整响应头与证据链归档 [survey §10](../../research/site-survey/acl-anthology.md)。原 ⚠ [UNRESOLVED]（"实现期首个 SI fetch 前须 HEAD 核实前缀"）就此闭合，SI plan 撤销"实验性/不计入 AC-2.5"限定语、转正式资产面（AC-2.5 判据本身锚定 enumerate 计数 + 无逐页爬取（§7），SI 不在判据内，判定口径不变）。
 - **不产**：`.bib`/`.xml`(MODS) 单篇副产物端点（存在但非 paper artifact，勘察 §2/§9）、`<video>`（媒体，非下载目标）——保持资产面精简。
 
 ### fetch_asset（AssetPlan → FetchResult）
@@ -159,7 +159,7 @@ updated: 2026-07-23
 - **discover 机制（★，见文末）**：(A) REST-tree 纯 HttpClient / (B) shallow-clone git 子进程 二选一；(B) 是重回填的净收益优化（离线枚举、无速率上限），(A) 是最小新机制（与 arxiv/openreview 同为纯 httpx）。
 - **仓库准实时更新**（勘察 §1：距勘察 1.5h 内有提交）：`git pull` / tree 重取延迟可很低；bulk 导出 `bib.gz` 随站点构建同步再生，可作独立对账源。
 - **schema 演进**：`schema.rnc` 社区维护、变更有 PR 史可追；解析失败即 `parse` 并锁上一 good commit（(B) 模式天然支持）。
-- **[UNRESOLVED] 清单**（实现期须闭合，勘察已标）：①attachment/SI URL 前缀（§4，HEAD 核实）；②`/papers/index.xml` XML feed（勘察 §9 未验证，非主路径，低优先）；③单一 `main` volume 内是否有 `type` 属性区分 long/short（勘察 §8，fixture 期核实——若无则 main=long+short 合并，2241 口径不变）。
+- **[UNRESOLVED] 清单**（实现期须闭合，勘察已标）：①attachment/SI URL 前缀——**已闭合 [LIVE 2026-07-26]**（§4，HEAD 200 实证，survey §10 归档，Phase 6 §3「机动」预算划支 1）；②`/papers/index.xml` XML feed（勘察 §9 未验证，非主路径，低优先）；③单一 `main` volume 内是否有 `type` 属性区分 long/short（勘察 §8，fixture 期核实——若无则 main=long+short 合并，2241 口径不变）。
 - **风险定档**：最低档——官方仓库即权威源、无认证无防护、bulk 单文件路径可审计；主要维护面是两代命名边界与 discover 机制选型，均已定位。
 
 ---

@@ -2,7 +2,7 @@
 title: 勘察：ACL Anthology（GitHub bulk/Findings 结构/许可二分）
 status: approved
 owner: fable5
-updated: 2026-07-22
+updated: 2026-07-26
 ---
 
 # ACL Anthology 站点勘察报告（LIVE）
@@ -344,4 +344,47 @@ HEAD https://aclanthology.org/2023.emnlp-main.1.bib → 200
 17:50:47Z HEAD aclanthology.org/2023.emnlp-main.1.bib                                       200
 17:52:22Z HEAD aclanthology.org/anthology.bib.gz                                            200
 17:52:24Z GET aclanthology.org/venues/emnlp/                                                200
+```
+
+## 10. 补充勘察：attachment/SI URL 前缀 HEAD 核实 [LIVE 2026-07-26]
+
+> 背景：§1 已实证 `<attachment>` 元素结构与「附件不在 GitHub 仓库、托管 aclanthology.org」，但原 24
+> 请求预算内未 HEAD 确认路径前缀，design/adapters/acl-anthology.md §4/§8 因此标 ⚠ [UNRESOLVED]①
+> （实现期首个 SI fetch 前须 HEAD 核实）；2026-07-24 审计（reports §3 S1 域）确认其零在线验证。本次
+> 按该实现期义务补勘。预算：Phase 6 计划 §3「机动」批次（≤10）划支 **1** 请求（余 9）。
+>
+> 分工合规：架构裁决（预算划支 + AC-2.5 限定语撤除）与文档定稿由主 agent（fable）完成（AGENTS §7）。
+
+- **样本**：`D19-1001.Attachment.pdf`——取自 §1 抓取的真实 `D19.xml` 数据（`<attachment
+  hash="6477c456">` 样例见 §1；同值已 verbatim 入 fixture
+  `tests/fixtures/acl_anthology/03_d19_legacy_excerpt.xml`，非合成值）。
+- **方法**：单次 `curl -I`（HEAD、不跟随重定向），UA 按 D-014 `PaperCrawler/0.1.0 (personal
+  research; mailto:<contact>)`。站外手工核实的理由：冻结 `HttpClient` 无 HEAD 方法（design §6 已知
+  限制④），本核验本就是设计文档规定的实现期一次性人工义务；§6 实测本站无 robots.txt/无
+  Crawl-delay，单请求远在 NFR-4 节流下界内。
+- **结果：200，前缀证实**。完整响应头：
+
+```
+HTTP/1.1 200 OK
+Date: Sat, 25 Jul 2026 20:22:27 GMT
+Server: Apache/2.4.41 (Ubuntu)
+Last-Modified: Sun, 03 Nov 2019 20:55:33 GMT
+ETag: "e97c8-596776b97fc5a"
+Accept-Ranges: bytes
+Content-Length: 956360
+Content-Type: application/pdf
+```
+
+- **证据链**：`Content-Type: application/pdf` + 956,360 字节实体 ⇒ 真文件非软 404/占位页；
+  `Last-Modified: 2019-11-03` 与 D19 卷 `ingest-date="2019-11-03"`（§1）**精确吻合** ⇒ 该路径
+  服务的正是当次数据摄入的附件本体；Apache/2.4.41 直挂、0 重定向、`Accept-Ranges: bytes` 与 §4
+  PDF 直链观测同构 ⇒ attachments 与 PDF 同一托管形态。
+- **结论**：`https://aclanthology.org/attachments/{local-filename}` 构造**正确**。`resolve_assets`
+  现行实现与单测断言（`test_resolve_assets_produces_si_plan_per_attachment`）无需改动；design
+  §4/§8 [UNRESOLVED]① 就此闭合。
+
+### 请求日志（1 条，成功）
+
+```
+2026-07-25T20:22:27Z (UTC, 响应 Date 头)  HEAD aclanthology.org/attachments/D19-1001.Attachment.pdf  200
 ```

@@ -19,8 +19,8 @@ arxiv.md §1 先例）。**获取策略阶梯的模范生**：GitHub 官方数�
   fetch_findings` + `_enumerate` 内的 volume 匹配）。两文件均 404（或清单证实均不存在）
   → legal-empty，返回空序列，非错误（§6）。
 - `resolve_assets`：**纯构造零网络**。PDF：`https://aclanthology.org/{anthology_id}.pdf`；
-  SI（`<attachment>`，[UNRESOLVED] 实验性——§4/§8）：`https://aclanthology.org/
-  attachments/{local-filename}`（URL 前缀未经 LIVE HEAD 核实，见模块末尾风险注记）。
+  SI（`<attachment>`——§4/§8）：`https://aclanthology.org/
+  attachments/{local-filename}`（前缀 [LIVE 2026-07-26] HEAD 200 核实，survey §10）。
 - `fetch_asset`：`HttpClient.stream` → `io.write_stream`；PDF 404（早期无 PDF /
   `<removed>`/`<retracted>`）由 `HttpClient` 直接映射 `GONE`，无需 adapter 重分类
   （区别于 raw 元数据 404，§6：勘察未见 aclanthology.org 对存在资源返回非 PDF 200 体
@@ -307,7 +307,7 @@ class AclAnthologyAdapter(AdapterBase):
     def resolve_assets(
         self, venue: VenueSpec, paper: PaperStub, session: SessionHandle | None = None
     ) -> list[AssetPlan]:
-        """PDF（恒产）+ SI（`<attachment>` 逐条，实验性——§4/§8 [UNRESOLVED]）→ `AssetPlan`。
+        """PDF（恒产）+ SI（`<attachment>` 逐条；前缀 [LIVE 2026-07-26] HEAD 核实——§4/§8）→ `AssetPlan`。
 
         anthology_id 直接读 stub 的 `identifier('anthology')`，不重新发请求（真零网络）。
         """
