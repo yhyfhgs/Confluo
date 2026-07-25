@@ -1,0 +1,38 @@
+# subscriptions/presets/causal-inference.yaml —— 预置 topic 包（模板，非活订阅；见 subscriptions/README.md）
+#
+# 取向：宽召回。因果推断是横跨统计、计量经济、机器学习乃至流行病学的方法论，
+#   同一批核心概念（工具变量、倍差法、断点回归）在不同学科用不同的写法出现——
+#   过早收紧类目或关键词会系统性漏掉某一学科的产出。
+# 改造建议：若只关心某一应用领域（如仅经济学），去掉 cs.LG/stat.ML 类目，只留
+#   econ.EM，并把 s2.fields_of_study 收窄到 ["Economics"]。
+name: causal-inference
+sources:
+  arxiv:
+    categories: [stat.ME, stat.ML, econ.EM, cs.LG]   # 官方分类（核对：docs/research/site-survey/arxiv.md 分类体系表）
+    query: >
+      (ti:"causal inference" OR abs:"instrumental variable" OR abs:"treatment effect"
+       OR abs:"difference-in-differences" OR abs:"propensity score")
+      AND NOT ti:"survey"
+  openalex:
+    concepts: ["causal inference"]
+    from_source_types: [preprint]
+  s2:                         # 计量方法类：s2 补跨学科覆盖（design/09 §3 bulk search venue/fieldsOfStudy）
+    fields_of_study: ["Economics", "Computer Science"]   # ⚠ 取值对照 S2 官方 fieldsOfStudy 分类表，实现期核验
+    venues: ["Journal of Causal Inference", "Journal of Econometrics"]
+    query: causal inference
+filters:
+  title_regex_any:
+    - "causal"
+    - "treatment effect"
+    - "instrumental variable"
+    - "difference-in-differences"
+    - "propensity score"
+  exclude_regex: ["survey"]
+  min_year: 2020
+actions:
+  ingest: metadata
+  auto_fetch_limit: 15
+guard:
+  max_new_per_run: 180        # 宽召回取向：多学科汇入，阈值相应调高
+  dedupe_against_library: true
+schedule_hint: weekly

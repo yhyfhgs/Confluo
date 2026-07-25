@@ -1,0 +1,30 @@
+# subscriptions/presets/llm-agents.yaml —— 预置 topic 包（模板，非活订阅；见 subscriptions/README.md）
+#
+# 取向：宽召回。"agent"/"agentic" 一族术语正在快速演进、命名不稳定（tool use、
+#   tool-augmented、autonomous agent…新叫法不断出现），源头查询/类目收太紧会漏掉
+#   新术语；宁可多收噪声，靠 filters 本地二次过滤兜底。
+# 改造建议：若发现噪声过多（如经济学/生物学里的"agent-based model"混入），把
+#   exclude_regex 加严，或去掉 openalex 段只留 arxiv 精确类目。
+#
+# 本预置几乎逐字取自 docs/design/09-search-filter.md §2 示例一（该文档的官方范式）。
+name: llm-agents
+sources:                       # 只列想要的源，各源有专属段
+  arxiv:
+    categories: [cs.AI, cs.LG, cs.CL, cs.MA]     # 官方分类（核对：docs/research/site-survey/arxiv.md 分类体系表）
+    query: >                   # 编译为 arXiv API search_query 的字段级布尔式
+      (ti:"agent" OR abs:"agentic" OR abs:"tool use")
+      AND NOT ti:"survey"
+  openalex:                    # 聚合源兜底（收 arXiv 外的 OA 预印本）
+    concepts: ["large language model"]
+    from_source_types: [preprint]
+filters:                       # 本地二次过滤（对所有源结果统一执行）
+  title_regex_any: ["\\bagent(s|ic)?\\b", "LLM"]
+  exclude_regex: ["quantum"]
+  min_year: 2024
+actions:
+  ingest: metadata             # metadata | metadata+pdf
+  auto_fetch_limit: 20         # 每次运行最多自动下载篇数
+guard:                         # 护栏（FR-16）——显式写全两个字段，不依赖缺省
+  max_new_per_run: 200         # 超过即熔断：只出报告不入库，提示收窄查询
+  dedupe_against_library: true
+schedule_hint: daily           # 仅存不调度（cron 外置，design/05 §2）

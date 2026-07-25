@@ -69,3 +69,20 @@ crawler watch <name> --dry-run     # 只报数，不入库、不下载、不推�
 
 订阅文件本身可以入 git（不含凭证）。watch 的运行产物——日报、watermark、下载的
 PDF——都不入 git（见仓库 `.gitignore` 与 AGENTS.md §6.4）。
+
+## presets 索引（Phase 6 T8 交付）
+
+`subscriptions/presets/` 9 件已到位（design/09 §4 清单）；每件头部注释 precision/
+recall 取向与改造建议，逐字段解析校验见 `tests/unit/test_subs_presets.py`。
+
+| 文件 | 领域 | 源组合 | 取向 |
+|---|---|---|---|
+| `llm-agents.yaml` | LLM 智能体（CS） | arxiv + openalex | 宽召回 |
+| `rl-theory.yaml` | 强化学习理论（CS） | arxiv + openalex | 高精确 |
+| `causal-inference.yaml` | 因果推断（计量方法） | arxiv + openalex + s2 | 宽召回 |
+| `econometrics-methods.yaml` | 计量方法（计量方法） | arxiv + openalex + s2 | 高精确 |
+| `asset-pricing.yaml` | 资产定价（econ/fin） | arxiv + ssrn + nber | 高精确 |
+| `market-microstructure.yaml` | 市场微观结构（econ/fin） | arxiv + ssrn | 高精确 |
+| `corporate-finance.yaml` | 公司金融（econ/fin） | arxiv + ssrn + nber | 宽召回 |
+| `mechanism-design.yaml` | 机制设计（CS/理论经济学） | arxiv + openalex | 高精确 |
+| `optimization-ml.yaml` | 机器学习优化（CS） | arxiv + openalex | 宽召回 |

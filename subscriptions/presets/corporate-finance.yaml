@@ -1,0 +1,37 @@
+# subscriptions/presets/corporate-finance.yaml —— 预置 topic 包（模板，非活订阅；见 subscriptions/README.md）
+#
+# 取向：宽召回。公司金融覆盖资本结构、并购、股利政策、公司治理等多个子话题，
+#   arXiv 没有专属类目兜底（只能靠 q-fin.GN/econ.GN 两个通用类目广撒网），必须
+#   靠本地关键词族收敛，源头查询不宜收太紧。
+# 改造建议：若只关心某一子话题（如仅并购），把 title_regex_any 收窄到单一词族
+#   （如只留 "merger"/"acquisition"），并去掉 econ.GN 类目减少无关经济学产出。
+name: corporate-finance
+sources:
+  arxiv:
+    categories: [q-fin.GN, econ.GN]   # 官方分类（核对：docs/research/site-survey/arxiv.md 分类体系表；无专属公司金融类目，取通用兜底）
+    query: >
+      (ti:"capital structure" OR abs:"merger" OR abs:"acquisition"
+       OR abs:"payout policy" OR abs:"corporate governance")
+      AND NOT ti:"survey"
+  ssrn:
+    networks: [FEN]                          # SSRN 子网（FEN=Financial Economics Network）
+    ejournals: ["Corporate Finance eJournal"]  # ⚠ 名称实现期核验（核对：docs/research/site-survey/econ-fin-preprints.md「FEN…Corporate Finance」）
+  nber:
+    programs: [CF]   # NBER Corporate Finance program（核对：docs/research/site-survey/nber.md [LIVE] newcf.xml 实测 200）
+filters:
+  title_regex_any:
+    - "capital structure"
+    - "merger"
+    - "acquisition"
+    - "payout polic"
+    - "dividend"
+    - "corporate governance"
+  exclude_regex: ["survey"]
+  min_year: 2020
+actions:
+  ingest: metadata
+  auto_fetch_limit: 12
+guard:
+  max_new_per_run: 150        # 宽召回取向：多子话题汇入，阈值相应调高
+  dedupe_against_library: true
+schedule_hint: weekly

@@ -1,0 +1,30 @@
+# subscriptions/presets/optimization-ml.yaml —— 预置 topic 包（模板，非活订阅；见 subscriptions/README.md）
+#
+# 取向：宽召回。机器学习优化方法横跨几乎全部 ML 子领域（深度学习训练、强化
+#   学习、贝叶斯方法都会用到自己的优化器变体），没有单一专属类目能兜住全部
+#   产出，源头需要广撒网靠本地关键词收敛。
+# 改造建议：若想精确化，把 title_regex_any 收紧到具体方法族（如只留
+#   "second-order"/"Newton" 一族），或加 exclude_regex 排除纯应用型论文
+#   （如排除 "case study"）。
+name: optimization-ml
+sources:
+  arxiv:
+    categories: [cs.LG, stat.ML, cs.AI, cs.NE]   # 官方分类（核对：docs/research/site-survey/arxiv.md 分类体系表）
+    query: >
+      (ti:"convex optimization" OR abs:"stochastic gradient" OR abs:"convergence rate"
+       OR abs:"adaptive optimizer")
+      AND NOT ti:"survey"
+  openalex:
+    concepts: ["mathematical optimization"]
+    from_source_types: [preprint]
+filters:
+  title_regex_any: ["optimiz", "gradient descent", "convergence rate", "adaptive (optimizer|method)", "second-order method"]
+  exclude_regex: ["survey"]
+  min_year: 2022
+actions:
+  ingest: metadata
+  auto_fetch_limit: 15
+guard:
+  max_new_per_run: 200        # 宽召回取向：跨子领域汇入量大，阈值相应调高
+  dedupe_against_library: true
+schedule_hint: daily

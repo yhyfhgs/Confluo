@@ -1,0 +1,26 @@
+# subscriptions/presets/asset-pricing.yaml —— 预置 topic 包（模板，非活订阅；见 subscriptions/README.md）
+#
+# 取向：高精确。资产定价是金融学里边界清楚的子领域，SSRN FEN 网络下有专属
+#   eJournal、NBER 有专属 program（AP）、arXiv 有专属类目（q-fin.PR/PM/ST）——
+#   三源都能精确下推，没必要靠宽召回兜底噪声。
+# 改造建议：若想扩召回，去掉 ssrn.ejournals 只留 networks: [FEN]，或去掉
+#   title_regex_any 只靠源头类目/分类过滤。
+#
+# sources 结构取自 docs/design/09-search-filter.md §2 示例二（asset-pricing-wp）范式。
+name: asset-pricing
+sources:
+  ssrn:
+    networks: [FEN]                    # SSRN 子网（FEN=Financial Economics Network）
+    ejournals: ["Asset Pricing eJournal", "Capital Markets eJournal"]  # ⚠ 名称实现期核验
+  arxiv:
+    categories: [q-fin.PR, q-fin.PM, q-fin.ST]   # 官方分类（核对：docs/research/site-survey/arxiv.md 分类体系表）
+  nber:
+    programs: [AP]   # NBER Asset Pricing program（核对：docs/research/site-survey/nber.md「Asset Pricing=newap」）
+filters:
+  title_regex_any: ["asset pricing", "cross-section", "risk premi", "factor model", "expected return"]
+  min_year: 2022
+actions: {ingest: metadata, auto_fetch_limit: 10}
+guard:
+  max_new_per_run: 120
+  dedupe_against_library: true
+schedule_hint: weekly

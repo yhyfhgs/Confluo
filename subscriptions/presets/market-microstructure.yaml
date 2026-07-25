@@ -1,0 +1,31 @@
+# subscriptions/presets/market-microstructure.yaml —— 预置 topic 包（模板，非活订阅；见 subscriptions/README.md）
+#
+# 取向：高精确。市场微观结构是有专属 arXiv 类目（q-fin.TR）与专属 SSRN eJournal
+#   的窄分支，核心词族（bid-ask spread、order flow、limit order book）专指性强，
+#   不易与其他金融子领域混淆。
+# 改造建议：若想扩召回覆盖高频交易/算法交易的交叉产出，加回 q-fin.CP 之外再加
+#   q-fin.PR，并把 title_regex_any 放宽为只保留 "market microstructure" 一条。
+#
+# 未含 NBER：勘察文档未确认 NBER 有专属 microstructure program（NBER 现实中此类
+#   研究多归 Asset Pricing program），故不臆造 program 代码——详见 T8 交付报告。
+name: market-microstructure
+sources:
+  arxiv:
+    categories: [q-fin.TR, q-fin.CP]   # 官方分类（核对：docs/research/site-survey/arxiv.md 分类体系表）
+    query: >
+      (ti:"market microstructure" OR abs:"bid-ask spread" OR abs:"order flow"
+       OR abs:"limit order book" OR abs:"price impact")
+  ssrn:
+    networks: [FEN]                              # SSRN 子网（FEN=Financial Economics Network）
+    ejournals: ["Market Microstructure eJournal"]  # ⚠ 名称实现期核验（核对：docs/research/site-survey/econ-fin-preprints.md「FEN…Market Microstructure」）
+filters:
+  title_regex_any: ["market microstructure", "bid-ask spread", "order flow", "limit order book", "price impact", "liquidity provision"]
+  exclude_regex: ["survey"]
+  min_year: 2021
+actions:
+  ingest: metadata
+  auto_fetch_limit: 8
+guard:
+  max_new_per_run: 80
+  dedupe_against_library: true
+schedule_hint: weekly

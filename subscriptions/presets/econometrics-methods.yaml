@@ -1,0 +1,39 @@
+# subscriptions/presets/econometrics-methods.yaml —— 预置 topic 包（模板，非活订阅；见 subscriptions/README.md）
+#
+# 取向：高精确。econ.EM 本身就是官方窄类目（计量方法，别于 econ.GN 一般经济学
+#   与 econ.TH 理论经济学），核心术语（GMM、面板数据、结构估计）专指性强，
+#   适合直接按类目+关键词收紧,而不是广撒网。
+# 改造建议：若想扩召回覆盖应用计量（非纯方法论文），加回 econ.GN 类目并放宽
+#   title_regex_any（如去掉 "structural estimat" 一类偏理论的锚点词）。
+name: econometrics-methods
+sources:
+  arxiv:
+    categories: [econ.EM, stat.ME, stat.AP]   # 官方分类（核对：docs/research/site-survey/arxiv.md 分类体系表）
+    query: >
+      (ti:"identification" OR abs:"generalized method of moments" OR abs:"panel data"
+       OR abs:"structural estimation" OR abs:"semiparametric")
+      AND NOT ti:"survey"
+  openalex:
+    concepts: ["econometrics"]
+    from_source_types: [preprint]
+  s2:                         # 计量方法类：s2 补经济学期刊侧覆盖
+    fields_of_study: ["Economics"]   # ⚠ 取值对照 S2 官方 fieldsOfStudy 分类表，实现期核验
+    venues: ["Econometrica", "Journal of Econometrics"]
+    query: econometric identification
+filters:
+  title_regex_any:
+    - "identificat"
+    - "instrumental variable"
+    - "\\bGMM\\b"
+    - "panel data"
+    - "structural estimat"
+    - "semiparametric"
+  exclude_regex: ["survey", "textbook"]
+  min_year: 2020
+actions:
+  ingest: metadata
+  auto_fetch_limit: 10
+guard:
+  max_new_per_run: 100
+  dedupe_against_library: true
+schedule_hint: weekly

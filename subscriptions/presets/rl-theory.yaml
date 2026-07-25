@@ -1,0 +1,29 @@
+# subscriptions/presets/rl-theory.yaml —— 预置 topic 包（模板，非活订阅；见 subscriptions/README.md）
+#
+# 取向：高精确。强化学习"理论"是一个界限清楚的窄分支（regret 界、样本复杂度、
+#   可证明收敛性），与海量的应用型 RL 论文（游戏、机器人、RLHF 调参报告）泾渭
+#   分明——宽召回会把后者大量收进来淹没真正的理论工作。
+# 改造建议：若想扩召回覆盖应用型 RL 进展，去掉 title_regex_any 的强约束，仅靠
+#   类目 + query 布尔式过滤，并把 exclude_regex 清空。
+name: rl-theory
+sources:
+  arxiv:
+    categories: [cs.LG, cs.AI, stat.ML]   # 官方分类（核对：docs/research/site-survey/arxiv.md 分类体系表）
+    query: >
+      (ti:"regret" OR ti:"sample complexity" OR abs:"provably efficient"
+       OR abs:"policy gradient" OR abs:"Markov decision process")
+      AND NOT ti:"survey"
+  openalex:
+    concepts: ["reinforcement learning"]
+    from_source_types: [preprint]
+filters:
+  title_regex_any: ["regret bound", "sample complexit", "provably efficient", "convergence"]
+  exclude_regex: ["survey", "tutorial"]
+  min_year: 2022
+actions:
+  ingest: metadata
+  auto_fetch_limit: 10
+guard:
+  max_new_per_run: 80          # 高精确取向：窄分支月产出有限，阈值相应调低
+  dedupe_against_library: true
+schedule_hint: weekly
