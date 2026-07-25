@@ -49,10 +49,16 @@ schedule_hint: daily           # 仅记录，不调度（定时交给 cron/launc
 半个领域的日报。改完订阅先跑一次干跑确认：
 
 ```
-crawler watch <name> --dry-run     # 只报数，不入库、不下载、不推进 watermark
+crawler subs watch <name> --dry-run   # 只报数，不入库、不下载、不推进 watermark、不留记录
+crawler subs watch <name>             # 真跑：入库 + 推进 watermark + 出日报
+crawler subs watch --all              # 全部订阅串行跑，合并出一份日报
 ```
 
-（`crawler watch` 的订阅模式由 Phase 6 T5 交付；在此之前本目录只被 `subs` 模块读取。）
+命令名注记：订阅增量落在 **`crawler subs watch`**，而不是顶层的 `crawler watch`
+——后者自 Phase 2 起是 **preprint venue 的当月桶元数据增量**（`crawler watch <venue>`），
+两者语义不同、`--all` 的含义更是互斥（"全部 preprint venue" vs "全部订阅"）。
+design/05 §6 的命令面写的是 `crawler watch <subscription-name>`；名字归属待裁决，
+在此之前两条命令并存、各自逐字不变。
 
 ## `presets/`（后续到位）
 
@@ -68,7 +74,9 @@ crawler watch <name> --dry-run     # 只报数，不入库、不下载、不推�
 ## 不入 git 的东西
 
 订阅文件本身可以入 git（不含凭证）。watch 的运行产物——日报、watermark、下载的
-PDF——都不入 git（见仓库 `.gitignore` 与 AGENTS.md §6.4）。
+PDF——都不入 git（见仓库 `.gitignore` 与 AGENTS.md §6.4）。日报落在
+`docs/reports/watch/daily-YYYY-MM-DD.md`（多订阅当天合并一份，同日重跑覆盖），
+该子目录已在 `.gitignore` 内。
 
 ## presets 索引（Phase 6 T8 交付）
 

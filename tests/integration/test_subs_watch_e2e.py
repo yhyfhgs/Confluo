@@ -1,0 +1,726 @@
+"""watch 端到端（Phase 6 T5 DoD）：mock_platform 载体 + 真 sqlite，四场景 + `--all`。
+
+四场景 = plan §4 T5 DoD 字面：**正常增量 / 熔断 / dry-run / 零新增**。载体是
+`mock_platform`（确定性语料、零网络），经 `AdapterFetcher` 的 DISCOVER→ENUMERATE 默认
+路径驱动——即"复用各 adapter DISCOVER/ENUMERATE"这条接缝本身也在被测。订阅源用
+`crossref`（DSL 六源之一）而 adapter 实物是 mock_platform：`AdapterFetcher` 按**源 id**
+索引 adapter，把哪个实物挂在这个 id 上是装配期的事，正是这个接缝让离线端到端成立。
+
+零网络：mock_platform 程序内生成语料，不触 socket（全局护栏 `tests/conftest.py` 兜底）。
+"""
+
+from __future__ import annotations
+
+from collections.abc import Iterator
+from dataclasses import dataclass
+from datetime import date
+from pathlib import Path
+
+import pytest
+import yaml
+
+from paper_crawler.adapters.mock_platform import MockPlatformAdapter
+from paper_crawler.errors import CrawlerError, ErrorClass, SubscriptionInvalid
+from paper_crawler.registry import VenueRegistry
+from paper_crawler.storage.db import Database
+from paper_crawler.storage.repo import Repo, SubscriptionRepo
+from paper_crawler.subs.model import Subscription
+from paper_crawler.subs.types import RunSummary, WatchOutcome
+from paper_crawler.subs.watch import (
+    AdapterFetcher,
+    SourceRequest,
+    WatchContext,
+    daily_report_path,
+    exit_code_for,
+    load_subscriptions,
+    resolve_subscription,
+    run_watch,
+    run_watch_all,
+    write_daily_report,
+)
+from paper_crawler.tasks import TaskQueue
+from paper_crawler.types import PaperStub, VenueNames, VenueSpec
+
+DAY = date(2026, 7, 26)
+CORPUS_SIZE = 6  # volumes 1 × issues 1 × papers 6（mock quirks，见 `_mock_venue`）
+
+# mock_platform 的语料配置：一卷一期六篇，seed 固定 → 同输入同输出（其模块 docstring）。
+_MOCK_QUIRKS: dict[str, object] = {
+    "volumes": 1,
+    "issues_per_volume": 1,
+    "papers_per_issue": CORPUS_SIZE,
+    "seed": 42,
+}
+
+
+def _mock_venue(
+    venue_id: str = "mock_journal", *, fulltext_source: str = "mock_platform"
+) -> VenueSpec:
+    return VenueSpec(
+        id=venue_id,
+        kind="journal",
+        names=VenueNames(full="Mock Journal"),
+        field=["cs_ai"],
+        identifiers={"issn": ["0000-0000"]},
+        metadata_source=fulltext_source,
+        fulltext_source=fulltext_source,
+        quirks=dict(_MOCK_QUIRKS),
+    )
+
+
+@dataclass
+class _Env:
+    """一次测试的隔离装配（真 sqlite + 临时订阅目录）。"""
+
+    db: Database
+    repo: Repo
+    subs_repo: SubscriptionRepo
+    queue: TaskQueue
+    subs_dir: Path
+    report_root: Path
+
+    def context(
+        self,
+        *,
+        registry: VenueRegistry | None = None,
+        fetcher: object | None = None,
+        venues: dict[str, VenueSpec] | None = None,
+    ) -> WatchContext:
+        source_venues = venues if venues is not None else {"crossref": _mock_venue()}
+        return WatchContext(
+            db=self.db,
+            repo=self.repo,
+            subs_repo=self.subs_repo,
+            fetcher=fetcher  # type: ignore[arg-type]
+            or AdapterFetcher({"crossref": MockPlatformAdapter()}, venues=source_venues),
+            registry=registry,
+            queue=self.queue,
+            venues=source_venues,
+            report_root=self.report_root,
+        )
+
+    def papers(self) -> int:
+        return int(self.db.query("SELECT COUNT(*) AS n FROM paper")[0]["n"])
+
+    def runs(self, name: str) -> list[dict[str, object]]:
+        return [dict(row) for row in self.subs_repo.runs(name)]
+
+
+@pytest.fixture
+def env(tmp_path: Path) -> Iterator[_Env]:
+    database = Database(tmp_path / "watch.sqlite")
+    database.migrate()
+    subs_dir = tmp_path / "subscriptions"
+    subs_dir.mkdir()
+    yield _Env(
+        db=database,
+        repo=Repo(database),
+        subs_repo=SubscriptionRepo(database),
+        queue=TaskQueue(database),
+        subs_dir=subs_dir,
+        report_root=tmp_path / "reports",
+    )
+    database.close()
+
+
+def _write_subscription(
+    directory: Path,
+    name: str = "mock-watch",
+    *,
+    sources: dict[str, object] | None = None,
+    filters: dict[str, object] | None = None,
+    actions: dict[str, object] | None = None,
+    guard: dict[str, object] | None = None,
+) -> Path:
+    doc: dict[str, object] = {
+        "name": name,
+        "sources": sources if sources is not None else {"crossref": {"issns": ["0000-0000"]}},
+        "actions": actions if actions is not None else {"ingest": "metadata"},
+        "guard": guard if guard is not None else {"max_new_per_run": 200},
+    }
+    if filters is not None:
+        doc["filters"] = filters
+    path = directory / f"{name}.yaml"
+    path.write_text(yaml.safe_dump(doc, allow_unicode=True), encoding="utf-8")
+    return path
+
+
+def _load_one(env: _Env, **kwargs: object) -> Subscription:
+    _write_subscription(env.subs_dir, **kwargs)  # type: ignore[arg-type]
+    return load_subscriptions(env.subs_dir, env.subs_repo)[0]
+
+
+# ---------------------------------------------------------------------------
+# 场景一：正常增量
+# ---------------------------------------------------------------------------
+
+
+def test_normal_increment_ingests_advances_watermark_and_records_run(env: _Env) -> None:
+    subscription = _load_one(env)
+    path = daily_report_path(DAY, root=env.report_root)
+
+    summary = run_watch(env.context(), subscription, now=DAY, report_path=str(path))
+
+    assert summary.outcome is WatchOutcome.OK
+    assert summary.seen_count == CORPUS_SIZE
+    assert summary.new_count == CORPUS_SIZE
+    assert summary.ingested_count == CORPUS_SIZE
+    assert summary.library_total == CORPUS_SIZE
+    assert env.papers() == CORPUS_SIZE
+    # 每条 entry 拿到入库后的内部 id（`ReportEntry.paper_id` 契约）。
+    assert all(entry.paper_id for entry in summary.entries)
+    assert {entry.source for entry in summary.entries} == {"crossref"}
+    # watermark 已提交且带 schema_ver（T4 序列化契约）。
+    stored = env.subs_repo.read_watermark(subscription.name)
+    assert stored["schema_ver"] == 1
+    assert "crossref" in stored["sources"]  # type: ignore[operator]
+    # run 记录落库且 report_path 已填（record_run 是 INSERT-only，路径须先于它算好）。
+    (run_row,) = env.runs(subscription.name)
+    assert run_row["new_count"] == CORPUS_SIZE
+    assert run_row["truncated"] == 0
+    assert run_row["report_path"] == str(path)
+    assert exit_code_for([summary]) == 0
+
+
+def test_normal_increment_writes_the_daily_report_file(env: _Env) -> None:
+    subscription = _load_one(env)
+    path = daily_report_path(DAY, root=env.report_root)
+    summary = run_watch(env.context(), subscription, now=DAY, report_path=str(path))
+
+    text = write_daily_report([summary], path, day=DAY)
+
+    assert path.is_file()
+    assert path.read_text(encoding="utf-8") == text
+    assert "# 日报 — 2026-07-26" in text
+    assert subscription.name in text
+
+
+# ---------------------------------------------------------------------------
+# 场景二：熔断（AC-6.2：正确熔断、零入库、过载报告含分布与建议）
+# ---------------------------------------------------------------------------
+
+
+def test_truncation_blocks_ingest_but_still_records_the_run(env: _Env) -> None:
+    subscription = _load_one(env, guard={"max_new_per_run": 2})
+    path = daily_report_path(DAY, root=env.report_root)
+
+    summary = run_watch(env.context(), subscription, now=DAY, report_path=str(path))
+
+    assert summary.outcome is WatchOutcome.TRUNCATED
+    assert summary.truncated is True
+    assert summary.new_count == CORPUS_SIZE
+    assert summary.ingested_count == 0
+    assert summary.fetched_count == 0
+    assert env.papers() == 0
+    # 分布三元组带 axis 标记（plan §4 T5 裁决⑥）；来源轴必有，分类轴视源侧信号而定。
+    assert ("source", "crossref", CORPUS_SIZE) in summary.distribution
+    assert {axis for axis, _, _ in summary.distribution} <= {"source", "category"}
+    assert summary.narrowing_hints == ()  # 收窄句归 T6 现算，T5 恒留空
+    # 熔断仍落 run 记录（truncated=1），但 watermark 不推进。
+    (run_row,) = env.runs(subscription.name)
+    assert run_row["truncated"] == 1
+    assert env.subs_repo.read_watermark(subscription.name) == {}
+    assert exit_code_for([summary]) == 3
+
+
+def test_truncation_at_exactly_the_limit_does_not_trigger(env: _Env) -> None:
+    """ "至多 N 篇"语义：等于阈值不熔断（T3 `is_truncated` 的边界，端到端复验）。"""
+    subscription = _load_one(env, guard={"max_new_per_run": CORPUS_SIZE})
+    summary = run_watch(env.context(), subscription, now=DAY)
+    assert summary.outcome is WatchOutcome.OK
+    assert summary.ingested_count == CORPUS_SIZE
+
+
+# ---------------------------------------------------------------------------
+# 场景三：dry-run（只报数，但完整消费各源流）
+# ---------------------------------------------------------------------------
+
+
+def test_dry_run_reports_counts_without_touching_anything(env: _Env) -> None:
+    subscription = _load_one(env)
+    path = daily_report_path(DAY, root=env.report_root)
+
+    summary = run_watch(env.context(), subscription, dry_run=True, now=DAY, report_path=str(path))
+
+    assert summary.dry_run is True
+    assert summary.outcome is WatchOutcome.OK
+    # 完整消费的证据：候选/新增计数照常算出来（惰性生成器若被早退跳过，这里会是 0）。
+    assert summary.seen_count == CORPUS_SIZE
+    assert summary.new_count == CORPUS_SIZE
+    # 四不做：不入库、不派生、不推 watermark、不写 run 记录。
+    assert summary.ingested_count == 0
+    assert summary.fetched_count == 0
+    assert env.papers() == 0
+    assert env.subs_repo.read_watermark(subscription.name) == {}
+    assert env.runs(subscription.name) == []
+    assert not path.exists()  # 日报只回显不落盘（落盘由调用方决定，dry-run 不调）
+
+
+def test_dry_run_still_runs_guard_and_reports_truncation(env: _Env) -> None:
+    """dry-run 与熔断正交：预览也要能提前告诉用户"这次会被拦下"（AC-6.2 的用法）。"""
+    subscription = _load_one(env, guard={"max_new_per_run": 1})
+
+    summary = run_watch(env.context(), subscription, dry_run=True, now=DAY)
+
+    assert summary.outcome is WatchOutcome.TRUNCATED
+    assert summary.dry_run is True
+    assert summary.ingested_count == 0
+    assert env.runs(subscription.name) == []  # dry-run 优先于"熔断也落记录"
+
+
+def test_dry_run_surfaces_predicate_wiring_errors_instead_of_skipping_them(env: _Env) -> None:
+    """未登记谓词在 dry-run 下同样炸——"上线前必跑 dry-run"才有意义（T7 教训）。"""
+
+    class _BadFetcher:
+        def fetch(self, request: SourceRequest) -> list[PaperStub]:
+            del request
+            return [PaperStub(title="x", identifiers=(("doi", "10.1/x"),))]
+
+    subscription = _load_one(env)
+    context = env.context(fetcher=_BadFetcher())
+    # 直接构造一个带未登记源专属谓词的计划：经 filter_papers 的前置校验响亮报错。
+    from dataclasses import replace as dataclass_replace
+
+    from paper_crawler.subs import compile as compile_module
+
+    original = compile_module.compile_subscription
+
+    def _poisoned(sub: Subscription, **kwargs: object) -> object:
+        plan = original(sub, **kwargs)  # type: ignore[arg-type]
+        step = dataclass_replace(plan.steps[0], local_predicates=("crossref.nope",))
+        return dataclass_replace(plan, steps=(step,))
+
+    from paper_crawler.subs import watch as watch_module
+
+    watch_module.compile_subscription = _poisoned  # type: ignore[assignment]
+    try:
+        with pytest.raises(ValueError, match="未登记的本地补偿谓词"):
+            run_watch(context, subscription, dry_run=True, now=DAY)
+    finally:
+        watch_module.compile_subscription = original  # type: ignore[assignment]
+
+
+# ---------------------------------------------------------------------------
+# 场景四：零新增（第二次运行全是库内已有）
+# ---------------------------------------------------------------------------
+
+
+def test_second_run_finds_nothing_new_and_still_records_the_run(env: _Env) -> None:
+    subscription = _load_one(env)
+    context = env.context()
+
+    first = run_watch(context, subscription, now=DAY)
+    second = run_watch(context, subscription, now=DAY)
+
+    assert first.ingested_count == CORPUS_SIZE
+    assert second.seen_count == CORPUS_SIZE  # 窗照拉（重叠窗必然重复，T4 纪律）
+    assert second.new_count == 0  # 对库去重把它们全滤掉
+    assert second.ingested_count == 0
+    assert second.outcome is WatchOutcome.OK
+    assert env.papers() == CORPUS_SIZE  # 零重复入库
+    assert len(env.runs(subscription.name)) == 2
+    assert exit_code_for([second]) == 0
+
+
+def test_dedupe_can_be_switched_off(env: _Env) -> None:
+    """`dedupe_against_library: false` = 用户显式要重复看——不去重，入库靠主键幂等兜底。"""
+    subscription = _load_one(env, guard={"max_new_per_run": 200, "dedupe_against_library": False})
+    context = env.context()
+
+    run_watch(context, subscription, now=DAY)
+    second = run_watch(context, subscription, now=DAY)
+
+    assert second.new_count == CORPUS_SIZE
+    assert env.papers() == CORPUS_SIZE  # identifier 主键保证零重复行
+
+
+# ---------------------------------------------------------------------------
+# `--all`：多订阅串行 + 合并一份日报
+# ---------------------------------------------------------------------------
+
+
+def test_watch_all_runs_serially_and_merges_one_daily_report(env: _Env) -> None:
+    _write_subscription(env.subs_dir, "alpha")
+    # beta 关掉对库去重：alpha 先跑并把整批语料入了库，否则 beta 会看到零新增而非熔断
+    # ——串行语义本身的体现（后跑的订阅看到的是前一个已经改过的库）。
+    _write_subscription(
+        env.subs_dir, "beta", guard={"max_new_per_run": 1, "dedupe_against_library": False}
+    )
+    subscriptions = load_subscriptions(env.subs_dir, env.subs_repo)
+
+    summaries, path = run_watch_all(env.context(), subscriptions, now=DAY)
+
+    assert [summary.subscription for summary in summaries] == ["alpha", "beta"]
+    assert [summary.outcome for summary in summaries] == [
+        WatchOutcome.OK,
+        WatchOutcome.TRUNCATED,
+    ]
+    # 一份合并日报，路径先算好、两条 run 记录都填了同一个值。
+    assert path == daily_report_path(DAY, root=env.report_root)
+    assert env.runs("alpha")[0]["report_path"] == str(path)
+    assert env.runs("beta")[0]["report_path"] == str(path)
+    text = write_daily_report(summaries, path, day=DAY)
+    assert "## alpha" in text and "## beta" in text
+    assert exit_code_for(summaries) == 3  # 无失败但有熔断
+
+
+def test_watch_all_rejects_the_whole_batch_when_any_file_is_invalid(env: _Env) -> None:
+    """plan §4 T5 裁决④：`--all` 遇任一坏订阅整体响亮拒载，报错带出错文件路径。"""
+    _write_subscription(env.subs_dir, "good")
+    bad = env.subs_dir / "bad.yaml"
+    bad.write_text("name: bad\nsources: {arxiv: {catgories: [cs.AI]}}\n", encoding="utf-8")
+
+    with pytest.raises(SubscriptionInvalid) as excinfo:
+        load_subscriptions(env.subs_dir, env.subs_repo)
+
+    assert str(bad) in str(excinfo.value)
+    assert env.subs_repo.list_names() == []  # 坏文件排在 good 之前，整批未生效
+
+
+def test_resolve_subscription_rejects_unknown_name(env: _Env) -> None:
+    _load_one(env)
+    with pytest.raises(CrawlerError) as excinfo:
+        resolve_subscription("nope", env.subs_repo)
+    assert excinfo.value.error_class is ErrorClass.CONFIG
+    assert "mock-watch" in str(excinfo.value)  # 报错列出已登记的名字
+
+
+def test_resolve_subscription_message_when_registry_is_empty(env: _Env) -> None:
+    with pytest.raises(CrawlerError, match="一个订阅都没有登记"):
+        resolve_subscription("nope", env.subs_repo)
+
+
+# ---------------------------------------------------------------------------
+# id 集合差分源（nber）：窗内先差分，再走后续链路
+# ---------------------------------------------------------------------------
+
+
+def test_id_set_diff_source_reports_nothing_new_on_the_second_run(env: _Env) -> None:
+    venues = {"nber": _mock_venue()}
+    context = env.context(
+        fetcher=AdapterFetcher({"nber": MockPlatformAdapter()}, venues=venues), venues=venues
+    )
+    subscription = _load_one(env, sources={"nber": {"programs": ["AP"]}})
+
+    first = run_watch(context, subscription, now=DAY)
+    stored = env.subs_repo.read_watermark(subscription.name)
+    second = run_watch(context, subscription, now=DAY)
+
+    assert first.new_count == CORPUS_SIZE
+    assert stored["sources"]["nber"]["kind"] == "id_set"  # type: ignore[index]
+    assert len(stored["sources"]["nber"]["ids"]) == CORPUS_SIZE  # type: ignore[index]
+    # 第二次：id 差分在**本地过滤之前**就把重叠部分摘掉了（seen 仍是整窗）。
+    assert second.seen_count == CORPUS_SIZE
+    assert second.new_count == 0
+
+
+# ---------------------------------------------------------------------------
+# 本地过滤 / 谓词分流 / 条目字段（用可控语料的 stub fetcher）
+# ---------------------------------------------------------------------------
+
+
+class _StubFetcher:
+    """可控语料的 `SourceFetcher`：按源给定 stub，并记录收到的请求。"""
+
+    def __init__(self, corpus: dict[str, list[PaperStub]]) -> None:
+        self.corpus = corpus
+        self.requests: list[SourceRequest] = []
+
+    def fetch(self, request: SourceRequest) -> list[PaperStub]:
+        self.requests.append(request)
+        return list(self.corpus.get(request.source, []))
+
+
+def _stub(
+    title: str,
+    doi: str,
+    *,
+    year: int | None = 2026,
+    meta: tuple[tuple[str, str], ...] = (),
+) -> PaperStub:
+    return PaperStub(
+        title=title, identifiers=(("doi", doi),), year=year, authors=("Ada Lovelace",), meta=meta
+    )
+
+
+def test_local_filters_apply_and_matched_rules_reach_the_report(env: _Env) -> None:
+    corpus = {
+        "crossref": [
+            _stub("Agentic tool use in LLMs", "10.1/a", meta=(("categories", "cs.AI, cs.LG"),)),
+            _stub("Quantum agents", "10.1/b"),  # exclude_regex 命中 → 剔除
+            _stub("Unrelated topology", "10.1/c"),  # title_regex_any 未命中 → 剔除
+            _stub("Agent memory", "10.1/d", year=None),  # min_year 声明下 year 缺失 → 剔除
+        ]
+    }
+    fetcher = _StubFetcher(corpus)
+    subscription = _load_one(
+        env,
+        filters={
+            "title_regex_any": ["agent"],
+            "exclude_regex": ["quantum"],
+            "min_year": 2024,
+        },
+    )
+
+    summary = run_watch(env.context(fetcher=fetcher), subscription, now=DAY)
+
+    assert summary.seen_count == 4
+    assert [entry.title for entry in summary.entries] == ["Agentic tool use in LLMs"]
+    entry = summary.entries[0]
+    assert entry.matched_rules == ("title_regex_any[0]", "min_year")
+    assert entry.categories == ("cs.AI", "cs.LG")
+    assert entry.url == "https://doi.org/10.1/a"  # 无 meta['url'] → DOI resolver 兜底
+    assert entry.authors == ("Ada Lovelace",)
+
+
+def test_meta_url_wins_over_the_doi_resolver(env: _Env) -> None:
+    fetcher = _StubFetcher(
+        {"crossref": [_stub("T", "10.1/x", meta=(("url", "https://example.test/x"),))]}
+    )
+    subscription = _load_one(env)
+    summary = run_watch(env.context(fetcher=fetcher), subscription, now=DAY)
+    assert summary.entries[0].url == "https://example.test/x"
+
+
+def test_entry_url_is_empty_without_doi_or_meta(env: _Env) -> None:
+    fetcher = _StubFetcher({"crossref": [PaperStub(title="T", identifiers=(("arxiv", "2601.1"),))]})
+    subscription = _load_one(env)
+    summary = run_watch(env.context(fetcher=fetcher), subscription, now=DAY)
+    assert summary.entries[0].url == ""
+    assert summary.entries[0].categories == ()
+
+
+def test_source_scoped_predicate_only_reaches_its_own_source(env: _Env) -> None:
+    """ssrn 的主题谓词不得误伤 crossref 的结果（`is_source_scoped_predicate` 分流）。
+
+    信号未接线时 `ssrn.topic_filter` 是 pass-through 放行（T3 兜底，随本卡修）——两源
+    因此都应完整通过，且 ssrn 一侧的命中记录里带上该谓词名。
+    """
+    ssrn_venue = VenueSpec(
+        id="ssrn",
+        kind="preprint_channel",
+        names=VenueNames(full="SSRN"),
+        field=["econ"],
+        fulltext_source="ssrn",
+        quirks={"topic_filter": "econ_fin"},
+    )
+    fetcher = _StubFetcher(
+        {
+            "ssrn": [_stub("Asset pricing puzzle", "10.2139/ssrn.1")],
+            "crossref": [_stub("Asset pricing anomalies", "10.1/j")],
+        }
+    )
+    subscription = _load_one(
+        env,
+        sources={"ssrn": {"networks": ["FEN"]}, "crossref": {"issns": ["0000-0000"]}},
+    )
+    context = env.context(fetcher=fetcher, venues={"ssrn": ssrn_venue, "crossref": _mock_venue()})
+
+    summary = run_watch(context, subscription, now=DAY)
+
+    by_source = {entry.source: entry for entry in summary.entries}
+    assert set(by_source) == {"ssrn", "crossref"}
+    assert "ssrn.topic_filter" in by_source["ssrn"].matched_rules
+    assert by_source["crossref"].matched_rules == ()
+
+
+# ---------------------------------------------------------------------------
+# 失败处置
+# ---------------------------------------------------------------------------
+
+
+class _FailingFetcher:
+    def __init__(self, failing: set[str], corpus: dict[str, list[PaperStub]]) -> None:
+        self.failing = failing
+        self.corpus = corpus
+
+    def fetch(self, request: SourceRequest) -> list[PaperStub]:
+        if request.source in self.failing:
+            raise CrawlerError(ErrorClass.TRANSIENT, f"{request.source} exploded")
+        return list(self.corpus.get(request.source, []))
+
+
+def test_partial_source_failure_keeps_the_other_source_and_exits_one(env: _Env) -> None:
+    fetcher = _FailingFetcher({"ssrn"}, {"crossref": [_stub("Kept", "10.1/k")]})
+    subscription = _load_one(
+        env, sources={"ssrn": {"networks": ["FEN"]}, "crossref": {"issns": ["0000-0000"]}}
+    )
+
+    summary = run_watch(env.context(fetcher=fetcher), subscription, now=DAY)
+
+    assert summary.outcome is WatchOutcome.OK  # 成功源照常入库
+    assert summary.ingested_count == 1
+    assert [failure.source for failure in summary.failures] == ["ssrn"]
+    assert summary.failures[0].error_class == "transient"
+    assert exit_code_for([summary]) == 1  # 但退出码非零：挂掉的源必须可见
+    # 失败源不进 watermark（成功源才推进）。
+    assert set(env.subs_repo.read_watermark(subscription.name)["sources"]) == {  # type: ignore[arg-type]
+        "crossref"
+    }
+
+
+def test_all_sources_failing_marks_the_run_failed_and_ingests_nothing(env: _Env) -> None:
+    fetcher = _FailingFetcher({"crossref"}, {})
+    subscription = _load_one(env)
+
+    summary = run_watch(env.context(fetcher=fetcher), subscription, now=DAY)
+
+    assert summary.outcome is WatchOutcome.FAILED
+    assert summary.ingested_count == 0
+    assert env.papers() == 0
+    assert env.subs_repo.read_watermark(subscription.name) == {}
+    assert len(env.runs(subscription.name)) == 1  # 失败也留痕
+    assert exit_code_for([summary]) == 1
+
+
+# ---------------------------------------------------------------------------
+# `ingest: metadata+pdf` → 派生取回链任务（不 drain，不改 runner）
+# ---------------------------------------------------------------------------
+
+
+def _registry_with(tmp_path: Path, spec: VenueSpec) -> VenueRegistry:
+    venues_dir = tmp_path / "venues"
+    venues_dir.mkdir(exist_ok=True)
+    (venues_dir / f"{spec.id}.yaml").write_text(
+        yaml.safe_dump(spec.model_dump(mode="json"), allow_unicode=True), encoding="utf-8"
+    )
+    registry = VenueRegistry(
+        {"crossref": MockPlatformAdapter(), "mock_platform": MockPlatformAdapter()}
+    )
+    registry.load_dirs([venues_dir])
+    return registry
+
+
+def test_metadata_plus_pdf_derives_resolve_tasks_within_the_limit(
+    env: _Env, tmp_path: Path
+) -> None:
+    spec = _mock_venue("crossref_backed", fulltext_source="crossref")
+    registry = _registry_with(tmp_path, spec)
+    subscription = _load_one(env, actions={"ingest": "metadata+pdf", "auto_fetch_limit": 2})
+
+    summary = run_watch(env.context(registry=registry), subscription, now=DAY)
+
+    assert summary.ingested_count == CORPUS_SIZE
+    assert summary.fetched_count == 2  # auto_fetch_limit 上限内
+    pending = env.queue.by_state("PENDING")
+    assert [row["kind"] for row in pending] == ["resolve", "resolve"]
+    assert {row["venue_id"] for row in pending} == {"crossref_backed"}
+    # 派生的 paper 已绑定 venue（`_stage_resolve` 靠 paper.venue_id 路由）。
+    bound = env.db.query("SELECT COUNT(*) AS n FROM paper WHERE venue_id IS NOT NULL")
+    assert int(bound[0]["n"]) == 2
+
+
+def test_metadata_only_derives_nothing(env: _Env, tmp_path: Path) -> None:
+    registry = _registry_with(tmp_path, _mock_venue("crossref_backed", fulltext_source="crossref"))
+    subscription = _load_one(env, actions={"ingest": "metadata", "auto_fetch_limit": 5})
+
+    summary = run_watch(env.context(registry=registry), subscription, now=DAY)
+
+    assert summary.fetched_count == 0
+    assert env.queue.by_state("PENDING") == []
+
+
+def test_zero_auto_fetch_limit_derives_nothing(env: _Env, tmp_path: Path) -> None:
+    registry = _registry_with(tmp_path, _mock_venue("crossref_backed", fulltext_source="crossref"))
+    subscription = _load_one(env, actions={"ingest": "metadata+pdf", "auto_fetch_limit": 0})
+    summary = run_watch(env.context(registry=registry), subscription, now=DAY)
+    assert summary.fetched_count == 0
+
+
+def test_derivation_is_skipped_loudly_when_no_venue_serves_the_source(
+    env: _Env, tmp_path: Path
+) -> None:
+    """没有以该源为 fulltext_source 的 venue → 跳过派生，不产出永远 BLOCKED 的任务。"""
+    registry = _registry_with(
+        tmp_path, _mock_venue("mock_journal")
+    )  # fulltext_source=mock_platform
+    subscription = _load_one(env, actions={"ingest": "metadata+pdf", "auto_fetch_limit": 3})
+
+    summary = run_watch(env.context(registry=registry), subscription, now=DAY)
+
+    assert summary.ingested_count == CORPUS_SIZE
+    assert summary.fetched_count == 0
+    assert env.queue.by_state("PENDING") == []
+
+
+def test_derivation_is_skipped_when_registry_or_queue_is_absent(env: _Env) -> None:
+    subscription = _load_one(env, actions={"ingest": "metadata+pdf", "auto_fetch_limit": 3})
+    context = env.context()
+    context.queue = None
+
+    summary = run_watch(context, subscription, now=DAY)
+
+    assert summary.fetched_count == 0
+
+
+# ---------------------------------------------------------------------------
+# 空目录 / 空计划
+# ---------------------------------------------------------------------------
+
+
+def test_empty_subscription_dir_loads_nothing(env: _Env) -> None:
+    assert load_subscriptions(env.subs_dir, env.subs_repo) == []
+
+
+def test_run_watch_all_with_no_subscriptions_returns_the_path_only(env: _Env) -> None:
+    summaries, path = run_watch_all(env.context(), [], now=DAY)
+    assert summaries == []
+    assert path.name == "daily-2026-07-26.md"
+    assert isinstance(write_daily_report(summaries, path, day=DAY), str)
+
+
+def test_run_summary_default_clock_is_used_when_now_is_omitted(env: _Env) -> None:
+    """`now=None` 走真实 UTC 今日（唯一时钟入口的另一分支）。"""
+    subscription = _load_one(env)
+    summary: RunSummary = run_watch(env.context(), subscription)
+    assert summary.outcome is WatchOutcome.OK
+    assert summary.finished_at >= summary.started_at
+
+
+def test_resolve_subscription_returns_the_stored_subscription(env: _Env) -> None:
+    """库内取回走 `Subscription.from_stored`（与文件加载同一校验器）——声明序须保住。"""
+    loaded = _load_one(env)
+    resolved = resolve_subscription(loaded.name, env.subs_repo)
+    assert resolved == loaded
+
+
+def test_repeat_derivation_does_not_recount_already_queued_tasks(env: _Env, tmp_path: Path) -> None:
+    """派生计数只算 `enqueued`：同一 paper 的 PENDING resolve 已在队列里就不是新工作。"""
+    registry = _registry_with(tmp_path, _mock_venue("crossref_backed", fulltext_source="crossref"))
+    subscription = _load_one(
+        env,
+        actions={"ingest": "metadata+pdf", "auto_fetch_limit": 2},
+        guard={"max_new_per_run": 200, "dedupe_against_library": False},
+    )
+    context = env.context(registry=registry)
+
+    first = run_watch(context, subscription, now=DAY)
+    second = run_watch(context, subscription, now=DAY)
+
+    assert first.fetched_count == 2
+    assert second.fetched_count == 0  # 同键 PENDING 已存在 → duplicate，不重复计数
+    assert len(env.queue.by_state("PENDING")) == 2
+
+
+def test_min_year_with_all_years_present_drops_nothing(env: _Env) -> None:
+    """声明 min_year 但语料年份齐全 → 无"因 year 缺失被排除"计数（该分支的另一侧）。"""
+    fetcher = _StubFetcher({"crossref": [_stub("Agent A", "10.1/a"), _stub("Agent B", "10.1/b")]})
+    subscription = _load_one(env, filters={"min_year": 2024})
+
+    summary = run_watch(env.context(fetcher=fetcher), subscription, now=DAY)
+
+    assert summary.new_count == 2
+    assert all("min_year" in entry.matched_rules for entry in summary.entries)
+
+
+def test_id_set_diff_falls_back_to_title_for_identifier_less_stubs(env: _Env) -> None:
+    """`PaperStub.identifiers` 契约是"至少 1 个"，真空了也不该炸掉整轮——退回标题差分。"""
+    fetcher = _StubFetcher({"nber": [PaperStub(title="Untitled anchor", identifiers=())]})
+    subscription = _load_one(env, sources={"nber": {"programs": ["AP"]}})
+    context = env.context(fetcher=fetcher, venues={"nber": _mock_venue()})
+
+    first = run_watch(context, subscription, now=DAY)
+    stored = env.subs_repo.read_watermark(subscription.name)
+
+    assert first.new_count == 1
+    assert stored["sources"]["nber"]["ids"] == ["title:Untitled anchor"]  # type: ignore[index]

@@ -23,6 +23,8 @@ downloads/
 !docs/**/*.pdf-placeholder
 
 # ---- 运行时 ----
+# watch 日报（design/05 §7 落 docs/reports/watch/；plan §4 T5 裁决③：运行产物不入 git）
+docs/reports/watch/
 *.log
 *.sqlite
 *.sqlite3

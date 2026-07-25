@@ -105,9 +105,22 @@ from paper_crawler.pipeline import PipelineRunner, RunReport, Selector, StageCon
 from paper_crawler.ratelimit import RateLimiter
 from paper_crawler.registry import VenueRegistry
 from paper_crawler.storage.db import Database
-from paper_crawler.storage.repo import Repo
+from paper_crawler.storage.repo import Repo, SubscriptionRepo
+from paper_crawler.subs.report import render_daily
+from paper_crawler.subs.types import RunSummary
+from paper_crawler.subs.watch import (
+    AdapterFetcher,
+    SourceFetcher,
+    WatchContext,
+    exit_code_for,
+    load_subscriptions,
+    overload_brief,
+    resolve_subscription,
+    run_watch_all,
+    write_daily_report,
+)
 from paper_crawler.tasks import TASK_STATES, TaskQueue
-from paper_crawler.types import SessionHandle
+from paper_crawler.types import SessionHandle, VenueSpec
 from paper_crawler.useragent import build_user_agent
 from paper_crawler.verify import VerifyIssue, verify_store
 
@@ -828,6 +841,147 @@ def _watch_summary_line(venue_id: str, report: RunReport) -> str:
         f"{venue_id}: 失败 {report.failed} 阻塞 {report.blocked} "
         f"跳过 {report.skipped}{f' | {detail}' if detail else ''}"
     )
+
+
+# -- subs watch（订阅增量；Phase 6 T5）------------------------------------------
+#
+# 命名说明（合并期须知）：design/05 §6 的命令面写作 `crawler watch <subscription-name>`，
+# 但 `watch` 这个名字在 Phase 2 T6 已被 **preprint venue 的当月桶元数据增量**占用（上一节，
+# 有 AC-2.3/D-018 的 7 日 runbook 依赖）。两者语义不同、`--all` 的含义更是互斥（"全部
+# preprint venue" vs "全部订阅"），把订阅 watch 直接挂成 `watch` 会静默改掉既有命令的行为。
+# 故订阅增量落在 `crawler subs watch`——沿 `venues`/`config`/`auth` 三个既有子命令组的
+# house style；既有 `crawler watch <venue>` 逐字不变。命令名归属的最终裁决（是否让订阅
+# watch 收编 `watch`、venue watch 另迁）留给 controller，本卡不擅自定夺（plan §1-7）。
+
+subs_app = typer.Typer(no_args_is_help=True, help="主题订阅（design/09）的增量运行。")
+app.add_typer(subs_app, name="subs")
+
+
+def _subscriptions_dir(env: CliEnv) -> Path:
+    """订阅目录：`<home>/subscriptions` 优先，否则仓库根的 `subscriptions/`。
+
+    订阅文件是**用户内容**，与 venue 注册表同属"声明面"，但 `Config` 尚无
+    `subscriptions_dir` 键（design/10 未定义，本卡不擅自扩配置面）。故按两段查找：
+    隔离 HOME 下有 `subscriptions/` 就用它（测试与多套配置并存的场景），否则退到相对
+    当前工作目录的 `subscriptions/`（design/09 §2 字面路径，同 `canary_record_path`
+    的"预期在仓库根调用"惯例）。
+    """
+    scoped = env.ctx.config.home / "subscriptions"
+    return scoped if scoped.is_dir() else Path("subscriptions")
+
+
+def _watch_source_venues(env: CliEnv) -> dict[str, VenueSpec]:
+    """按**源 id** 索引的 `VenueSpec`：registry 内以该源为 `fulltext_source` 的 id 序首个。
+
+    两个消费方：①T2 编译器读 ssrn 的 `quirks.topic_filter`（检查单 #10 的接线）；
+    ②`AdapterFetcher` 拿它当 adapter 方法的 venue 入参。缺失的源由 `AdapterFetcher`
+    合成最小 spec 兜底（其 `venue_for` docstring）。
+    """
+    venues: dict[str, VenueSpec] = {}
+    for spec in env.ctx.registry.all():
+        venues.setdefault(spec.fulltext_source, spec)
+    return venues
+
+
+def _watch_fetcher_factory(env: CliEnv) -> SourceFetcher:
+    """订阅 watch 的源侧拉取件（模块级函数 = 测试注入 seam，同 `_http_client_factory`）。
+
+    `load_adapters()` 取新鲜实例后注入 `_build_env` 已装配好的共享 `http`（同 UA、同
+    限速器实例）——与 `_prepare_unpaywall_adapter`/`_prepare_enrich_source` 同款装配，
+    使订阅拉取与 pipeline 走同一份限速预算，不另开一条绕过限速的通道。限速域登记复用
+    `_register_rate_domains`（canary 侧同款需求：注入了带 limiter 的共享 client 后，
+    未登记域会让逐请求 `acquire(host)` 撞 CONFIG fail-fast）——不在此另写一份同形循环。
+    """
+    adapters = load_adapters()
+    bind_http_client(adapters, env.http)
+    _register_rate_domains(env, adapters)
+    return AdapterFetcher(adapters, venues=_watch_source_venues(env))
+
+
+def _subs_summary_line(summary: RunSummary) -> str:
+    """每订阅单行摘要（`subs watch` 终端输出；日报是 markdown 的那份，此处是人读速览）。"""
+    preview = "（预览，未入库）" if summary.dry_run else ""
+    line = (
+        f"{summary.subscription}: 状态 {summary.outcome.value}{preview} "
+        f"候选 {summary.seen_count} 新增 {summary.new_count} 入库 {summary.ingested_count} "
+        f"派生取回 {summary.fetched_count} 累计库存 {summary.library_total}"
+    )
+    if summary.failures:
+        sources = ", ".join(sorted({failure.source for failure in summary.failures}))
+        line += f" | 失败源: {sources}"
+    return line
+
+
+@subs_app.command("watch")
+def subs_watch(
+    name: Annotated[str | None, typer.Argument(help="订阅名（省略时需 --all）")] = None,
+    all_: Annotated[bool, typer.Option("--all", help="跑 subscriptions/ 下全部订阅")] = False,
+    dry_run: Annotated[
+        bool,
+        typer.Option("--dry-run", help="只报数：不入库、不派生任务、不推 watermark、不写记录"),
+    ] = False,
+    home: HomeOpt = None,
+    verbose: VerboseOpt = False,
+) -> None:
+    """订阅增量运行（design/09；cron/launchd 触发的一次性运行，无常驻进程）。
+
+    先把 `subscriptions/` 顶层的订阅文件加载并 upsert 入库（文件是权威，watermark
+    等运行期状态不受影响），再按 `<NAME>`/`--all` 选目标逐个跑：编译→增量窗→per-source
+    拉取→本地过滤→护栏→入库→推进 watermark→落运行记录，多订阅合并出一份
+    `docs/reports/watch/daily-YYYY-MM-DD.md`。
+
+    `--dry-run`（**新订阅上线前必跑**，design/09 §6.2）只报数：不入库、不派生取回任务、
+    不推 watermark、不写运行记录，日报只回显到 stdout 不落盘——但拉取/过滤/护栏判定
+    全程照跑，因此该跑出的报错一条都不会被跳过。
+
+    退出码：0 正常（含零新增）/ 1 有源失败 / 2 用法·配置错（缺参数、未知订阅、订阅
+    文件非法）/ 3 无失败但有护栏熔断。
+    """
+    if name is None and not all_:
+        _usage_error("必须指定 NAME 或 --all")
+    if name is not None and all_:
+        _usage_error("NAME 与 --all 不能同时指定")
+
+    with _env(home, verbose, dry_run=dry_run) as env:
+        _emit_missing_email_warning(env)
+        subs_repo = SubscriptionRepo(env.ctx.db)
+        try:
+            loaded = load_subscriptions(_subscriptions_dir(env), subs_repo)
+            targets = loaded if all_ else [resolve_subscription(str(name), subs_repo)]
+        except CrawlerError as exc:
+            _echo_error(exc)
+            raise typer.Exit(code=2) from exc
+
+        if not targets:
+            typer.echo("没有已登记的订阅，watch 无目标（把订阅 YAML 放进 subscriptions/）。")
+            raise typer.Exit(code=0)
+
+        context = WatchContext(
+            db=env.ctx.db,
+            repo=env.ctx.repo,
+            subs_repo=subs_repo,
+            fetcher=_watch_fetcher_factory(env),
+            registry=env.ctx.registry,
+            queue=env.ctx.queue,
+            venues=_watch_source_venues(env),
+        )
+        # 时钟只取一次并贯穿全程（日报路径/渲染标题/增量窗同日，避免跨午夜时三者分裂）。
+        today = dt.datetime.now(dt.UTC).date()
+        summaries, report_path = run_watch_all(context, targets, dry_run=dry_run, now=today)
+
+        for summary in summaries:
+            typer.echo(_subs_summary_line(summary))
+            brief = overload_brief(summary)
+            if brief is not None:
+                typer.echo(f"  熔断简报: {brief}")
+
+        if dry_run:
+            typer.echo(render_daily(summaries, date=today.isoformat()))
+        else:
+            write_daily_report(summaries, report_path, day=today)
+            typer.echo(f"日报已落盘：{report_path}")
+        exit_code = exit_code_for(summaries)
+    raise typer.Exit(code=exit_code)
 
 
 # -- status -------------------------------------------------------------------

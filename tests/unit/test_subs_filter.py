@@ -8,6 +8,7 @@
 from __future__ import annotations
 
 import dataclasses
+import logging
 
 import pytest
 
@@ -17,6 +18,7 @@ from paper_crawler.subs.filter import (
     FilteredPaper,
     apply_predicate,
     filter_papers,
+    reset_predicate_warnings,
 )
 from paper_crawler.subs.model import LocalFilter
 from paper_crawler.types import PaperStub
@@ -179,9 +181,41 @@ def test_apply_predicate_ssrn_topic_filter_true_for_econ_fin_field() -> None:
     assert apply_predicate(SSRN_TOPIC_FILTER, stub) is True
 
 
-def test_apply_predicate_ssrn_topic_filter_false_without_field() -> None:
+def test_apply_predicate_ssrn_topic_filter_passes_through_when_signal_missing(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    """信号未接线（无 `openalex_field`）→ **放行** + 一次性 WARNING（T5 随卡小修）。
+
+    与 `adapters.ssrn.parse.topic_field_matches(None) is False` 的原语语义刻意相反：
+    那条路径上信号本该有，缺失即"不属于"；订阅域这条通道**整条 enrich 都还没接**，
+    照原语会把整份 ssrn 订阅静默清零（模块 docstring "信号缺失时的兜底"段）。
+    """
+    reset_predicate_warnings()
     stub = _stub("Unrelated Engineering Paper")  # 无 openalex_field meta
-    assert apply_predicate(SSRN_TOPIC_FILTER, stub) is False
+
+    with caplog.at_level(logging.WARNING, logger="paper_crawler"):
+        assert apply_predicate(SSRN_TOPIC_FILTER, stub) is True
+        # 第二条同样放行，但提示只出一次（"每 run 每源一条"，不逐条刷屏）。
+        assert apply_predicate(SSRN_TOPIC_FILTER, _stub("Another")) is True
+
+    warnings = [r for r in caplog.records if SSRN_TOPIC_FILTER in r.getMessage()]
+    assert len(warnings) == 1
+    assert "LocalFilter-only" in warnings[0].getMessage()
+
+
+def test_apply_predicate_ssrn_topic_filter_still_judges_when_signal_present(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    """有信号就照走 `topic_field_matches`——兜底只在"缺信号"这一格生效，不改判定语义。"""
+    reset_predicate_warnings()
+    econ = _stub("WP", meta=(("openalex_field", "Economics, Econometrics and Finance"),))
+    engineering = _stub("WP", meta=(("openalex_field", "Engineering"),))
+
+    with caplog.at_level(logging.WARNING, logger="paper_crawler"):
+        assert apply_predicate(SSRN_TOPIC_FILTER, econ) is True
+        assert apply_predicate(SSRN_TOPIC_FILTER, engineering) is False
+
+    assert [r for r in caplog.records if SSRN_TOPIC_FILTER in r.getMessage()] == []
 
 
 def test_apply_predicate_ssrn_topic_filter_false_for_other_field() -> None:

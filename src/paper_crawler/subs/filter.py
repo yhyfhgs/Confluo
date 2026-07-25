@@ -34,6 +34,29 @@ econ/fin 主题近似过滤，design/adapters/ssrn.md §3）尚未有 DSL 字段
 当前唯一登记项 `SSRN_TOPIC_FILTER`（`"ssrn.topic_filter"`）直接复用
 `adapters.ssrn.parse.topic_field_matches`/`stub_topic_field`（Phase 5 既有纯函数，
 `stub.meta` 读 `TOPIC_FIELD_META_KEY`）——不复制这套近似过滤逻辑第二份。
+
+### 信号缺失时的兜底：pass-through 放行（T5 随卡小修，controller 裁决 2026-07-26）
+
+`topic_field_matches(None)` 在**原语层**是 `False`（"无法确认 econ/fin 归属时诚实
+排除"，见其 docstring）——那是 Phase 5 的 `filter_stubs_by_topic` 语义：那条路径上
+信号**本该有**（openalex enrich 已跑过），缺失即真实的"不属于"。
+
+订阅域的处境相反：`stub.meta['openalex_field']` 这个 enrich 信号**当前生产路径根本
+不产**（ssrn 走 crossref 前缀枚举，无此键；openalex `_meta_of` 亦未接线——见
+`compile.py::_compile_ssrn` docstring 的"执行前提"段）。若直接沿用原语语义，整条
+ssrn 订阅会被这个谓词**清零**：用户看到的是一份永远空白的日报，而不是一条"这层
+过滤没生效"的提示。故本层包一道兜底——
+
+- `stub_topic_field(stub) is None` → **放行**（pass-through），并经 obslog 记一条
+  一次性 WARNING（每次 watch 运行每个源一条，由 `reset_predicate_warnings()` 在
+  run 起点复位）；
+- 非 None → 照走 `topic_field_matches`（信号一旦接线，语义立刻回到精确判定，本层
+  自动退场，无需再改一次代码）。
+
+方向性取舍与 `filter_papers` 的 `min_year` 那条**刻意相反**：`min_year` 缺 year 时
+排除，因为 year 是普遍可得的字段，缺失是数据个例；此处缺的是**整条通道都还没接的
+信号**，"全都排除"表达的不是数据事实而是接线状态。宁可多收噪声（用户看得见、可
+用 `exclude_regex` 收窄），不可静默清零（用户看不见、无从自证）。
 """
 
 from collections.abc import Callable, Iterable, Sequence
@@ -42,6 +65,7 @@ from re import IGNORECASE, Pattern
 from re import compile as re_compile
 
 from paper_crawler.adapters.ssrn.parse import stub_topic_field, topic_field_matches
+from paper_crawler.obslog import log_event
 from paper_crawler.subs.model import LocalFilter
 from paper_crawler.subs.types import LOCAL_PREDICATE_MIN_YEAR, LOCAL_PREDICATE_TITLE_REGEX_ANY
 from paper_crawler.types import PaperStub
@@ -53,10 +77,46 @@ PredicateFn = Callable[[PaperStub], bool]
 # `quirks.topic_filter: econ_fin` 的运行期落点）。`"<source>.<name>"` 命名约定。
 SSRN_TOPIC_FILTER = "ssrn.topic_filter"
 
+# 已提示过"enrich 信号未接线"的谓词名（模块级；`reset_predicate_warnings()` 复位）。
+# 一次 watch 运行内每个谓词只提示一条——逐条目提示会把日志刷成噪声，而这条提示描述的
+# 是**接线状态**（整条通道的属性），不是某一条目的属性。
+_SIGNAL_WARNED: set[str] = set()
+
+
+def reset_predicate_warnings() -> None:
+    """复位"信号缺失"一次性提示的记账（每次 watch 运行的每个源起点调用一次）。
+
+    `subs/watch.py` 在逐源执行前调用，使"每 run 每源一条"成立；不调用亦不影响过滤
+    结果，只是提示退化为"进程内一条"。
+    """
+    _SIGNAL_WARNED.clear()
+
+
+def _warn_signal_missing_once(predicate: str, detail: str) -> None:
+    """同一谓词在本次运行内只提示一次（模块 docstring "信号缺失时的兜底"段）。"""
+    if predicate in _SIGNAL_WARNED:
+        return
+    _SIGNAL_WARNED.add(predicate)
+    log_event("WARNING", f"{predicate}: {detail}", stage="watch")
+
+
+def _ssrn_topic_filter(stub: PaperStub) -> bool:
+    """`ssrn.topic_filter` 的执行体：信号缺失 → 放行 + 一次性提示；有信号 → 照判。"""
+    field_value = stub_topic_field(stub)
+    if field_value is None:
+        _warn_signal_missing_once(
+            SSRN_TOPIC_FILTER,
+            "enrich 信号未接线（stub.meta['openalex_field'] 缺失），"
+            "topic_filter 退化为 LocalFilter-only（本次全部放行）",
+        )
+        return True
+    return topic_field_matches(field_value)
+
+
 # 谓词注册表（任务卡要求的"简单 dict 映射"）：名字 → 可调用。新增源专属谓词只需在此
 # 添加一项，无需改动 `filter_papers` 的控制流。
 PREDICATE_REGISTRY: dict[str, PredicateFn] = {
-    SSRN_TOPIC_FILTER: lambda stub: topic_field_matches(stub_topic_field(stub)),
+    SSRN_TOPIC_FILTER: _ssrn_topic_filter,
 }
 
 
@@ -154,4 +214,5 @@ __all__ = [
     "PredicateFn",
     "apply_predicate",
     "filter_papers",
+    "reset_predicate_warnings",
 ]
