@@ -1,7 +1,7 @@
 # 文档索引（唯一权威清单）
 
 > 本表是全仓库文档的单一事实来源（D-008）。任何新增/改名/废弃文档必须同一提交内更新本表（AGENTS.md §4）。
-> status 取值与流转见 [process/status-workflow.md](process/status-workflow.md)。最后盘点：2026-07-26（Phase 5 终审后独立全库审计 + progress/INDEX 终态同步）。
+> status 取值与流转见 [process/status-workflow.md](process/status-workflow.md)。最后盘点：2026-07-26（Phase 6 R1 browser-fetch 详设草案登记）。
 
 ## 按意图导航（先于逐目录清单）
 
@@ -37,7 +37,7 @@
 | [plan/progress.md](plan/progress.md) | 项目进度跟踪 | approved | 2026-07-24 |
 | [plan/decision-log.md](plan/decision-log.md) | 架构决策记录（D-001…D-029） | approved | 2026-07-24 |
 
-## design/ — 核心设计（00–09）
+## design/ — 核心设计（00–11）
 
 | 路径 | 标题 | status | updated |
 |---|---|---|---|
@@ -53,6 +53,7 @@
 | [design/09-search-filter.md](design/09-search-filter.md) | 主题订阅与精确搜索 | approved | 2026-07-20 |
 | [design/auth-framework.md](design/auth-framework.md) | 认证框架实现级详设（07/04 的实现级扩展：四 Provider + 凭证库 + CLI + pipeline 接缝） | implemented | 2026-07-24 |
 | [design/10-config-layout.md](design/10-config-layout.md) | 配置归集与分层规范（D-025：config/ 文件夹 + 加载链 + 敏感键护栏） | implemented | 2026-07-23 |
+| [design/11-browser-fetch.md](design/11-browser-fetch.md) | Browser-Fetch 横切件详设（三消费方统一浏览器取回通道 + CF-403 冷却缺口方案；D-029 案 B 承接） | draft | 2026-07-26 |
 
 ## design/adapters/ — 平台 adapter 详设
 
