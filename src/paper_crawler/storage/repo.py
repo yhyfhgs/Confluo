@@ -50,6 +50,10 @@ _EVIDENCE_STRENGTH: dict[str, float] = {_WEAK_SIGNAL_REASON: 0.0, _IDENTIFIER_CO
 # 未知来源（无 provenance 记录的存量字段，如 upsert_paper pull 路径所写）的优先级视为
 # **最高**——只补空、绝不被覆盖，保守保护既有（多为官方 proceedings）数据。
 _UNKNOWN_RANK = float("inf")
+# 同级 tie-break 中按"值本身的自然序"取小的字段（year 为 int、pub_date 为 ISO 前缀可比字符串
+# ——两者的 min 都等于"更早的那次观测"）。其余字段是自由文本，走"更长者胜"复合序，
+# 见 `_prefers_on_tie`。
+_ORDERED_SCALAR_FIELDS = frozenset({"year", "pub_date"})
 
 
 @dataclass(frozen=True)
@@ -132,20 +136,36 @@ def _rank(priority: Mapping[str, int], source: str) -> float:
     return _UNKNOWN_RANK if known is None else float(known)
 
 
-def _prefers_on_tie(incoming: object, current: object) -> bool:
+def _prefers_on_tie(field_key: str, incoming: object, current: object) -> bool:
     """**同级**来源（=同一来源的二次观测，六枚举优先级两两互异）异值时的确定性 tie-break。
 
     `SOURCE_PRIORITY`（D-021，design/06 §3 来源优先级表）只对**跨源**冲突定序；同源二次观测
     给出不同值时表无话可说，原实现落到「先到者胜」——即注入顺序决定终值（审计 P3
-    「同源二次观测异值先到胜」）。此处改判为「取值序更小者」：`min` 是幂等+交换+结合的格
-    运算，故同一批观测无论以何种顺序到达都收敛到同一终值（AC-3.4）。语义上对 year/pub_date
-    等于「取更早的那次观测值」（保守：不让同源复查悄悄推着记录漂移），对文本字段则是任意但
-    **全序确定**的选择——同源异值本身即源头数据不自洽，此处只保证可复现，不假装能判优劣。
+    「同源二次观测异值先到胜」）。此处按字段类别取两种**全序**，故 `min` 仍是幂等+交换+结合
+    的格运算，同一批观测无论以何种顺序到达都收敛到同一终值（AC-3.4）：
+
+    - **有序标量**（`_ORDERED_SCALAR_FIELDS`：year/pub_date）→ 纯 `min`，即"取更早的那次观测
+      值"：保守，不让同源复查悄悄把发表时间往后推。
+    - **文本**（title/abstract/首作者姓氏/meta 各键）→ **更长者胜，等长取字典序小者**（复合序
+      `(-len, str)`，仍是全序）。纯字典序对文本有系统性偏向：前缀恒胜——`"A Study"` 恒压制
+      `"A Study (Retracted)"`、摘要截断版恒压制完整版，而同源二次观测最常见的形态恰是**信息
+      增补**（补全摘要、补副标题、补撤稿/勘误标记）。
+
+    **剩余代价（具名披露）**：更长者胜会让"解析漂移带来的尾部垃圾"取胜——例如页面改版后
+    abstract 抓进了导航栏/版权声明/参考文献尾巴、或重复段落拼接，这类值比正确值长，会顶掉
+    干净值。取舍理由：①该形态是**偶发**的解析缺陷（另有 adapter 侧"宁缺勿污"约束兜底），而
+    截断/前缀压制是**系统性**的——纯字典序下完整值恒输，且无从察觉；②被压制的一方可从
+    `meta_json._field_tie` 取证（本次收敛记录了哪些字段发生过同源异值），Phase 7
+    `dedupe review` 可据此复核；③两种取舍都不改变顺序无关性，此处只在"注定要丢一个值"时
+    选丢失代价较小的一侧，不假装能判语义优劣。
     跨源冲突仍完全由优先级表裁决，本函数不参与。
     """
     if isinstance(incoming, int) and isinstance(current, int):
         return incoming < current
-    return str(incoming) < str(current)
+    incoming_text, current_text = str(incoming), str(current)
+    if field_key in _ORDERED_SCALAR_FIELDS:
+        return incoming_text < current_text
+    return (-len(incoming_text), incoming_text) < (-len(current_text), current_text)
 
 
 def _evidence_strength(reason: object) -> float:
@@ -285,10 +305,14 @@ class Repo:
         （scheme=doi 的值小写化/剥前缀，其余原样）——与 `MergeEngine` 共用同一归一入口，
         使 pull 路径与 aggregator 路径的 DOI 键收敛到同一规范形（AC-3.1 混合双路无条件命中）。
 
-        **title_norm 维护**：新建 paper 时一并写 `title_norm`（schema v2 列，`normalize_title`）
-        ——使 pull 路径 paper 也进弱信号候审匹配面（否则 title_norm=NULL 对 MergeEngine 的
-        title 匹配不可见），且与 0002 迁移的存量回填口径一致。title 是强合并锚点、恒不更新，
-        故 title_norm 仅在建行时写、合并分支不动。
+        **title_norm 维护**：新建 paper 时一并写 `title_norm`（schema v2 列，`normalize_title`），
+        与 0002 迁移的存量回填口径一致。title 是强合并锚点、恒不更新，故 title_norm 仅在建行时
+        写、合并分支不动。
+        **本列已不是弱信号匹配面**（Phase 6 F1）：候审匹配改由 `paper_weak_key`（观测级键集合，
+        schema v3）承载，pull 路径不写该表——故 upsert_paper 建的 paper 仍**不进**弱信号匹配面，
+        直到某次 `MergeEngine.ingest` 并入它时记下那次观测的键（与改造前"无 `_first_author` 即
+        无从确认姓氏、保守不建 candidate"的实际行为一致）。`title_norm` 列现留两个用途：
+        0003 迁移回填存量历史键的取数源，以及归一标题的展示/检索面（`idx_paper_title_norm`）。
         """
         identifiers = tuple(
             normalize_identifier(scheme, value) for scheme, value in stub.identifiers
@@ -558,6 +582,17 @@ class Repo:
         （连带 title_norm 列）/abstract/year/pub_date/首作者姓氏（`authors`→`_first_author`）/
         每个 meta 键（`meta:<k>`）。跨级由优先级表定序、同级由确定性 tie-break 定序，两者都
         与到达顺序无关，故任意注入顺序收敛到同一终态。
+
+        **取证抓手** `meta_json._field_tie`（字段键集合）：标记"**当前生效来源**对该字段给出过
+        互不相同的多个值、当前值是 `_prefers_on_tie` 择一的结果"，为 Phase 7 `dedupe review`
+        留复核面（`_prefers_on_tie` docstring 具名披露的剩余代价即从这里取证）。维护规则两条：
+        同级异值比较时**加**记号；该字段被**严格更高优先源**改写时**清**记号（旧记号属于已被
+        取代的来源）。二者使记号恒等于"终局赢家来源自身给出过几个不同值"——只与输入集合有关：
+        赢家来源的首个观测落库后，更低源再也改不动该字段，其后赢家的每个观测都必然走到同级
+        比较，故赢家的自相矛盾在任意到达序下都会被记到；败者来源的自相矛盾则一律不记
+        （它们的值本就被优先级表淘汰，不是 tie-break 丢的）。若只做"集合并、不清记号"，
+        `[openalex_a, openalex_b, dblp]` 会留记号而 `[dblp, openalex_a, openalex_b]` 不会
+        ——顺序敏感（补强后的 property 生成器实测捕获）。
         """
         row = conn.execute(
             "SELECT title, abstract, year, pub_date, meta_json FROM paper WHERE id = ?",
@@ -567,6 +602,8 @@ class Repo:
         raw_src = meta_obj.get("_field_src")
         field_src: dict[str, str] = dict(raw_src) if isinstance(raw_src, dict) else {}
         col_updates: dict[str, object] = {}
+        tie_fields: set[str] = set()  # 本次同源异值 → 加取证记号
+        upgraded_fields: set[str] = set()  # 本次被更高优先源改写 → 清旧取证记号
 
         def better(field_key: str, incoming_value: object, current_value: object) -> bool:
             if _is_empty(incoming_value):
@@ -578,9 +615,15 @@ class Repo:
                 return False
             incoming_rank = _rank(incoming.priority, incoming.source)
             current_rank = _rank(incoming.priority, current_source)
-            if incoming_rank != current_rank:
-                return incoming_rank > current_rank
-            return _prefers_on_tie(incoming_value, current_value)
+            if incoming_rank > current_rank:
+                upgraded_fields.add(field_key)
+                return True
+            if incoming_rank < current_rank:
+                return False
+            if incoming_value == current_value:  # 同源同值 = 幂等重复，非冲突
+                return False
+            tie_fields.add(field_key)  # 同源异值：无论谁胜都留取证痕迹
+            return _prefers_on_tie(field_key, incoming_value, current_value)
 
         if better("title", incoming.title, row["title"]):
             col_updates["title"] = incoming.title
@@ -607,6 +650,14 @@ class Repo:
 
         if field_src:
             meta_obj["_field_src"] = field_src
+        if tie_fields or upgraded_fields:  # 加新记号、清被更高源取代的旧记号（见 docstring）
+            previous_tie = meta_obj.get("_field_tie")
+            known = {str(key) for key in previous_tie} if isinstance(previous_tie, list) else set()
+            live_ties = (known - upgraded_fields) | tie_fields
+            if live_ties:
+                meta_obj["_field_tie"] = sorted(live_ties)  # 排序落盘使 JSON 稳定可比
+            else:
+                meta_obj.pop("_field_tie", None)
         new_meta_json = (
             json.dumps(meta_obj, ensure_ascii=False, sort_keys=True) if meta_obj else None
         )
@@ -722,9 +773,12 @@ class Repo:
     ) -> None:
         """建/刷新 candidate_duplicate(decided=NULL)：**一对 paper 至多一行**（任一方向）。
 
-        - 新边：端点按各自最小 identifier 定向（`_paper_min_identifier`，与到达顺序无关）。
-        - 已有边：查两个方向后再决定——`(from,to,kind)` 主键不认方向，若只看单向，identifier
-          集合增长导致的定向翻转会给同一对 paper 落出第二行。
+        - 新边：端点按各自最小 identifier 定向（`_paper_min_identifier`）。该锚是**建边时刻的
+          快照、不是不变量**——此后 paper 补进更小的 identifier 也不重定向，故不同注入序可能
+          落出方向相反的同一条边。`candidate_duplicate` 语义上是无序对，消费方按无序对处理
+          （merge.py 裁决 5）。
+        - 已有边：查两个方向后再决定——`(from,to,kind)` 主键不认方向，若只看单向，上述定向
+          翻转会给同一对 paper 落出第二行。
         - 刷新规则：已人工裁决（`decided` 非空）的边**绝不动**；未裁决的边仅当新证据强度
           **不弱于**既有（`_EVIDENCE_STRENGTH`，未知 reason 视为最强不可覆盖）才写——弱信号
           刷新共享键全交、identifier 冲突可升级既有弱信号边，反向绝不降级。绝不删行。

@@ -319,9 +319,11 @@ def dump_paper_relations(db_path: Path) -> list[tuple[object, ...]]:
     冲突 / 迁移 doi 碰撞会写 candidate_duplicate，AC-3.4 顺序无关属性测试须逐行比对它。
 
     `from_paper`/`to_paper`（ULID，跨库不可比）翻译为 paper 复合业务键
-    `(title, primary_identifier)`（同 `canonical_dump` 规则 2）；两端点按 repr 排序使
-    **方向无关**（写侧已按最小 identifier 定向，dump 侧再排序作双重保险，跨库/跨注入顺序
-    的两库对同一对 paper 得同一行）。行按整行 repr 排序，不受插入顺序影响。返回
+    `(title, primary_identifier)`（同 `canonical_dump` 规则 2）；两端点按 repr 排序归一为
+    **无序对**——这不是"双重保险"而是**必需**：写侧的定向锚（建边时刻两 paper 各自最小
+    identifier）是快照、**非不变量**，paper 后补进更小的 identifier 不会重定向，故同一批观测
+    的不同注入序可能把同一条边写成相反方向（merge.py 裁决 5 已如实记载；`candidate_duplicate`
+    语义本就是无序对"这两篇疑似同一著作"）。行按整行 repr 排序，不受插入顺序影响。返回
     `[(endpoints, kind, confidence, evidence_json, decided), ...]`，`endpoints` 为已排序
     的两 paper_key 元组。只读。
     """

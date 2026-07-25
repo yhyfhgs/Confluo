@@ -2,7 +2,7 @@
 title: 数据模型与入库设计
 status: implemented
 owner: fable5
-updated: 2026-07-24
+updated: 2026-07-26
 ---
 
 # 06 · 数据模型与入库设计
@@ -116,6 +116,19 @@ CREATE TABLE paper_relation (       -- D-007
   decided TEXT,                     -- null=待审 | merged | rejected
   PRIMARY KEY (from_paper, to_paper, kind)
 );
+-- kind=candidate_duplicate 语义上是**无序对**（"这两篇疑似同一著作"）：from/to 由建边时刻
+-- 两 paper 各自最小 identifier 定序，是快照而非不变量（后补更小 identifier 不重定向），
+-- 消费方一律按无序对处理，不得依赖 from/to 字面顺序。
+
+CREATE TABLE paper_weak_key (       -- schema v3（0003）：弱信号候审的**观测级**匹配键集合
+  paper_id TEXT NOT NULL REFERENCES paper,
+  title_norm TEXT NOT NULL,         -- 该次观测标题的归一形（ids.normalize_title）
+  first_author TEXT NOT NULL,       -- 该次观测的首作者姓氏归一形
+  PRIMARY KEY (paper_id, title_norm, first_author)
+);
+-- 一 paper 多行 = 它历次观测给出的键全集：单调只增、不被 §3 的字段级收敛改写，故候审终态
+-- 是输入集合（而非注入顺序）的函数 —— AC-3.4 的实现基石，见 §3。索引
+-- idx_paper_weak_key_lookup(title_norm, first_author) 服务"谁曾观测过这个键"的反查。
 
 CREATE TABLE fulltext (
   paper_id TEXT PRIMARY KEY REFERENCES paper,
@@ -144,8 +157,8 @@ CREATE TABLE subscription_run (
 
 ## 3. 去重与合并（ingest 阶段算法）
 
-**强合并（自动）**：新纸带 identifier (scheme,value) 已存在 → 直接并入既有 paper（字段按"来源优先级表"补缺不覆盖：出版社/官方 proceedings > Crossref > OpenAlex > S2 > 启发式）。
-**弱信号（进候审）**：无共同 identifier 时计算：标题规范化（去标点/大小写/LaTeX 宏）精确匹配 + 首作者姓氏一致 → `candidate_duplicate(confidence)`；**绝不自动合并**（D-007：WP↔刊发版标题常变，宁可两条待审）。
+**强合并（自动）**：新纸带 identifier (scheme,value) 已存在 → 直接并入既有 paper（字段按"来源优先级表"补缺不覆盖：出版社/官方 proceedings > Crossref > OpenAlex > S2 > 启发式）。字段级收敛的完整判据（实现：`storage/repo.py::_converge_fields`，权威说明见 `merge.py` 裁决点 2）：新值仅在①现值为空、②新源优先级**严格更高**、或③**同源二次观测**按确定性 tie-break 胜出时写入；未记录 provenance 的存量值（pull 路径所写）视为最高优先只补空。tie-break（③）取全序而非"先到者胜"，否则注入顺序即决定终值：文本字段（title/abstract/首作者/meta）**更长者胜、等长取字典序小者**（同源复查最常见形态是信息增补，纯字典序会让截断/前缀版恒压制完整版），year/pub_date 取更早者。被 tie-break 压制掉不同值的字段记入 `meta_json._field_tie`（仅记**当前生效来源**的自相矛盾），供 Phase 7 `dedupe review` 复核。
+**弱信号（进候审）**：无共同 identifier 时计算：标题规范化（去标点/大小写/LaTeX 宏）精确匹配 + 首作者姓氏一致 → `candidate_duplicate(confidence)`；**绝不自动合并**（D-007：WP↔刊发版标题常变，宁可两条待审）。匹配键是**观测级**的（Phase 6 F1 修正）：每次 ingest 把该次观测的 `(title_norm, 首作者姓氏)` 并入 `paper_weak_key`（§2，单调只增），新键即触发重判，对每个曾持同键的 paper 建边——终态候审边 = 「键集合有交的每一对 paper」，与注入顺序无关（AC-3.4）。取 paper **行**的当前 title_norm/首作者做键则不成立：二者参与上条的字段收敛，后到的高优先源改写标题即抹掉匹配面，同批观测按不同序注入产生不同候审边（审计 P1 实测）。代价如实记：观测级键不含"A 观测标题 × B 观测姓氏"的跨观测拼接键，故对仅靠拼接键才撞得上的候审**漏标**（fail-safe 侧；行态键随收敛漂移，不可序无关化）。
 **preprint_of 建边**：Crossref/OpenAlex 的 preprint 关系字段、arXiv 的 `journal_ref/doi` 回填字段、SSRN→DOI 提示 → 自动建 `preprint_of`（保留双条 paper 双份全文）。
 **审核工具**（Phase 7）：`crawler dedupe review` 逐条展示证据，人工 merge/reject；merge 保留两 paper 行并置 `same_as(decided=merged)`，查询层聚合——**物理不删行**，可回滚。
 
@@ -195,4 +208,5 @@ data/
 
 | # | 日期 | 修订 | 依据 |
 |---|---|---|---|
+| 2 | 2026-07-26 | **实现级演进（AC-3.4 顺序无关修复）**：§2 新增 `paper_weak_key` 表（schema v3 / `0003_paper_weak_key.sql`，纯附加、方言中性、Python 步回填存量键）+ `paper_relation` 的 candidate_duplicate 无序对语义注记；§3 补齐字段级收敛的第③条（同源二次观测确定性 tie-break + `meta_json._field_tie` 取证）与弱信号匹配键改为观测级键集合（含漏标代价如实记）。实体模型语义不变（新表是弱信号匹配面的倒排索引，不引入新实体），故 status 保持 `implemented`。 | Phase 6 F1（[phase6-implementation-plan §4 F1](../plan/phase6-implementation-plan.md)）；缺陷台账 [post-phase5-audit §3 P1-1 + P3「同源二次观测异值先到胜」](../reports/2026-07-24-post-phase5-audit.md)；**ADR D-031 待 controller 落笔**（decision-log 补记后本行补链接） |
 | 1 | 2026-07-24 | **开放修订议题登记（非设计变更）**：`asset` 表落盘路径布局（§4 `data/pdf/{venue_id}/{year}/{paper_ulid}.pdf`）不含 `version`（§2 `asset.version`，如 `publishedVersion`）判别位——OA-fallback 产生的 OA 副本 asset 与原平台 asset（`version=None`）仅靠内部 ULID 区分，版本身份并存但路径本身不可读出版本语义；该并存不覆盖行为已被 `test_no_entitlement_triggers_oa_fallback_direct_fetch` 验证，但设计文档层面此前未显式承认此路径布局缺口。本条**仅登记议题**，不改 §2/§4 既有设计；是否需在路径中纳入 version 判别位留待后续修订评估。 | Phase 4 T7a 发现；[2026-07-23-phase4-report.md §5「asset 路径 version 债务」](../reports/2026-07-23-phase4-report.md) + [AC-4 离线汇总记录 §5「asset 路径 version 债务（→ T8 / design 修订）」](../testing/records/2026-07-23-ac4-acceptance.md)；phase4-report §6 开工检查单 #1② 移交 |

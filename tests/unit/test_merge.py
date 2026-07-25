@@ -16,7 +16,7 @@ import pytest
 
 from paper_crawler.merge import MergeEngine
 from paper_crawler.storage.db import Database
-from paper_crawler.storage.repo import Repo
+from paper_crawler.storage.repo import Repo, _evidence_strength
 from paper_crawler.types import PaperStub, VenueSpec
 
 
@@ -64,9 +64,13 @@ def _relations(repo: Repo) -> list[object]:
     return repo.db.query("SELECT * FROM paper_relation")
 
 
-def _field_src(repo: Repo, paper_id: str) -> dict[str, str]:
+def _meta(repo: Repo, paper_id: str) -> dict[str, object]:
     row = repo.db.query("SELECT meta_json FROM paper WHERE id = ?", (paper_id,))[0]
-    return dict(json.loads(row["meta_json"]).get("_field_src", {}))
+    return dict(json.loads(row["meta_json"]))
+
+
+def _field_src(repo: Repo, paper_id: str) -> dict[str, str]:
+    return dict(_meta(repo, paper_id).get("_field_src", {}))  # type: ignore[arg-type]
 
 
 def _weak_keys(repo: Repo) -> list[tuple[str, str]]:
@@ -74,6 +78,22 @@ def _weak_keys(repo: Repo) -> list[tuple[str, str]]:
         "SELECT title_norm, first_author FROM paper_weak_key ORDER BY title_norm, first_author"
     )
     return [(r["title_norm"], r["first_author"]) for r in rows]
+
+
+def _weak_keys_of(repo: Repo, paper_id: str) -> list[tuple[str, str]]:
+    rows = repo.db.query(
+        "SELECT title_norm, first_author FROM paper_weak_key WHERE paper_id = ? "
+        "ORDER BY title_norm, first_author",
+        (paper_id,),
+    )
+    return [(r["title_norm"], r["first_author"]) for r in rows]
+
+
+def _paper_id_by_identifier(repo: Repo, scheme: str, value: str) -> str:
+    rows = repo.db.query(
+        "SELECT paper_id FROM identifier WHERE scheme = ? AND value = ?", (scheme, value)
+    )
+    return str(rows[0]["paper_id"])
 
 
 # -- source 校验 -------------------------------------------------------------
@@ -178,44 +198,71 @@ def test_convergence_meta_keys_union_and_priority(env: tuple[Repo, MergeEngine, 
     assert meta["jel"] == "G12"  # 新键并入
 
 
-def test_same_source_reobservation_tie_break_takes_smaller_value(
-    env: tuple[Repo, MergeEngine, Path],
+@pytest.mark.parametrize("reversed_order", [False, True])
+def test_same_source_reobservation_tie_break_is_deterministic(
+    env: tuple[Repo, MergeEngine, Path], reversed_order: bool
 ) -> None:
-    """同源二次观测异值 → 取值序更小者（确定性 tie-break，审计 P3「先到胜」修复）。
+    """同源二次观测异值 → 确定性 tie-break（审计 P3「先到胜」修复），两种到达序同终值。
 
-    优先级表只对跨源定序；同源两次给出不同值时原实现"先到者胜"=顺序敏感。取 min 使两种
-    到达顺序收敛同一终值（本例反向序由 `test_merge_property.py` 的全排列属性统一锁）。
+    文本（abstract/title）**更长者胜**（同源复查最常见形态是信息增补）；有序标量
+    （year/pub_date）取 min（= 更早的那次观测）。
     """
     repo, engine, _ = env
-    engine.ingest(
-        _stub(title="T", ids=(("doi", "10.1/a"),), abstract="b-abs", year=2020, pub_date="2020-02"),
-        source="crossref",
+    first = _stub(
+        title="T",
+        ids=(("doi", "10.1/a"),),
+        abstract="short abstract",
+        year=2020,
+        pub_date="2020-02",
     )
-    engine.ingest(
-        _stub(title="T", ids=(("doi", "10.1/a"),), abstract="a-abs", year=2019, pub_date="2019-01"),
-        source="crossref",
+    second = _stub(
+        title="T",
+        ids=(("doi", "10.1/a"),),
+        abstract="short abstract, now with the full text",
+        year=2019,
+        pub_date="2019-01",
     )
+    order = [second, first] if reversed_order else [first, second]
+    for stub in order:
+        engine.ingest(stub, source="crossref")
+
     paper = _papers(repo)[0]
-    assert paper["abstract"] == "a-abs"  # 字符串值序取小
-    assert paper["year"] == 2019  # 数值取小（= 更早的那次观测）
+    assert paper["abstract"] == "short abstract, now with the full text"  # 文本取长
+    assert paper["year"] == 2019  # 有序标量取小
     assert paper["pub_date"] == "2019-01"
     assert _field_src(repo, paper["id"])["year"] == "crossref"  # 同源，provenance 不变
+    # 取证抓手：三个字段都发生过同源异值（集合并，与到达顺序无关）。
+    assert _meta(repo, paper["id"])["_field_tie"] == ["abstract", "pub_date", "year"]
 
 
-def test_same_source_reobservation_keeps_smaller_value_when_larger_arrives_later(
+def test_equal_length_text_tie_break_takes_lexicographically_smaller(
     env: tuple[Repo, MergeEngine, Path],
 ) -> None:
-    """同上的反向到达序：小值先到、大值后到 → 终值仍为小值（不覆盖）。"""
+    """文本等长 → 复合序退到字典序取小（`(-len, str)` 仍是全序，min 幂等/交换/结合）。"""
     repo, engine, _ = env
-    engine.ingest(
-        _stub(title="T", ids=(("doi", "10.1/a"),), abstract="a-abs", year=2019), source="crossref"
-    )
-    engine.ingest(
-        _stub(title="T", ids=(("doi", "10.1/a"),), abstract="b-abs", year=2020), source="crossref"
-    )
+    engine.ingest(_stub(title="T", ids=(("doi", "10.1/a"),), abstract="b-abs"), source="crossref")
+    engine.ingest(_stub(title="T", ids=(("doi", "10.1/a"),), abstract="a-abs"), source="crossref")
+    assert _papers(repo)[0]["abstract"] == "a-abs"
+
+
+def test_field_tie_mark_cleared_when_higher_priority_source_takes_over(
+    env: tuple[Repo, MergeEngine, Path],
+) -> None:
+    """更高优先源改写该字段 → 清掉旧来源留下的 tie 记号（记号只描述**当前生效来源**）。
+
+    否则 `[openalex_a, openalex_b, dblp]` 留记号而 `[dblp, openalex_a, openalex_b]` 不留
+    ——记号本身变成顺序敏感面（补强后的 property 生成器实测捕获过该形态）。
+    """
+    repo, engine, _ = env
+    engine.ingest(_stub(title="T", ids=(("doi", "10.1/a"),), year=2001), source="openalex")
+    engine.ingest(_stub(title="T", ids=(("doi", "10.1/a"),), year=2002), source="openalex")
+    paper_id = _papers(repo)[0]["id"]
+    assert _meta(repo, paper_id)["_field_tie"] == ["year"]
+
+    engine.ingest(_stub(title="T", ids=(("doi", "10.1/a"),), year=2003), source="dblp")
     paper = _papers(repo)[0]
-    assert paper["abstract"] == "a-abs"
-    assert paper["year"] == 2019
+    assert paper["year"] == 2003  # dblp > openalex：跨级由优先级表裁决
+    assert "_field_tie" not in _meta(repo, paper_id)
 
 
 # -- 未知 provenance 保护（并存策略核心） -------------------------------------
@@ -450,28 +497,75 @@ def test_candidate_pair_single_row_and_evidence_accumulates_shared_keys(
 def test_weak_signal_does_not_downgrade_identifier_conflict_evidence(
     env: tuple[Repo, MergeEngine, Path],
 ) -> None:
-    """已有 identifier-conflict 边的一对 paper 再撞弱信号键 → 不降级为弱信号证据。"""
+    """已有 identifier-conflict 边的一对 paper 再撞弱信号键 → 不降级为弱信号证据。
+
+    用例刻意让桥接 stub 给胜者带来一个**新**键（胜者原键与之不同），否则 `_apply_weak_signal`
+    在"键已存在"处早返回、强度守卫根本走不到（空转用例杀不掉守卫变异体）。胜者由 identifier
+    数唯一确定（P1 两个、P2 一个），不依赖 ULID 平局。
+    """
     repo, engine, _ = env
-    engine.ingest(
-        _stub(title="Alpha Study", ids=(("doi", "10.1/a"),), authors=("Jane Smith",)),
-        source="official",
-    )
-    engine.ingest(
-        _stub(title="Alpha Study", ids=(("arxiv", "2401.9"),), authors=("John Smith",)),
-        source="official",
-    )
-    engine.ingest(  # 桥接 stub：两 paper 冲突 → identifier-conflict 边
+    engine.ingest(  # P1：2 个 identifier → 冲突裁决的胜者
         _stub(
             title="Alpha Study",
+            ids=(("doi", "10.1/a"), ("openalex", "W1")),
+            authors=("Jane Smith",),
+        ),
+        source="official",
+    )
+    engine.ingest(  # P2：异标题异姓氏 → 此刻与 P1 无弱信号
+        _stub(title="Gamma Study", ids=(("arxiv", "2401.9"),), authors=("Bob Jones",)),
+        source="official",
+    )
+    assert _relations(repo) == []
+
+    engine.ingest(  # 桥接 stub：冲突建边，且给胜者带来 P2 的键 → 走到强度守卫
+        _stub(
+            title="Gamma Study",
             ids=(("doi", "10.1/a"), ("arxiv", "2401.9")),
-            authors=("Jill Smith",),
+            authors=("Bob Jones",),
         ),
         source="crossref",
     )
+    winner_id = _paper_id_by_identifier(repo, "openalex", "W1")
+    assert ("gamma study", "jones") in _weak_keys_of(repo, winner_id)  # 守卫确实被走到
     rels = _relations(repo)
     assert len(rels) == 1
-    assert "identifier-conflict" in rels[0]["evidence_json"]  # 强证据留存
+    assert "identifier-conflict" in rels[0]["evidence_json"]  # 强证据留存、未被弱信号覆盖
     assert rels[0]["confidence"] == 0.9
+
+
+def test_conflict_path_records_observation_key_for_later_weak_signal(
+    env: tuple[Repo, MergeEngine, Path],
+) -> None:
+    """冲突并入路径也记本次观测的键：后到的同键 stub 必须被候审（删该记键调用即红）。"""
+    repo, engine, _ = env
+    engine.ingest(
+        _stub(
+            title="Alpha Study",
+            ids=(("doi", "10.1/a"), ("openalex", "W1")),
+            authors=("Jane Smith",),
+        ),
+        source="official",
+    )
+    engine.ingest(
+        _stub(title="Beta Study", ids=(("arxiv", "2401.9"),), authors=("Bob Jones",)),
+        source="official",
+    )
+    engine.ingest(  # 桥接 stub 携第三个键（Delta/Nguyen），并入胜者
+        _stub(
+            title="Delta Study",
+            ids=(("doi", "10.1/a"), ("arxiv", "2401.9")),
+            authors=("Carl Nguyen",),
+        ),
+        source="crossref",
+    )
+    result = engine.ingest(  # 后到的独立 work 与该键相撞
+        _stub(title="Delta Study", ids=(("doi", "10.1/z"),), authors=("Ann Nguyen",)),
+        source="crossref",
+    )
+    assert result.action == "candidate_flagged"
+    winner_id = _paper_id_by_identifier(repo, "openalex", "W1")
+    assert ("delta study", "nguyen") in _weak_keys_of(repo, winner_id)
 
 
 def test_decided_candidate_edge_is_never_rewritten(
@@ -502,11 +596,28 @@ def test_decided_candidate_edge_is_never_rewritten(
     assert rels[0]["evidence_json"] == before
 
 
-@pytest.mark.parametrize("stored_evidence", [None, '"not-an-object"'])
+def test_unregistered_evidence_reason_ranks_strongest() -> None:
+    """未登记的 evidence reason（如 0002 迁移写的 doi 归一碰撞边）强度视为最强——直测默认分支。"""
+    assert _evidence_strength("doi-normalization-collision") == float("inf")
+    assert _evidence_strength(None) == float("inf")  # 读不出 reason 同样视为最强
+    assert _evidence_strength("weak-signal-title-author") < _evidence_strength(
+        "identifier-conflict"
+    )
+    assert _evidence_strength("identifier-conflict") < _evidence_strength("doi-collision-x")
+
+
+@pytest.mark.parametrize(
+    "stored_evidence",
+    [
+        None,
+        '"not-an-object"',
+        '{"doi_normalized": "10.1/a", "reason": "doi-normalization-collision"}',
+    ],
+)
 def test_unreadable_existing_evidence_is_not_overwritten(
     env: tuple[Repo, MergeEngine, Path], stored_evidence: str | None
 ) -> None:
-    """既有边证据为空/非本模块所写（读不出 reason）→ 视为最强，弱信号不覆盖。"""
+    """既有边证据读不出 reason / reason 未登记（如迁移的 doi 归一碰撞）→ 最强，弱信号不覆盖。"""
     repo, engine, _ = env
     engine.ingest(
         _stub(title="Alpha Study", ids=(("doi", "10.1/a"),), authors=("Jane Smith",)), source="s2"
