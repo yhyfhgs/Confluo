@@ -97,6 +97,25 @@ class SubscriptionInvalid(CrawlerError):
         super().__init__(ErrorClass.CONFIG, msg, detail=detail)
 
 
+class WatermarkInvalid(CrawlerError):
+    """watermark 文档（`subscription.watermark_json`，design/09 §5）格式/取值非法；
+    `error_class` 恒 `CONFIG`。
+
+    Phase 6 T4 **纯追加**子类（既有 errors 层级与退出码契约不动）。与
+    `SubscriptionInvalid` 分立而非复用：后者是**用户手写的 DSL** 出错（改 YAML 即可），
+    本类是**运行期状态**损坏（手改库行/旧版本格式/未知 `schema_ver`），处置动作不同
+    （重置游标而非改订阅）——CLI 据类型给不同提示。
+
+    仍归 CONFIG 而非 PARSE：与 `SubscriptionRepo.read_watermark` 对畸形 JSON 的既有
+    分类同口径（损坏的游标若被当成"首跑"会静默重刷全窗——响亮失败优于静默降级）。
+
+    `detail` 存问题定位串（`<订阅|文档>:<字段路径>`）。
+    """
+
+    def __init__(self, msg: str = "invalid watermark", *, detail: str = "") -> None:
+        super().__init__(ErrorClass.CONFIG, msg, detail=detail)
+
+
 @dataclass(frozen=True)
 class RetrySpec:
     """重试规格；`backoff_seconds` 秒值可被 `Config.retry_scale` 缩放。"""
