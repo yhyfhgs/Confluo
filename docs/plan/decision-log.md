@@ -290,3 +290,15 @@ updated: 2026-07-24
 - **同批定稿确认**（§12 裁决点④–⑧）：④ `crawler cooldown` CLI 缓议（登记 Phase 7 检查单候选）；⑤ ★接缝 A-1＝`RENDER_PAGE` 复用既有枚举、不新增 asset state（门控表达 deferred 语义）、aea 产计划改动归实现卡；⑥ 配额口径＝`browser_daily_cap=50` 默认与 VenueSpec 声明取 min；⑦ AC 编号＝临时 AC-BF.x，落地 Phase 转正并回填 FR→AC 映射 + AC-5.1b 承接指针；⑧ S-a（`get_with_meta`）不落。
 - **影响**：11-browser-fetch.md 转 `approved`（实现仍未承诺——落地卡权在 controller，Phase 6 末 stretch 或 Phase 7）；**S-c + E-1 属既有 httpx 路径缺口修复、不依赖横切件实现，立即立卡 F6**（Phase 6 修复批增补，闭合审计处置 #2 CF-403 缺口）；wiley.md §5 与 http.py 的文档/实现漂移随 S-c 自动收口。
 - **落款**：fable 定稿裁决 2026-07-26（R1 opus 起草 + fable 通读全文签署）。
+
+## D-031 弱信号候审匹配键改为观测级键集合（新表 paper_weak_key）+ 同级 tie-break 复合序
+
+- 状态：accepted · 日期：2026-07-26 · 依据：[post-phase5-audit §3](../reports/2026-07-24-post-phase5-audit.md) AC-3.4 P1 + P6-F1 卡（`5130c4a`）+ F1 独立审查（双候选修法反例实测/12 变异体）
+- **背景**：审计实证注入顺序可改变弱信号候审边（ABC→1 边、ACB/CAB→0 边）——根因是匹配键取 paper 行**当前** `title_norm`/`_first_author`，会被高优先源字段收敛改写，抹掉匹配面。
+- **决策**：
+  1. **匹配键 = 观测级键集合**：新表 `paper_weak_key(paper_id, title_norm, first_author)`（schema v3，`0003` 迁移 + 存量回填零倒退零扩张），单调只增、不被收敛改写；新建/强合并/冲突并入三路径均记键并对新键重判候审。终态候审边＝键集合有交的 paper 对（输入集合的函数，与到达序无关）。审计所列两个候选修法（收敛改键后重判/冻结 title_norm）均经审查反例实测证伪。语义代价如实入档：跨观测拼接键（行态键）漏标——该匹配面被证明不可序无关化，漏标方向 fail-safe（D-007「宁可两条待审」不破坏）。
+  2. **同一来源二次观测的 tie-break＝复合全序取 min**：文本字段「更长者胜、等长取字典序小者」（修复纯字典序对信息增补的系统性压制——前缀恒胜会静默丢弃 "(Retracted)" 标记与完整摘要）；`year`/`pub_date` 纯 min（取更早观测，保守）。min 为幂等+交换+结合的半格运算 ⇒ 顺序无关成立。「取新值」方案明确排除（"新"＝到达序，违反 AC-3.4）。
+  3. **取证抓手 `_field_tie`**：tie-break 实际压制不同同源值时在 `meta_json` 记字段键集合（集合并、被更高优先源改写即清——记号本身亦序无关），供 Phase 7 `dedupe review` 审计。
+  4. **候审边 from/to 定向如实化**：定向是建边时刻快照、非不变量（identifier 增长不重定向）；`candidate_duplicate` 语义上是**无序对**，消费方不得依赖 from/to 字面序。
+- **影响**：schema v2→v3（备份链/幂等/失败回滚经审查亲测）；design/06 §2/§3 已随卡更新；`IngestResult` 三枚举与退出码契约不变；行为面为旧候审的向下收敛+同级收敛的确定化，绝不自动合并/不删行语义不变；性能 +0.023ms/ingest 常数开销（审查实测）。
+- **落款**：F1 opus 执行 + opus 审查（放行附条件全闭合，变异体 M3/M4/M8 补锁后 KILLED）+ fable 合并裁决 2026-07-26。
