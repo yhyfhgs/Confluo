@@ -1,6 +1,6 @@
 ---
 title: AC-6 离线端到端验收 + 在线冒烟记录 — 订阅与搜索（Phase 6 T9）
-status: draft
+status: approved
 owner: t9
 updated: 2026-07-26
 ---
@@ -229,3 +229,4 @@ llm-agents 与 econometrics-methods 两个已实跑的 preset，dry-run 净候�
 
 - **T9 初判（2026-07-26）**：AC-6.1/6.2/6.3/6.4 离线判据本次在隔离 worktree 内实跑全部 PASS（§1 逐条 + §5 台账，6 新增 + 既有回归零回归）；在线冒烟延伸如实执行 2/3 preset + 1 次风险量化探测（§3），发现两项已知限制（§4）并已就其中较严重者（arxiv）登记独立后续任务。**判定：建议 PASS，待 controller（fable）亲验**（不自置 approved/签署）。
 - **待办**：controller 亲验载体计数复现 + `docs/testing/acceptance-criteria.md` AC-6 节核对（本次未改动该文件，纯执行留痕）+ §4 已知限制两项的优先级裁决 + §6 偏离项确认后，方可转 `status: approved`。
+- **fable 亲验签署（2026-07-26）**：**AC-6 判定：达成（PASS ×4）**。亲验动作：①验收载体亲跑两轮——T9 合并时 `test_subs_ac6_acceptance.py` 6/6、F7 合并后连同 `test_subs_watch.py` 复跑 48/48；②合并态全量门禁亲跑 3798→3820 passed / 28 skipped / 99.00%→98.99% / EXIT=0 逐位核对；③§4 已知限制裁决——#1 arxiv/#2 ssrn 由 F7 卡在本 Phase 内修复并在线复验（arxiv OAI 窗口下推无 badArgument、ssrn 日窗 25.6× 收敛，§4.1a 台账）；#6 arxiv `search_query` 结构性缺口（title 侧已由 LocalFilter 兑现，abs 谓词与多分类 fan-out 缺）**不阻塞本 Phase**——列账如实、WARNING 响亮化有专测、修复方向已档（quirks fan-out），转 Phase 7 检查单；③nber 隔离在线验证与 asset-pricing CLI 端到端补验转 Phase 7 检查单（T7 已有 5/5 feed [LIVE] 证据，风险低）；④§6 偏离两项确认合理（门禁止损与收窄 venues 的等价性论证成立）。AC-6.1 判定口径 = 离线 7 天推演 DoD + 在线延伸经 F7 修复后 arxiv/ssrn 通道实证可用；AC-6.3 = 离线代理口径（真人工基准 defer 运行期，如实标注）。本记录转 `status: approved`。
