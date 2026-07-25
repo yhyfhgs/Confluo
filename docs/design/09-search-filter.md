@@ -2,7 +2,7 @@
 title: 主题订阅与精确搜索
 status: approved
 owner: fable5
-updated: 2026-07-20
+updated: 2026-07-26
 ---
 
 # 09 · 主题订阅与精确搜索（Topic/Tag DSL）
@@ -78,7 +78,7 @@ guard: {max_new_per_run: 100}
 ## 5. 增量语义（watermark）
 
 - arXiv：`submittedDate` 上界推进，重叠 1 天窗口防边界丢失（announce 延迟）+ id 去重；
-- SSRN：最近 N 页 `abstract_id` 集合差分（无可靠时间过滤时的通用法）；
+- SSRN：~~最近 N 页 `abstract_id` 集合差分（无可靠时间过滤时的通用法）~~ **D-029 联动修订（2026-07-26）**：ssrn 元数据主路径改经 crossref prefix 枚举后，时间过滤已可靠——增量语义改用 `from-created-date` 游标（[ssrn.md §4.2](adapters/ssrn.md) 权威，P6-T4 审查裁定）；
 - OpenAlex/S2/Crossref：`from_*_date` 游标；
 - 全源统一：入库前对 (scheme,value) 去重 → "无重复"由 identifier 主键保证（design/06）。
 

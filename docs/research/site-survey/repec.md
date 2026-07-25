@@ -94,6 +94,10 @@ updated: 2026-07-24
 
 **[UNRESOLVED / PENDING·实现期]**：① OAI-PMH endpoint live 活性与"flaky"程度（本次未探，避环境 TLS-fail 噪声）；② 非 DOI WP 长尾的规模量级（决定未来 enrich 价值）；③ CitEc API live 形态与配额（[DOCS] 未 live 复核）；④ **JEL 分类的历史覆盖率**（[LIVE] 近年 WP 有、1989 无——enrich 价值随年代衰减，实现期抽样评估）。均不阻塞"降级为 enrich 候选"裁决。
 
+### 7.1 P6-R2 裁决注记（2026-07-26 追加）
+
+enrich 通道经 [enrich-eval-p6.md](../enrich-eval-p6.md) 评估 + 6 请求前置探针（**GO**：`Classification-JEL` bulk 面确证、2010 起覆盖 100%、`Publication-Status` 同在；OAI `earliestDatestamp=2021-09-23` ⇒ 全量须 bulk 直连；备镜像 `www2.nber.org` 稳定）——裁决：**再缓，定档 Phase 7 首批候选**（消费端缺位为决定性理由）。任务卡草稿备于 enrich-eval-p6.md §2.7。
+
 ## 附. 请求台账（12 次；[LIVE] 2026-07-24；同域 ≥2s / API ≥1.5s）
 
 | # | 方法 | 目标 | 结果 |

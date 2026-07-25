@@ -159,7 +159,7 @@ updated: 2026-07-26
 - **问题**：crossref 1.41M DOI vs abstract_id 空间 ~7.17M；缺口成因 **① 无 DOI 投稿** / **② 稀疏跳号**混淆，不许假设 crossref 全覆盖。
 - **零-SSRN-接触量化法**（关键约束：**不能**采样整数 abstract_id——多数整数本非存在投稿，混淆两成因；**不能**采样 SSRN 本体 census——Cloudflare 门）：**以 OpenAlex source S4210172589 作 census 代理**（1.63M works，含无 DOI 补录）→ 随机采样 N works → 测「带 DOI 且 crossref 可解析」比率。**首阶估计 = 1.41M / 1.63M ≈ 87%**（openalex-相对覆盖）。细化：N≈1000（95%±3% CI），经 openalex `filter=primary_location.source.id:S4210172589` + 分页随机偏移，credit 预算内（§5 熔断）。
 - **判定阈值**：openalex-相对 DOI 覆盖 **≥90% → crossref 前缀枚举判"覆盖充分"，无候补**；**<90% → 评估候补路径**（下）。
-- **候补路径评估条件（缺口过大时，阶梯）**：(a) OpenAlex 补枚举无-DOI works（但 openalex 已**收回 ENUMERATE**，aggregators §1，且信用计费——需重评能力面）；(b) RePEc/NBER 交叉（Phase 5 同批，econ WP 书目）；(c) 有限度 SSRN 浏览页 census——**触 Cloudflare，须专门 BLOCKED 处置**，红线下降级/可选。默认不启用。
+- **候补路径评估条件（缺口过大时，阶梯）**：(a) OpenAlex 补枚举无-DOI works（但 openalex 已**收回 ENUMERATE**，aggregators §1，且信用计费——需重评能力面）；(b) ~~RePEc/NBER 交叉~~ **已改判「结构性无效·出列」**（SSRN 不在 RePEc archives 全表，[LIVE]；P6-R2 Q7 裁决 2026-07-26）；(c) ~~有限度 SSRN 浏览页 census~~ **已永久否决**（P6-R2 Q8：红线+合规基础缺失+环境不可执行）。**(a) 条件立卡**（P6-R2 Q9：M1-d U2/U3 落 ≥90% 分支，排期 W3 stretch 评估或 defer Phase 7）——权威裁决链见 [enrich-eval-p6.md §6](../../research/enrich-eval-p6.md)。
 - **固有天花板（如实标注）**：本法测「crossref 相对 openalex」覆盖，**非**「crossref 相对 SSRN 真实全库」——后者需 SSRN census（无合规路径）。OpenAlex 自身对 SSRN 的覆盖上界未知，是量化的天花板，记开放问题。
 
 **census 实测记录 [LIVE 2026-07-24]**（P5-M1 在线执行，独立脚本 httpx，非 CI）：

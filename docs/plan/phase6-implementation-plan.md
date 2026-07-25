@@ -95,8 +95,8 @@ updated: 2026-07-26
 #### T4 watermark 增量语义（`subs/watermark`，**opus/opus**，依 T1）
 
 - **范围**：`subs/watermark.py`——per-source 策略（design/09 §5）：arxiv `submittedDate` 上界推进 +
-  重叠 1 天窗防 announce 延迟；openalex/s2/crossref `from_*_date` 游标；ssrn/nber id 集合差分
-  （最近 N 页 abstract_id/RSS id 集合）。序列化进 `subscription.watermark_json`；**推进纪律：run 成功才
+  重叠 1 天窗防 announce 延迟；openalex/s2/crossref/**ssrn** `from_*_date` 游标（ssrn 走 crossref created 轴
+  `from-created-date`——D-029 后站点零接触，id 差分前提已消失，T2/T4 审查联合裁定 2026-07-26）；**nber** id 集合差分（RSS id 集合）。序列化进 `subscription.watermark_json`；**推进纪律：run 成功才
   推进，熔断/失败不推进**（丢失容忍优于重复容忍的反向——宁可重看不可漏看，id 去重兜底重复）。
 - **已裁决歧义**：watermark_json 格式 `{source: {cursor|ids|date}}` 带 `schema_ver` 字段留演进缝。
 - **DoD**：三类策略（日期上界/游标/集合差分）各自 fixture 时间线推演正确；重叠窗重复由去重兜底验证；

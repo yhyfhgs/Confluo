@@ -28,5 +28,5 @@ notes: >
   AC-5.2 调研伦理红线）→ 既有 unpaywall OA-fallback 天然兜底（auth-framework §8.1，10.3386 覆盖
   oa_status=green 预期良好）。全文 Phase 5 先限 w 系列（t 全文路径未勘察实证 → 元数据照收、全文
   路径核验后放开，N-2）。**字段缺口**：Crossref/OpenAlex/站内三路均无 JEL 分类码（唯一已知源
-  RePEc nbr:nberwo ReDIF）——RePEc enrich 挂 Phase 6（N-5，controller 令，不在本 adapter 实现）。
-  NBER WP 常后发 AER/QJE 等期刊版本（preprint_of 高频，D-007 版本关联同挂 Phase 6）。
+  RePEc nbr:nberwo ReDIF）——RePEc enrich 定档 Phase 7 首批候选（N-5；P6-R2 裁决 2026-07-26，探针 GO 见 enrich-eval-p6.md §6）。
+  NBER WP 常后发 AER/QJE 等期刊版本（preprint_of 高频，D-007 版本关联同定档 Phase 7——建边代码现零实现，P6-R2 Q6 入档）。

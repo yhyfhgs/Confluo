@@ -1,6 +1,6 @@
 ---
 title: R2 合并评估：repec aggregator-enrich 通道 + ssrn 覆盖候补 ladder
-status: draft
+status: approved
 owner: fable5
 updated: 2026-07-26
 ---
@@ -414,8 +414,44 @@ ssrn 语料是 141 万篇——**repec enrich 的覆盖面比 ssrn 小两个数�
 
 ---
 
+## 6. 定稿裁决附录（fable 2026-07-26 签署；本节为 §4 十三项的权威结论）
+
+### 6.1 M1-d 实测回填（U1–U5）
+
+| # | 结论 | 数据（[LIVE 2026-07-26 M1-d]，详见 [ssrn.md §9.1 附录](../design/adapters/ssrn.md)） |
+|---|---|---|
+| U1 | **接受** | `has_doi:false` filter 组合实测成功；无-DOI 切片 `primary_location.source.id` 口径 **229,102** 条 / `locations.source.id` 宽口径 **285,262** 条（与 §3.1 推算 CI 吻合） |
+| U2 | **5/5 可提取** → §3.2 判定落 **≥90% 分支** | `landing_page_url` 正则出 `abstract_id` 5/5 命中（2 种 URL 变体）；可产 `(ssrn, abstract_id)` 强锚点 |
+| U3 | 5/5 完整 | title/authors/publication_date/abstract 索引全非空 |
+| U4 | 未判定（样本过小） | 5 条内零杂质；DOI 侧对照 0.58% 作先验，实现卡沿用 `skipped_non_ssrn` 护栏 |
+| U5 | 未测（顺带项） | 不影响 go/no-go |
+| 翻页/成本 | cursor 两页零 ID 重叠；全量 ~1,146 页 ≈ $0.11（advisory `cost_usd` 口径） | — |
+
+### 6.2 repec 前置探针结果（P1–P3，6/6 请求，报告归档于执行台账）
+
+**GO**——P1：JEL 在 bulk ReDIF 面确证（字段 `Classification-JEL`，w35506 = `D1; J13; J15` 与 HTML 勘察逐字节吻合）；覆盖率 1989=0% / 2000=87.4% / **2010 起=100%**（远好于保守估计，带 JEL 篇数量级 ~3 万+）；`Publication-Status`（wp↔published）同在 bulk 面。P2：OAI 端点活，但 `earliestDatestamp=2021-09-23` ⇒ **增量面仅覆盖 2021-09 起，全量快照必须走 bulk 直连**；flaky 程度降级实现期验证。P3：主镜像 `repec.nber.org` 1 次连接层失败（样本=1 不定性），备镜像 `www2.nber.org` 4/4 稳定——实现期以后者为主或运行时探测。合规注记：`www2.nber.org`/`repec.nber.org` robots 未核（原勘察只覆盖 www/back），**立卡后首个动作补两域 robots 核验**。
+
+### 6.3 Q1–Q13 裁决表
+
+| # | 裁决 | 依据要点 |
+|---|---|---|
+| Q1 | **再缓，定档 Phase 7 首批候选**（探针 GO 为绿灯前提入档） | 决定性=消费端缺位（JEL 无 DSL 过滤键 + `preprint_of` 建边零实现）；Phase 7 范围本含 preprint↔published 关联报告，天然合批 |
+| Q2 | 已批准并执行，结果 §6.2 | 占机动预算 6/10 |
+| Q3 | **缓**——`SOURCE_PRIORITY` 扩位随 Phase 7 立卡时 ADR | 不为未立卡的通道预改冻结表 |
+| Q4 | 同 Q3，bulk 快照落盘契约随立卡 ADR | — |
+| Q5 | JEL 不进 design/09 DSL（本 Phase 不动） | T1 冻结件在关键路径 |
+| Q6 | 否；「`preprint_of` 设计有代码无」登记 Phase 7 检查单（T10 落） | 两处 `paper_relation` 插入点均硬编码 `candidate_duplicate` 的事实入档 |
+| Q7 | **(b) RePEc 交叉核对正式改判「结构性无效·出列」** | SSRN 不在 RePEc（442KB archives 全表零 "ssrn"，[LIVE]）——可闭合缺口恒为 0；ssrn.md §9.1 行随本提交回填 |
+| Q8 | **(c) SSRN 浏览页 census 永久否决** | 红线 + 合规基础缺失 + 环境不可执行三条件写死 |
+| Q9 | **(a) OpenAlex 补枚举条件立卡**：U2 落 ≥90% 分支 → 立卡登记，**排期 = W3 stretch 评估**（T5/T9 完成后有余力执行，否则 defer Phase 7） | §3.2 三分支判定规则机械读出；ENUMERATE 顾虑经「ssrn adapter 内部委托」绕开（§3 结构对称论证） |
+| Q10 | 三分支阈值判据转正 | — |
+| Q11 | 21 万条历史 backfill = 一次性运维动作（不入实现卡 DoD） | — |
+| Q12 | backfill 前置要求 free key；不动默认预算值 | 匿名 1000 credits/日先于本地 $0.50 触顶的护栏错配事实入档 |
+| Q13 | ssrn.md §9.1 / repec.md §7 随本提交回填；ADR 缓至 Phase 7 立卡（并 Q3/Q4） | — |
+
 ## 5. 修订记录
 
 | # | 日期 | 修订 | 依据 |
 |---|---|---|---|
 | 1 | 2026-07-26 | 初稿（R2 起草，opus）：① repec enrich 评估（建议再缓 + 探针 + 任务卡草稿）；② ssrn ladder 三路径评估（推荐序 a≫b 出列≫c 否决 + 量化表 + M1-d 供数清单 + 任务卡草稿）；§4 交裁决 13 项 | 既有 [LIVE] 勘察（repec.md / ssrn.md / nber.md / aggregators.md）+ 本仓库源码事实（C1–C13）；**零网络** |
+| 2 | 2026-07-26 | **fable 定稿（draft→approved）**：§6 定稿裁决附录（M1-d U1–U5 回填 + repec 探针 GO + Q1–Q13 裁决表）；联动回填 ssrn.md §9.1 / repec.md §7.1 / design-09 §5 D-029 注记 / plan-T4 卡 ssrn 表述 / nber.yaml N-5 | fable 通读 + M1-d/探针供数 |
