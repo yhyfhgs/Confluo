@@ -2,7 +2,7 @@
 title: 预印本/工作论文平台清单与订阅范围
 status: review
 owner: fable5
-updated: 2026-07-24
+updated: 2026-07-26
 ---
 
 # 预印本 / 工作论文平台
@@ -48,7 +48,11 @@ updated: 2026-07-24
 - 编号：`w{n}`（历史 h/t 前缀已停用）[VERIFIED]；landing `nber.org/papers/w{n}`；
 - **19 个官方 Program**；本项目相关 program 代码 [VERIFIED]：`AP`（Asset Pricing）· `CF`（Corporate Finance）· `EFG`（Fluctuations & Growth）· `IFM`（Intl Finance & Macro）· `ME`（Monetary）；⚠ PE 缩写存两义（Public/Political Economy）未核验，实现期以官网筛选器确认；
 - **无官方 "AI" program**（Economics of AI 是 project/会议，非 program）[VERIFIED]；
-- 增量：program RSS `back.nber.org/rss/new{code}.xml`（19 feed，[LIVE]）；
+- 增量：program RSS `back.nber.org/rss/new{code}.xml`——NBER 官方共 19 个 program，本项目
+  仅对上一条 `[VERIFIED]` 的 5 个（`AP`/`CF`/`EFG`/`IFM`/`ME`）实证收录 feed 映射（5/19，
+  2026-07-26 [LIVE] 逐条 `GET` 验证 200 + 结构；`PE` 两义未核验、其余 14 个未点名代码均
+  排除不猜）；权威映射表见 [`adapters/nber/rss.py`](../../src/paper_crawler/adapters/nber/rss.py)
+  `PROGRAM_FEEDS`，本行不重复维护具体 URL 清单；
 - 访问：>18 月完全开放；<18 月按策略配额——**不利用软门绕过**（D-014，AC-5.2）。
 
 ## 5. CEPR Discussion Papers（**仅元数据**，T2）

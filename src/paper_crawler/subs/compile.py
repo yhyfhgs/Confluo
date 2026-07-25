@@ -127,7 +127,7 @@ _S2_NOTE = (
 
 _NBER_NOTE = (
     "nber programs 下推为参数形态（每 program 一条）；feed 路由归 T7"
-    "（back.nber.org/rss/new{code}.xml，19 feed，nber.md §3.4）；"
+    "（back.nber.org/rss/new{code}.xml，实证 feed 清单见 adapters/nber/rss.py，nber.md §3.4）；"
     "无日期参数——增量走 RSS id 集合差分（T4/T7 卡）"
 )
 

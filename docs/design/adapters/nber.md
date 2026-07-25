@@ -109,20 +109,46 @@ NBER **无 ISSN**，现 `discover_timeline`/`enumerate_issue` 硬走 `/journals/
   免费得（`<description>`），是 OpenAlex 超预算时的 abstract 降级源。**须在 `back.nber.org` 独立桶下发**（≥10s，§4）。
 - Phase 5 交付以 AC-5.2（`pull nber --year` = prefix enumerate + fetch）为准；RSS watch 与订阅 DSL 联动的**完整 7 日增量**
   验收随 Phase 6（沿 D-018 arxiv AC-2.3 分层先例）——本详设给通道设计，不在 Phase 5 判 watch 完整性。
-- **[落地 2026-07-26，Phase 6 T7，检查单 #3]**：program watch 通道实现于
+- **[落地 2026-07-26，Phase 6 T7，phase5-report §6 检查单 #3]**：program watch 通道实现于
   [`adapters/nber/rss.py`](../../../src/paper_crawler/adapters/nber/rss.py)——`PROGRAM_FEEDS`
   program 代码→feed URL 映射表（大小写归一入口 `normalize_program`）、`discover_incremental`
-  （duck-typed 条目流，供 `subs/watch.py` T5 消费）、`to_paper_stub` 字段映射（RSS 字段薄，
-  尽力而为——pub_date 非权威，18 月开放窗判定仍恒经 crossref 侧 pub_date，与本通道解耦）、
-  id 集合差分桥接（`ids_of`/`new_entries`，`subs/watermark.py` T4 正式 `IdSetDiff` 策略落地
-  前的占位，接口形状保持一致）。**证据缺口如实标注（不臆造满 19 个）**：NBER 官方声称 19 个
+  （duck-typed 条目流，供 `subs/watch.py` T5 消费；非生成器外壳，调用即校验，见 rss.py
+  docstring）、`to_paper_stub` 字段映射（RSS 字段薄，尽力而为）。id 集合差分不再由本模块
+  自持占位逻辑——`subs/watermark.py`（T4，已落地 main）的 `IdSetDiff` 策略权威承接，
+  `rss.ids_of(entries)` 只负责产出喂给该策略的保序去重 id 序列。backfill/全量枚举**不变**，
+  仍恒走 §3.1 crossref prefix（本次落地零改动该主干、零改动 `NberAdapter`/`AdapterBase`
+  既有公开签名）。
+
+  **证据分级（2026-07-26 审查后在线补测闭合，5/5 全 [LIVE]）**：NBER 官方声称 19 个
   program，本项目文档（[catalog/preprint-platforms.md](../../catalog/preprint-platforms.md)
-  §4）只对 5 个给出 `[VERIFIED]` 代码 + 语义（`AP`/`CF`/`EFG`/`IFM`/`ME`）——`PROGRAM_FEEDS`
-  只收录这 5 个；官方 `PE` 代码因两义（Public/Political Economy）未核验被明确排除，其余
-  ~13 个未点名代码同样排除而非按命名模式硬猜（猜错代码悄悄产出 404/空 feed，属"看似能跑
-  实为静默失效"，违反响亮失败纪律）；如需扩展先补勘察证据，不改此表。backfill/全量枚举
-  **不变**，仍恒走 §3.1 crossref prefix（本次落地零改动该主干、零改动 `NberAdapter`/
-  `AdapterBase` 既有公开签名）。
+  §4）只对 5 个给出 `[VERIFIED]` 代码 + 语义（`AP`/`CF`/`EFG`/`IFM`/`ME`）——审查后 controller
+  批准动用 phase6 计划 §3 机动预算余量 4 请求，对 `newap`/`newefg`/`newifm`/`newme` 四个原
+  "命名模式外推"的 feed 逐条 `GET`（遵 `Crawl-delay:10`，间隔 ≥10s，UA 表明身份），全部
+  `200 application/xml` 且解析出实际 item（4/5/2/2 条）；`newcf` 沿用 2026-07-24 原勘察
+  [LIVE] 证据。**故 `PROGRAM_FEEDS` 现 5/5 全 [LIVE] 实证**，非"命名模式外推"。补测同时
+  实锤两条此前未知的真实字段形态：① 真实 `<item>` **均无** `<pubDate>` 子元素（呼应
+  site-survey §3 字段表"发表日期 RSS ❌"，而非本模块臆断）；② `<guid>` 真实形态带
+  `#fromrss` 片段（`.../papers/w{n}#fromrss`），`rss.py` 复用的 `parse.doi_from_guid`
+  对此零解析失败（13/13 真实条目）。官方 `PE` 代码因两义（Public/Political Economy）未
+  核验被明确排除（未获在线核验该代码本身含义的预算），其余 ~14 个未点名代码同样排除而非
+  按命名模式硬猜（猜错代码悄悄产出 404/空 feed，属"看似能跑实为静默失效"，违反响亮失败
+  纪律）。**最终口径**：有据可查（含义+代码双确认）的 program 全部实证收录（5/19），
+  其余 14 个官方 program 无码不猜；如需扩展先补勘察证据（含 `PE` 语义核验），不改此表。
+
+  **`year` 字段与 `min_year` 预设的已知残余风险（P1，红线级）**：`to_paper_stub()` 的
+  `year` 从 `pub_date` 派生（`_year_from_date`，对齐 `adapters/crossref/parse.py` 同名
+  函数）——**必须填**，否则与 `subs/filter.py` 的 `min_year` 判据相撞（"已声明 `min_year`
+  但 `year is None`"视为不通过）：T8 仅有的两个带 nber 的预设（`asset-pricing-wp` 的
+  `min_year: 2022`、`corporate-finance` 的 `min_year: 2020`）一旦接线，`year` 恒 `None`
+  会让 nber 恒零产出、且表现为"本周没有新论文"这种不会主动报错的静默失效。**但
+  2026-07-26 在线补测实证：真实 RSS `<item>` 100% 不带 `<pubDate>`**——这意味着
+  `to_paper_stub().year` 在生产环境里几乎恒为 `None`，`min_year` 判据在 nber 源上
+  实际仍会系统性判不通过（这不是代码缺陷：没有日期就是没有日期，不能编造）。**残余
+  风险与兜底方向留给 T5/T9**：T5 编排层可考虑为 nber 增补一个廉价的日期兜底信号（如
+  由 series 号数值大小近似排序、或对已入库 crossref 记录的 `pub_date` 做二次关联），
+  或在 daily-report 标注"日期缺失"提示；T9 AC-6 验收须把"nber pub_date 常缺失、
+  `min_year` 预设可能系统性漏收"列为**已知限制**逐条验收，而非误判 nber watch 功能
+  故障——本详设与 `rss.py` 均已如实标注，不视为本卡遗留 bug。
 
 ### 3.5 healthcheck(session)
 
@@ -218,5 +244,6 @@ register/alias` 单调收紧取 min。故若把 `back.nber.org` 放进 `domains`
 | 2 | 2026-07-24 | **W0 双评审修订轮**（Approve-with-fixes）：§3.1 升格为**全谱参数化枚举扩展规范出处**（★N-1 裁决=YES：crossref 升通用 prefix 枚举源；两轴 enum-key〔issn XOR prefix〕+ date-field〔published\|created，评审实证 parse.py:114 硬绑 published 须泛化〕；消费方 nber〔published〕/ssrn〔created〕）；§6/§9 **N-4 收口**（现码零变更：registry `_lint_issn` 仅 journal 必填 issn、preprint_channel 豁免、identifiers 自由 dict——arxiv 31 venue 实证）+ JEL 缺口相碰号改 N-5 | controller W0 回派（双评审收敛）+ registry.py/types.py/parse.py 实证 |
 | 3 | 2026-07-24 | W0 双评审（A/B 独立实例，2026-07-24）Approve-with-fixes → 修订轮闭合 → controller approved | controller W0 收口 |
 | 4 | 2026-07-26 | **Phase 6 T7 落地**：§3.4 状态行同步"watch 主通道已落地"——`adapters/nber/rss.py` 新增（program feed 映射表 5/19 如实标注证据缺口 + `discover_incremental` + id 集合差分桥接）；backfill/crossref 主干零改动 | [phase6-implementation-plan.md](../../plan/phase6-implementation-plan.md) T7 + [catalog/preprint-platforms.md](../../catalog/preprint-platforms.md) §4 |
+| 5 | 2026-07-26 | **T7 审查后 P1/P2 修订**：§3.4 证据分级升级为 5/5 全 [LIVE]（在线补测 `newap`/`newefg`/`newifm`/`newme` 四条 + 沿用 `newcf` 原勘察）；补 `year` 字段派生与 `min_year` 预设残余风险如实标注（P1 红线，真实 feed 100% 无 `<pubDate>` 实证）；id 集合差分改由 `subs/watermark.py`（T4，已落地）`IdSetDiff` 权威承接，`rss.py` 不再自持占位差分逻辑 | controller 审查回执（放行附条件）+ 2026-07-26 在线补测（4 请求，`Crawl-delay:10` 遵守）+ `subs/watermark.py` 类文档 |
 
 Co-Authored-By: Claude Fable 5 <noreply@anthropic.com>

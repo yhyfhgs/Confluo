@@ -1,11 +1,12 @@
 """nber/rss.py 单测（MockTransport 注入，零真实网络；design/adapters/nber.md §3.4；
-Phase 6 T7 检查单 #3）。
+Phase 6 T7 检查单 #3，含审查后 P1/P2 修订回归）。
 
 覆盖：program 代码归一 + feed URL 映射（含未知代码 CONFIG）、映射表键集 == 已声明支持
 集合的 contract 自断言（防清单漂移）、单 feed fixture 解析回归（正常/空/畸形三态）、
-`discover_incremental` 端到端（一 feed 一请求、多 program 顺序、路由恒落 back.nber.org
-不触 crossref、未知 program 零部分请求副作用）、`to_paper_stub` 字段映射、id 集合差分
-桥接（`ids_of`/`new_entries`）、作者尾巴拆分与 pubDate 解析的边界启发式。
+`discover_incremental`（一 feed 一请求、归一化去重、多 program 顺序、路由恒落
+back.nber.org 不触 crossref、**调用即炸的非生成器外壳校验**）、`to_paper_stub` 字段
+映射（含 **year 派生**，P1 红线）、id 序列桥接（`ids_of`，喂给 T4 `IdSetDiff`）、
+作者尾巴拆分（**贪婪匹配取最后一个 "-- by"**）与 pubDate 解析的边界启发式。
 """
 
 from __future__ import annotations
@@ -94,8 +95,8 @@ def test_program_feed_mapping_matches_supported_programs() -> None:
     assert set(rss.PROGRAM_FEEDS) == rss.SUPPORTED_PROGRAMS
 
 
-def test_supported_programs_is_five_of_nineteen() -> None:
-    """如实反映证据缺口：NBER 官方声称 19 个 program，本项目只对 5 个有 [VERIFIED] 代码。"""
+def test_supported_programs_is_five_of_nineteen_all_live_verified() -> None:
+    """如实反映证据缺口：NBER 官方声称 19 个 program，本项目 5 个全部 [LIVE] 实证收录。"""
     assert rss.SUPPORTED_PROGRAMS == frozenset({"AP", "CF", "EFG", "IFM", "ME"})
     assert len(rss.SUPPORTED_PROGRAMS) == 5
 
@@ -156,7 +157,21 @@ def test_parse_feed_entries_missing_guid_is_skipped() -> None:
     assert rss._parse_feed_entries(body, program="AP") == ()
 
 
-# --- discover_incremental：端到端 + 路由专测 -------------------------------------------------
+def test_parse_feed_entries_handles_real_fromrss_guid_fragment() -> None:
+    """2026-07-26 在线补测实证：真实 guid 带 `#fromrss` 片段，`doi_from_guid` 须正确反解。"""
+    body = (
+        b"<rss><channel><item><title>Real Shape -- by Real Author</title>"
+        b'<guid isPermaLink="true">https://www.nber.org/papers/w35481#fromrss</guid>'
+        b"</item></channel></rss>"
+    )
+    entries = rss._parse_feed_entries(body, program="AP")
+    assert len(entries) == 1
+    assert entries[0].doi == "10.3386/w35481"
+    assert entries[0].series_id == "w35481"
+    assert entries[0].url == "https://www.nber.org/papers/w35481"  # 干净 landing，无片段
+
+
+# --- discover_incremental：端到端 + 路由专测 + 归一化去重 -------------------------------------
 
 
 def test_discover_incremental_single_program_yields_parsed_entries() -> None:
@@ -173,7 +188,7 @@ def test_discover_incremental_single_program_yields_parsed_entries() -> None:
 
 
 def test_discover_incremental_one_request_per_program_in_order() -> None:
-    """严格一 feed 一请求；多 program 按传入顺序逐一请求（DoD "每 feed 一次请求语义"）。"""
+    """严格一 feed 一请求；多 program 按传入顺序（去重后）逐一请求。"""
     requested: list[str] = []
 
     def handler(request: httpx.Request) -> httpx.Response:
@@ -186,6 +201,18 @@ def test_discover_incremental_one_request_per_program_in_order() -> None:
         "https://back.nber.org/rss/newcf.xml",
         "https://back.nber.org/rss/newme.xml",
     ]
+
+
+def test_discover_incremental_dedupes_normalized_duplicate_programs() -> None:
+    """P2#1：归一后重复的 program（大小写/空白不同）只请求一次（省限速预算）。"""
+    requested: list[str] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        requested.append(str(request.url))
+        return httpx.Response(200, content=fixture_bytes("07_rss_program_empty.xml"))
+
+    list(rss.discover_incremental(["CF", "cf", "  Cf  "], _client_for(handler)))
+    assert requested == ["https://back.nber.org/rss/newcf.xml"]
 
 
 def test_discover_incremental_watch_routes_to_back_host_never_crossref() -> None:
@@ -218,11 +245,24 @@ def test_discover_incremental_unknown_program_raises_before_any_request() -> Non
     assert calls == []  # 连合法的 "AP" 也没被请求——校验发生在循环之前
 
 
+def test_discover_incremental_validates_eagerly_without_consuming() -> None:
+    """P2#5：非生成器外壳——调用本身（不迭代/不消费返回值）即触发校验并抛错。
+
+    用 `_never` transport：若校验被推迟到迭代时才跑（旧生成器函数语义），本测试
+    因为从不迭代返回值，将**观察不到任何异常**（静默通过，掩盖 T5 dry-run 场景下
+    "构造了流却不消费"时拼错 program 会被漏检的风险）。断言点是"调用这一行本身"
+    必须抛错，而不是包一层 `list()`/`next()` 才抛。
+    """
+    with pytest.raises(CrawlerError) as exc:
+        rss.discover_incremental(["NOTREAL"], _client_for(_never))  # 注意：未迭代、未赋值消费
+    assert exc.value.error_class is ErrorClass.CONFIG
+
+
 def test_discover_incremental_empty_programs_yields_nothing() -> None:
     assert list(rss.discover_incremental([], _client_for(_never))) == []
 
 
-# --- to_paper_stub 字段映射 -------------------------------------------------------------------
+# --- to_paper_stub 字段映射（含 year 派生，P1 红线）--------------------------------------------
 
 
 def test_to_paper_stub_maps_fields_and_carries_program_in_meta() -> None:
@@ -242,9 +282,42 @@ def test_to_paper_stub_maps_fields_and_carries_program_in_meta() -> None:
     assert stub.authors == ("Alice Adams", "Bob Brown")
     assert stub.abstract == "A synthetic abstract."
     assert stub.pub_date == "2026-07-20"
+    assert stub.year == 2026
     assert ("program", "AP") in stub.meta
     assert ("series_id", "w40001") in stub.meta
     assert ("url", "https://www.nber.org/papers/w40001") in stub.meta
+
+
+def test_to_paper_stub_year_is_none_when_pub_date_missing() -> None:
+    """P1 残余风险（模块 docstring "year" 段）：pub_date 缺失（RSS 常态）时 year 只能是
+    None——`min_year` 订阅届时判不通过，这是"没有日期就是没有日期"的诚实结果，非 bug。
+    """
+    entry = rss.NberWatchEntry(
+        program="AP",
+        doi="10.3386/w1",
+        series_id="w1",
+        title="t",
+        authors=(),
+        abstract=None,
+        url="https://www.nber.org/papers/w1",
+        pub_date=None,
+    )
+    assert entry.to_paper_stub().year is None
+
+
+@pytest.mark.parametrize(
+    ("pub_date", "expected_year"),
+    [
+        ("2026-07-20", 2026),
+        ("2020", 2020),
+        (None, None),
+        ("", None),
+        ("garbage", None),
+        ("20", None),  # 不足 4 位数字
+    ],
+)
+def test_year_from_date(pub_date: str | None, expected_year: int | None) -> None:
+    assert rss._year_from_date(pub_date) == expected_year
 
 
 def test_diff_id_is_series_id() -> None:
@@ -261,7 +334,7 @@ def test_diff_id_is_series_id() -> None:
     assert entry.diff_id == "w1"
 
 
-# --- id 集合差分桥接（T4/T5 接缝占位）----------------------------------------------------------
+# --- ids_of：喂给 T4 subs.watermark.IdSetDiff 的保序去重 id 序列 -------------------------------
 
 
 def _entry(series_id: str) -> rss.NberWatchEntry:
@@ -277,23 +350,28 @@ def _entry(series_id: str) -> rss.NberWatchEntry:
     )
 
 
-def test_ids_of_collects_diff_ids() -> None:
-    entries = (_entry("w1"), _entry("w2"))
-    assert rss.ids_of(entries) == frozenset({"w1", "w2"})
+def test_ids_of_preserves_feed_order() -> None:
+    """P1#2：`ids_of` 保序（feed 序即新→旧）——`IdSetDiff.advance()` 的截断前提。"""
+    entries = (_entry("w3"), _entry("w2"), _entry("w1"))
+    assert rss.ids_of(entries) == ("w3", "w2", "w1")
 
 
-def test_new_entries_filters_already_seen() -> None:
-    entries = (_entry("w1"), _entry("w2"), _entry("w3"))
-    fresh = rss.new_entries(entries, seen_ids={"w1"})
-    assert [e.series_id for e in fresh] == ["w2", "w3"]
+def test_ids_of_dedupes_repeated_ids() -> None:
+    entries = (_entry("w1"), _entry("w2"), _entry("w1"))
+    assert rss.ids_of(entries) == ("w1", "w2")
 
 
-def test_new_entries_empty_seen_returns_all() -> None:
-    entries = (_entry("w1"), _entry("w2"))
-    assert rss.new_entries(entries, seen_ids=()) == entries
+def test_ids_of_empty() -> None:
+    assert rss.ids_of(()) == ()
 
 
-# --- 作者尾巴拆分启发式（边界个案，超出 fixture 覆盖的额外用例）--------------------------------
+def test_ids_of_return_type_is_tuple_not_set() -> None:
+    """回归锁：曾是 `frozenset`（无序），P1 审查后改为保序 tuple——类型不得退回集合。"""
+    result = rss.ids_of((_entry("w1"),))
+    assert isinstance(result, tuple)
+
+
+# --- 作者尾巴拆分启发式（含 P2#2 贪婪匹配回归）--------------------------------------------------
 
 
 @pytest.mark.parametrize(
@@ -326,6 +404,28 @@ def test_split_title_authors_strips_tail() -> None:
     title, authors = rss._split_title_authors("Some Paper -- by Alice Adams")
     assert title == "Some Paper"
     assert authors == ("Alice Adams",)
+
+
+def test_split_title_authors_last_by_wins_when_title_contains_by_phrase() -> None:
+    """P2#2：标题本身含 "-- by" 短语时，真正的作者分隔是**最后一个**（贪婪匹配）。
+
+    非贪婪（旧实现）会在第一个 "-- by" 处误切，把 "Design: Evidence from Firms"
+    这类本属标题的文字错当成作者串去拆分逗号。
+    """
+    title, authors = rss._split_title_authors(
+        "The Trade-off -- by Design: Evidence from Firms -- by Alice Adams, Bob Brown"
+    )
+    assert title == "The Trade-off -- by Design: Evidence from Firms"
+    assert authors == ("Alice Adams", "Bob Brown")
+
+
+def test_split_title_authors_single_by_still_works_with_greedy_regex() -> None:
+    """贪婪化不应回归单个 "-- by" 场景的行为（回归锁）。"""
+    title, authors = rss._split_title_authors(
+        "Synthetic Study of Board Composition and Leverage -- by Carol Cooper and Dave Diaz"
+    )
+    assert title == "Synthetic Study of Board Composition and Leverage"
+    assert authors == ("Carol Cooper", "Dave Diaz")
 
 
 # --- pubDate 尽力而为解析 ----------------------------------------------------------------------
