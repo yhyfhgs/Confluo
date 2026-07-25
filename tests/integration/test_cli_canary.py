@@ -94,6 +94,38 @@ def test_canary_unknown_adapter_exits_2(tmp_path: Path) -> None:
     assert "not_a_real_adapter" in result.output
 
 
+# 断言列表须与 `load_adapters()` 实际注册表全集保持同步——Phase 4 M2b 检查单 #15d 发现
+# 本列表此前遗漏了 aaai_ojs/dblp；Phase 4 T8 controller 收尾又补上 oup_silverchair/wiley
+# （同模式第二次）；post-phase5-audit §3[O4] 发现 Phase 5 新增的 aea 又漏——"注册了却没
+# 验证"反模式第三次复现（aea healthcheck 天然 SKIP，逐条 `in result.output` 断言本身仍能
+# 通过，只是从未真正要求 aea 出现，漏了也不会报错，故测试仍绿）。为根治该反模式，本模块
+# 级列表改配一条**集合等值自断言**（见下方测试函数体）：与 `load_adapters()` 的实际返回
+# 集合动态比对，而非仅逐个 `in` 检查——未来任何新 adapter 注册后忘记同步本列表，多了/
+# 少了任何一个都会响亮失败，不再依赖人工发现第四次。
+_EXPECTED_CANARY_ADAPTER_IDS = (
+    "mock_platform",
+    "arxiv",
+    "pmlr",
+    "crossref",
+    "openreview",
+    "elsevier_sd",  # T3 auth_gated 无 key → SKIP 行
+    "acl_anthology",
+    "cvf",
+    "aaai_ojs",
+    "neurips_proceedings",
+    "dblp",
+    "unpaywall",
+    "oup_silverchair",  # T4 auth_gated 无 session → SKIP 行
+    "wiley",  # T-wiley auth_gated 无 token → SKIP 行
+    "openalex",  # T6（SKIP 行——无 key）
+    "s2",  # T6（SKIP 行——无 key）
+    "econsoc",  # Phase 5 T6（open_access；healthcheck 猴补丁为 healthy，同 aaai_ojs）
+    "ssrn",  # Phase 5 T4（healthcheck 猴补丁为 healthy——经内部 crossref lookup 发真实请求）
+    "nber",  # Phase 5 T3（open_access，healthcheck 猴补丁为 healthy）
+    "aea",  # Phase 5 T5（auth_gated 无网络探针 → 恒 SKIP，同 elsevier_sd；此前漏列本次补齐）
+)
+
+
 def test_canary_without_filter_checks_all_registered_adapters(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
@@ -150,33 +182,18 @@ def test_canary_without_filter_checks_all_registered_adapters(
     result = runner.invoke(app, ["canary", "--home", str(_home(tmp_path))])
 
     assert result.exit_code == 0, result.output
-    # 断言列表须与 test_adapter_loading.py::EXPECTED_ADAPTER_IDS（全部已注册 adapter，
-    # 现 20 个——Phase 5 T3/T4/T5/T6 四源 union 合并后实数）保持同步——Phase 4 M2b 检查单
-    # #15d 发现本列表此前遗漏了 aaai_ojs/dblp；Phase 4 T8 controller 收尾又补上
-    # oup_silverchair/wiley（同模式第二次：auth_gated 无凭证的 healthcheck 天然 raise
-    # NotImplementedError→SKIP，同 openalex/s2 无需猴补丁，但断言列表须验证它们出现在
-    # canary 输出里，否则又是"注册了却没验证"的静默漏测）。
-    for adapter_id in (
-        "mock_platform",
-        "arxiv",
-        "pmlr",
-        "crossref",
-        "openreview",
-        "elsevier_sd",  # T3 auth_gated 无 key → SKIP 行
-        "acl_anthology",
-        "cvf",
-        "aaai_ojs",
-        "neurips_proceedings",
-        "dblp",
-        "unpaywall",
-        "oup_silverchair",  # T4 auth_gated 无 session → SKIP 行
-        "wiley",  # T-wiley auth_gated 无 token → SKIP 行
-        "openalex",  # T6（SKIP 行——无 key）
-        "s2",  # T6（SKIP 行——无 key）
-        "econsoc",  # Phase 5 T6（open_access；healthcheck 猴补丁为 healthy，同 aaai_ojs）
-        "ssrn",  # Phase 5 T4（healthcheck 猴补丁为 healthy——经内部 crossref lookup 发真实请求）
-        "nber",  # Phase 5 T3（open_access，healthcheck 猴补丁为 healthy）
-    ):
+
+    # 集合等值自断言（post-phase5-audit §3[O4]/§6 处置 4：根治"注册了却没验证"反模式，
+    # 已第三次复现——aaai_ojs/dblp → oup_silverchair/wiley → aea）：与 `load_adapters()`
+    # 的实际注册表全集动态比对，而非仅逐个 `in` 检查。任何一侧多了/少了任何一个 adapter_id
+    # 都会在这里响亮失败——不再需要靠人工记得同步 `_EXPECTED_CANARY_ADAPTER_IDS`。
+    from paper_crawler.adapter import load_adapters
+
+    assert set(_EXPECTED_CANARY_ADAPTER_IDS) == set(load_adapters())
+
+    # 逐个校验每个 adapter_id 确实出现在 canary 的终端输出里（集合等值只保证"清单本身
+    # 与注册表一致"，不保证 CLI 真的把每一行都渲染出来——两条断言互补，缺一不可）。
+    for adapter_id in _EXPECTED_CANARY_ADAPTER_IDS:
         assert adapter_id in result.output
 
 

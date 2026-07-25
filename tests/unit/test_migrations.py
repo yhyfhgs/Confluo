@@ -2,6 +2,25 @@
 
 覆盖：全表存在性对 DDL 清单断言、migrate 幂等、外键约束生效、不建 FTS5、
 WAL/foreign_keys pragma、每步事务备份、tx 提交/回滚、语句切分器。
+
+连接关闭纪律（post-phase5-audit §3[S4]/§6 处置 4）：`db` fixture 经 pytest 的
+yield-teardown 保证关闭（正常/异常任一路径都会跑到 `yield` 之后的 `database.close()`），
+本就健壮；本文件内**手工构造** `Database` 的用例一律改用 `contextlib.closing` 包裹
+（而非"构造 - 操作 - 末尾手写 `.close()`"的旧模式）——旧模式下若包裹体内任何一条
+`assert`/迁移调用先于 `.close()` 抛出，连接就不会被关闭，须手工在每个未来新增用例里
+记得补 `.close()`，且改动前的写法在 `-W error::ResourceWarning` 下也确实测不出问题
+（改前/改后隔离单跑本文件均为 0 条——CPython 引用计数在这种简单场景下够快，等不到
+gc 分代阈值触发就已经同步析构）；`closing()` 经 `__exit__` 保证无论体内正常返回还是
+异常都调用 `.close()`，是结构性更稳的写法，不依赖"顺序写对了"这种脆弱前提。
+
+★核查记录：全量 `make check`（`tests/unit`+`tests/contract`+`tests/integration` 一起跑）
+下确有 27 条 `ResourceWarning: unclosed database`（post-phase5-audit §3[S4] 原始发现），
+但本次改造后实测该数字不变——进一步隔离定位（`--ignore`/仅跑子目录组合）证实这 27 条
+并不集中于本文件：`tests/unit` 单独跑、`tests/unit`+`tests/contract`、`tests/unit`+
+`tests/integration` 三种组合下均为 0 条，只有三者全部一起跑时才出现，指向与本文件
+无关的全库级 gc 分代阈值效应（`sqlite3.Connection.__del__` 在对象参与引用环时的析构
+时机取决于累计分配量触发的 gc 扫描，警告信息里的文件:行号只是扫描发生时恰好在执行
+的代码，不是泄漏的真实来源）。该发现已作为独立事项上报，不在本文件修复范围内。
 """
 
 from __future__ import annotations
@@ -9,6 +28,7 @@ from __future__ import annotations
 import shutil
 import sqlite3
 from collections.abc import Iterator
+from contextlib import closing
 from pathlib import Path
 
 import pytest
@@ -183,9 +203,8 @@ def test_first_build_skips_backup_of_empty_v0(
     锁定「初始空库不备份」这一规则（migrate() 的 `if current > 0` 分支）。
     """
     db_path = tmp_path / "app.sqlite"
-    database = Database(db_path)
-    assert database.migrate() == 2
-    database.close()
+    with closing(Database(db_path)) as database:
+        assert database.migrate() == 2
     assert list(tmp_path.glob("*.v0.bak")) == []
     # 跨到 0002 时对 v1 中间态备份（from_version=1）。
     assert [p.name for p in tmp_path.glob("*.bak")] == ["app.sqlite.v1.bak"]
@@ -205,9 +224,8 @@ def test_second_migration_creates_backup(tmp_path: Path, monkeypatch: pytest.Mon
     monkeypatch.setattr(db_module, "MIGRATIONS_DIR", mig_dir)
 
     db_path = tmp_path / "app.sqlite"
-    database = Database(db_path)
-    final = database.migrate()
-    database.close()
+    with closing(Database(db_path)) as database:
+        final = database.migrate()
 
     assert final == 2
     backups = list(tmp_path.glob("*.v1.bak"))
@@ -227,12 +245,11 @@ def test_migrate_applies_only_pending(tmp_path: Path, monkeypatch: pytest.Monkey
     monkeypatch.setattr(db_module, "MIGRATIONS_DIR", mig_dir)
 
     db_path = tmp_path / "app.sqlite"
-    database = Database(db_path)
-    assert database.migrate() == 1
+    with closing(Database(db_path)) as database:
+        assert database.migrate() == 1
 
-    _write_migration(mig_dir, "0002_b.sql", "CREATE TABLE t2 (id TEXT PRIMARY KEY);")
-    assert database.migrate() == 2  # 只应用 0002；若重跑 0001 会因 t1 已存在而报错
-    database.close()
+        _write_migration(mig_dir, "0002_b.sql", "CREATE TABLE t2 (id TEXT PRIMARY KEY);")
+        assert database.migrate() == 2  # 只应用 0002；若重跑 0001 会因 t1 已存在而报错
 
 
 def test_migration_step_is_atomic(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
@@ -248,12 +265,11 @@ def test_migration_step_is_atomic(tmp_path: Path, monkeypatch: pytest.MonkeyPatc
     )
     monkeypatch.setattr(db_module, "MIGRATIONS_DIR", mig_dir)
 
-    database = Database(tmp_path / "app.sqlite")
-    with pytest.raises(sqlite3.OperationalError):
-        database.migrate()
-    # 回滚后：schema_version 表本身也在同一失败事务内 → 版本仍为 0。
-    assert database._current_version() == 0
-    database.close()
+    with closing(Database(tmp_path / "app.sqlite")) as database:
+        with pytest.raises(sqlite3.OperationalError):
+            database.migrate()
+        # 回滚后：schema_version 表本身也在同一失败事务内 → 版本仍为 0。
+        assert database._current_version() == 0
 
 
 # -- 事务上下文 --------------------------------------------------------------
@@ -282,9 +298,10 @@ def test_tx_rolls_back_on_error(db: Database) -> None:
 
 
 def test_close_releases_connection(tmp_path: Path) -> None:
-    database = Database(tmp_path / "c.sqlite")
-    database.migrate()
-    database.close()
+    with closing(Database(tmp_path / "c.sqlite")) as database:
+        database.migrate()
+    # `with` 块退出时 `closing()` 已调用 `database.close()`——此处验证关闭后果
+    # （后续操作报 ProgrammingError），不是本用例需要额外手工 close 的信号。
     with pytest.raises(sqlite3.ProgrammingError):
         database.query("SELECT 1")
 
@@ -335,25 +352,34 @@ def test_migrate_ignores_non_numeric_sql_files(
     _write_migration(mig_dir, "notes.sql", "CREATE TABLE ignored (id TEXT PRIMARY KEY);")
     monkeypatch.setattr(db_module, "MIGRATIONS_DIR", mig_dir)
 
-    database = Database(tmp_path / "app.sqlite")
-    assert database.migrate() == 1
-    assert "ignored" not in _table_names(database)
-    database.close()
+    with closing(Database(tmp_path / "app.sqlite")) as database:
+        assert database.migrate() == 1
+        assert "ignored" not in _table_names(database)
 
 
 # -- schema v2（0002）v1→v2 自动升级 + Python 回填 -----------------------------
 
 
 def _seed_v1(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Database:
-    """建一个停在 v1 的库（仅应用 0001_init.sql）；MIGRATIONS_DIR 已被 monkeypatch。"""
+    """建一个停在 v1 的库（仅应用 0001_init.sql）；MIGRATIONS_DIR 已被 monkeypatch。
+
+    返回一个**未关闭**的 `Database`——按约定调用方须用 `contextlib.closing` 包裹
+    （本文件模块 docstring"连接关闭纪律"一节）。构造后的首次 migrate/seed 写入本身
+    也兜一层：万一在 `return` 之前就失败，调用方根本拿不到对象、也就没机会经
+    `closing()` 兜底，此处必须自行关闭后再原样重新抛出，避免半途连接泄漏。
+    """
     mig_dir = _staged_migrations_dir(tmp_path, "0001_init.sql")
     monkeypatch.setattr(db_module, "MIGRATIONS_DIR", mig_dir)
     database = Database(tmp_path / "app.sqlite")
-    assert database.migrate() == 1
-    database.execute(
-        "INSERT INTO venue (id, kind, name, field_json) VALUES (?,?,?,?)",
-        ("v", "journal", "V", "[]"),
-    )
+    try:
+        assert database.migrate() == 1
+        database.execute(
+            "INSERT INTO venue (id, kind, name, field_json) VALUES (?,?,?,?)",
+            ("v", "journal", "V", "[]"),
+        )
+    except Exception:
+        database.close()
+        raise
     return database
 
 
@@ -372,20 +398,21 @@ def test_v1_to_v2_upgrade_backfills_title_norm(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """v1 存量 paper 行升级到 v2 时用 Python 步回填 title_norm（含 LaTeX/Unicode 归一）。"""
-    database = _seed_v1(tmp_path, monkeypatch)
-    _insert_paper(database, "p1", r"Erd\H{o}s--R\'enyi!")
-    _insert_paper(database, "p2", "Café Society")
+    with closing(_seed_v1(tmp_path, monkeypatch)) as database:
+        _insert_paper(database, "p1", r"Erd\H{o}s--R\'enyi!")
+        _insert_paper(database, "p2", "Café Society")
 
-    _add_0002(tmp_path)
-    assert database.migrate() == 2
+        _add_0002(tmp_path)
+        assert database.migrate() == 2
 
-    norms = {r["id"]: r["title_norm"] for r in database.query("SELECT id, title_norm FROM paper")}
-    assert norms == {"p1": "erdos renyi", "p2": "cafe society"}
-    idx = database.query(
-        "SELECT name FROM sqlite_master WHERE type='index' AND name='idx_paper_title_norm'"
-    )
-    assert len(idx) == 1
-    database.close()
+        norms = {
+            r["id"]: r["title_norm"] for r in database.query("SELECT id, title_norm FROM paper")
+        }
+        assert norms == {"p1": "erdos renyi", "p2": "cafe society"}
+        idx = database.query(
+            "SELECT name FROM sqlite_master WHERE type='index' AND name='idx_paper_title_norm'"
+        )
+        assert len(idx) == 1
 
 
 def _insert_doi(database: Database, paper_id: str, value: str, *, is_primary: int = 0) -> None:
@@ -399,98 +426,98 @@ def test_v1_to_v2_normalizes_doi_identifier_in_place(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """存量 doi 大小写异形、无归一形冲突 → 就地归一（小写化），行不丢。"""
-    database = _seed_v1(tmp_path, monkeypatch)
-    _insert_paper(database, "p1", "Some Paper")
-    _insert_doi(database, "p1", "10.1016/J.X")
+    with closing(_seed_v1(tmp_path, monkeypatch)) as database:
+        _insert_paper(database, "p1", "Some Paper")
+        _insert_doi(database, "p1", "10.1016/J.X")
 
-    _add_0002(tmp_path)
-    assert database.migrate() == 2
+        _add_0002(tmp_path)
+        assert database.migrate() == 2
 
-    ids = database.query("SELECT paper_id, value FROM identifier WHERE scheme='doi'")
-    assert [(r["paper_id"], r["value"]) for r in ids] == [("p1", "10.1016/j.x")]
-    database.close()
+        ids = database.query("SELECT paper_id, value FROM identifier WHERE scheme='doi'")
+        assert [(r["paper_id"], r["value"]) for r in ids] == [("p1", "10.1016/j.x")]
 
 
 def test_v1_to_v2_doi_case_collision_cross_paper_builds_candidate(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """两 paper 各持同一 DOI 的大小写异形 → 留归一形行、删异形行、建 candidate 留人审。"""
-    database = _seed_v1(tmp_path, monkeypatch)
-    _insert_paper(database, "p_lower", "Same Work")
-    _insert_paper(database, "p_upper", "Same Work WP")
-    _insert_doi(database, "p_lower", "10.1/abc")  # 已归一形
-    _insert_doi(database, "p_upper", "10.1/ABC")  # 异形，归一后碰撞
+    with closing(_seed_v1(tmp_path, monkeypatch)) as database:
+        _insert_paper(database, "p_lower", "Same Work")
+        _insert_paper(database, "p_upper", "Same Work WP")
+        _insert_doi(database, "p_lower", "10.1/abc")  # 已归一形
+        _insert_doi(database, "p_upper", "10.1/ABC")  # 异形，归一后碰撞
 
-    _add_0002(tmp_path)
-    assert database.migrate() == 2
+        _add_0002(tmp_path)
+        assert database.migrate() == 2
 
-    # 归一形行保留（指向 p_lower），异形行删除——不静默丢 paper。
-    ids = database.query("SELECT paper_id, value FROM identifier WHERE scheme='doi'")
-    assert [(r["paper_id"], r["value"]) for r in ids] == [("p_lower", "10.1/abc")]
-    # 两 paper 行都在。
-    papers = {r["id"] for r in database.query("SELECT id FROM paper")}
-    assert {"p_lower", "p_upper"} <= papers
-    # candidate_duplicate(decided=NULL, 中性 evidence 标签) 建成，端点按 id 升序。
-    rel = database.query("SELECT * FROM paper_relation WHERE kind='candidate_duplicate'")
-    assert len(rel) == 1
-    assert rel[0]["decided"] is None
-    assert {rel[0]["from_paper"], rel[0]["to_paper"]} == {"p_lower", "p_upper"}
-    assert "doi-normalization-collision" in rel[0]["evidence_json"]
-    database.close()
+        # 归一形行保留（指向 p_lower），异形行删除——不静默丢 paper。
+        ids = database.query("SELECT paper_id, value FROM identifier WHERE scheme='doi'")
+        assert [(r["paper_id"], r["value"]) for r in ids] == [("p_lower", "10.1/abc")]
+        # 两 paper 行都在。
+        papers = {r["id"] for r in database.query("SELECT id FROM paper")}
+        assert {"p_lower", "p_upper"} <= papers
+        # candidate_duplicate(decided=NULL, 中性 evidence 标签) 建成，端点按 id 升序。
+        rel = database.query("SELECT * FROM paper_relation WHERE kind='candidate_duplicate'")
+        assert len(rel) == 1
+        assert rel[0]["decided"] is None
+        assert {rel[0]["from_paper"], rel[0]["to_paper"]} == {"p_lower", "p_upper"}
+        assert "doi-normalization-collision" in rel[0]["evidence_json"]
 
 
 def test_v1_to_v2_doi_prefix_collision_uses_neutral_label(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """前缀异形（非纯大小写）碰撞同样走中性标签 doi-normalization-collision（名副其实）。"""
-    database = _seed_v1(tmp_path, monkeypatch)
-    _insert_paper(database, "p_bare", "Work")
-    _insert_paper(database, "p_url", "Work Preprint")
-    _insert_doi(database, "p_bare", "10.1/abc")  # 已归一形
-    _insert_doi(database, "p_url", "https://doi.org/10.1/abc")  # 前缀异形，归一后碰撞
+    with closing(_seed_v1(tmp_path, monkeypatch)) as database:
+        _insert_paper(database, "p_bare", "Work")
+        _insert_paper(database, "p_url", "Work Preprint")
+        _insert_doi(database, "p_bare", "10.1/abc")  # 已归一形
+        _insert_doi(database, "p_url", "https://doi.org/10.1/abc")  # 前缀异形，归一后碰撞
 
-    _add_0002(tmp_path)
-    assert database.migrate() == 2
+        _add_0002(tmp_path)
+        assert database.migrate() == 2
 
-    ids = database.query("SELECT paper_id, value FROM identifier WHERE scheme='doi'")
-    assert [(r["paper_id"], r["value"]) for r in ids] == [("p_bare", "10.1/abc")]
-    rel = database.query("SELECT * FROM paper_relation WHERE kind='candidate_duplicate'")
-    assert len(rel) == 1
-    assert "doi-normalization-collision" in rel[0]["evidence_json"]
-    database.close()
+        ids = database.query("SELECT paper_id, value FROM identifier WHERE scheme='doi'")
+        assert [(r["paper_id"], r["value"]) for r in ids] == [("p_bare", "10.1/abc")]
+        rel = database.query("SELECT * FROM paper_relation WHERE kind='candidate_duplicate'")
+        assert len(rel) == 1
+        assert "doi-normalization-collision" in rel[0]["evidence_json"]
 
 
 def test_v1_to_v2_doi_collision_restores_primary_when_deleted_row_was_primary(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """碰撞删除的异形行若为 primary → 保留的归一行提为 primary（补单一 primary 不变量）。"""
-    database = _seed_v1(tmp_path, monkeypatch)
-    _insert_paper(database, "p1", "Some Paper")
-    _insert_doi(database, "p1", "10.1/abc", is_primary=0)  # 归一形，非 primary
-    _insert_doi(database, "p1", "10.1/ABC", is_primary=1)  # 异形，恰为 primary → 将被删
+    with closing(_seed_v1(tmp_path, monkeypatch)) as database:
+        _insert_paper(database, "p1", "Some Paper")
+        _insert_doi(database, "p1", "10.1/abc", is_primary=0)  # 归一形，非 primary
+        _insert_doi(database, "p1", "10.1/ABC", is_primary=1)  # 异形，恰为 primary → 将被删
 
-    _add_0002(tmp_path)
-    assert database.migrate() == 2
+        _add_0002(tmp_path)
+        assert database.migrate() == 2
 
-    ids = database.query("SELECT value, is_primary FROM identifier WHERE scheme='doi'")
-    assert [(r["value"], r["is_primary"]) for r in ids] == [("10.1/abc", 1)]  # 保留行提为 primary
-    database.close()
+        ids = database.query("SELECT value, is_primary FROM identifier WHERE scheme='doi'")
+        # 保留行提为 primary。
+        assert [(r["value"], r["is_primary"]) for r in ids] == [("10.1/abc", 1)]
 
 
 def test_v1_to_v2_doi_case_collision_same_paper_drops_redundant(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """同一 paper 上异形冗余 doi → 删冗余行、不建 candidate；归一行本就是 primary 则原样保留。"""
-    database = _seed_v1(tmp_path, monkeypatch)
-    _insert_paper(database, "p1", "Some Paper")
-    _insert_doi(database, "p1", "10.1/abc", is_primary=1)  # 归一形本就是 primary
-    _insert_doi(database, "p1", "10.1/ABC", is_primary=0)  # 异形冗余，非 primary → 将被删
+    with closing(_seed_v1(tmp_path, monkeypatch)) as database:
+        _insert_paper(database, "p1", "Some Paper")
+        _insert_doi(database, "p1", "10.1/abc", is_primary=1)  # 归一形本就是 primary
+        _insert_doi(database, "p1", "10.1/ABC", is_primary=0)  # 异形冗余，非 primary → 将被删
 
-    _add_0002(tmp_path)
-    assert database.migrate() == 2
+        _add_0002(tmp_path)
+        assert database.migrate() == 2
 
-    ids = database.query("SELECT paper_id, value, is_primary FROM identifier WHERE scheme='doi'")
-    # 删非 primary 异形后 paper 仍有 primary → 不重复提升，归一行原样保留其 primary。
-    assert [(r["paper_id"], r["value"], r["is_primary"]) for r in ids] == [("p1", "10.1/abc", 1)]
-    assert database.query("SELECT COUNT(*) AS n FROM paper_relation")[0]["n"] == 0
-    database.close()
+        ids = database.query(
+            "SELECT paper_id, value, is_primary FROM identifier WHERE scheme='doi'"
+        )
+        # 删非 primary 异形后 paper 仍有 primary → 不重复提升，归一行原样保留其 primary。
+        assert [(r["paper_id"], r["value"], r["is_primary"]) for r in ids] == [
+            ("p1", "10.1/abc", 1)
+        ]
+        assert database.query("SELECT COUNT(*) AS n FROM paper_relation")[0]["n"] == 0

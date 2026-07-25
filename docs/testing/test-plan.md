@@ -2,7 +2,7 @@
 title: 测试计划与测试类型
 status: approved
 owner: fable5
-updated: 2026-07-21
+updated: 2026-07-26
 ---
 
 # 测试计划
@@ -47,7 +47,10 @@ updated: 2026-07-21
 - 每个 adapter 注册 1–3 个**已知答案样本**（如：ICLR 2024 应有论文 N 篇 ±口径差、DOI 10.1016/j.jfineco.xxx 的 resolve 应产出 pdf 计划）；
 - `crawler canary` 逐 adapter 限速执行：PASS / DRIFT(解析失败) / DEGRADED(可解析但字段缺失) / BLOCKED(认证/风控)；
 - 输出健康矩阵（markdown）到 `docs/testing/records/canary/`；连续 2 周 DRIFT → 模块降级流程（status-workflow §3.4）；
-- 频率：周跑（cron）；发布前必跑。
+- 频率：周跑（cron）；发布前必跑。本地 launchd/cron 模板与使用说明见
+  [records/canary/README.md](records/canary/README.md)（`scripts/canary_weekly.sh` +
+  `scripts/com.papercrawler.canary-weekly.plist.template`，post-phase5-audit §3[S4]/§6
+  处置 4——不常驻、不改 CI、不自动安装，仅模板+文档）。
 
 ## 5. 在线测试的礼貌预算
 
