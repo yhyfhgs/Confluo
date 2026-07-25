@@ -159,19 +159,40 @@ def test_run_summary_defaults_are_zeroed() -> None:
     assert summary.narrowing_hints == () and summary.distribution == ()
 
 
-def test_run_summary_carries_narrowing_hints_and_distribution() -> None:
-    """AC-6.2 判据承载字段：T3 生成、T5 装配、T6 渲染（Phase 6 深审热修，纯追加）。"""
+def test_run_summary_carries_distribution_as_axis_label_count_triples() -> None:
+    """`distribution` 是 `(axis, label, count)` 三元组（T3/T6 接缝终裁，AC-6.2 判据承载）：
+    T5 从 `subs.guard.OverloadReport` 的 `by_source`/`by_category` 两轴分布各自打上
+    axis 标签后拼装成一个扁平序列；T6 渲染日报时按 `axis` 过滤拆回两张表。
+    """
     summary = RunSummary(
         subscription="s",
         started_at="t",
-        narrowing_hints=("收窄 min_year 到 2024 起", "exclude_regex 加 'workshop'"),
-        distribution=(("arxiv", 120), ("ssrn", 30)),
+        distribution=(
+            ("source", "arxiv", 120),
+            ("source", "ssrn", 30),
+            ("category", "cs.AI", 90),
+        ),
     )
-    assert summary.narrowing_hints == (
-        "收窄 min_year 到 2024 起",
-        "exclude_regex 加 'workshop'",
+    assert summary.distribution == (
+        ("source", "arxiv", 120),
+        ("source", "ssrn", 30),
+        ("category", "cs.AI", 90),
     )
-    assert summary.distribution == (("arxiv", 120), ("ssrn", 30))
+    # axis 取值域仅 docstring 约定、非类型系统强制——冒烟一下字面量本身没有第三个轴。
+    axes = {axis for axis, _label, _count in summary.distribution}
+    assert axes <= {"source", "category"}
+
+
+def test_run_summary_narrowing_hints_reserved_for_future_use() -> None:
+    """`narrowing_hints` 现阶段 T5 恒留空——收窄句改由 T6 直接从 `distribution` 的
+    计数现算（算法思路同 `subs.guard._suggest_narrowing`），不经 T5 预先算好传递。
+    字段类型未变，仍可被显式赋值（保留作未来面，非被禁用）。
+    """
+    summary = RunSummary(subscription="s", started_at="t")
+    assert summary.narrowing_hints == ()  # T5 现阶段的实际产出
+
+    reserved = RunSummary(subscription="s", started_at="t", narrowing_hints=("未来面占位提示",))
+    assert reserved.narrowing_hints == ("未来面占位提示",)
 
 
 def test_report_entry_carries_daily_report_columns() -> None:

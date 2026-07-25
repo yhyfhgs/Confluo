@@ -145,11 +145,16 @@ class RunSummary:
       同样受 dry-run 恒零约束；
     - `library_total`：累计库存（日报第二要素，§6.3）。
 
-    `narrowing_hints`/`distribution`（Phase 6 深审热修纯追加，既有构造点零改动）：
-    T3（guard）依据本次过载/命中情况产出收窄建议与按源计数分布，T5 原样装配进本
-    摘要，T6 渲染日报时呈现——是 AC-6.2（过载报告需给出可操作的收窄线索）的判据
-    承载字段。`distribution` 是 `(source, count)` 的有序元组（tuple-of-tuples，同
-    模块 docstring 的 hashable 约定）。
+    `narrowing_hints`/`distribution`（Phase 6 深审热修追加，纯追加不改既有字段；
+    T3/T6 接缝终裁二次调整）——AC-6.2（过载报告需给出可操作的收窄线索）的判据
+    承载字段：
+    - `distribution`：`(axis, label, count)` 有序三元组，`axis ∈ {"source", "category"}`
+      （取值域仅 docstring 约定，非类型系统强制）。T5 从 `subs.guard.OverloadReport`
+      的 `by_source`/`by_category` 两轴分布各自打上 axis 标签后拼接装配成一个扁平
+      序列；T6 渲染日报时按 `axis` 过滤拆回两张表（来源分布表、类目分布表）。
+    - `narrowing_hints`：当前 T5 恒留空（`()`）——收窄建议句改由 T6 直接从
+      `distribution` 的计数现算（算法思路同 `subs.guard._suggest_narrowing`），不
+      经 T5 预先算好传递。字段保留作未来面（如需要脱离 `distribution` 的独立提示）。
     """
 
     subscription: str
@@ -167,8 +172,8 @@ class RunSummary:
     failures: tuple[FailureEvent, ...] = ()
     report_path: str | None = None
     # T3 guard 生成 → T5 装配 → T6 渲染（AC-6.2）；纯追加字段，既有构造点缺省即空。
-    narrowing_hints: tuple[str, ...] = ()
-    distribution: tuple[tuple[str, int], ...] = ()  # (source, count)，按源计数分布
+    narrowing_hints: tuple[str, ...] = ()  # 当前 T5 恒留空；收窄句由 T6 从 distribution 现算
+    distribution: tuple[tuple[str, str, int], ...] = ()  # (axis, label, count)，axis 见类 docstring
 
     def __post_init__(self) -> None:
         """dry-run 不变量（P2#3 热修）：`dry_run=True` 时绝不能真的入库或派生 fetch。
