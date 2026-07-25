@@ -2,7 +2,7 @@
 title: 认证框架实现级详设（AuthProvider 四实现 + 凭证库 + CLI + pipeline 接缝）
 status: implemented
 owner: fable5
-updated: 2026-07-24
+updated: 2026-07-26
 ---
 
 # 认证框架 · 实现级详设
@@ -617,11 +617,17 @@ SELECT COUNT(*) FROM fetch_log
 WHERE domain = ? AND DATE(ts) = DATE('now')   # fetch 尝试篇次（成败均计；ts=fetch_log 实名列，B-m5）
 ```
 ```
-fetch 前:  if count_fetch_today(domain) >= cap:      # cap = VenueSpec.rate_limit 或 Config.auth_daily_cap（默认 200）
+fetch 前:  if count_fetch_today(domain) >= cap:      # cap = Config.auth_daily_cap（默认 200；唯一来源）
              raise CrawlerError(CONFIG, "daily quota reached", detail=f"cap={cap}")  # → BLOCKED(config)
 ```
 - **对账证据源 = FetchLog**（design/05 §7 明示"AC-4.4 数据源"）——每次 fetch 尝试一行；日配额判定读同表。
-  `cap` 来源优先级：VenueSpec `rate_limit`（若声明日上限）> `Config.auth_daily_cap`（默认 200，04 §4）。
+  `cap` **单一来源** `Config.auth_daily_cap`（默认 200，04 §4；env `PAPER_CRAWLER_AUTH_DAILY_CAP`
+  可覆盖，config.py §8 knobs）——**2026-07-26 文档滞后修正**：本行此前称"`cap` 来源优先级：
+  VenueSpec `rate_limit`（若声明日上限）> `Config.auth_daily_cap`"，但 `VenueRateLimit`
+  （types.py）schema 只有 `requests_per_minute` 一个字段，从无日上限槽；`runner.py::
+  _auth_gate_fetch` 的实现也只读 `getattr(self.ctx.config, "auth_daily_cap", …)`，从不读
+  VenueSpec——原表述高估了系统能力，对齐 post-phase5-audit §5 处置删除（非实质设计变更，
+  VenueSpec 增日上限字段留作未来可能的增量，本次不做）。
 - **OA-fallback direct fetch（`_stage_oa_fallback` 产的 OA host）不占 auth 平台配额**：OA host 是**第三方 OA 域**
   （非 auth 平台 domain），本查询按 auth 平台 domain 计数，OA host 天然不落入——§8.1 限速隔离的对账侧印证。
 - **"宁慢勿封"**（04 §4）：配额达上限即 BLOCKED 该 venue 剩余 fetch（非 FAILED），次日或 `--force` 恢复。
@@ -804,6 +810,7 @@ class ChallengeDetector:
 | 2 | 2026-07-23 | P0b R0 落地：§2.4 异常子类 + §6 status_code 权威版**归 T2**（D-024 波次，plan §5）；§3.4 补 `[auth.elsevier]`/`[auth.wiley]` Config-slot + **两级凭证模型**（简单串走 Config-slot 不触 cryptography / 有状态走 AES-GCM store）；P0a 开放题①②由 **D-023** 定裁（cryptography optional extra + SessionHandle 具体化附注）、③健康门/配额/冷却默认值确认沿 04 原文 | [R0 勘察](../research/site-survey/publisher-platforms-p4-recheck.md) [LIVE 2026-07-23] + controller 裁决 D-023/D-024 |
 | 3 | 2026-07-23 | **W0 双评审修订轮**（评审 A Reject 3B+7M+5m / 评审 B Approve-with-fixes 4M+5m 逐条闭合）：**A-B1 OA-fallback 取回全链**（主方向：record→AssetPlan 规格化 + `_stage_fetch` OA 分支 + `_fetch_oa_direct` 通用 direct + OA 域保守桶自动注册，§8.1）；A-B2/B-m5 `DATE(ts)` 实名列 + A-M5 配额口径"fetch 尝试篇次"三处统一（§8.3）；A-M2 工作时段窗（§8.6）；A-M7 一次性 user-data-dir mkdtemp+rmtree（§10 + AC-4.5 ⑥）；B-M1 假时钟注入（PipelineRunner/provider clock，§8.2/§9）；B-M3 fixture 分平台形态（OUP HTML 四类 / elsevier JSON 封套，§11）；B-M4 canary SKIP 钉死删 AuthRequired 归一（§7）；A-M1 canary 补限速域注册（§7）；A-m1 nonce/A-m2 sidecar/A-m5 no_entitlement 不计 failed（§3/§8.5）/B-m6 取证清单按 kind 分列/B-m7 CI 装 [auth]/B-m8 AC-4.2 双源；config.py 归 **T2 独占**（撞面消除）；controller 亲读 quota_probe 样例值 + probe_url ⚠ 未实测（§3.4） | 评审 A/B 裁决 + controller 增量令（T1→T1a/T1b、config→T2、10-config-layout D-025） |
 | 4 | 2026-07-24 | **可测性 backlog 登记（非缺陷，非设计变更）**：`AuthManager.resolve`/`get`（§2 编排入口）走 provider 默认构造，**不支持**注入 `http_factory`/`login_flow` 测试 seam——T6 全生命周期集成测试因此须绕过 `AuthManager` 直接构造 `SSOFlowProvider(...)`（`_make_sso_provider`；仅 `logout` 经 `AuthManager` 驱动）。生产路径无影响（默认构造即真实路径），但集成测试无法端到端经 manager 装配 mock 平台。登记为可测性改进 backlog，本条不改动既有 `AuthManager` 接口设计。 | Phase 4 T6 发现；[2026-07-23-phase4-report.md §5「AuthManager DI 缺口」](../reports/2026-07-23-phase4-report.md) + [AC-4 离线汇总记录 §5「AuthManager DI 缺口（T6 发现 → T8 登记）」](../testing/records/2026-07-23-ac4-acceptance.md)；phase4-report §6 开工检查单 #1③ 移交 |
+| 5 | 2026-07-26 | **§8.3 文档滞后修正（非设计变更）**：日配额 `cap` 表述由"VenueSpec `rate_limit`（若声明日上限）> `Config.auth_daily_cap`"改为"`Config.auth_daily_cap` 单一来源"——`VenueRateLimit`（types.py）schema 只有 `requests_per_minute`、从无日上限字段，`runner.py::_auth_gate_fetch` 的实现也从不读 VenueSpec，原表述高估系统能力 | Phase 6 F2（[2026-07-24-post-phase5-audit.md §5](../reports/2026-07-24-post-phase5-audit.md)） |
 
 > **[已裁决]**（P0b，2026-07-23）：①`cryptography` optional extra → **D-023**（含 `types.SessionHandle` 具体化系 types.py:128 预留的计划内变更之附注）；②健康门 N=20/15min、日配额 200、challenge 冷却 24h **确认沿 04 §4/§5 原文**；③异常子类 + status_code **归 T2 权威版**（plan §5）；④wiley **纳入本 Phase + token 门控** → **D-024**（acm_dl 维持出列、全文改道 unpaywall 一并入 D-024）。
 > **[待双评审]**：elsevier entitlement 语义、`X-RateLimit-*` 真值、全文/attachment 字段名——R0 keyless 429 拦在 auth 层前无法活验，留 T3 实现期真实 key 核验（BLOCKER-1，见 elsevier-sd.md §2/§5）。

@@ -499,6 +499,43 @@ def test_guardrail_scans_array_of_tables(isolated_cwd: Path, tmp_path: Path) -> 
     assert "servers" in str(exc.value) and "token" in str(exc.value)
 
 
+# -- 畸形 TOML 语法错误 → CONFIG 类错误（2026-07-24 审计 P1 [O1]）----------------------------
+# 家目录/项目级 config.toml 语法错误此前抛裸 `tomllib.TOMLDecodeError` 逃逸出 errors.py
+# 「配置错误归 CONFIG 类」契约（与同函数的敏感键护栏处理不一致）；`_load_toml` 现统一包裹。
+
+
+def test_home_config_malformed_toml_raises_config_error(tmp_path: Path) -> None:
+    """家目录 config.toml 语法错误（缺右中括号）→ CrawlerError(CONFIG)，不逃逸裸异常。"""
+    home = tmp_path / "home"
+    home.mkdir()
+    (home / "config.toml").write_text("[rate\nscale = 0.5\n", encoding="utf-8")
+    with pytest.raises(CrawlerError) as exc:
+        Config.load(home=home)
+    assert exc.value.error_class is ErrorClass.CONFIG
+    assert str(home / "config.toml") in str(exc.value)
+
+
+def test_project_config_malformed_toml_raises_config_error(
+    isolated_cwd: Path, tmp_path: Path
+) -> None:
+    """项目级 ./paper-crawler.toml 语法错误 → 同归 CrawlerError(CONFIG)（同一 `_load_toml`）。"""
+    _write(isolated_cwd / "paper-crawler.toml", "key = = bad\n")
+    with pytest.raises(CrawlerError) as exc:
+        Config.load(home=tmp_path / "home")
+    assert exc.value.error_class is ErrorClass.CONFIG
+    assert str(isolated_cwd / "paper-crawler.toml") in str(exc.value)
+
+
+def test_describe_config_malformed_home_toml_raises_config_error(tmp_path: Path) -> None:
+    """`describe_config` 与 `Config.load` 共享 `_load_toml`——畸形 TOML 同样归 CONFIG。"""
+    home = tmp_path / "home"
+    home.mkdir()
+    (home / "config.toml").write_text("not = [valid\n", encoding="utf-8")
+    with pytest.raises(CrawlerError) as exc:
+        describe_config(home=home)
+    assert exc.value.error_class is ErrorClass.CONFIG
+
+
 @pytest.mark.parametrize("bad_scale", ["true", "[1, 2]"])
 def test_scale_non_number_raises_typeerror(
     isolated_cwd: Path, tmp_path: Path, bad_scale: str

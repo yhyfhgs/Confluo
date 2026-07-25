@@ -312,8 +312,10 @@ def _env(
 
     **分层加载护栏（D-025）**：`_build_env` 首行 `Config.load` 若命中项目级敏感键护栏
     （`./paper-crawler.toml` 含凭证形态键）→ `CrawlerError(CONFIG)`；在此统一转 `typer.Exit(2)`
-    优雅拒启动（此前 Config.load 从不抛 CrawlerError，本 catch 纯附加只作用于新护栏路径，
-    覆盖所有走 `_env` 的命令）。此时尚未开 DB/日志，无资源需清理。
+    优雅拒启动（此前 Config.load 从不抛 CrawlerError，本 catch 纯附加，覆盖所有走 `_env`
+    的命令）。同一 catch 亦覆盖 `Config.load` 的另一条 CrawlerError(CONFIG) 路径——家目录/
+    项目级 config.toml 语法错误（`config.py::_load_toml`，2026-07-26 归类修正）。此时尚未开
+    DB/日志，无资源需清理。
     """
     try:
         cli_env = _build_env(home, verbose, dry_run=dry_run, auth=auth)

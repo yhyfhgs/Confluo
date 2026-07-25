@@ -96,8 +96,21 @@ def _find_project_config(start: Path) -> Path | None:
 
 
 def _load_toml(path: Path) -> dict[str, object]:
-    with path.open("rb") as handle:
-        return tomllib.load(handle)
+    """读取并解析一个 TOML 文件（家目录 `config.toml` 或项目级 `paper-crawler.toml` 共用）。
+
+    语法错误归一为 `CrawlerError(CONFIG)`——不放行裸 `tomllib.TOMLDecodeError` 逃逸。
+    本函数同一层级的敏感键护栏（`_guard_project_config`）早已规范包 CONFIG，语法错误路径
+    此前不一致（2026-07-24 审计 P1 [O1]：`config.py:98` 畸形 TOML 逃逸出 errors.py「配置
+    错误归 CONFIG 类」契约，CLI 侧因此收到裸异常而非退出码 2）；风格对齐
+    `auth/store.py::load_profiles` 对 `profiles.toml` 的同款包裹先例。
+    """
+    try:
+        with path.open("rb") as handle:
+            return tomllib.load(handle)
+    except tomllib.TOMLDecodeError as exc:
+        raise CrawlerError(
+            ErrorClass.CONFIG, f"配置文件解析失败（{path}）：{exc}", detail=str(path)
+        ) from exc
 
 
 def _scan_sensitive_keys(node: object, path: tuple[str, ...] = ()) -> str | None:

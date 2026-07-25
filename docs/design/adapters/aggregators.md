@@ -2,7 +2,7 @@
 title: Adapter 设计 · 聚合元数据源（Crossref/DBLP/OpenAlex/S2/Unpaywall/CORE）
 status: implemented
 owner: fable5
-updated: 2026-07-23
+updated: 2026-07-26
 ---
 
 # Adapter · `aggregators`（五源 committed + core 保留的合册实现级详设）
@@ -156,6 +156,21 @@ state:  <config-home>/state/openalex-budget.json = {"date": "YYYY-MM-DD(UTC)", "
 | 历史回填 | `GET /xml/dblp.xml.gz`（+ `.md5`） | 一次性 dump（CC0）；backfill 走此而非在线逐卷 |
 
 - **分页**：无。dblp 逐卷一次性整取（单卷 XML，规模随卷内 `inproceedings` 数变化；`icml2023.xml` 勘察 [LIVE] 2026-07-20 实测 HTTP 200，字节数未计量）；大规模历史走 dump（获取策略阶梯）。**禁区**：search API、`/rec/xml` 不访问（§3）。
+
+**枚举卷响应 schema（双形态，回填 2026-07-26；事实来源=`adapters/dblp/parse.py` 模块 docstring「双 schema」专节 + 其测试 fixture）**：`GET /db/conf/{acr}/{slug}.xml`（在线卷页，`enumerate_issue`/`healthcheck` 实际请求路径）**根元素不是** `<dblp>`，而是 `<bht>`——每条 `proceedings`/`inproceedings` 记录被多包一层 `<r>`，外层还有 `<dblpcites>` 容器与一个人读 `<h1>` 标题（均非记录本身）：
+
+```xml
+<bht key="db/conf/icml/icml2023.bht" title="…">
+  <h1>40th ICML 2023: Honolulu, HI, USA</h1>
+  <dblpcites>
+    <r><proceedings key="conf/icml/2023">…</proceedings></r>
+    <r style="ee"><inproceedings key="conf/icml/AamandACINS23">…</inproceedings></r>
+    …
+  </dblpcites>
+</bht>
+```
+
+（[LIVE] 2026-07-23 对 `https://dblp.org/db/conf/icml/icml2023.xml` 真实在线请求核实，HTTP 200 / `content-type: application/xml`；捕获件见 `tests/fixtures/dblp/raw/11_volume_xml_bht_schema_full_real_icml2023.xml`，逐字节未改动，含 1828 条 `inproceedings` + 1 条 `proceedings`，与 §7 D-019 锚点 `icml2023.record_count=1828` 同源）。**历史回填 `GET /xml/dblp.xml.gz` 用的是另一 schema**——根元素为 `<dblp>`，`proceedings`/`inproceedings` 是根的**直接子元素**（无 `<r>`/`<dblpcites>` 包装，`dblp.dtd` 描述的形态；示例见 `tests/fixtures/dblp/raw/04_volume_xml_dump_schema_normal.xml`）。下节"响应字段 → PaperStub 映射"的 XPath（如 `inproceedings/@key`）对两种 schema 同样有效——解析器（`parse_volume_xml`）统一按 `Element.iter(tag)`（任意深度递归查找）取记录，根元素校验放宽为 `{"bht","dblp"}` 两者皆合法，无需按 schema 分支实现。**初版实现教训（HIGH 阻断项，已修复）**：曾把 dump schema（`<dblp>` 直接子元素）误当成在线卷 XML 的 schema，导致 `enumerate_issue`/`healthcheck` 对任何真实卷 100% 解析失败（`root.tag != "dblp"` 早失败 + 直接子查询在 `<bht>` 下永远找不到记录）；本节回填此前仅见 `parse.py` docstring 与测试记录该真实结构，本文档未同步（2026-07-24 post-phase5-audit §5 处置）。
 
 **请求头**：UA + mailto（统一）。
 
@@ -437,6 +452,7 @@ openalex/s2 **不承担枚举**（capabilities 已收回 ENUMERATE，§1；两�
 | 11 | 2026-07-23 | **§5.1 补记 T3 限速/timeline 粒度实现落地**：X-Rate-Limit 动态读头在冻结 `HttpClient.get_bytes`（不暴露响应头）下不可达，落地为静态 5 req/s 保守上限 + 429 退避（★裁决 2026-07-22，T3）；timeline 粒度=出版年（Crossref filter 无卷期维度），volume/issue 经 works 记录读入 meta（★裁决） | T3 实现（`adapters/crossref/adapter.py` 模块 docstring） |
 | 12 | 2026-07-23 | **§5.3/§5.4 healthcheck 措辞对齐 T6 实现**：openalex healthcheck 门控收紧为与 s2 统一"无 key → `NotImplementedError`→canary SKIP"，废止原"匿名即可探测"表述（★裁决 2026-07-23；理由=防 `crawler canary` 周期性高频调用时静默消耗 openalex 每日 credit 配额） | T6 实现（`adapters/openalex/adapter.py` 模块 docstring 自述"收紧于设计稿 §5.3"） |
 | 13 | 2026-07-23 | **文档转正**：front matter `status: approved`→`implemented`（T1~T7 五源 adapter + 合并引擎全部合并落地；AC-3.5 在线实跑 PASS 建议，待 controller 终签） | Phase 3 收尾（[records/2026-07-23-ac35-acceptance.md](../../testing/records/2026-07-23-ac35-acceptance.md)） |
+| 14 | 2026-07-26 | **§5.2 回填 dblp 真实枚举卷响应 schema**：在线卷页根元素 `<bht>`（记录嵌 `<dblpcites>/<r>` 两层包装）vs 历史 dump `<dblp>`（`proceedings`/`inproceedings` 为直接子元素）两形态并存，此前仅 `dblp/parse.py` 模块 docstring 与测试 fixture 记录该真实结构，本文档未同步回填（文档滞后修正，非实质设计变更） | Phase 6 F2（[2026-07-24-post-phase5-audit.md §5](../../reports/2026-07-24-post-phase5-audit.md)） |
 
 ## 10. 风险与维护
 

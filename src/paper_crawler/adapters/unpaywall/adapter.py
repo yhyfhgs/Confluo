@@ -20,11 +20,19 @@ FETCH——Unpaywall 无搜索端点，必须先有 DOI 清单来自 crossref/db
   5xx→transient、畸形 JSON→parse）由 `HttpClient`/`parse.parse_response` 原样 raise。
 - `healthcheck`：固定金 OA DOI（D-019 锚点，§7）比对 `is_oa`+`oa_status`。
 
-**触发条件语义**（设计意图，§5.5；Phase 3 T5 范围内不接线 pipeline）：本 adapter 意在
-两种场景下被调用——①主源 resolve 因 `no_entitlement` 失败后的 OA 兜底；② VenueSpec
-声明 OA-fallback 优先。**这两条触发路径均不在本次改动范围内**（会触及 `pipeline/
-stages.py` 的兜底重试逻辑）——本包只保证 `resolve_assets` 被**直接调用**时行为正确
-（单测/OA 报告即如此使用），pipeline 侧接线留待另行评估（见任务报告 concerns）。
+**触发条件语义**（设计意图，§5.5；**接线现状**：Phase 4 已实现并被集成测试覆盖，见
+auth-framework.md §8.1——本节此前称"两条触发路径均不在本次改动范围内"的表述已过期，
+2026-07-26 审计文档滞后修正）：本 adapter 在两种场景下被调用——①主源 resolve/fetch 因
+`no_entitlement` 失败后的 OA 兜底（`runner._route_error` 的 NO_ENTITLEMENT 分支经
+`_enqueue_oa_fallback` 派生 `oa_fallback` 子任务）；② `StageContext.oa_fallback` 门控
+开启时（auth_gated venue 装配期默认置 True，见 `cli.py::_assemble_auth_seam`）。接线
+路径：pipeline 第七 handler `_stage_oa_fallback`（`pipeline/stages.py`）把本类
+`lookup()` 的记录规格化为 `AssetPlan` 并入队 `fetch` 任务 → `_fetch_oa_direct` 通用
+direct 取回落盘（复用 `PartFileIO`/`validate_pdf_magic`/`finalize_fetch` 三件不绕过）。
+本文件自身只负责 `resolve_assets`/`lookup` 的正确性（pipeline 编排/入队/落盘属
+`stages.py`/`runner.py` 职责，不在本文件范围）；接线集成测试见
+`tests/integration/test_auth_pipeline.py`（如
+`test_no_entitlement_triggers_oa_fallback_direct_fetch`）。
 
 **邮箱注入**（`?email=` 查询参数；aggregators.md §3）：优先级"显式注入 > env 兜底"
 （同 arxiv/openreview 的 UA email 注入先例，见 `set_email`/`_resolve_email`）——CLI

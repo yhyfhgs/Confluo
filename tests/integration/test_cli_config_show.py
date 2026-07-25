@@ -114,6 +114,21 @@ def test_config_show_project_sensitive_key_rejects_exit_2(cwd: Path, tmp_path: P
     assert "敏感键" in result.output
 
 
+def test_config_show_malformed_home_toml_exit_2(cwd: Path, tmp_path: Path) -> None:
+    """家目录 config.toml 语法损坏 → `CrawlerError(CONFIG)` → 退出码 2（无裸 traceback）。
+
+    2026-07-24 审计 P1 [O1]：畸形 TOML 此前逃逸出 CONFIG 错误分类契约（裸
+    `tomllib.TOMLDecodeError` 而非退出码 2）；`config.py::_load_toml` 归类修正后回归。
+    """
+    home = tmp_path / "home"
+    home.mkdir()
+    (home / "config.toml").write_text("[rate\nscale = 0.5\n", encoding="utf-8")  # 缺右中括号
+    result = runner.invoke(app, ["config", "show", "--home", str(home)])
+    assert result.exit_code == 2, result.output
+    assert "Traceback" not in result.output
+    assert str(home / "config.toml") in result.output
+
+
 def test_config_show_home_row_present(cwd: Path, tmp_path: Path) -> None:
     """首行呈现 config-home 及其来源（explicit，因 --home 显式给出）。"""
     result = runner.invoke(app, ["config", "show", "--home", str(tmp_path / "home")])

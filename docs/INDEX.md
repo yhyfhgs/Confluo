@@ -51,7 +51,7 @@
 | [design/07-auth-session.md](design/07-auth-session.md) | 认证与会话管理 | implemented | 2026-07-23 |
 | [design/08-venue-tracking.md](design/08-venue-tracking.md) | Venue 时间轴与年度追踪 | approved | 2026-07-20 |
 | [design/09-search-filter.md](design/09-search-filter.md) | 主题订阅与精确搜索 | approved | 2026-07-20 |
-| [design/auth-framework.md](design/auth-framework.md) | 认证框架实现级详设（07/04 的实现级扩展：四 Provider + 凭证库 + CLI + pipeline 接缝） | implemented | 2026-07-24 |
+| [design/auth-framework.md](design/auth-framework.md) | 认证框架实现级详设（07/04 的实现级扩展：四 Provider + 凭证库 + CLI + pipeline 接缝） | implemented | 2026-07-26 |
 | [design/10-config-layout.md](design/10-config-layout.md) | 配置归集与分层规范（D-025：config/ 文件夹 + 加载链 + 敏感键护栏） | implemented | 2026-07-23 |
 | [design/11-browser-fetch.md](design/11-browser-fetch.md) | Browser-Fetch 横切件详设（三消费方统一浏览器取回通道 + CF-403 冷却缺口方案；D-029 案 B 承接，D-030 定稿） | approved | 2026-07-26 |
 
@@ -73,7 +73,7 @@
 | [design/adapters/aaai-ojs.md](design/adapters/aaai-ojs.md) | AAAI OJS | implemented | 2026-07-26 |
 | [design/adapters/acm-dl.md](design/adapters/acm-dl.md) | ACM Digital Library（D-020：Phase 2 出列；D-024：Phase 4 重评维持出列，全文改道 unpaywall OA-fallback） | review | 2026-07-23 |
 | [design/adapters/ieee-xplore.md](design/adapters/ieee-xplore.md) | IEEE Xplore | review | 2026-07-20 |
-| [design/adapters/aggregators.md](design/adapters/aggregators.md) | 聚合元数据源（6 合册） | implemented | 2026-07-23 |
+| [design/adapters/aggregators.md](design/adapters/aggregators.md) | 聚合元数据源（6 合册） | implemented | 2026-07-26 |
 | [design/adapters/elsevier-sd.md](design/adapters/elsevier-sd.md) | Elsevier ScienceDirect（实现级，P4-W0/T3） | implemented | 2026-07-23 |
 | [design/adapters/wiley.md](design/adapters/wiley.md) | Wiley Online Library（实现级，P4-W0，D-024 纳入） | implemented | 2026-07-24 |
 | [design/adapters/oup-silverchair.md](design/adapters/oup-silverchair.md) | OUP（Silverchair）（实现级，P4-W0/T4） | implemented | 2026-07-23 |
