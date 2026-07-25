@@ -5,10 +5,18 @@
 #   适合直接按类目+关键词收紧,而不是广撒网。
 # 改造建议：若想扩召回覆盖应用计量（非纯方法论文），加回 econ.GN 类目并放宽
 #   title_regex_any（如去掉 "structural estimat" 一类偏理论的锚点词）。
+#
+# ⚠ T8 审查修复（2026-07-26）：①裸词干 "identificat" 太宽（会命中"identification
+#   number"一类无关标题），收紧为带介词上下文式；②query 的 "generalized method of
+#   moments" 分支原无 title 全称对应式（死子句，只留了 \bGMM\b 缩写）；③补
+#   nonparametric/cointegration|unit root/quantile regression/weak instrument/
+#   treatment effect 五个该子领域公认词族；④去掉 stat.AP（Statistics Applications
+#   是横跨全统计学的通用类目，与本预置"高精确"取向冲突——它不专指计量方法，会把
+#   大量无关应用统计学论文引入；宽召回场景可加回，见上方改造建议同类操作）。
 name: econometrics-methods
 sources:
   arxiv:
-    categories: [econ.EM, stat.ME, stat.AP]   # 官方分类（核对：docs/research/site-survey/arxiv.md 分类体系表）
+    categories: [econ.EM, stat.ME]   # 官方分类（核对：docs/research/site-survey/arxiv.md 分类体系表；已去 stat.AP，见头注④）
     query: >
       (ti:"identification" OR abs:"generalized method of moments" OR abs:"panel data"
        OR abs:"structural estimation" OR abs:"semiparametric")
@@ -22,13 +30,19 @@ sources:
     query: econometric identification
 filters:
   title_regex_any:
-    - "identificat"
+    - "identification (of|in|and)"       # 原裸 "identificat" 过宽收紧（T8 修复）
     - "instrumental variable"
     - "\\bGMM\\b"
+    - "generalized method of moments"    # 对应 query 分支全称（T8 修复：原缺失）
     - "panel data"
     - "structural estimat"
     - "semiparametric"
-  exclude_regex: ["survey", "textbook"]
+    - "nonparametric"                    # 新增
+    - "co-?integration|unit root"        # 新增（容忍 "cointegration"/"co-integration" 两种拼法）
+    - "quantile regression"              # 新增
+    - "weak instrument"                  # 新增
+    - "treatment effect"                 # 新增
+  exclude_regex: ["\\ba survey\\b|: a survey|\\bsurvey of\\b", "textbook"]   # survey 锚定，防误杀含 "survey" 字样的非综述论文
   min_year: 2020
 actions:
   ingest: metadata

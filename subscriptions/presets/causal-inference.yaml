@@ -5,29 +5,45 @@
 #   过早收紧类目或关键词会系统性漏掉某一学科的产出。
 # 改造建议：若只关心某一应用领域（如仅经济学），去掉 cs.LG/stat.ML 类目，只留
 #   econ.EM，并把 s2.fields_of_study 收窄到 ["Economics"]。
+#
+# ⚠ T8 审查修复（2026-07-26）：query 与 title 双侧补 regression discontinuity/
+#   synthetic control/double machine learning 三个该领域公认方法族（原缺失，
+#   实测 6/6 经典标题被漏判或误杀）；difference-in-differences 收紧为死板全词，
+#   改为容忍连字符/空格与复数变体的宽松式；补 \bDiD\b 缩写。
 name: causal-inference
 sources:
   arxiv:
     categories: [stat.ME, stat.ML, econ.EM, cs.LG]   # 官方分类（核对：docs/research/site-survey/arxiv.md 分类体系表）
     query: >
       (ti:"causal inference" OR abs:"instrumental variable" OR abs:"treatment effect"
-       OR abs:"difference-in-differences" OR abs:"propensity score")
+       OR abs:"difference-in-differences" OR abs:"propensity score"
+       OR abs:"regression discontinuity" OR abs:"synthetic control")
       AND NOT ti:"survey"
   openalex:
     concepts: ["causal inference"]
     from_source_types: [preprint]
   s2:                         # 计量方法类：s2 补跨学科覆盖（design/09 §3 bulk search venue/fieldsOfStudy）
     fields_of_study: ["Economics", "Computer Science"]   # ⚠ 取值对照 S2 官方 fieldsOfStudy 分类表，实现期核验
-    venues: ["Journal of Causal Inference", "Journal of Econometrics"]
+    venues:
+      - "Journal of Causal Inference"
+      - "Journal of Econometrics"
+      - "Journal of the American Statistical Association"   # T8 补：JASA
+      - "Biometrika"                                         # T8 补
+      - "Econometrica"                                       # T8 补
+      - "American Economic Review"                           # T8 补
     query: causal inference
 filters:
   title_regex_any:
     - "causal"
     - "treatment effect"
     - "instrumental variable"
-    - "difference-in-differences"
+    - "difference\\w*[- ]in[- ]difference"   # 原死板全词漏掉连字符/复数变体，改宽（T8 修复）
+    - "\\bDiD\\b"                            # 新增：DiD 缩写
     - "propensity score"
-  exclude_regex: ["survey"]
+    - "regression discontinuity"             # 新增（T8 修复：query 已有，title 端原缺失）
+    - "synthetic control"                    # 新增（同上）
+    - "double.{0,20}machine learning"        # 新增：容忍 "Double/Debiased Machine Learning" 原始表述
+  exclude_regex: ["\\ba survey\\b|: a survey|\\bsurvey of\\b"]   # survey 锚定，防误杀含 "survey data/experiment" 字样的方法论文
   min_year: 2020
 actions:
   ingest: metadata

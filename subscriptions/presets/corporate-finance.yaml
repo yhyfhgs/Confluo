@@ -5,6 +5,10 @@
 #   靠本地关键词族收敛，源头查询不宜收太紧。
 # 改造建议：若只关心某一子话题（如仅并购），把 title_regex_any 收窄到单一词族
 #   （如只留 "merger"/"acquisition"），并去掉 econ.GN 类目减少无关经济学产出。
+#
+# ⚠ T8 审查修复（2026-07-26）：补 IPO/leverage/repurchase|buyback/takeover/
+#   executive compensation 五个该子领域公认词族（原覆盖面偏窄，只有资本结构/
+#   并购/股利/治理四条）；exclude_regex 的 survey 锚定为精确短语，防误杀。
 name: corporate-finance
 sources:
   arxiv:
@@ -17,7 +21,10 @@ sources:
     networks: [FEN]                          # SSRN 子网（FEN=Financial Economics Network）
     ejournals: ["Corporate Finance eJournal"]  # ⚠ 名称实现期核验（核对：docs/research/site-survey/econ-fin-preprints.md「FEN…Corporate Finance」）
   nber:
-    programs: [CF]   # NBER Corporate Finance program（核对：docs/research/site-survey/nber.md [LIVE] newcf.xml 实测 200）
+    # NBER Corporate Finance program。证据等级 [LIVE]：docs/research/site-survey/nber.md
+    # 明确记录对 newcf.xml 的独立 HTTP 实测（200，3 item）——强于 asset-pricing.yaml
+    # 的 AP=[DOC]（该文件同位注释有说明）。
+    programs: [CF]
 filters:
   title_regex_any:
     - "capital structure"
@@ -26,7 +33,12 @@ filters:
     - "payout polic"
     - "dividend"
     - "corporate governance"
-  exclude_regex: ["survey"]
+    - "\\bIPO\\b|initial public offering"   # 新增
+    - "leverage"                            # 新增
+    - "repurchase|buyback"                  # 新增
+    - "takeover"                            # 新增
+    - "executive compensation"              # 新增
+  exclude_regex: ["\\ba survey\\b|: a survey|\\bsurvey of\\b"]   # survey 锚定，防误杀含 "survey" 字样的非综述论文
   min_year: 2020
 actions:
   ingest: metadata

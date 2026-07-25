@@ -5,6 +5,11 @@
 #   直接收紧。
 # 改造建议：若想扩召回覆盖应用型多智能体博弈工作，加回 cs.MA/cs.AI 类目并放宽
 #   query 的布尔约束（去掉 NOT ti:"survey"）。
+#
+# ⚠ T8 审查修复（2026-07-26）：补 strategy-proof/deferred acceptance/school
+#   choice/kidney exchange 四个该子领域公认经典词族（稳定匹配理论一脉：
+#   Gale-Shapley/Roth-Sönmez-Ünver/Abdulkadiroğlu-Sönmez）；exclude_regex 的
+#   survey 锚定为精确短语，防误杀。
 name: mechanism-design
 sources:
   arxiv:
@@ -17,8 +22,19 @@ sources:
     concepts: ["mechanism design", "auction theory"]
     from_source_types: [preprint]
 filters:
-  title_regex_any: ["mechanism design", "auction", "matching market", "stable matching", "incentive compat", "truthful", "\\bVCG\\b"]
-  exclude_regex: ["survey"]
+  title_regex_any:
+    - "mechanism design"
+    - "auction"
+    - "matching market"
+    - "stable matching"
+    - "incentive compat"
+    - "truthful"
+    - "\\bVCG\\b"
+    - "strategy-?proof"        # 新增（容忍 "strategyproof"/"strategy-proof" 两种拼法）
+    - "deferred acceptance"    # 新增
+    - "school choice"          # 新增
+    - "kidney exchange"        # 新增
+  exclude_regex: ["\\ba survey\\b|: a survey|\\bsurvey of\\b"]   # survey 锚定，防误杀含 "survey" 字样的非综述论文
   min_year: 2021
 actions:
   ingest: metadata

@@ -42,6 +42,16 @@ guard:                         # 护栏（FR-16）
 schedule_hint: daily
 ```
 
+> **脚注（2026-07-26 补，见修订记录 #1）**：`title_regex_any` 应至少有一条能
+> 匹配 `sources.*.concepts`/`query` 里声明的概念**全称**——本例
+> `openalex.concepts: ["large language model"]` 与 `query` 的 `tool use`
+> 分支，若 `title_regex_any` 只有 `\bagent(s|ic)?\b`/`LLM` 两条缩写式，会把
+> 标题直接写全称"Large Language Model"（不含"agent"或"LLM"缩写）或只提
+> "tool"不提"agent"的论文漏判为不命中。照抄本示例产出订阅/preset 时请一并
+> 检查这条对应关系；`subscriptions/presets/llm-agents.yaml`（T8）已按此修复，
+> 并以真实论文标题（如 *Large Language Models are Zero-Shot Reasoners*）
+> 建了回归测试（`tests/unit/test_subs_presets.py`）。
+
 ```yaml
 # subscriptions/asset-pricing-wp.yaml —— 金融示例
 name: asset-pricing-wp
@@ -101,3 +111,9 @@ guard: {max_new_per_run: 100}
   - AC-6.1 3 个预置 topic 连续 7 天 watch：无重复、无遗漏（与源头 listing 抽样对照）、日报生成；
   - AC-6.2 人为构造超限场景：正确熔断、零入库、过载报告含分布与建议；
   - AC-6.3 SSRN 订阅在无关键词下推能力下，本地过滤后的清单与人工浏览基准一致率 ≥95%。
+
+## 修订记录
+
+| # | 日期 | 修订 | 依据 |
+|---|---|---|---|
+| 1 | 2026-07-26 | 滞后修正（status 不降，仍 approved）：§2 示例一（llm-agents）补脚注——`title_regex_any` 需含 `sources.*.concepts`/`query` 声明词的全称对应式，防止照抄该示例时复现"query/concept 有词、title 本地过滤无对应式"的死子句缺陷 | T8（`subs/presets`）审查：用真实经典论文标题实测 9 件预置 topic 包，发现同类 P1 级缺陷 7 处并修复；本条为反哺设计文档源头示例 |

@@ -3,24 +3,43 @@
 # 取向：高精确。市场微观结构是有专属 arXiv 类目（q-fin.TR）与专属 SSRN eJournal
 #   的窄分支，核心词族（bid-ask spread、order flow、limit order book）专指性强，
 #   不易与其他金融子领域混淆。
-# 改造建议：若想扩召回覆盖高频交易/算法交易的交叉产出，加回 q-fin.CP 之外再加
-#   q-fin.PR，并把 title_regex_any 放宽为只保留 "market microstructure" 一条。
+# 改造建议：若想扩召回覆盖资产定价交叉产出，加入 q-fin.PR 类目，并把
+#   title_regex_any 放宽为只保留 "market microstructure" 一条。
+#   （T8 修复：原此处误写"加回 q-fin.CP"，但 CP 已在下方 categories 表内，属
+#   自相矛盾的笔误，已订正——CP 本就属于本预置默认类目，不是改造项。）
 #
 # 未含 NBER：勘察文档未确认 NBER 有专属 microstructure program（NBER 现实中此类
 #   研究多归 Asset Pricing program），故不臆造 program 代码——详见 T8 交付报告。
+#
+# ⚠ T8 审查修复（2026-07-26）：实测本领域 6 个经典标题（如 Commonality in
+#   Liquidity）全部被原 title_regex_any 漏判——"liquidity provision"死板全词
+#   改宽为词干"liquidit"；补 price discovery/market making/adverse selection/
+#   informed trading/high-frequency trading 五个该子领域公认词族；query 同步
+#   补 price discovery 分支。
 name: market-microstructure
 sources:
   arxiv:
     categories: [q-fin.TR, q-fin.CP]   # 官方分类（核对：docs/research/site-survey/arxiv.md 分类体系表）
     query: >
       (ti:"market microstructure" OR abs:"bid-ask spread" OR abs:"order flow"
-       OR abs:"limit order book" OR abs:"price impact")
+       OR abs:"limit order book" OR abs:"price impact" OR abs:"price discovery")
   ssrn:
     networks: [FEN]                              # SSRN 子网（FEN=Financial Economics Network）
     ejournals: ["Market Microstructure eJournal"]  # ⚠ 名称实现期核验（核对：docs/research/site-survey/econ-fin-preprints.md「FEN…Market Microstructure」）
 filters:
-  title_regex_any: ["market microstructure", "bid-ask spread", "order flow", "limit order book", "price impact", "liquidity provision"]
-  exclude_regex: ["survey"]
+  title_regex_any:
+    - "market microstructure"
+    - "bid-ask spread"
+    - "order flow"
+    - "limit order book"
+    - "price impact"
+    - "liquidit"                # 原 "liquidity provision" 死板全词改宽（T8 修复：吃下 liquidity/illiquidity）
+    - "price discovery"         # 新增
+    - "market[- ]mak"           # 新增（容忍 "market maker"/"market-making" 两种连字符形态）
+    - "adverse selection"       # 新增
+    - "informed trad"           # 新增（容忍 "informed trader"/"informed trading"）
+    - "high-frequency trading"  # 新增
+  exclude_regex: ["\\ba survey\\b|: a survey|\\bsurvey of\\b"]   # survey 锚定，防误杀含 "survey" 字样的非综述论文
   min_year: 2021
 actions:
   ingest: metadata
