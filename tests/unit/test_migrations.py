@@ -66,6 +66,7 @@ EXPECTED_TABLES = {
     "task",
     "fetch_log",
     "schema_version",
+    "paper_weak_key",  # schema v3（0003_paper_weak_key.sql，Phase 6 F1）
 }
 
 EXPECTED_INDEXES = {
@@ -74,11 +75,13 @@ EXPECTED_INDEXES = {
     "idx_fetch_log_domain_ts",
     "idx_asset_state",
     "idx_paper_title_norm",  # schema v2（0002_title_norm.sql，Phase 3 T1）
+    "idx_paper_weak_key_lookup",  # schema v3（0003_paper_weak_key.sql，Phase 6 F1）
 }
 
 # 当前最新 schema 版本 = migrations/ 下迁移文件数。schema v2（Phase 3 T1）新增
-# 0002_title_norm.sql（title_norm 列 + doi identifier 归一回填）。
-LATEST_SCHEMA_VERSION = 2
+# 0002_title_norm.sql（title_norm 列 + doi identifier 归一回填）；schema v3（Phase 6 F1）新增
+# 0003_paper_weak_key.sql（观测级弱信号键倒排表 + 存量回填）。
+LATEST_SCHEMA_VERSION = 3
 
 
 @pytest.fixture
@@ -198,16 +201,19 @@ def test_first_build_skips_backup_of_empty_v0(
 ) -> None:
     """version 0 空库不备份（无 .v0.bak）。
 
-    真实迁移目录含 0001+0002 后，一次全新建库跨 0→1→2：0→1 步（from_version=0）跳过备份，
-    1→2 步（from_version=1>0）会对 v1 中间态备份——故断言"无 .v0.bak"而非"零 .bak"，精确
+    真实迁移目录含 0001+0002+0003 后，一次全新建库跨 0→1→2→3：0→1 步（from_version=0）跳过
+    备份，其后每步（from_version>0）会对中间态备份——故断言"无 .v0.bak"而非"零 .bak"，精确
     锁定「初始空库不备份」这一规则（migrate() 的 `if current > 0` 分支）。
     """
     db_path = tmp_path / "app.sqlite"
     with closing(Database(db_path)) as database:
-        assert database.migrate() == 2
+        assert database.migrate() == LATEST_SCHEMA_VERSION
     assert list(tmp_path.glob("*.v0.bak")) == []
-    # 跨到 0002 时对 v1 中间态备份（from_version=1）。
-    assert [p.name for p in tmp_path.glob("*.bak")] == ["app.sqlite.v1.bak"]
+    # 跨到 0002/0003 时分别对 v1/v2 中间态备份（from_version=1 / 2）。
+    assert sorted(p.name for p in tmp_path.glob("*.bak")) == [
+        "app.sqlite.v1.bak",
+        "app.sqlite.v2.bak",
+    ]
 
 
 def test_second_migration_creates_backup(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
@@ -521,3 +527,40 @@ def test_v1_to_v2_doi_case_collision_same_paper_drops_redundant(
             ("p1", "10.1/abc", 1)
         ]
         assert database.query("SELECT COUNT(*) AS n FROM paper_relation")[0]["n"] == 0
+
+
+# -- schema v3（0003）v2→v3 自动升级 + 弱信号键回填 ----------------------------
+
+
+def _add_0003(tmp_path: Path) -> None:
+    shutil.copy(_REAL_MIGRATIONS_DIR / "0003_paper_weak_key.sql", tmp_path / "migrations")
+
+
+def test_v2_to_v3_backfills_weak_keys_from_existing_papers(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """v2 存量 paper 的历史弱信号键回填 = 旧实现的匹配面（title_norm + meta_json._first_author）。
+
+    键不全的行（无 `_first_author` / 无 title_norm）本就不参与旧实现的弱信号匹配，故不回填
+    ——升级后覆盖面零倒退、零扩张。
+    """
+    database = _seed_v1(tmp_path, monkeypatch)
+    _add_0002(tmp_path)
+    assert database.migrate() == 2
+    database.execute(
+        "INSERT INTO paper (id, title, title_norm, meta_json, ingest_state) VALUES (?,?,?,?,?)",
+        ("p1", "Some Paper", "some paper", '{"_first_author": "smith"}', "metadata_only"),
+    )
+    database.execute(  # 无 _first_author（pull 路径所建）→ 不回填
+        "INSERT INTO paper (id, title, title_norm, meta_json, ingest_state) VALUES (?,?,?,?,?)",
+        ("p2", "Other Paper", "other paper", '{"pages": "1-2"}', "metadata_only"),
+    )
+
+    _add_0003(tmp_path)
+    assert database.migrate() == 3
+
+    rows = database.query("SELECT paper_id, title_norm, first_author FROM paper_weak_key")
+    assert [(r["paper_id"], r["title_norm"], r["first_author"]) for r in rows] == [
+        ("p1", "some paper", "smith")
+    ]
+    database.close()

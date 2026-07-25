@@ -19,10 +19,14 @@
 1. **强合并**：stub 任一（归一后）identifier 命中恰一个既有 paper → 并入，字段按下条收敛，
    补 stub 其余 identifier。查→并→补在 `Repo.merge_ingest` 单事务内（防并发裂脑）。
 2. **字段级来源优先级收敛**：优先级 `official > crossref > dblp > openalex > s2 > heuristic`
-   （`SOURCE_PRIORITY`，D-021 冻结）。新值仅当①现值空 或 ②新源优先级**严格高于**现值来源
-   时写入；同级不覆盖 → 任意到达顺序收敛到同一终态。provenance 记于
-   `paper.meta_json._field_src`。**未记录来源的存量字段**（upsert_paper pull 路径所写）视为
-   **最高优先**——只补空、绝不覆盖（保守保护官方 proceedings 数据）。
+   （`SOURCE_PRIORITY`，D-021 冻结）。新值仅当①现值空、②新源优先级**严格高于**现值来源、
+   或③**同级但值序更小**时写入。provenance 记于 `paper.meta_json._field_src`。**未记录来源的
+   存量字段**（upsert_paper pull 路径所写）视为**最高优先**——只补空、绝不覆盖（保守保护官方
+   proceedings 数据）。
+   ③是 Phase 6 F1 修补的顺序敏感缝（审计 P3「同源二次观测异值先到胜」）：六枚举优先级两两
+   互异，故"同级"只可能是**同一来源的二次观测**给出不同值；原实现同级一律不覆盖=先到者胜
+   （顺序敏感）。改判为取值序更小者（`repo._prefers_on_tie`）——`min` 幂等+交换+结合，任意
+   到达顺序收敛同一终值；跨源冲突仍完全由优先级表裁决，tie-break 不介入。
 3. **跨 paper identifier 冲突**（stub 的 identifier 命中≥2 个不同既有 paper——06 未显写的
    边界）：**不自动合并两 paper**（等价弱信号升级场景）；stub 并入 identifier 数最多者
    （平局取 paper_id 字典序最小者——确定性），其余每个命中 paper 与胜者建
@@ -34,13 +38,27 @@
    paper + 候审边。②平局胜者随 paper 创建序（ULID）摆动。差异体现在 paper 行数 / 桥字段
    落点 / 候审边有无。但这是既定语义的数学必然且**零丢失**：identifier 值集不变、绝不删行。
    故该输入类不纳入随机顺序属性测试，其确定性由定向集成测试（`test_merge`）单独锁。
-4. **弱信号候审**：无 identifier 命中 → `title_norm` 精确匹配 + 首作者姓氏一致 → 新建 paper
-   + 对每个匹配既有 paper 建 `candidate_duplicate(decided=NULL, confidence, evidence)`。
-   **绝不自动合并**（06 §3）。「对每个匹配都建边」保证顺序无关（同簇终态=两两建边）。
-5. **candidate 端点定向**：按两 paper 各自最小 identifier `(scheme,value)` 升序定向 from→to
-   ——与到达顺序无关（AC-3.4 弱信号定向的确定性）。
-6. **幂等**：同一 stub 重复 ingest → identifier 已命中该 paper（强合并分支）、字段同级不覆盖、
-   candidate 主键 `ON CONFLICT DO NOTHING` → DB 终态不变。
+4. **弱信号候审**：匹配键 = `(title_norm, 首作者姓氏)`，**观测级**——每次 ingest（新建/强合并/
+   冲突并入三条路径全覆盖）都把本次观测的键并入该 paper 的**键集合**（schema v3
+   `paper_weak_key` 表，单调只增、不被上条的字段收敛改写），新键触发重判：对每个曾观测到同一
+   键的既有 paper 建 `candidate_duplicate(decided=NULL, confidence, evidence)`。**绝不自动合并**
+   （06 §3）。终态候审边 = 「键集合有交的每一对 paper」——输入集合（而非到达序）的函数。
+   键任一为空（无标题归一形/无首作者）不参与匹配，避免空键误配。
+   **F1 修复的缝（审计 P1）**：原实现拿 paper 行的**当前** title_norm/`_first_author` 当键、且
+   只在新建分支判定，后到的高优先源改写标题即抹掉匹配面——同一批观测按不同序注入得到不同
+   候审边数（实测 A,B,C→1 边 / C,A,B→0 边）。方向 fail-safe（漏标不误并）但违反 AC-3.4。
+   审计所列两个候选修法经反例检验均**不足**：仅「收敛改键后重判」漏掉"低优先观测的键先于
+   对家出现"的历史匹配；「冻结 title_norm 不参与收敛」则把键钉在**建行观测**上，而建行者本身
+   随到达序摆动——故取观测级键集合（两者的闭包）。
+   `IngestResult.action` 口径不变（冻结件）：强合并路径即便顺带建了候审边仍报 `merged`，
+   候审边只作为 DB 副作用记录；`candidate_flagged` 仍专指弱信号新建与跨 paper 冲突并入。
+5. **candidate 端点定向与唯一性**：一对 paper 至多一条 `candidate_duplicate`（`_upsert_candidate`
+   查双向后再落行——`(from,to,kind)` 主键不认方向，只查单向会因 identifier 集合增长导致的定向
+   翻转落出第二行）。新边按两 paper 各自最小 identifier `(scheme,value)` 升序定向 from→to
+   ——与到达顺序无关（AC-3.4 弱信号定向的确定性）。既有边只在**未经人工裁决**且新证据强度不弱
+   于既有时刷新（弱信号刷新共享键全交、identifier 冲突可升级弱信号边，反向不降级）；**绝不删行**。
+6. **幂等**：同一 stub 重复 ingest → identifier 已命中该 paper（强合并分支）、字段同值不覆盖、
+   弱信号键已在集合内不重判、candidate 至多一行且证据不变则不写 → DB 终态不变。
 
 首作者姓氏：`PaperStub.authors` 冻结为名字串组（types.py），不改 types——由 `authors[0]`
 启发式取姓（逗号前段，或末词）再经 `normalize_title` 归一为比对键（best-effort 弱信号）。

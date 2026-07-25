@@ -1,8 +1,9 @@
-"""`MergeEngine` 单测（Phase 3 T1；plan §2-1 全裁决点）。
+"""`MergeEngine` 单测（Phase 3 T1；plan §2-1 全裁决点。Phase 6 F1 补审计 P1/P3 定向用例）。
 
-覆盖：source 校验 / 纯新建 / 强合并 / 字段级来源优先级收敛（升/降/补空）/ 未知 provenance
-保护（upsert_paper 存量字段不被覆盖）/ 弱信号候审（正反例）/ 跨 paper identifier 冲突 /
-幂等 / matched_identifiers 口径 / DOI 归一强合并。
+覆盖：source 校验 / 纯新建 / 强合并 / 字段级来源优先级收敛（升/降/补空/同级 tie-break）/
+未知 provenance 保护（upsert_paper 存量字段不被覆盖）/ 弱信号候审（正反例 + 观测级键集合）/
+跨 paper identifier 冲突 / candidate 单行不重复与证据刷新规则 / 幂等 / matched_identifiers
+口径 / DOI 归一强合并。
 """
 
 from __future__ import annotations
@@ -66,6 +67,13 @@ def _relations(repo: Repo) -> list[object]:
 def _field_src(repo: Repo, paper_id: str) -> dict[str, str]:
     row = repo.db.query("SELECT meta_json FROM paper WHERE id = ?", (paper_id,))[0]
     return dict(json.loads(row["meta_json"]).get("_field_src", {}))
+
+
+def _weak_keys(repo: Repo) -> list[tuple[str, str]]:
+    rows = repo.db.query(
+        "SELECT title_norm, first_author FROM paper_weak_key ORDER BY title_norm, first_author"
+    )
+    return [(r["title_norm"], r["first_author"]) for r in rows]
 
 
 # -- source 校验 -------------------------------------------------------------
@@ -168,6 +176,46 @@ def test_convergence_meta_keys_union_and_priority(env: tuple[Repo, MergeEngine, 
     meta = json.loads(_papers(repo)[0]["meta_json"])
     assert meta["pages"] == "1-20"  # crossref > s2 覆盖同键
     assert meta["jel"] == "G12"  # 新键并入
+
+
+def test_same_source_reobservation_tie_break_takes_smaller_value(
+    env: tuple[Repo, MergeEngine, Path],
+) -> None:
+    """同源二次观测异值 → 取值序更小者（确定性 tie-break，审计 P3「先到胜」修复）。
+
+    优先级表只对跨源定序；同源两次给出不同值时原实现"先到者胜"=顺序敏感。取 min 使两种
+    到达顺序收敛同一终值（本例反向序由 `test_merge_property.py` 的全排列属性统一锁）。
+    """
+    repo, engine, _ = env
+    engine.ingest(
+        _stub(title="T", ids=(("doi", "10.1/a"),), abstract="b-abs", year=2020, pub_date="2020-02"),
+        source="crossref",
+    )
+    engine.ingest(
+        _stub(title="T", ids=(("doi", "10.1/a"),), abstract="a-abs", year=2019, pub_date="2019-01"),
+        source="crossref",
+    )
+    paper = _papers(repo)[0]
+    assert paper["abstract"] == "a-abs"  # 字符串值序取小
+    assert paper["year"] == 2019  # 数值取小（= 更早的那次观测）
+    assert paper["pub_date"] == "2019-01"
+    assert _field_src(repo, paper["id"])["year"] == "crossref"  # 同源，provenance 不变
+
+
+def test_same_source_reobservation_keeps_smaller_value_when_larger_arrives_later(
+    env: tuple[Repo, MergeEngine, Path],
+) -> None:
+    """同上的反向到达序：小值先到、大值后到 → 终值仍为小值（不覆盖）。"""
+    repo, engine, _ = env
+    engine.ingest(
+        _stub(title="T", ids=(("doi", "10.1/a"),), abstract="a-abs", year=2019), source="crossref"
+    )
+    engine.ingest(
+        _stub(title="T", ids=(("doi", "10.1/a"),), abstract="b-abs", year=2020), source="crossref"
+    )
+    paper = _papers(repo)[0]
+    assert paper["abstract"] == "a-abs"
+    assert paper["year"] == 2019
 
 
 # -- 未知 provenance 保护（并存策略核心） -------------------------------------
@@ -309,6 +357,176 @@ def test_weak_signal_latex_unicode_title_variants_match(
     )
     assert result.action == "candidate_flagged"
     assert len(_relations(repo)) == 1
+
+
+# -- 弱信号键集合：收敛不得抹掉匹配面（审计 P1 定向用例，Phase 6 F1） ---------
+
+
+def test_weak_signal_matches_superseded_title_after_convergence(
+    env: tuple[Repo, MergeEngine, Path],
+) -> None:
+    """高优先源改写标题后，**被顶掉的旧标题**仍留在匹配面上（观测级键集合单调只增）。
+
+    原实现只保留 paper 行的当前 title_norm，此处第三条 stub 会静默漏标候审（审计 P1 的
+    fail-safe 侧）。
+    """
+    repo, engine, _ = env
+    engine.ingest(
+        _stub(title="Alpha Study", ids=(("doi", "10.1/a"),), authors=("Jane Smith",)), source="s2"
+    )
+    engine.ingest(  # official > s2 → 改写 title/title_norm
+        _stub(title="Beta Study", ids=(("doi", "10.1/a"),), authors=("Jane Smith",)),
+        source="official",
+    )
+    assert _papers(repo)[0]["title"] == "Beta Study"
+    assert _weak_keys(repo) == [("alpha study", "smith"), ("beta study", "smith")]
+
+    result = engine.ingest(  # 与**旧**标题撞键
+        _stub(title="Alpha Study", ids=(("doi", "10.1/c"),), authors=("John Smith",)),
+        source="crossref",
+    )
+    assert result.action == "candidate_flagged"
+    assert len(_papers(repo)) == 2  # 绝不自动合并
+    assert len(_relations(repo)) == 1
+
+
+def test_strong_merge_new_key_flags_candidate_against_existing_paper(
+    env: tuple[Repo, MergeEngine, Path],
+) -> None:
+    """强合并引入新键时也重判候审——审计复现序 `C,A,B` 的那一侧（原实现此处 0 条边）。
+
+    action 仍报 `merged`（`IngestResult` 三枚举是冻结件），候审边作为 DB 副作用落库。
+    """
+    repo, engine, _ = env
+    engine.ingest(  # C：独立 work，键 (beta study, smith)
+        _stub(title="Beta Study", ids=(("doi", "10.1/c"),), authors=("John Smith",)),
+        source="crossref",
+    )
+    engine.ingest(  # A：另一 work，键 (alpha study, smith) —— 此时无匹配
+        _stub(title="Alpha Study", ids=(("doi", "10.1/a"),), authors=("Jane Smith",)), source="s2"
+    )
+    assert _relations(repo) == []
+
+    result = engine.ingest(  # B：并入 A 的 paper 并带来键 (beta study, smith) → 撞上 C
+        _stub(title="Beta Study", ids=(("doi", "10.1/a"),), authors=("Jane Smith",)),
+        source="official",
+    )
+    assert result.action == "merged"
+    assert result.matched_identifiers == ("doi:10.1/a",)
+    assert len(_papers(repo)) == 2
+    rels = _relations(repo)
+    assert len(rels) == 1
+    assert "weak-signal-title-author" in rels[0]["evidence_json"]
+
+
+def test_candidate_pair_single_row_and_evidence_accumulates_shared_keys(
+    env: tuple[Repo, MergeEngine, Path],
+) -> None:
+    """两 paper 共享两个键 → 仍只一行 candidate，证据记**共享键全交**（顺序无关）。"""
+    repo, engine, _ = env
+    engine.ingest(
+        _stub(title="Alpha Study", ids=(("doi", "10.1/a"),), authors=("Jane Smith",)), source="s2"
+    )
+    engine.ingest(
+        _stub(title="Beta Study", ids=(("doi", "10.1/a"),), authors=("Jane Smith",)),
+        source="official",
+    )
+    engine.ingest(
+        _stub(title="Alpha Study", ids=(("doi", "10.1/c"),), authors=("John Smith",)),
+        source="crossref",
+    )
+    engine.ingest(  # 第二个共享键
+        _stub(title="Beta Study", ids=(("doi", "10.1/c"),), authors=("John Smith",)),
+        source="official",
+    )
+    rels = _relations(repo)
+    assert len(rels) == 1  # 一对 paper 至多一行（含反向）
+    assert json.loads(rels[0]["evidence_json"])["keys"] == [
+        ["alpha study", "smith"],
+        ["beta study", "smith"],
+    ]
+
+
+def test_weak_signal_does_not_downgrade_identifier_conflict_evidence(
+    env: tuple[Repo, MergeEngine, Path],
+) -> None:
+    """已有 identifier-conflict 边的一对 paper 再撞弱信号键 → 不降级为弱信号证据。"""
+    repo, engine, _ = env
+    engine.ingest(
+        _stub(title="Alpha Study", ids=(("doi", "10.1/a"),), authors=("Jane Smith",)),
+        source="official",
+    )
+    engine.ingest(
+        _stub(title="Alpha Study", ids=(("arxiv", "2401.9"),), authors=("John Smith",)),
+        source="official",
+    )
+    engine.ingest(  # 桥接 stub：两 paper 冲突 → identifier-conflict 边
+        _stub(
+            title="Alpha Study",
+            ids=(("doi", "10.1/a"), ("arxiv", "2401.9")),
+            authors=("Jill Smith",),
+        ),
+        source="crossref",
+    )
+    rels = _relations(repo)
+    assert len(rels) == 1
+    assert "identifier-conflict" in rels[0]["evidence_json"]  # 强证据留存
+    assert rels[0]["confidence"] == 0.9
+
+
+def test_decided_candidate_edge_is_never_rewritten(
+    env: tuple[Repo, MergeEngine, Path],
+) -> None:
+    """已人工裁决的候审边（decided 非空）不被后续观测刷新证据（绝不覆盖人工结论）。"""
+    repo, engine, _ = env
+    engine.ingest(
+        _stub(title="Alpha Study", ids=(("doi", "10.1/a"),), authors=("Jane Smith",)), source="s2"
+    )
+    engine.ingest(
+        _stub(title="Alpha Study", ids=(("doi", "10.1/c"),), authors=("John Smith",)),
+        source="crossref",
+    )
+    repo.db.execute("UPDATE paper_relation SET decided = 'rejected'")
+    before = _relations(repo)[0]["evidence_json"]
+    engine.ingest(  # 给两 paper 再添一个共享键——证据本会刷新，但该边已裁决
+        _stub(title="Beta Study", ids=(("doi", "10.1/a"),), authors=("Jane Smith",)),
+        source="official",
+    )
+    engine.ingest(
+        _stub(title="Beta Study", ids=(("doi", "10.1/c"),), authors=("John Smith",)),
+        source="official",
+    )
+    rels = _relations(repo)
+    assert len(rels) == 1
+    assert rels[0]["decided"] == "rejected"
+    assert rels[0]["evidence_json"] == before
+
+
+@pytest.mark.parametrize("stored_evidence", [None, '"not-an-object"'])
+def test_unreadable_existing_evidence_is_not_overwritten(
+    env: tuple[Repo, MergeEngine, Path], stored_evidence: str | None
+) -> None:
+    """既有边证据为空/非本模块所写（读不出 reason）→ 视为最强，弱信号不覆盖。"""
+    repo, engine, _ = env
+    engine.ingest(
+        _stub(title="Alpha Study", ids=(("doi", "10.1/a"),), authors=("Jane Smith",)), source="s2"
+    )
+    engine.ingest(
+        _stub(title="Alpha Study", ids=(("doi", "10.1/c"),), authors=("John Smith",)),
+        source="crossref",
+    )
+    repo.db.execute("UPDATE paper_relation SET evidence_json = ?", (stored_evidence,))
+    engine.ingest(
+        _stub(title="Beta Study", ids=(("doi", "10.1/a"),), authors=("Jane Smith",)),
+        source="official",
+    )
+    engine.ingest(
+        _stub(title="Beta Study", ids=(("doi", "10.1/c"),), authors=("John Smith",)),
+        source="official",
+    )
+    rels = _relations(repo)
+    assert len(rels) == 1
+    assert rels[0]["evidence_json"] == stored_evidence
 
 
 # -- 跨 paper identifier 冲突 -------------------------------------------------

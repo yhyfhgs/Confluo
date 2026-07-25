@@ -281,6 +281,37 @@ def canonical_dump(db_path: Path) -> dict[str, list[tuple[object, ...]]]:
         db.close()
 
 
+def dump_weak_keys(db_path: Path) -> list[tuple[object, ...]]:
+    """`paper_weak_key`（schema v3）的 canonical dump —— 合并引擎的观测级弱信号键集合。
+
+    `canonical_dump` 同样不含此表（Phase 1 无写入路径）。`paper_id`（ULID，跨库不可比）翻译
+    为 paper 复合业务键 `(title, primary_identifier)`（同 `canonical_dump` 规则 2）；行按整行
+    repr 排序，故比较的是"键集合"本身而非插入顺序——AC-3.4 属性测试据此把弱信号匹配面也纳入
+    顺序无关判据（否则匹配面只在下一次 ingest 才显形，属性测试看不见其漂移）。只读。
+    """
+    scheme_sql = _PRIMARY_IDENTIFIER_SCHEME_SQL.format(fk="k.paper_id")
+    value_sql = _PRIMARY_IDENTIFIER_VALUE_SQL.format(fk="k.paper_id")
+    db = Database(db_path)
+    try:
+        rows = db.query(
+            "SELECT p.title AS paper_title, "
+            f"       {scheme_sql} AS primary_scheme, {value_sql} AS primary_value, "
+            "       k.title_norm, k.first_author "
+            "FROM paper_weak_key k JOIN paper p ON p.id = k.paper_id"
+        )
+        result = [
+            (
+                _paper_key(row["paper_title"], row["primary_scheme"], row["primary_value"]),
+                row["title_norm"],
+                row["first_author"],
+            )
+            for row in rows
+        ]
+        return sorted(result, key=repr)
+    finally:
+        db.close()
+
+
 def dump_paper_relations(db_path: Path) -> list[tuple[object, ...]]:
     """`paper_relation` 的 canonical dump（Phase 3 T1 合并引擎新增写入路径）。
 

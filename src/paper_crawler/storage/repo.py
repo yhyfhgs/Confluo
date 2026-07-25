@@ -41,6 +41,12 @@ IngestAction = Literal["created", "merged", "candidate_flagged"]
 # 弱信号候审 / 跨 paper identifier 冲突的 candidate_duplicate 置信度（固定常量→确定性）。
 _WEAK_SIGNAL_CONFIDENCE = 0.5
 _IDENTIFIER_CONFLICT_CONFIDENCE = 0.9
+# candidate_duplicate 的 evidence reason 标签与其"证据强度"序（越大越强）。同一对 paper 至多
+# 一条 candidate_duplicate（见 `_upsert_candidate`）：证据不弱于既有者才刷新，弱者不覆盖强者。
+# 未登记的 reason（如迁移写的 `doi-normalization-collision`）视为最强——绝不被覆盖。
+_WEAK_SIGNAL_REASON = "weak-signal-title-author"
+_IDENTIFIER_CONFLICT_REASON = "identifier-conflict"
+_EVIDENCE_STRENGTH: dict[str, float] = {_WEAK_SIGNAL_REASON: 0.0, _IDENTIFIER_CONFLICT_REASON: 1.0}
 # 未知来源（无 provenance 记录的存量字段，如 upsert_paper pull 路径所写）的优先级视为
 # **最高**——只补空、绝不被覆盖，保守保护既有（多为官方 proceedings）数据。
 _UNKNOWN_RANK = float("inf")
@@ -116,12 +122,62 @@ def _is_empty(value: object) -> bool:
     return value is None or value == ""
 
 
-def _rank(priority: Mapping[str, int], source: str | None) -> float:
-    """来源优先级排名（越大越强）。未记录/未知来源 → 最高（`_UNKNOWN_RANK`，只补空不覆盖）。"""
-    if source is None:
-        return _UNKNOWN_RANK
+def _rank(priority: Mapping[str, int], source: str) -> float:
+    """来源优先级排名（越大越强）。未知来源 → 最高（`_UNKNOWN_RANK`，只补空不覆盖）。
+
+    "**未记录** provenance"（现值来自 upsert_paper pull 路径，`_field_src` 无该键）不走本函数
+    ——由 `_converge_fields.better` 直接短路为"绝不覆盖"，见该处注释。
+    """
     known = priority.get(source)
     return _UNKNOWN_RANK if known is None else float(known)
+
+
+def _prefers_on_tie(incoming: object, current: object) -> bool:
+    """**同级**来源（=同一来源的二次观测，六枚举优先级两两互异）异值时的确定性 tie-break。
+
+    `SOURCE_PRIORITY`（D-021，design/06 §3 来源优先级表）只对**跨源**冲突定序；同源二次观测
+    给出不同值时表无话可说，原实现落到「先到者胜」——即注入顺序决定终值（审计 P3
+    「同源二次观测异值先到胜」）。此处改判为「取值序更小者」：`min` 是幂等+交换+结合的格
+    运算，故同一批观测无论以何种顺序到达都收敛到同一终值（AC-3.4）。语义上对 year/pub_date
+    等于「取更早的那次观测值」（保守：不让同源复查悄悄推着记录漂移），对文本字段则是任意但
+    **全序确定**的选择——同源异值本身即源头数据不自洽，此处只保证可复现，不假装能判优劣。
+    跨源冲突仍完全由优先级表裁决，本函数不参与。
+    """
+    if isinstance(incoming, int) and isinstance(current, int):
+        return incoming < current
+    return str(incoming) < str(current)
+
+
+def _evidence_strength(reason: object) -> float:
+    """candidate_duplicate 证据强度（越大越强）；未登记标签/读不出 → 最强（`_UNKNOWN_RANK`）。
+
+    "最强"即"绝不被覆盖"——看不懂的证据（人工写入、未来新增标签、迁移写的
+    `doi-normalization-collision`）一律保守留存。
+    """
+    if not isinstance(reason, str):
+        return _UNKNOWN_RANK
+    return _EVIDENCE_STRENGTH.get(reason, _UNKNOWN_RANK)
+
+
+def _evidence_reason(evidence_json: object) -> object:
+    """从既有边的 `evidence_json` 取 reason 标签；空/非 JSON 对象 → None（强度即最强）。"""
+    if not isinstance(evidence_json, str) or not evidence_json:
+        return None
+    try:
+        parsed = json.loads(evidence_json)
+    except json.JSONDecodeError:  # pragma: no cover - 库内 evidence 恒由本模块写出
+        return None
+    return parsed.get("reason") if isinstance(parsed, dict) else None
+
+
+def _weak_key(incoming: MergeInput) -> tuple[str, str] | None:
+    """本次观测的弱信号匹配键 `(title_norm, first_author)`；任一为空 → None（不参与匹配）。
+
+    空键不匹配是既有判据（避免"无标题/无作者"的残缺观测互相误配），随键集合语义原样保留。
+    """
+    if not incoming.title_norm or not incoming.first_author:
+        return None
+    return (incoming.title_norm, incoming.first_author)
 
 
 class Repo:
@@ -381,6 +437,10 @@ class Repo:
                 paper_id = distinct[0]
                 self._converge_fields(conn, paper_id, incoming)
                 self._ensure_identifiers(conn, paper_id, identifiers)
+                # 强合并分支也记本次观测的弱信号键并重判候审：键集合单调只增，故"高优先源
+                # 改写标题"不再抹掉此前/此后的匹配面（审计 P1）。action 仍报 `merged`
+                # ——`IngestResult` 三枚举是冻结件，候审边只作为 DB 副作用记录，不改口径。
+                self._apply_weak_signal(conn, paper_id, incoming)
                 return IngestOutcome(paper_id, "merged", tuple(matched))
             return self._merge_ingest_conflict(
                 conn, distinct, incoming, identifiers, tuple(matched)
@@ -395,37 +455,14 @@ class Repo:
         """无 identifier 命中：弱信号候审（title_norm 精确匹配 + 首作者姓氏一致）或纯新建。
 
         弱信号**绝不自动合并**（06 §3：WP↔刊发版标题常变，宁可两条待审）——新建 paper 后
-        对**每个**匹配到的既有 paper 建 candidate_duplicate。「对每个匹配都建边」而非「只对
-        其一」是顺序无关的关键：任意注入顺序下，同 (title_norm, first_author) 簇内的每对
-        paper 最终都被建边（后建者对先在者建边），终态 = 该簇全体两两 candidate，与顺序无关
-        （AC-3.4）。title_norm 为空或 stub 无首作者时不触发弱信号（避免空键误配）。
+        对**每个**曾观测到同一键的既有 paper 建 candidate_duplicate（`_apply_weak_signal`）。
+        「对每个匹配都建边」而非「只对其一」是顺序无关的关键：任意注入顺序下，同键簇内的
+        每对 paper 最终都被建边（后取得该键者对先持有者建边），终态 = 该簇全体两两 candidate。
         """
-        matches: list[str] = []
-        if incoming.title_norm and incoming.first_author is not None:
-            rows = conn.execute(
-                "SELECT id FROM paper WHERE title_norm = ? ORDER BY id",
-                (incoming.title_norm,),
-            ).fetchall()
-            for row in rows:
-                pid = str(row["id"])
-                if self._read_first_author(conn, pid) == incoming.first_author:
-                    matches.append(pid)
-
         new_id = self._create_paper(conn, incoming, identifiers)
+        matches = self._apply_weak_signal(conn, new_id, incoming)
         if not matches:
             return IngestOutcome(new_id, "created", ())
-        for other in matches:
-            self._insert_candidate(
-                conn,
-                new_id,
-                other,
-                _WEAK_SIGNAL_CONFIDENCE,
-                {
-                    "reason": "weak-signal-title-author",
-                    "title_norm": incoming.title_norm,
-                    "first_author": incoming.first_author,
-                },
-            )
         return IngestOutcome(new_id, "candidate_flagged", ())
 
     def _merge_ingest_conflict(
@@ -449,13 +486,15 @@ class Repo:
         self._ensure_identifiers(conn, winner, identifiers)
         for other in distinct:
             if other != winner:
-                self._insert_candidate(
+                self._upsert_candidate(
                     conn,
                     winner,
                     other,
                     _IDENTIFIER_CONFLICT_CONFIDENCE,
-                    {"reason": "identifier-conflict", "identifiers": sorted(matched)},
+                    {"reason": _IDENTIFIER_CONFLICT_REASON, "identifiers": sorted(matched)},
                 )
+        # 冲突边先落（证据更强，见 `_upsert_candidate` 的强度序），再记本次观测的弱信号键。
+        self._apply_weak_signal(conn, winner, incoming)
         return IngestOutcome(winner, "candidate_flagged", matched)
 
     def _create_paper(
@@ -511,13 +550,14 @@ class Repo:
     def _converge_fields(
         self, conn: sqlite3.Connection, paper_id: str, incoming: MergeInput
     ) -> None:
-        """字段级来源优先级收敛（AC-3.4 基石）：新值仅当①现值空 或 ②新源优先级严格高时写入。
+        """字段级来源优先级收敛（AC-3.4 基石）：新值仅当①现值空、②新源优先级严格高、或
+        ③同级但值序更小（`_prefers_on_tie`）时写入。
 
         provenance 记于 `meta_json._field_src`（field_key→source）；未记录来源的存量字段
-        （upsert_paper pull 路径所写）视为最高优先（`_rank` 返回 `_UNKNOWN_RANK`）——只补空、
-        绝不覆盖。收敛字段：title（连带 title_norm 列）/abstract/year/pub_date/首作者姓氏
-        （`authors`→`_first_author`）/每个 meta 键（`meta:<k>`）。同级不覆盖（`>` 严格），故
-        任意到达顺序收敛到同一终态。
+        （upsert_paper pull 路径所写）视为最高优先——只补空、绝不覆盖。收敛字段：title
+        （连带 title_norm 列）/abstract/year/pub_date/首作者姓氏（`authors`→`_first_author`）/
+        每个 meta 键（`meta:<k>`）。跨级由优先级表定序、同级由确定性 tie-break 定序，两者都
+        与到达顺序无关，故任意注入顺序收敛到同一终态。
         """
         row = conn.execute(
             "SELECT title, abstract, year, pub_date, meta_json FROM paper WHERE id = ?",
@@ -533,9 +573,14 @@ class Repo:
                 return False
             if _is_empty(current_value):
                 return True
-            return _rank(incoming.priority, incoming.source) > _rank(
-                incoming.priority, field_src.get(field_key)
-            )
+            current_source = field_src.get(field_key)
+            if current_source is None:  # 无 provenance 的存量值（pull 路径）：只补空、绝不覆盖
+                return False
+            incoming_rank = _rank(incoming.priority, incoming.source)
+            current_rank = _rank(incoming.priority, current_source)
+            if incoming_rank != current_rank:
+                return incoming_rank > current_rank
+            return _prefers_on_tie(incoming_value, current_value)
 
         if better("title", incoming.title, row["title"]):
             col_updates["title"] = incoming.title
@@ -581,13 +626,81 @@ class Repo:
         ).fetchone()
         return int(row["n"])
 
+    # -- 弱信号键集合（AC-3.4 顺序无关的匹配面，schema v3 `paper_weak_key`） -------
+
+    def _apply_weak_signal(
+        self, conn: sqlite3.Connection, paper_id: str, incoming: MergeInput
+    ) -> list[str]:
+        """记下本次观测的弱信号键，并对**新键**重判候审；返回本次新配上的既有 paper（升序）。
+
+        匹配键是**观测级**的：一个 paper 的键集合 = 它全部观测的 `(title_norm, first_author)`，
+        单调只增、不被字段收敛改写。故终态候审边 = 「键集合有交的每一对 paper」——输入集合的
+        函数，与到达顺序无关（AC-3.4）。原实现拿 paper 行的**当前** title_norm/`_first_author`
+        当键，后到的高优先源改写标题即抹掉匹配面，同一批观测按不同序注入得到不同候审边数
+        （审计 P1 实测 1 条 vs 0 条）——本方法是该缺陷的修复点。
+
+        键对本 paper 已存在 → 直接返回：该键当时已与彼时所有持键 paper 建过边，此后取得该键
+        的 paper 会在**自己那一侧**建边（增量算法的完备性论证），故无需重判，幂等亦由此保证。
+        """
+        key = _weak_key(incoming)
+        if key is None:
+            return []
+        title_norm, first_author = key
+        if not self._record_weak_key(conn, paper_id, title_norm, first_author):
+            return []
+        rows = conn.execute(
+            "SELECT paper_id FROM paper_weak_key "
+            "WHERE title_norm = ? AND first_author = ? AND paper_id <> ? ORDER BY paper_id",
+            (title_norm, first_author, paper_id),
+        ).fetchall()
+        others = [str(row["paper_id"]) for row in rows]
+        for other in others:
+            self._upsert_candidate(
+                conn,
+                paper_id,
+                other,
+                _WEAK_SIGNAL_CONFIDENCE,
+                {
+                    "reason": _WEAK_SIGNAL_REASON,
+                    "keys": self._shared_weak_keys(conn, paper_id, other),
+                },
+            )
+        return others
+
     @staticmethod
-    def _read_first_author(conn: sqlite3.Connection, paper_id: str) -> str | None:
-        row = conn.execute("SELECT meta_json FROM paper WHERE id = ?", (paper_id,)).fetchone()
-        if row is None or not row["meta_json"]:
-            return None
-        value = json.loads(row["meta_json"]).get("_first_author")
-        return value if isinstance(value, str) else None
+    def _record_weak_key(
+        conn: sqlite3.Connection, paper_id: str, title_norm: str, first_author: str
+    ) -> bool:
+        """把键并入该 paper 的键集合；返回是否为**新键**（已存在则不重判候审）。"""
+        existing = conn.execute(
+            "SELECT 1 FROM paper_weak_key "
+            "WHERE paper_id = ? AND title_norm = ? AND first_author = ? LIMIT 1",
+            (paper_id, title_norm, first_author),
+        ).fetchone()
+        if existing is not None:
+            return False
+        conn.execute(
+            "INSERT INTO paper_weak_key (paper_id, title_norm, first_author) VALUES (?,?,?)",
+            (paper_id, title_norm, first_author),
+        )
+        return True
+
+    @staticmethod
+    def _shared_weak_keys(conn: sqlite3.Connection, paper_a: str, paper_b: str) -> list[list[str]]:
+        """两 paper 键集合的交（升序）——候审边的证据体。
+
+        取**当前全交**而非"本次撞上的那一个键"：交集单调只增，且最后一次触碰该 pair 必然
+        发生在最后一个共享键出现之时，故写入的证据恒为终态全交，与到达顺序无关。
+        """
+        rows = conn.execute(
+            "SELECT ka.title_norm AS title_norm, ka.first_author AS first_author "
+            "FROM paper_weak_key ka JOIN paper_weak_key kb "
+            "  ON kb.title_norm = ka.title_norm AND kb.first_author = ka.first_author "
+            "WHERE ka.paper_id = ? AND kb.paper_id = ? "
+            "ORDER BY ka.title_norm, ka.first_author",
+            (paper_a, paper_b),
+        ).fetchall()
+        return [[str(row["title_norm"]), str(row["first_author"])] for row in rows]
 
     @staticmethod
     def _paper_min_identifier(conn: sqlite3.Connection, paper_id: str) -> tuple[str, str]:
@@ -599,7 +712,7 @@ class Repo:
         ).fetchone()
         return (str(row["scheme"]), str(row["value"])) if row is not None else ("", "")
 
-    def _insert_candidate(
+    def _upsert_candidate(
         self,
         conn: sqlite3.Connection,
         paper_a: str,
@@ -607,24 +720,47 @@ class Repo:
         confidence: float,
         evidence: dict[str, object],
     ) -> None:
-        """建 candidate_duplicate(decided=NULL)；端点按各自最小 identifier 定向（顺序无关）。"""
-        if self._paper_min_identifier(conn, paper_a) <= self._paper_min_identifier(conn, paper_b):
-            from_paper, to_paper = paper_a, paper_b
-        else:
-            from_paper, to_paper = paper_b, paper_a
+        """建/刷新 candidate_duplicate(decided=NULL)：**一对 paper 至多一行**（任一方向）。
+
+        - 新边：端点按各自最小 identifier 定向（`_paper_min_identifier`，与到达顺序无关）。
+        - 已有边：查两个方向后再决定——`(from,to,kind)` 主键不认方向，若只看单向，identifier
+          集合增长导致的定向翻转会给同一对 paper 落出第二行。
+        - 刷新规则：已人工裁决（`decided` 非空）的边**绝不动**；未裁决的边仅当新证据强度
+          **不弱于**既有（`_EVIDENCE_STRENGTH`，未知 reason 视为最强不可覆盖）才写——弱信号
+          刷新共享键全交、identifier 冲突可升级既有弱信号边，反向绝不降级。绝不删行。
+        """
+        evidence_json = json.dumps(evidence, ensure_ascii=False, sort_keys=True)
+        row = conn.execute(
+            "SELECT from_paper, to_paper, evidence_json, decided FROM paper_relation "
+            "WHERE kind = ? AND ((from_paper = ? AND to_paper = ?) "
+            "                 OR (from_paper = ? AND to_paper = ?))",
+            ("candidate_duplicate", paper_a, paper_b, paper_b, paper_a),
+        ).fetchone()
+        if row is None:
+            if self._paper_min_identifier(conn, paper_a) <= self._paper_min_identifier(
+                conn, paper_b
+            ):
+                from_paper, to_paper = paper_a, paper_b
+            else:
+                from_paper, to_paper = paper_b, paper_a
+            conn.execute(
+                "INSERT INTO paper_relation "
+                "(from_paper, to_paper, kind, confidence, evidence_json, decided) "
+                "VALUES (?,?,?,?,?,?) "
+                "ON CONFLICT (from_paper, to_paper, kind) DO NOTHING",
+                (from_paper, to_paper, "candidate_duplicate", confidence, evidence_json, None),
+            )
+            return
+        if row["decided"] is not None or row["evidence_json"] == evidence_json:
+            return
+        if _evidence_strength(evidence.get("reason")) < _evidence_strength(
+            _evidence_reason(row["evidence_json"])
+        ):
+            return
         conn.execute(
-            "INSERT INTO paper_relation "
-            "(from_paper, to_paper, kind, confidence, evidence_json, decided) "
-            "VALUES (?,?,?,?,?,?) "
-            "ON CONFLICT (from_paper, to_paper, kind) DO NOTHING",
-            (
-                from_paper,
-                to_paper,
-                "candidate_duplicate",
-                confidence,
-                json.dumps(evidence, ensure_ascii=False, sort_keys=True),
-                None,
-            ),
+            "UPDATE paper_relation SET confidence = ?, evidence_json = ? "
+            "WHERE from_paper = ? AND to_paper = ? AND kind = ?",
+            (confidence, evidence_json, row["from_paper"], row["to_paper"], "candidate_duplicate"),
         )
 
     def list_papers(self, venue_id: str, issue_id: str | None = None) -> list[sqlite3.Row]:

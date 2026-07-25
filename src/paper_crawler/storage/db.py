@@ -148,12 +148,36 @@ def _migrate_v2(conn: sqlite3.Connection) -> None:
     _normalize_doi_identifiers(conn)
 
 
+def _migrate_v3(conn: sqlite3.Connection) -> None:
+    """schema v3（0003_paper_weak_key.sql）Python 回填：存量 paper 的历史弱信号键。
+
+    存量行的键 = 旧实现的匹配面本身：`paper.title_norm` 列 + `meta_json._first_author`
+    （`_first_author` 藏在 JSON 里，抽取函数方言专有，故不写进 SQL 脚本）。两者齐备且非空
+    的行才有匹配资格（与旧 `_merge_ingest_no_hit` 判据一致——空键不参与匹配，避免误配），
+    故只回填这些行；v2 库升级后弱信号覆盖面零倒退、零扩张。`ON CONFLICT DO NOTHING` 幂等。
+    """
+    rows = conn.execute(
+        "SELECT id, title_norm, meta_json FROM paper "
+        "WHERE title_norm IS NOT NULL AND title_norm <> '' AND meta_json IS NOT NULL"
+    ).fetchall()
+    for row in rows:
+        first_author = json.loads(row["meta_json"]).get("_first_author")
+        if not isinstance(first_author, str) or not first_author:
+            continue
+        conn.execute(
+            "INSERT INTO paper_weak_key (paper_id, title_norm, first_author) VALUES (?,?,?) "
+            "ON CONFLICT (paper_id, title_norm, first_author) DO NOTHING",
+            (row["id"], row["title_norm"], first_author),
+        )
+
+
 # 迁移的 Python 后置步：**按文件名绑定**（非仅版本号），故对测试里 monkeypatch 出的
 # 同版本号但不同内容的迁移（如 `0002_b.sql`）不误触发——只有 0001_init.sql 之后真正的
 # `0002_title_norm.sql` 会跑本步。每个 Python 步在其 SQL 语句之后、写 schema_version
 # 之前、同一事务内执行（见 `_apply`）。
 _PY_MIGRATIONS: dict[str, Callable[[sqlite3.Connection], None]] = {
     "0002_title_norm.sql": _migrate_v2,
+    "0003_paper_weak_key.sql": _migrate_v3,
 }
 
 
