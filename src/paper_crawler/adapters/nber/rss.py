@@ -67,13 +67,35 @@ catalog §4 "⚠ PE 缩写存两义...未核验，实现期以官网筛选器确
   通过**（呼应 `ssrn.parse.topic_field_matches` 同一保守原则）；T8 仅有的两个带
   nber 的预设（`asset-pricing-wp` 的 `min_year: 2022`、`corporate-finance` 的
   `min_year: 2020`）一旦接线，若 `year` 恒 `None` 则 nber 恒零产出——表现为"本周
-  没有新论文"这种不会主动报错的静默失效，比响亮失败更危险。**残余风险**：`pub_date`
-  本身尽力而为、可能为 `None`（RSS 无该字段的条目——本次实测显示这是**常态**而非
-  例外），此时 `year` 同样是 `None`，`min_year` 订阅仍会把该条目判不通过——这不是
-  本模块能单方面解决的（没有日期就是没有日期，不能编造）；**残余风险与兜底方向**
-  留给 T5/T9：T5 编排层可在派生 `PlanStep`/`ReportEntry` 时按 `series_id` 数值大小
-  兜底排序或标注"日期缺失"提示，T9 AC-6 验收须把"nber pub_date 常缺失、
-  min_year 预设可能系统性漏收"列为已知限制逐条验收（而非误判 nber watch 功能故障）。
+  没有新论文"这种不会主动报错的静默失效，比响亮失败更危险。**在线实测证实
+  `pub_date` 本身常缺失**（RSS 无该字段的条目是**常态**而非例外，2026-07-26 补测
+  13/13 真实条目零个带 `<pubDate>`）——若只靠 `pub_date` 派生，`year` 会在生产环境
+  里近乎恒 `None`，`min_year` 预设系统性判不通过。
+
+  **已缓解：controller 裁决方案 (c) watch 增量语境 proxy year**——`to_paper_stub`
+  新增可选参数 `default_year: int | None = None`：`pub_date` 能派生年份时优先用
+  该年份（**权威路径不变**）；派生不出时退回调用方传入的 `default_year`。
+  `discover_incremental` 外壳按抓取时刻（UTC，`now` 参数可注入假时钟，同
+  `subs/watermark.py` `now: date | None = None` 先例）算出 `fetch_year`，写在每条
+  `NberWatchEntry.fetch_year` 上，供 T5 调用 `entry.to_paper_stub(default_year=
+  entry.fetch_year)` 时取用。proxy 语义与边界（四条，controller 裁决原文）：
+
+  1. **proxy 依据**：RSS watch 通道只吐"最近一批"条目（园区无翻页/无历史窗），
+     抓取周即约等于该条目的发布周——proxy 误差只在**跨年周**（12 月末/1 月初的
+     那一两周）才可能出现 ±1 年偏差，其余 50 周误差为 0。
+  2. **proxy ≠ 编造**：这是**增量语境下的下界推断**（"这条本周从 watch 通道
+     冒出来，年份大概率是今年"），目的是让 `min_year` 一类过滤器对"本周新条目"
+     正确放行，不是替官方数据杜撰一个字段——`pub_date` 依旧诚实为 `None`，
+     `year` 才是 proxy，且只在 `pub_date` 派生失败时才启用（显式、可关闭：调用方
+     不传 `default_year` 即完全退回旧行为）。
+  3. **入库后修正**：nber 的元数据主干仍是 crossref 前缀枚举（§3.1，本通道零
+     改动）——同一篇论文一旦被 crossref/backfill 收录，其 `pub_date`/`year` 会按
+     DOI 关联被权威值覆盖；watch 通道产的 proxy year 只是"先放行、后续被真实
+     数据自然纠正"的临时值，不是永久性替代。
+  4. **backfill 不受影响**：`NberAdapter.resolve_assets` 的 18 月开放窗判定
+     （§3.2）与 crossref 枚举通道（§3.1）完全不经本模块，本 mitigate 只影响
+     watch 增量路径产出的 `PaperStub.year`，不触碰 18 月窗红线判定或 backfill
+     字段口径。
 - `url`：RSS `<guid>` 在勘察中确认等价 landing 链（`www.nber.org/papers/w{n}`，
   2026-07-26 在线补测确认真实形态为 `.../papers/w{n}#fromrss`），本模块按既有
   `parse.pdf_url` 的"确定性构造"惯例直接拼干净 landing URL（免二次抓取/免依赖
@@ -109,6 +131,7 @@ from __future__ import annotations
 
 from collections.abc import Iterable, Iterator, Sequence
 from dataclasses import dataclass
+from datetime import UTC, date, datetime
 from email.utils import parsedate_to_datetime
 from re import IGNORECASE
 from re import compile as re_compile
@@ -149,6 +172,12 @@ _LANDING_TMPL = "https://www.nber.org/papers/{sid}"
 _AUTHOR_TAIL_RE = re_compile(r"^(?P<title>.*)\s*--\s*by\s+(?P<authors>.+)$", IGNORECASE)
 # 拆分后单个作者段开头残留的 "and " （Oxford 逗号写法 "A, B, and C" 的收尾清理）。
 _LEADING_AND_RE = re_compile(r"^and\s+", IGNORECASE)
+
+
+def _today() -> date:
+    """当前 UTC 日期（proxy year 的时钟入口）；`discover_incremental` 的 `now=` 可
+    注入假时钟，同 `subs/watermark.py` 同名 `_today()` 先例，非本模块自创写法。"""
+    return datetime.now(UTC).date()
 
 
 def _dedupe(values: Iterable[str]) -> tuple[str, ...]:
@@ -195,24 +224,32 @@ class NberWatchEntry:
     abstract: str | None
     url: str  # landing 页（确定性构造）
     pub_date: str | None  # 尽力而为、非权威（模块 docstring "pub_date" 段）
+    fetch_year: int  # 抓取时刻年份（UTC）——proxy year 的候选值，`discover_incremental` 注入
 
     @property
     def diff_id(self) -> str:
         """id 集合差分用稳定 id（喂给 `subs.watermark.IdSetDiff`，模块 docstring 末段）。"""
         return self.series_id
 
-    def to_paper_stub(self) -> PaperStub:
+    def to_paper_stub(self, *, default_year: int | None = None) -> PaperStub:
         """→ `PaperStub`（T5 摄入所需形态；program/series_id/url 搭 `meta` 顺风车）。
 
-        `year` 从 `pub_date` 派生（`_year_from_date`）——**必须填**，否则与 T3
-        `subs/filter.py` 的 `min_year` 判据相撞（模块 docstring "year" 段，P1 红线）。
+        `year` 优先从 `pub_date` 派生（`_year_from_date`，**权威路径**）；派生不出时
+        （RSS 常态缺 `<pubDate>`）退回调用方传入的 `default_year`——两者都缺才是
+        `None`。`default_year` 缺省 `None`：不传参调用与旧行为完全一致（纯 `pub_date`
+        派生），T5 的推荐用法是 `entry.to_paper_stub(default_year=entry.fetch_year)`
+        （proxy year 语义/边界见模块 docstring "year" 段，controller 方案 (c) 裁决）。
+
         `meta` 弹性字段（`types.PaperStub` 既有设计意图：携带 adapter 私有定位符）——
         `program` 供日报 `ReportEntry.categories`（"NBER program"）取用，无需 T5 反查。
         """
+        year = _year_from_date(self.pub_date)
+        if year is None:
+            year = default_year
         return PaperStub(
             title=self.title,
             identifiers=(("doi", self.doi),),
-            year=_year_from_date(self.pub_date),
+            year=year,
             pub_date=self.pub_date,
             abstract=self.abstract,
             authors=self.authors,
@@ -281,7 +318,9 @@ def _child_text(item: ET.Element, tag: str) -> str | None:
     return text or None
 
 
-def _parse_feed_entries(data: bytes, *, program: str) -> tuple[NberWatchEntry, ...]:
+def _parse_feed_entries(
+    data: bytes, *, program: str, fetch_year: int
+) -> tuple[NberWatchEntry, ...]:
     """单 feed 原始字节 → `NberWatchEntry` 元组（program 已归一，由调用方传入）。
 
     **独立于** `parse.parse_rss_items`（而非直接调用）：本函数需要在同一遍解析里
@@ -290,6 +329,10 @@ def _parse_feed_entries(data: bytes, *, program: str) -> tuple[NberWatchEntry, .
     补测确认其 `\\b` 词边界写法对真实 `#fromrss` guid 片段解析零失败），跳过语义
     （无 guid / guid 无 series 段 → 跳过该 item，无稳定身份不产条目）与畸形 XML→
     `PARSE` 的红线口径与 `parse.parse_rss_items` 完全一致。
+
+    `fetch_year`：调用方（`discover_incremental`）算好的抓取时刻年份，逐字写进
+    每条产出的 `NberWatchEntry.fetch_year`（proxy year 候选值，模块 docstring
+    "year" 段）——本函数不读时钟，纯参数传递，保持零网络/零副作用可测性。
     """
     try:
         root = ET.fromstring(data)
@@ -316,12 +359,15 @@ def _parse_feed_entries(data: bytes, *, program: str) -> tuple[NberWatchEntry, .
                 abstract=_child_text(item, "description"),
                 url=_LANDING_TMPL.format(sid=series_id),
                 pub_date=_parse_pub_date(_child_text(item, "pubDate")),
+                fetch_year=fetch_year,
             )
         )
     return tuple(entries)
 
 
-def discover_incremental(programs: Iterable[str], client: HttpClient) -> Iterator[NberWatchEntry]:
+def discover_incremental(
+    programs: Iterable[str], client: HttpClient, *, now: date | None = None
+) -> Iterator[NberWatchEntry]:
     """按 program 逐 feed 拉取（严格一 feed 一请求，重复代码只请求一次）→
     `NberWatchEntry` 流（watch 增量主通道）。
 
@@ -346,16 +392,25 @@ def discover_incremental(programs: Iterable[str], client: HttpClient) -> Iterato
       专测断言点。限速闸生效与否取决于 `client` 装配时是否注入了已注册 `back.nber.org`
       桶的 `RateLimiter`（模块 docstring "watch-only 定位"段）；未注入时 `HttpClient`
       对无 limiter 的请求是无操作直通（`http.py` 既有语义），单测无需装配限速器。
+    - **`now`：proxy year 的时钟入口**（UTC，缺省真实 `_today()`；测试可注入假时钟，
+      同 `subs/watermark.py` 各策略 `now: date | None = None` 参数先例）。本次调用
+      算出的 `now.year`（或 `_today().year`）写进本批**每一条**产出 entry 的
+      `fetch_year`——同一次 `discover_incremental` 调用内所有条目共享同一个抓取年份
+      （不逐条重新读时钟），供 T5 在 `entry.to_paper_stub(default_year=
+      entry.fetch_year)` 时取用（模块 docstring "year" 段 controller 方案 (c)）。
     """
     codes = _dedupe(normalize_program(code) for code in programs)
-    return _discover_incremental(codes, client)
+    fetch_year = (now if now is not None else _today()).year
+    return _discover_incremental(codes, client, fetch_year=fetch_year)
 
 
-def _discover_incremental(codes: Sequence[str], client: HttpClient) -> Iterator[NberWatchEntry]:
+def _discover_incremental(
+    codes: Sequence[str], client: HttpClient, *, fetch_year: int
+) -> Iterator[NberWatchEntry]:
     """`discover_incremental` 的内部生成器实现；`codes` 已归一去重校验完毕。"""
     for code in codes:
         data = client.get_bytes(PROGRAM_FEEDS[code])
-        yield from _parse_feed_entries(data, program=code)
+        yield from _parse_feed_entries(data, program=code, fetch_year=fetch_year)
 
 
 def ids_of(entries: Iterable[NberWatchEntry]) -> tuple[str, ...]:

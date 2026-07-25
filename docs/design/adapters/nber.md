@@ -135,20 +135,26 @@ NBER **无 ISSN**，现 `discover_timeline`/`enumerate_issue` 硬走 `/journals/
   纪律）。**最终口径**：有据可查（含义+代码双确认）的 program 全部实证收录（5/19），
   其余 14 个官方 program 无码不猜；如需扩展先补勘察证据（含 `PE` 语义核验），不改此表。
 
-  **`year` 字段与 `min_year` 预设的已知残余风险（P1，红线级）**：`to_paper_stub()` 的
-  `year` 从 `pub_date` 派生（`_year_from_date`，对齐 `adapters/crossref/parse.py` 同名
-  函数）——**必须填**，否则与 `subs/filter.py` 的 `min_year` 判据相撞（"已声明 `min_year`
-  但 `year is None`"视为不通过）：T8 仅有的两个带 nber 的预设（`asset-pricing-wp` 的
-  `min_year: 2022`、`corporate-finance` 的 `min_year: 2020`）一旦接线，`year` 恒 `None`
-  会让 nber 恒零产出、且表现为"本周没有新论文"这种不会主动报错的静默失效。**但
-  2026-07-26 在线补测实证：真实 RSS `<item>` 100% 不带 `<pubDate>`**——这意味着
-  `to_paper_stub().year` 在生产环境里几乎恒为 `None`，`min_year` 判据在 nber 源上
-  实际仍会系统性判不通过（这不是代码缺陷：没有日期就是没有日期，不能编造）。**残余
-  风险与兜底方向留给 T5/T9**：T5 编排层可考虑为 nber 增补一个廉价的日期兜底信号（如
-  由 series 号数值大小近似排序、或对已入库 crossref 记录的 `pub_date` 做二次关联），
-  或在 daily-report 标注"日期缺失"提示；T9 AC-6 验收须把"nber pub_date 常缺失、
-  `min_year` 预设可能系统性漏收"列为**已知限制**逐条验收，而非误判 nber watch 功能
-  故障——本详设与 `rss.py` 均已如实标注，不视为本卡遗留 bug。
+  **`year` 字段与 `min_year` 预设：已缓解（proxy year）+ 残余：跨年周 ±1**（P1，
+  红线级）：`to_paper_stub()` 的 `year` 优先从 `pub_date` 派生（`_year_from_date`，
+  对齐 `adapters/crossref/parse.py` 同名函数，**权威路径不变**）——2026-07-26 在线
+  补测实证真实 RSS `<item>` 100% 不带 `<pubDate>`，纯靠该路径 `year` 会在生产环境
+  里近乎恒 `None`，与 `subs/filter.py` 的 `min_year` 判据相撞（"已声明 `min_year`
+  但 `year is None`"视为不通过），T8 仅有的两个带 nber 的预设（`asset-pricing-wp`
+  的 `min_year: 2022`、`corporate-finance` 的 `min_year: 2020`）一旦接线会恒零产出。
+
+  **controller 裁决方案 (c)：watch 增量语境 proxy year**——`to_paper_stub` 新增
+  `default_year: int | None = None` 参数，`pub_date` 派生不出时退回该值；
+  `discover_incremental` 外壳按抓取时刻（UTC，`now:` 可注入假时钟）算出批内共享的
+  `fetch_year`，写在每条 `NberWatchEntry.fetch_year` 上，供 T5 调用
+  `entry.to_paper_stub(default_year=entry.fetch_year)` 时取用。语义与边界：
+  ①RSS watch 只吐最近一批，抓取周约等于发布周，误差只在跨年周（12 月末/1 月初）
+  可能 ±1；②这是增量语境的下界推断而非编造——`pub_date` 仍诚实为 `None`，
+  proxy 只影响 `year`、且仅在派生失败时启用；③论文一旦被 crossref 收录，真实
+  `pub_date`/`year` 会按 DOI 关联自然覆盖 proxy 值；④backfill（crossref 枚举通道，
+  §3.1）与 18 月开放窗判定（§3.2）完全不经本路径，零影响。**残余**：仅跨年周
+  ±1 年偏差，T9 AC-6 验收记为已知边界（非功能故障）；`rss.py`/测试均已覆盖
+  该优先级链（pub_date 派生 > proxy 兜底 > 都缺 `None`）。
 
 ### 3.5 healthcheck(session)
 
@@ -245,5 +251,6 @@ register/alias` 单调收紧取 min。故若把 `back.nber.org` 放进 `domains`
 | 3 | 2026-07-24 | W0 双评审（A/B 独立实例，2026-07-24）Approve-with-fixes → 修订轮闭合 → controller approved | controller W0 收口 |
 | 4 | 2026-07-26 | **Phase 6 T7 落地**：§3.4 状态行同步"watch 主通道已落地"——`adapters/nber/rss.py` 新增（program feed 映射表 5/19 如实标注证据缺口 + `discover_incremental` + id 集合差分桥接）；backfill/crossref 主干零改动 | [phase6-implementation-plan.md](../../plan/phase6-implementation-plan.md) T7 + [catalog/preprint-platforms.md](../../catalog/preprint-platforms.md) §4 |
 | 5 | 2026-07-26 | **T7 审查后 P1/P2 修订**：§3.4 证据分级升级为 5/5 全 [LIVE]（在线补测 `newap`/`newefg`/`newifm`/`newme` 四条 + 沿用 `newcf` 原勘察）；补 `year` 字段派生与 `min_year` 预设残余风险如实标注（P1 红线，真实 feed 100% 无 `<pubDate>` 实证）；id 集合差分改由 `subs/watermark.py`（T4，已落地）`IdSetDiff` 权威承接，`rss.py` 不再自持占位差分逻辑 | controller 审查回执（放行附条件）+ 2026-07-26 在线补测（4 请求，`Crawl-delay:10` 遵守）+ `subs/watermark.py` 类文档 |
+| 6 | 2026-07-26 | **T7 终笔：proxy year 缓解**（controller 方案 (c) 裁决）：`to_paper_stub(default_year=...)` + `discover_incremental(now=...)` 注入批级 `fetch_year`——`year` 派生优先级改为 pub_date 派生 > proxy 兜底 > `None`；§3.4"已知限制"段同步改"已缓解 + 残余：跨年周 ±1" | controller 最终裁决（T7 完成即合并） |
 
 Co-Authored-By: Claude Fable 5 <noreply@anthropic.com>
