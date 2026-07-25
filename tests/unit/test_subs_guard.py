@@ -107,6 +107,33 @@ def test_build_overload_report_multi_label_category_counts_each_bucket() -> None
     assert dict(report.by_category) == {"cs.AI": 2, "cs.LG": 1}
 
 
+def test_build_overload_report_dedupes_repeated_category_within_one_entry() -> None:
+    """P2#4 回归：单条目内重复标签只计一次，不应让份额超过 100%。
+
+    `ReportEntry.categories` 无去重契约（源侧原始元组，如 arXiv 主分类与
+    cross-list 可能同值）——条目内去重是 `_counts_by` 自身的职责，不是上游契约；
+    跨条目的正常累计不受影响（见上一测试）。source 留空使 by_source 为空，
+    让类目轴成为唯一候选，从而对份额文案做精确断言。
+    """
+    entries = [_entry("", ("cs.AI", "cs.AI"))]
+    report = build_overload_report("s", entries, guard_limit=1)
+
+    assert report.by_category == (("cs.AI", 1),)  # 而非 ("cs.AI", 2)
+    assert report.new_count == 1
+    assert "200%" not in report.suggestion
+    assert "1/1 ≈ 100%" in report.suggestion
+
+
+def test_build_overload_report_repeated_category_with_source_still_caps_at_total() -> None:
+    """复现审查报告里的具体例子：单条目 categories=('cs.AI','cs.AI') + 正常来源。"""
+    entries = [_entry("arxiv", ("cs.AI", "cs.AI"))]
+    report = build_overload_report("s", entries, guard_limit=1)
+
+    assert report.by_category == (("cs.AI", 1),)
+    assert report.by_source == (("arxiv", 1),)
+    assert "200%" not in report.suggestion
+
+
 def test_build_overload_report_empty_source_skips_by_source_bucket() -> None:
     entries = [_entry("", ("cs.AI",))]
     report = build_overload_report("s", entries, guard_limit=0)

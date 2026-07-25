@@ -108,10 +108,17 @@ class OverloadReport:
 def _counts_by(
     entries: Sequence[ReportEntry], labels_of: Callable[[ReportEntry], Iterable[str]]
 ) -> tuple[tuple[str, int], ...]:
-    """按 `labels_of` 抽取的标签计数，输出确定性排序（count 降序、label 升序打破平局）。"""
+    """按 `labels_of` 抽取的标签计数，输出确定性排序（count 降序、label 升序打破平局）。
+
+    **条目内去重、跨条目正常累计**：`labels_of(entry)` 在同一条目内重复的标签
+    （`ReportEntry.categories` 是源侧原始元组，无去重契约——如 arXiv 主分类与
+    cross-list 可能同值）只计一次（`dict.fromkeys` 保序去重）；不同条目共享同一
+    标签则各自正常计数。否则单条目内的重复会让某个桶的计数超过实际拥有该标签的
+    条目数，`_suggest_narrowing` 算出的份额可能溢出 100%（P2#4，审查发现）。
+    """
     counts: dict[str, int] = {}
     for entry in entries:
-        for label in labels_of(entry):
+        for label in dict.fromkeys(labels_of(entry)):
             counts[label] = counts.get(label, 0) + 1
     return tuple(sorted(counts.items(), key=lambda item: (-item[1], item[0])))
 
