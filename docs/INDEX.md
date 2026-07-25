@@ -143,6 +143,7 @@
 | [research/site-survey/publisher-platforms-econfin.md](research/site-survey/publisher-platforms-econfin.md) | 勘察：Econ/Fin 六出版社平台 | approved | 2026-07-20 |
 | [research/site-survey/publisher-platforms-cs.md](research/site-survey/publisher-platforms-cs.md) | 勘察：IEEE/AEA/SIAM/MIT Press | approved | 2026-07-20 |
 | [research/site-survey/publisher-platforms-p4-recheck.md](research/site-survey/publisher-platforms-p4-recheck.md) | 复核：出版社平台增量勘察（Elsevier/OUP/Wiley/ACM）+凭证核查 [LIVE 07-23] | draft | 2026-07-23 |
+| [research/enrich-eval-p6.md](research/enrich-eval-p6.md) | 评估：repec enrich 通道 + ssrn 覆盖候补 ladder（P6-R2，待 fable 裁决） | draft | 2026-07-26 |
 | [research/github-similar-projects.md](research/github-similar-projects.md) | 调研：GitHub 同类项目（20 项）+架构总结 | approved | 2026-07-20 |
 
 ## diagrams/ — SVG 图（源文件即交付物）
