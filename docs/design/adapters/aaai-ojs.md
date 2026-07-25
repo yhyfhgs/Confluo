@@ -187,6 +187,9 @@ Vol.33–40 同构可收割**（同一 OAI 端点、同一 DOI 形态 `10.1609/a
 （如 `('track', 'iaai'|'eaai'|'main')`，从 `dc:source` 正则抽取）并补测试；本次不产生此实现，
 仅记录信号来源供未来实现参考。
 
+**规模注记**：AAAI-26/Vol.40 本身仍在扫描中途（No.1–24/预期 48+），其活记录数 2136 是**下限
+非终值**；补完预算 ≤30 请求（见 [research/site-survey/aaai-ojs.md](../../research/site-survey/aaai-ojs.md) §11.5，非本文档章节）。
+
 ## 11. A⑥⑦ 重跑闭合（2026-07-26，Phase 6 M1-b 在线闭合批，预算 5/6 请求）
 
 > 承接 [research/site-survey/aaai-ojs.md §12](../../research/site-survey/aaai-ojs.md#12-unresolved-专项在线核实尝试-live-2026-07-24--站点侧持续性故障blocked) 2026-07-24 的 BLOCKED 移交（`ojs.aaai.org` 应用层持续性故障，未获结论）。本次前置 1 次 `GET /robots.txt` 确认站点已恢复（200），随后按该节"移交 controller"段落的既定方法执行，5 请求内两项全部闭合。
@@ -205,6 +208,3 @@ Vol.33–40 同构可收割**（同一 OAI 端点、同一 DOI 形态 `10.1609/a
 | 5 | GET | `oai?verb=ListIdentifiers&set=AAAI:2023-11` | `noRecordsMatch`（复现，项④反例，确认非瞬时） |
 
 第 6 请求预算未使用（两项已用 5 请求充分闭合，经济收尾）。零 PDF 下载、零登录、零表单；[research/site-survey/aaai-ojs.md](../../research/site-survey/aaai-ojs.md) §12 同步更新结论状态。
-
-**规模注记**：AAAI-26/Vol.40 本身仍在扫描中途（No.1–24/预期 48+），其活记录数 2136 是**下限
-非终值**；补完预算 ≤30 请求（§11.5）。

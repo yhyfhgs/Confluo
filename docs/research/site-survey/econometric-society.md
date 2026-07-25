@@ -47,12 +47,12 @@ updated: 2026-07-26
 |---|---|---|---|
 | ECMA `10.2307/1912227` | 1933 | `jstor.org/stable/1912227` | pre-DOI 过刊在 **JSTOR**（旧前缀 10.2307） |
 | ECMA `10.3982/ECTA12058` | 2015 | `doi.wiley.com/10.3982/ECTA12058` → **403 Cloudflare**（stateless） | **Wiley 时代过刊**（登记 link 含 `api.wiley.com/onlinelibrary/tdm/v1/...` + `onlinelibrary.wiley.com/.../fullpdf`） |
-| ECMA `10.3982/ECTA23709` | 2026 | `econometricsociety.org/doi/10.3982/ECTA23709` → `/publications/econometrica/2026/03/01/{slug}` → **200** | **当前自营**（CF 前置，无挑战） |
+| ECMA `10.3982/ECTA23709` | 2026 | `econometricsociety.org/doi/10.3982/ECTA23709` → `/publications/econometrica/2026/03/01/{slug}` → **200** | **当前自营**（CF 前置，~~无挑战~~——见 §7：2026-07-26 复核同一 DOI 已现 Cloudflare 质询） |
 | QE `10.3982/QE2297` | 2026 | `econometricsociety.org/doi/10.3982/QE2297` → `/publications/quantitative-economics/2026/01/01/{slug}` → **200** | 当前自营（其 crossref link 仍留 `onlinelibrary.wiley.com/doi/pdf/...` = **陈旧遗留元数据**） |
 | TE `10.3982/TE6021` | — | `econometricsociety.org/10.3982/TE6021` → **404** | TE 的 crossref 登记落地用了 **无 `/doi/` 前缀的坏 URL**；TE 真身在 OJS/econtheory（见 §4） |
 
 - **切换形态 = 前向**：过刊（Wiley 时代 ~2010–202x、JSTOR 时代 pre-2010）**不迁移**、留在原平台；新刊落自营。**切换日历日 [UNRESOLVED]**（实现期用 crossref 按年枚举 + doi.org HEAD 抽样二分确定 DOI 区间分界，预算内可完成）。
-- **合并落地 URL 形态（自营）**：`/doi/10.3982/{ECTA|TE|QE}{n}` → 302 → `/publications/{journal-slug}/{yyyy}/{mm}/{dd}/{title-slug}`（文章页），全 Cloudflare 前置、`cf-cache-status: DYNAMIC`，本次 stateless 200 无挑战。
+- **合并落地 URL 形态（自营）**：`/doi/10.3982/{ECTA|TE|QE}{n}` → 302 → `/publications/{journal-slug}/{yyyy}/{mm}/{dd}/{title-slug}`（文章页），全 Cloudflare 前置、`cf-cache-status: DYNAMIC`，~~本次 stateless 200 无挑战~~（见 §7：2026-07-26 复核同类请求已现质询，非恒常畅通）。
 - **独立域现状**：`econtheory.org/` 与 `qeconomics.org/` 根路径均跳转到 `econometricsociety.org/publications/{theoretical-economics|quantitative-economics}`；**`qeconomics.org` TLS 证书已过期**（curl(60)，`-k` 方可探）——adapter 绝不可依赖该域直连、且不得关校验绕过（本次 `-k` 仅勘察诊断）。
 
 ## 3. ECMA — `wiley` adapter 复用判断（本源最关键情报）
@@ -76,7 +76,7 @@ updated: 2026-07-26
 - **OA 全文实测（匿名门槛）**：
   - OJS 旧端点 `article/download/{id}/{galley}` **stateless 302 跳登录**（`/te/login`）——**遗留/弃用路径，非当前 OA 入口**。
   - 当前入口：`article/view/{id}` **302 跳合并前端** `econometricsociety.org/publications/{journal}/{yyyy}/{mm}/{dd}/{slug}`，页面标 **"Open Access"**，含 galley 链 `/publications/.../file/{file}.PDF`。
-  - **该 galley PDF HEAD [LIVE]** → `HTTP/2 200`、`content-type: application/pdf`、`accept-ranges: bytes`、CF 无挑战 → **TE 匿名 OA 全文确认可下**（Range 支持，利于断点/校验）。QE 同平台，判定同构（本次未逐刊 HEAD QE PDF，[LIVE] 仅 TE；QE OA 由 crossref CC BY-NC + 同实例强推定）。
+  - **该 galley PDF HEAD [LIVE]** → `HTTP/2 200`、`content-type: application/pdf`、`accept-ranges: bytes`、~~CF 无挑战~~（见 §7：2026-07-26 复核 econsoc 域其它请求路径已现质询；TE 本身未在该次复核中重测，此条 2026-07-24 结论未被直接推翻，但"当前恒无挑战"的推广假设不再成立）→ **TE 匿名 OA 全文确认可下**（Range 支持，利于断点/校验）。QE 同平台，判定同构（本次未逐刊 HEAD QE PDF，[LIVE] 仅 TE；QE OA 由 crossref CC BY-NC + 同实例强推定）。
 - **枚举面小结**：TE/QE 有 **两条独立可用枚举通道**——① crossref-by-ISSN（系统主干，推荐）② OJS OAI-PMH（2006 全史，二级校验/补摘要）。RSS/卷期浏览未专测（OJS 默认均有，非必需）。
 
 ## 5. robots / 合规（每域 [LIVE] 2026-07-24）
@@ -116,9 +116,9 @@ updated: 2026-07-26
 | ④（过刊段终态） | `resolve_assets(ecma, doi=10.3982/ecta12058, meta 无 primary_url_domain)`→`GET https://www.econometricsociety.org/doi/10.3982/ecta12058`（复现生产乐观路径） | econsoc 自营域对过刊 DOI 的真实响应（404/redirect/其它） | **同样命中 Cloudflare 交互质询页**（`CHALLENGE`/BLOCKED），非 404/410——未取得清晰终态答案，但确认现有 adapter 挑战处置代码路径正确工作——**维持 UNRESOLVED** |
 | ③（TE 差额抽样） | `GET https://api.crossref.org/journals/1933-6837/works?rows=0&facet=type-name:*` | TE 656(OAI) vs 735(crossref) 差额成因 | 200；`total-results=735`，`type-name` facet = `{"Journal Article": 735}`——**735 条全部同质为 Journal Article，排除类型异构假说**；真实成因仍未定位（编辑部记录/OAI 窗口/DOI 粒度差异等候选未逐一验证，预算所限）——**部分推进，非阻塞** |
 
-**新增关键发现（供 R1 browser-fetch 通道与 canary 建设参考）**：本文档 §5/§6 原判"当前对 stateless PaperCrawler UA 无挑战"（2026-07-24 R0c，curl 客户端实测）**已被本次复核证伪**——同一 UA 字符串、同域路径，仅客户端库由 curl 换为项目生产用的 httpx（`HttpClient`），两次请求均触发 Cloudflare 交互质询页（"Just a moment" 类型，200 状态 + body 特征，非头级 403）。差异成因未定性，候选：①CF 策略在两日内主动收紧；②CF 对不同 TLS/HTTP 客户端指纹的差异化处置（curl 与 httpx 的 JA3/JA4 指纹不同，是已知的 CF 启发式判据之一）；③间歇性/概率性质询。**三者均未排除，如实记录不臆断**。按 AC-0.2 红线，本次遇质询后立即停手，未更换客户端、未重试、未尝试任何形式的规避——两次质询已构成"该子批遇挑战即终止"的触发条件，故②的重新在线核实（doi.org HEAD 二次确认）与①④的进一步探测均未再尝试，`test_econsoc_smoke.py` 全量重跑（含 TE 健康检查/OAI 收割等 7 请求）本次未执行（超出本次子批必要范围，且同域已现质询风险）。
+**新增关键发现（供 R1 browser-fetch 通道与 canary 建设参考）**：本文档 §2（:50/:55，ECMA 当前段 DOI 判读表与合并落地 URL 形态段）与 §4（:79，TE galley HEAD 段）原判"无挑战"（2026-07-24 R0c，curl 客户端实测；三处原文已加删除线并回指本节）**已被本次复核证伪**——同一 UA 字符串、同域路径，仅客户端库由 curl 换为项目生产用的 httpx（`HttpClient`），两次请求均触发 Cloudflare 交互质询页（"Just a moment" 类型，200 状态 + body 特征，非头级 403）。差异成因未定性，候选：①CF 策略在两日内主动收紧；②CF 对不同 TLS/HTTP 客户端指纹的差异化处置（curl 与 httpx 的 JA3/JA4 指纹不同，是已知的 CF 启发式判据之一）；③间歇性/概率性质询。**三者均未排除，如实记录不臆断**。按 AC-0.2 红线，本次遇质询后立即停手，未更换客户端、未重试、未尝试任何形式的规避——两次质询已构成"该子批遇挑战即终止"的触发条件，故②的重新在线核实（doi.org HEAD 二次确认）与①④的进一步探测均未再尝试，`test_econsoc_smoke.py` 全量重跑（含 TE 健康检查/OAI 收割等 7 请求）本次未执行（超出本次子批必要范围，且同域已现质询风险）。
 
-**建议留痕**：①canary 监测应提高优先级（原风险条"未来若加质询"已是当下现实）；②econsoc.md §5/§8 已同步更新此发现；③下次窗口期重试建议前置一次 `GET /robots.txt` 轻量探活确认站点当前对本项目 UA 的质询状态，而非直接对 `/doi/` 落地页发起请求。
+**建议留痕**：①canary 监测应提高优先级（原风险条"未来若加质询"已是当下现实）；②econsoc.md §8 已同步更新此发现（§5"限速与礼貌"本次未动）；③下次窗口期重试建议前置一次 `GET /robots.txt` 轻量探活确认站点当前对本项目 UA 的质询状态，而非直接对 `/doi/` 落地页发起请求。
 
 ## 附. 请求台账（26 次完成请求；[LIVE] 2026-07-24）
 
