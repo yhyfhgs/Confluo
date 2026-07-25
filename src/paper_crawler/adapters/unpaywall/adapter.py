@@ -22,10 +22,13 @@ FETCH——Unpaywall 无搜索端点，必须先有 DOI 清单来自 crossref/db
 
 **触发条件语义**（设计意图，§5.5；**接线现状**：Phase 4 已实现并被集成测试覆盖，见
 auth-framework.md §8.1——本节此前称"两条触发路径均不在本次改动范围内"的表述已过期，
-2026-07-26 审计文档滞后修正）：本 adapter 在两种场景下被调用——①主源 resolve/fetch 因
-`no_entitlement` 失败后的 OA 兜底（`runner._route_error` 的 NO_ENTITLEMENT 分支经
-`_enqueue_oa_fallback` 派生 `oa_fallback` 子任务）；② `StageContext.oa_fallback` 门控
-开启时（auth_gated venue 装配期默认置 True，见 `cli.py::_assemble_auth_seam`）。接线
+2026-07-26 审计文档滞后修正）：本 adapter 实际只有**一条**已接线触发路径——主源
+resolve/fetch 因 `no_entitlement` 失败后的 OA 兜底：`runner._route_error` 的
+NO_ENTITLEMENT 分支，在 `StageContext.oa_fallback` 门控开启时（`pull`/`grab` 命令装配期
+经 `cli.py::_build_env`→`_assemble_auth_seam` 统一置 True，不区分 venue 是否
+auth_gated）经 `_enqueue_oa_fallback` 派生 `oa_fallback` 子任务。§5.5 原文另提的
+"VenueSpec 声明 OA-fallback 优先"第二条触发路径**未实现**——`VenueSpec`（types.py）
+无对应字段，本文顺带如实标注（该处属 §5.5 范围，不在本文件本次改动内另行修正）。接线
 路径：pipeline 第七 handler `_stage_oa_fallback`（`pipeline/stages.py`）把本类
 `lookup()` 的记录规格化为 `AssetPlan` 并入队 `fetch` 任务 → `_fetch_oa_direct` 通用
 direct 取回落盘（复用 `PartFileIO`/`validate_pdf_magic`/`finalize_fetch` 三件不绕过）。
