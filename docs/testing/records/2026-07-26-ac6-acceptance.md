@@ -11,6 +11,7 @@ updated: 2026-07-26
 > 记录范式：沿 [AC-5 离线端到端汇总验收记录](2026-07-24-ac5-acceptance.md)（逐条判定表 / 证据链 / 亲跑台账 / 分层标注 / 签署）。
 > **本记录由 T9 执行 agent（sonnet 档）起草，判定一律"建议 PASS"，不自置签署——最终签署由 controller（fable）亲验完成**（任务卡字面纪律）。
 > 代码基线：`feat/ac6-e2e` 分支 @ `main` `5729d50`（Phase 6 T1–T8 主线全部已合并：DSL 地基/编译器/过滤+护栏/watermark/watch runner+CLI/日报渲染/nber RSS/9 preset）。本记录新增 `tests/integration/test_subs_ac6_acceptance.py`（6 例），零改动既有 `src/`。
+> **F7 增补（2026-07-26，`fix/watch-online-usability` @ `5a62004`）**：§4 已知限制 #1（arxiv 恒失败）/#2（ssrn 整年枚举）已修复并在线复验，见 §4.1a 台账与 §6.1；本记录相应两条改判"已修复"，其余判定与签署状态不变（离线 DoD 判定不受影响）。
 
 ## 0. 分层与范围
 
@@ -166,11 +167,33 @@ llm-agents 与 econometrics-methods 两个已实跑的 preset，dry-run 净候�
 
 ## 4. 已知限制（如实列，不阻塞本记录 AC-6 离线 DoD 判定）
 
-1. **`crawler subs watch` 的 arxiv 源在真实网络下当前不可用**（本次在线冒烟新证据）：`subs/watch.py::_lower_bound_of` 对 arxiv 恒返回 `None`（其窗口并入 `search_query` 字符串，非独立 `since` 参数——这是该模块 docstring"参数下达面"段已预先示警的已知设计现状），导致 `AdapterFetcher.fetch()` 调用 `arxiv 适配器.discover_timeline(venue, since=None)` 时，该适配器对 `since=None` 的默认行为是从硬编码起点 `1998-01-01` 按月桶枚举——本次实测该起点被 arXiv 官方 OAI-PMH 服务端以 `badArgument`/"start date too early" **确定性拒绝**（非限速、非偶发，两次独立调用逐字返回同一错误）。净效果：**任何声明了 `sources.arxiv` 的订阅，在真实网络下 `subs watch` 当前恒失败、零候选**——9 个预置里唯独 `market-microstructure`/`mechanism-design` 之外的绝大多数 preset 均含 arxiv 源，此为影响面较广的生产阻断项。**已通过 `spawn_task` 登记为独立后续任务**（见 §6），本记录不代为修复（超出 T9 验收范围）。
-2. **asset-pricing.yaml 的 ssrn 源年粒度桶会触发对 crossref 前缀 10.2139 整年的枚举**（本次在线冒烟量化确认，非新发现——`subs/watch.py` 模块 docstring"参数下达面"段已预先示警"crossref 走 identifiers 下达、日期窗客户端收窄（请求量或超预期）"，本次冒烟**实测量化**了该风险的具体规模）：`SsrnAdapter.discover_timeline` 按**年**切桶（`_resolve_start_year` 只取 `since` 前 4 位），而非把 7 日 watch 增量窗传导到日粒度——本次单次 `rows=0` 探测实测 `prefix:10.2139` 在 `created` 轴 2026 全年已有 **155,461** 条 crossref 记录，意味着若真实执行 `crawler subs watch asset-pricing`，其 ssrn 源的 `enumerate_issue`（委托 `CrossrefAdapter` 分页枚举该整年）将产生远超预算的请求量（数十至数千页，视翻页大小而定）。**本记录出于预算纪律（≤15）主动放弃对 asset-pricing.yaml 的真实 dry-run 执行**，以 1 次安全的 count-only 探测量化风险后止损，而非盲目实跑到超支或网络挑战才停手——这正是任务卡"dry-run 先行/谨慎执行/超预算即停"纪律的字面落实。该发现与既有 `subs/watch.py` docstring 已记录的风险同源，本记录不重复登记独立后续任务，仅在此如实标注量化证据。
+1. ~~**`crawler subs watch` 的 arxiv 源在真实网络下当前不可用**~~ → **已修复（F7，2026-07-26；`fix/watch-online-usability`）**。原文（保留供追溯）：`subs/watch.py::_lower_bound_of` 对 arxiv 恒返回 `None`（其窗口并入 `search_query` 字符串，非独立 `since` 参数——这是该模块 docstring"参数下达面"段已预先示警的已知设计现状），导致 `AdapterFetcher.fetch()` 调用 `arxiv 适配器.discover_timeline(venue, since=None)` 时，该适配器对 `since=None` 的默认行为是从 venue `quirks.inception`（`1998-01`）按月桶枚举——本次实测该起点被 arXiv 官方 OAI-PMH 服务端以 `badArgument`/"start date too early" **确定性拒绝**（非限速、非偶发，两次独立调用逐字返回同一错误）。净效果：**任何声明了 `sources.arxiv` 的订阅，在真实网络下 `subs watch` 恒失败、零候选**。
+   **修复**：`_lower_bound_of` 把 `[YYYYMMDDHHMM TO …]` 窗值解回 ISO 下界喂 `SourceRequest.since` → `discover_timeline` 起始月 = 窗下界所在月；月桶与日窗的差额仍由既有结果面收窄兜底（arxiv stub 的 `pub_date` 取 OAI `created`，与 `submittedDate` 同轴）；窗值形态认不出 → CONFIG 响亮（不留"退回 None"的同形后门）。**在线复验见 §4.1a 台账 #2：`from=2026-07-01&until=2026-07-25`，HTTP 200，无 `badArgument`，arxiv 源不再失败。**
+2. ~~**ssrn 源年粒度桶会触发对 crossref 前缀 10.2139 整年的枚举**~~ → **已修复（F7，同上）**。原文（保留供追溯）：`SsrnAdapter.discover_timeline` 按**年**切桶，`CrossrefAdapter._enumerate_window` 无条件用 `YYYY-01-01..YYYY-12-31`，7 日 watch 增量窗传导不到日粒度——单次 `rows=0` 探测实测 `prefix:10.2139` 在 `created` 轴 2026 全年已有 **155,461** 条记录（约 156 页 × 1000）。
+   **修复**：`CrossrefAdapter` 新增日窗通道 `_window_bounds`——venue `quirks` 的 `from/until-{pub|created}-date`（键名 = 该 date-field 轴的 filter 名本身，与 `subs/types.py::DATE_WINDOW_PARAMS` 逐字同源）与桶年取**交集**后拼进 `filter=`，交集为空则零请求；订阅层经既有 `AdapterFetcher.venue_for` 把窗参数并进 `quirks`，ssrn adapter 零改动即生效，crossref 期刊 watch 同一通道一并收窄。冻结 adapter 公开签名未动；venue YAML 不声明日窗时行为逐字不变（backfill 主路径零回归）。联动摘掉 ssrn 的**结果面**窗收窄（窗轴 `created` vs `PaperStub.pub_date` 的 `published` 是错轴比较，会丢"本周登记、刊期更早"的记录）。**在线复验见 §4.1a 台账 #1：同一 7 天窗服务端计数 6,067（vs 整年 155,461）= 25.6× 收敛，约 156 页 → 约 7 页。**
 3. **NBER 源本次未做真实网络验证**（asset-pricing.yaml 唯一同时含 ssrn 风险的 preset，因 #2 原因整体未执行；其余两个已测 preset 不含 nber 源）——`NberRssFetcher` 走独立、有界的单次 RSS 请求路径（不经 `AdapterFetcher`/`DISCOVER`），T7 阶段已有 `newap.xml`/`newcf.xml` 等 [LIVE] 实测记录（`docs/catalog/preprint-platforms.md` §4、`adapters/nber/rss.py` 模块 docstring），本记录不重复验证，如实标注"本次会话未覆盖"而非默认其在 `subs watch` 编排下必然工作。
 4. **AC-6.3 真人工基准 defer**：本记录判定使用的是独立赋值的代理标签（§AC-6.3 小节已述构造方法），非真实人工浏览标注；真人工基准验证 defer 至运行期实测，如实标注，不预支结论。
 5. **crossref 多 issn fan-out 场景无真实 preset 承载**：9 个预置文件均未声明 `crossref:` 源（§AC-6.1 已述），该子场景沿用既有 e2e 回归而非本记录新造，是 9 preset 真实源分布决定的口径差异，不是覆盖缺口。
+6. **arxiv 的 `search_query` 既下推不了、也没有本地补偿谓词**（F7 修复期新发现，**未修**，如实列账并上报——修复须另开卡）：`_compile_arxiv` 把 `categories`（`cat:` 组）与 `query`（`ti/abs` 字段级布尔式）合成单个 `search_query`，而 OAI-PMH 通道**无关键词查询能力**，`enumerate_issue` 的收割面只由 venue 的 `quirks.arxiv_set`（archive 级）+ `arxiv_category`（客户端按 `primary_category` 过滤）决定。两条净效果：
+   - `sources.arxiv.query` 的布尔式**完全不生效**——`filter.PREDICATE_REGISTRY` 只登记了 `ssrn.topic_filter`，且谓词签名 `PaperStub -> bool` 不带参数，无法承载订阅级表达式；9 个预置靠"`filters.title_regex_any` 手工镜像 query 词族"这条**约定**兜底（llm-agents 的 T8 修复正是在补这个镜像），不是机制，AC-6.4"正确性以本地过滤为准"在此条上**未被机制保证**。
+   - `cli._watch_source_venues` 按 id 序取该源首个 venue → 生产 venues 目录下 arxiv 恒路由到 `arxiv_cs_ai`，故订阅声明的其余分类（llm-agents 的 cs.LG/cs.CL/cs.MA、asset-pricing 的全部 q-fin.*）**收不到任何条目**。
+   F7 已就地做的是**列账 + 响亮化**：`subs/watch.py` 模块 docstring 末段写明两者，且该源的降级 WARNING 不再谎称"其余条件由本地过滤兜底"（改为点名"search_query 的分类组与关键词布尔式无本地补偿谓词，实际只有 filters: 三谓词生效"），并有专测锁住这句措辞。**建议的修复方向**（供 controller 排期）：`_compose_arxiv` 按 `categories` fan-out，每条请求带一个 `arxiv_category` 参数——它经既有 `venue_for` 并进 `quirks` 后正是 `_oai_target` 读的键（set 亦可由它派生），与 crossref `issn` 的下达形态同款，adapter 零改动；关键词布尔式则需要一条参数化谓词，属更大的改面。
+
+### 4.1a F7 修复后的在线复验台账（2026-07-26 执行，预算 ≤6 请求，controller 授权）
+
+代码基线：`fix/watch-online-usability` @ `5a62004`（离线门禁 `make check` **3820 passed / 28 skipped / 98.99% / EXIT=0**，较本记录 §5 的 3804 只增不减：+16 为本次两接缝专测）。隔离 `--home`（scratchpad，非仓库路径）：`config.toml` 声明 `[identity].email` + `paths.venues_dirs` 指向**收窄的 venues 副本**（只放 `venues/preprint/arxiv-q-fin-pr.yaml` + `venues/econ/ssrn.yaml`）；`subscriptions/` 放 `llm-agents.yaml`/`asset-pricing.yaml` 的**原样拷贝**。
+
+> **venues 收窄的理由（如实标注，非掩饰）**：`cli._watch_source_venues` 按 id 序取该源首个 venue，生产 venues 目录下 arxiv 恒路由到 `arxiv_cs_ai`（set=`cs`，全站最大 archive）——一次整月 OAI 收割要翻十余页，单这一项就吃光 ≤6 预算。收窄到 `arxiv_q_fin_pr`（set=`q-fin`）后一个月桶一页即到底，**被验的接缝（窗下界→`since`→月桶 `from=`）逐字相同**，只是收割面更小。附带效果：该 venue 对 `asset-pricing` 的 q-fin 类目声明反而是语义正确的路由（见 §4 第 6 条）。
+
+| # | 动作 | 目标 | 结果 | 判据 |
+|---|---|---|---|---|
+| 1 | count-only 探测（`rows=0`，本记录执行者手动，同款 D-014 UA） | `api.crossref.org/prefixes/10.2139/works?filter=from-created-date:2026-07-18,until-created-date:2026-07-25&rows=0` | HTTP 200，`total-results: **6067**` | **ssrn 接缝**：服务端接受下推后的日窗 filter；同一 prefix 整年 155,461 → 7 天窗 6,067（**25.6×**），翻页面 ~156 页 → ~7 页 |
+| 2 | `crawler subs watch llm-agents --dry-run --verbose` | `oaipmh.arxiv.org/oai?verb=ListRecords&metadataPrefix=arXiv&set=q-fin&**from=2026-07-01&until=2026-07-25**` | HTTP 200，**无 `badArgument`**；arxiv 源成功（候选 1）；openalex 同批失败但**零网络**（`capabilities` 空集，Python 层拒绝）；退出码 1（openalex 失败） | **arxiv 接缝**：窗下界 2026-07-18（首跑=今天−7）→ 月桶起点 2026-07-01，**不再是 1998-01-01**；obslog `msg:"http exchange"` **恰 1 条**（逐条核对） |
+| 3 | `verb=ListIdentifiers&set=cs&from=2026-07-01&until=2026-07-25` 探测（量化生产 venue 路由下的 cs archive 规模） | `oaipmh.arxiv.org` | **超时**（`TRANSIENT`，无服务端响应） | 未重试——非服务端拒绝/挑战，但按"即停"纪律不追加请求；该超时本身佐证 §4.1a 抬头"cs 整月收割吃光预算"的判断 |
+
+**本次共 3 条真实网络动作（3/6，未超预算）**；#2 的 obslog 逐条核对（`logs/crawler-20260725.jsonl`，`msg:"http exchange"` 恰 1 条，host=`oaipmh.arxiv.org`）。
+
+**`asset-pricing --dry-run` 未实跑**：任务卡对该步的门禁是"**先 crossref count-only 探测窗口内计数 <1000 再 dry-run**"，#1 实测 6,067 > 1000 → **门禁不成立，按卡面止损**。这不是遗漏，是门禁按设计生效：一次 7 天首跑的 ssrn 源需 ~7 页 + arxiv 1 页 + nber RSS 1 页 ≈ 9 请求，超 ≤6 预算。ssrn 接缝的证据链因此是"#1 服务端接受同一 filter + 计数收敛"（在线）＋`test_subs_watch.py::test_ssrn_day_window_reaches_the_crossref_filter_and_trims_the_year_buckets`（离线逐字断言 `filter=from-created-date:2026-07-19,until-created-date:2026-07-26` 与"1 次请求"）——**CLI 端到端实跑仍待一次预算更宽的会话补做**，如实登记为残留（§6）。
 
 ## 5. 亲跑台账（本 worktree `feat/ac6-e2e` @ `main` `5729d50`，`uv sync --extra auth` 后 `uv run pytest`，除 §3 明确列出的在线冒烟外零真实网络）
 
@@ -189,11 +212,18 @@ llm-agents 与 econometrics-methods 两个已实跑的 preset，dry-run 净候�
 - **上报**：已用 `spawn_task` 登记"`crawler subs watch` 的 arxiv 源在真实网络下恒失败"为独立后续任务（Fix ID 见任务面板；prompt 已附本记录 §4.1 的完整技术细节与复现步骤，供后续会话直接定位修复）。ssrn 年粒度枚举风险（§4.2）与既有 docstring 已记录风险同源，未另开新任务，仅在此登记量化证据供 controller 决定是否需要优先级提升。
 - 其余：无。
 
+### 6.1 F7 增补卡的偏离与上报（2026-07-26，`fix/watch-online-usability`）
+
+- **偏离①**：任务卡列的在线复验是"`llm-agents --dry-run`（arxiv 真实一轮）+ `asset-pricing --dry-run`"，实跑只完成前者。**`asset-pricing` 未跑的依据是任务卡自带的门禁**"先 crossref count-only 探测窗口内计数 <1000 再 dry-run"——实测 6,067 > 1000，门禁不成立（§4.1a）。ssrn 接缝的在线证据改由同一 filter 的服务端计数承担，**CLI 端到端实跑残留**，建议 controller 在预算更宽的会话补一次（估 ~9 请求：ssrn 7 页 + arxiv 1 + nber RSS 1）。
+- **偏离②**：`llm-agents` 的在线实跑用了**收窄的 venues 目录**（只留 `arxiv_q_fin_pr` + `ssrn`），理由与被验接缝的等价性见 §4.1a 抬头的引述块。生产 venues 目录下的 arxiv 路由（`arxiv_cs_ai`，set=`cs`）未在线覆盖——台账 #3 的 cs archive 探测超时，未重试。
+- **上报（新发现，未修）**：§4 第 6 条——arxiv 的 `search_query`（分类组 + 关键词布尔式）既下推不了也无本地补偿谓词，且 venue 路由只取 id 序首个 venue 导致多分类订阅实际只收一个分类。F7 只做了列账与 WARNING 响亮化（含专测），**修复须另开卡**；建议的下达形态（`arxiv_category` 走既有 quirks 通道 fan-out，adapter 零改动）已写在该条内。
+- **红线自查**：AC-0 未触；在线 3/6 请求且 count-only/dry-run 先行；冻结件（`SourceAdapter` 协议、adapter 公开签名、`subs/types.py` 数据类）未动——crossref 的日窗走 venue `quirks`（adapter 读配置的既有入口），无签名变更。
+
 ## 7. 移交
 
 - controller 亲验：复跑本记录 §5 亲跑台账（尤其 `test_subs_ac6_acceptance.py` 6 例 + `make check` 3804/28/99.00%/EXIT=0）核对吻合；复核 §3 在线台账（`logs/crawler-*.jsonl` 若需要可提供完整会话副本）与 §4 已知限制两项的技术判断（尤其 arxiv 发现是否需要提升为 Phase 6 范围内插单修复，而非仅 backlog 登记）。
-- §4 已知限制清单转交后续处置：① arxiv watch 集成问题（已 spawn_task）；② ssrn 年粒度枚举风险（如实登记，未开新任务）；③ nber 本次未验（低风险，T7 已有 [LIVE] 证据，建议后续会话顺带补一次 asset-pricing 的 nber-only 隔离验证）。
-- T10 收尾时按本记录 §1 四条"建议 PASS"逐条复核，phase6-report 汇总时一并登记本记录的两项在线发现。
+- §4 已知限制清单转交后续处置：① arxiv watch 集成问题（已 spawn_task）→ **F7 已修，§4.1a 在线复验**；② ssrn 年粒度枚举风险（如实登记，未开新任务）→ **F7 已修，同上**；③ nber 本次未验（低风险，T7 已有 [LIVE] 证据，建议后续会话顺带补一次 asset-pricing 的 nber-only 隔离验证）；⑥ **新增：arxiv `search_query` 无本地补偿 + venue 路由只取首个分类（F7 期发现，未修，待排期）**。
+- T10 收尾时按本记录 §1 四条"建议 PASS"逐条复核，phase6-report 汇总时一并登记本记录的两项在线发现**及 F7 的闭合结论（§4.1a/§6.1）**。
 
 ## 8. 签署
 
