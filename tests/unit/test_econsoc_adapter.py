@@ -123,11 +123,13 @@ def test_enumerate_historical_year_keeps_only_te_2006_records() -> None:
 # --- 当前年回看窗完整性缺口可观测性（F4 清账，S3-P2 审计，与 aaai_ojs:176 同构）------------------
 
 
-def test_enumerate_current_year_window_logs_completeness_warning(
+def test_enumerate_current_year_window_logs_completeness_info(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     # 首次收割该刊/年时，回看窗外（今年早些时候发表）的论文本次不会被覆盖——此前零
-    # 日志、纯静默；现须经 obslog 显式 WARNING 可观测（不改变加窗本身的既有增量语义）。
+    # 日志、纯静默；现须经 obslog 显式 INFO 可观测（不改变加窗本身的既有增量语义）。
+    # 级别为 INFO 非 WARNING（F4 审查修正）：这是加窗路径的常态表现（每次当前年收割
+    # 都会触发），非偶发异常——全库 WARNING 语义惯例保留给真正的异常条件。
     events: list[dict[str, object]] = []
     monkeypatch.setattr(
         "paper_crawler.adapters.econsoc.adapter.log_event",
@@ -138,13 +140,13 @@ def test_enumerate_current_year_window_logs_completeness_warning(
             make_econsoc_teqe_venue("te"), _te_issue(2024, "20")
         )
     )
-    warnings = [e for e in events if "windowed to from=" in str(e["msg"])]
-    assert len(warnings) == 1
-    assert warnings[0]["level"] == "WARNING"
-    assert warnings[0]["lookback_days"] == 30
+    infos = [e for e in events if "windowed to from=" in str(e["msg"])]
+    assert len(infos) == 1
+    assert infos[0]["level"] == "INFO"
+    assert infos[0]["lookback_days"] == 30
 
 
-def test_enumerate_historical_year_does_not_log_completeness_warning(
+def test_enumerate_historical_year_does_not_log_completeness_info(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     events: list[dict[str, object]] = []

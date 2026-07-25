@@ -211,13 +211,33 @@ class AaaiOjsAdapter(AdapterBase):
     def _enumerate_pages(
         self, venue: VenueSpec, issue: IssueRef, volume: str, oai_base: str, url: str
     ) -> Iterator[PaperStub]:
-        """单卷收割：翻页 + DOI-卷号过滤，只产本卷（当前届回看窗增量路径）。"""
+        """单卷收割：翻页 + DOI-卷号过滤，只产本卷（当前届回看窗增量路径）。
+
+        **丢弃可观测**（F4 审查追加，S1 台账 (c) 项）：当前窗查询按 datestamp 而非卷号
+        取数，天然会带回其它卷的记录（如历史卷论文因勘误被重新 touch）——
+        ``record.volume != volume`` 的丢弃是**正常路由噪声**，非本届数据缺失（那些
+        记录仍会被各自届的收割路径覆盖，不是真丢失）。此前零日志、纯静默；现汇总
+        计数于收割自然跑完时经 obslog DEBUG 可观测（逐记录打日志噪声太大，故只在
+        生成器耗尽时汇总一条）。
+        """
+        other_volume_count = 0
         for page in self._iter_pages(venue, issue, oai_base, url):
             for record in page.records:
                 # DOI-卷号客户端过滤（§4）：只保留 DOI 解析出的卷号 == 本届卷号者。
                 if record.volume != volume:
+                    other_volume_count += 1
                     continue
                 yield parse.to_paper_stub(record)
+        if other_volume_count:
+            log_event(
+                "DEBUG",
+                "aaai current-window records skipped for non-matching volume",
+                venue=venue.id,
+                stage="enumerate",
+                bucket=issue.label,
+                volume=volume,
+                skipped_other_volume=other_volume_count,
+            )
 
     # -- 跨卷分区缓存（审计 S1-P1：历史卷冷回填单趟化）----------------------------------------
 
@@ -234,16 +254,25 @@ class AaaiOjsAdapter(AdapterBase):
 
         缓存只在收割**自然跑完**（resumptionToken 耗尽）时发布：调用方提前 break 而中断
         生成器，则本趟不发布任何缓存（宁可下次重扫，不要发布残缺分区）。
+
+        **真丢弃可观测**（F4 审查追加，S1 台账 (c) 项）：未注册卷号/volume=None（非
+        AAAI DOI 形态）的记录不属任何已知届——既非目标卷也非其余已注册历史卷，此后
+        也不会被任何届的收割路径覆盖，是真正的数据丢失面（区别于 `_enumerate_pages`
+        同构位置"记录属于别的届、稍后自会被覆盖"的路由噪声）。此前零日志、纯静默；
+        现汇总计数于收割自然跑完时经 obslog INFO 可观测（真丢弃比路由噪声更值得
+        留意，故用 INFO 而非 DEBUG；逐记录打日志噪声太大，只在跑完时汇总一条）。
         """
         cacheable = self._cacheable_volumes(venue)
         partitions: dict[str, list[PaperStub]] | None = {v: [] for v in cacheable}
         buffered = 0
+        discarded_unregistered = 0
         for page in self._iter_pages(venue, issue, oai_base, url):
             for record in page.records:
                 vol = record.volume
                 # DOI-卷号 partition（§4）：目标卷即时产出；其余已注册历史卷进缓存；
-                # 未注册卷号/非 AAAI 形态（volume=None）不属任何届，丢弃。
+                # 未注册卷号/非 AAAI 形态（volume=None）不属任何届，真丢弃。
                 if vol is None or (vol != volume and vol not in cacheable):
+                    discarded_unregistered += 1
                     continue
                 stub = parse.to_paper_stub(record)
                 if vol == volume:
@@ -261,6 +290,16 @@ class AaaiOjsAdapter(AdapterBase):
                             bucket=issue.label,
                             cap=_BACKFILL_CACHE_MAX_RECORDS,
                         )
+        if discarded_unregistered:
+            log_event(
+                "INFO",
+                "aaai backfill records discarded for unregistered/unparseable volume",
+                venue=venue.id,
+                stage="enumerate",
+                bucket=issue.label,
+                volume=volume,
+                discarded_unregistered_volume=discarded_unregistered,
+            )
         if partitions is not None:
             self._publish_backfill(venue, oai_base, partitions)
 

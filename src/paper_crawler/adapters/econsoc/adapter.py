@@ -193,10 +193,14 @@ class EconsocAdapter(AdapterBase):
         惰性执行。当前刊（volume_map 最大年）加 `from=<今日−回看天数>` datestamp 窗做增量，
         历史刊无窗全量收割；去重由下游 `identifier('doi')` 主键天然保证（§4）。**完整性
         缺口响亮化**（F4 清账，S3-P2 审计，与 aaai_ojs 同构）：加窗时经 obslog 显式
-        WARNING——若这是该刊/年**首次**收割，窗口外（今年早些时候发表）的论文本次不会
+        INFO——若这是该刊/年**首次**收割，窗口外（今年早些时候发表）的论文本次不会
         被收割覆盖，须等年份滚出为历史年后由无窗历史收割补齐、或手动跑一次无窗全量
         收割；adapter 层无状态无法判定"是否首次"，故每次加窗都记录，交人工据此判断——
-        此前该缺口零日志、纯静默，仅测试断言 URL 含 `from=`，未触及语义完整性。
+        此前该缺口零日志、纯静默，仅测试断言 URL 含 `from=`，未触及语义完整性。**级别
+        取 INFO 非 WARNING**（F4 审查修正）：这是加窗增量路径的**常态**表现（每次当前
+        年收割都会触发，非偶发异常），全库 WARNING 语义惯例是"异常条件触发"（如
+        aaai_ojs 缓存触顶、TOML 畸形等）；此处是**常驻提示**——告知运行者"这次收割的
+        完整性边界在哪"，供必要时人工判断是否需要补一次无窗全量收割，非"出错了"。
         """
         year = _issue_year(issue, venue)
         code = _ojs_code(venue)
@@ -204,7 +208,7 @@ class EconsocAdapter(AdapterBase):
         frm = _lookback_from() if year == max(_volume_map(venue)) else None
         if frm is not None:
             log_event(
-                "WARNING",
+                "INFO",
                 f"econsoc {venue.id} {issue.label}: current-year harvest windowed to "
                 f"from={frm} (last {_LOOKBACK_DAYS}d only) — if this is the first-ever "
                 f"harvest of this venue/year, papers published earlier in {year} are NOT "

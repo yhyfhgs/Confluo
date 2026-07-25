@@ -218,6 +218,34 @@ def test_enumerate_logs_tombstone_skip_debug_event(monkeypatch: pytest.MonkeyPat
     assert ev["skipped_tombstones"] == 1
 
 
+def test_enumerate_current_edition_logs_skipped_other_volume_debug_event(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # F4 审查追加（S1 台账 (c) 项）：当前窗查询按 datestamp 取数，天然混入其它卷记录
+    # （v33），此前静默丢弃、零日志——现汇总计数经 obslog DEBUG 可观测（路由噪声，
+    # 非真丢失：这些记录仍会被 v33 自己的收割路径覆盖）。
+    events: list[dict[str, object]] = []
+    monkeypatch.setattr(
+        "paper_crawler.adapters.aaai_ojs.adapter.log_event",
+        lambda level, msg, **kw: events.append({"level": level, "msg": msg, **kw}),
+    )
+    list(
+        _adapter(_two_page_handler).enumerate_issue(
+            make_aaai_venue(), _issue(volume="40", year=2026)
+        )
+    )
+    expected_msg = "aaai current-window records skipped for non-matching volume"
+    skip_events = [e for e in events if e["msg"] == expected_msg]
+    assert len(skip_events) == 1
+    ev = skip_events[0]
+    assert ev["level"] == "DEBUG"
+    assert ev["venue"] == "aaai"
+    assert ev["stage"] == "enumerate"
+    assert ev["bucket"] == "AAAI-26"
+    assert ev["volume"] == "40"
+    assert ev["skipped_other_volume"] == 2  # v33 记录：页1 D + 页2 G
+
+
 def test_enumerate_norecordsmatch_completes_empty() -> None:
     handler: Handler = lambda request: httpx.Response(  # noqa: E731
         200, content=fixture_bytes("03_oai_norecordsmatch.xml")
@@ -495,6 +523,88 @@ def test_backfill_records_outside_registered_volumes_are_dropped() -> None:
     ]
     assert adapter._backfill is not None
     assert set(adapter._backfill) == set(_COLD_HISTORICAL)  # v99 未入缓存
+
+
+# 混合丢弃场景（F4 审查追加，S1 台账 (c) 项）：目标卷（24，产出）+ 未注册卷号（99，不在
+# _cold_venue() 的 volume_map 里）+ 非 AAAI DOI 形态（volume=None，DOI 不含 "aaai.vNi"）。
+# 后两类都命中 `_backfill_pages` 的真丢弃分支（非"进分区缓存"分支），也是本测试要钉死的。
+_MIXED_DISCARD_PAGE = b"""<?xml version="1.0" encoding="UTF-8"?>
+<OAI-PMH xmlns="http://www.openarchives.org/OAI/2.0/"
+         xmlns:oai_dc="http://www.openarchives.org/OAI/2.0/oai_dc/"
+         xmlns:dc="http://purl.org/dc/elements/1.1/">
+<ListRecords>
+<record>
+<header><identifier>oai:ojs.aaai.org:article/2401</identifier><datestamp>2010-03-17T09:00:00Z</datestamp></header>
+<metadata><oai_dc:dc>
+<dc:title>Target Volume Paper</dc:title>
+<dc:creator>Synthetic, Author</dc:creator>
+<dc:date>2010-03-17</dc:date>
+<dc:identifier>https://ojs.aaai.org/index.php/AAAI/article/view/2401</dc:identifier>
+<dc:identifier>10.1609/aaai.v24i1.2401</dc:identifier>
+<dc:relation>https://ojs.aaai.org/index.php/AAAI/article/view/2401/1</dc:relation>
+</oai_dc:dc></metadata>
+</record>
+<record>
+<header><identifier>oai:ojs.aaai.org:article/9901</identifier><datestamp>2010-03-17T09:00:00Z</datestamp></header>
+<metadata><oai_dc:dc>
+<dc:title>Unregistered Volume Paper</dc:title>
+<dc:creator>Synthetic, Author</dc:creator>
+<dc:date>2010-03-17</dc:date>
+<dc:identifier>https://ojs.aaai.org/index.php/AAAI/article/view/9901</dc:identifier>
+<dc:identifier>10.1609/aaai.v99i1.9901</dc:identifier>
+<dc:relation>https://ojs.aaai.org/index.php/AAAI/article/view/9901/1</dc:relation>
+</oai_dc:dc></metadata>
+</record>
+<record>
+<header><identifier>oai:ojs.aaai.org:article/5001</identifier><datestamp>2010-03-17T09:00:00Z</datestamp></header>
+<metadata><oai_dc:dc>
+<dc:title>Non-AAAI DOI Paper</dc:title>
+<dc:creator>Synthetic, Author</dc:creator>
+<dc:date>2010-03-17</dc:date>
+<dc:identifier>https://ojs.aaai.org/index.php/AAAI/article/view/5001</dc:identifier>
+<dc:identifier>10.9999/other-publisher.5001</dc:identifier>
+<dc:relation>https://ojs.aaai.org/index.php/AAAI/article/view/5001/1</dc:relation>
+</oai_dc:dc></metadata>
+</record>
+<resumptionToken/>
+</ListRecords>
+</OAI-PMH>
+"""
+
+
+def test_backfill_logs_info_event_for_unregistered_and_unparseable_volume_discards(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # F4 审查追加（S1 台账 (c) 项）：未注册卷号（99）与非 AAAI DOI（volume=None）都是
+    # 真丢弃（此后不会被任何届的收割路径覆盖，区别于 _enumerate_pages 的路由噪声）；
+    # 此前零日志、纯静默——现汇总计数经 obslog INFO 可观测。
+    events: list[dict[str, object]] = []
+    monkeypatch.setattr(
+        "paper_crawler.adapters.aaai_ojs.adapter.log_event",
+        lambda level, msg, **kw: events.append({"level": level, "msg": msg, **kw}),
+    )
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(200, content=_MIXED_DISCARD_PAGE)
+
+    adapter = _adapter(handler)
+    venue = _cold_venue()
+    stubs = list(adapter.enumerate_issue(venue, _issue(volume="24", year=2010)))
+    assert _dois(stubs) == ["10.1609/aaai.v24i1.2401"]  # 只产目标卷
+    assert set(adapter._backfill) == set(_COLD_HISTORICAL)  # v99/None 均未入缓存
+
+    discard_events = [
+        e
+        for e in events
+        if e["msg"] == "aaai backfill records discarded for unregistered/unparseable volume"
+    ]
+    assert len(discard_events) == 1
+    ev = discard_events[0]
+    assert ev["level"] == "INFO"
+    assert ev["venue"] == "aaai"
+    assert ev["stage"] == "enumerate"
+    assert ev["volume"] == "24"
+    assert ev["discarded_unregistered_volume"] == 2  # v99 + 非 AAAI DOI(volume=None)
 
 
 def test_empty_registered_edition_is_a_cache_hit_not_a_rescan() -> None:

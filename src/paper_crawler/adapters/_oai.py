@@ -24,6 +24,13 @@
 - ``idDoesNotExist`` → `GONE`（单 id 查询场景，如 GetRecord canary 未命中）；
 - 其余未知 code → `PARSE`（保守兜底）。
 
+`ListRecords` 页形状守卫（F4 清账，S1 审计"OAI 空信封"）：`<error>` 与 `<ListRecords>`
+两者按 OAI-PMH 协议必居其一。**曾见 `<error>`**（走到信封遍历这一步时必为
+``noRecordsMatch``，其余 code 已在上表响亮抛出）→ 缺 `<ListRecords>` 是该错误码响应
+的合法形态，仍判定为空窗口/空桶的正常空页；**`<error>` 与 `<ListRecords>` 两者皆无**
+（如误配成 `Identify` 等其它 verb 的响应体、代理返回了非预期页面）→ 响应形态本身
+不合规，非合法空页，判定为 `PARSE`——避免把这类结构性异常误判为"这页恰好没有记录"。
+
 墓碑（``<header status="deleted">`` 或整条缺 ``<metadata>``）计入跳过数而非静默
 丢弃——``OaiListPage.skipped_tombstones`` 让墓碑可观测（adapter 经 obslog 记 debug
 事件）。任何 XML 语法错误（截断响应等）→ `PARSE`。

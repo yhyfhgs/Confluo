@@ -18,35 +18,54 @@ findings-emnlp=1059，合计 2241），供 AC-2.5"EMNLP 全量"离线验收使�
 权威值。`assert_matches_anchor` 在模块导入期即独立重新加载 anchor JSON 并逐卷
 断言一致，把此前仅靠某个下游测试文件"恰好"做了这项 cross-check 的隐性依赖，
 变成本模块自身在导入时就响亮校验的显式契约。
+
+**F4 审查追加两项反向断言**（逐项相等只查"我方键→anchor 值"单向，查不出"anchor
+多出一卷、我方从未覆盖"这一反向漂移；`TOTAL_EMNLP_2023==2241` 也只是手抄合计与
+手抄字面量自洽，从未对照 anchor 自己记录的 `total` 字段）：
+1. 集合等值——``set(main_counts) | {"findings"} == set(anchor_by_volume)``。
+2. 合计交叉核对——``sum(main_counts.values()) + findings_count == anchor["total"]``。
 """
 
 from __future__ import annotations
 
 import json
 from pathlib import Path
+from typing import Any
 
 _ANCHOR_PATH = (
     Path(__file__).resolve().parents[1] / "fixtures" / "acl_anthology" / "anchor-emnlp-2023.json"
 )
 
 
-def _load_anchor_by_volume(path: Path = _ANCHOR_PATH) -> dict[str, int]:
-    """`anchor-emnlp-2023.json` → ``{anthology_volume_id: paper_count}``（独立加载，
-    不经 `MAIN_VOLUME_COUNTS`/`FINDINGS_EMNLP_COUNT`，供交叉校验用）。
+def _load_anchor(path: Path = _ANCHOR_PATH) -> dict[str, Any]:
+    """加载 `anchor-emnlp-2023.json` 全量 JSON（供交叉校验：卷明细 + `total` 字段）。
+
+    独立加载，不经 `MAIN_VOLUME_COUNTS`/`FINDINGS_EMNLP_COUNT`——`assert_matches_anchor`
+    据此做真正的外部权威值比对，而非只跟自己（手抄常量）比。
     """
-    data = json.loads(path.read_text(encoding="utf-8"))
-    return {v["anthology_volume_id"]: v["paper_count"] for v in data["volumes"]}
+    return json.loads(path.read_text(encoding="utf-8"))
+
+
+def _anchor_by_volume(anchor: dict[str, Any]) -> dict[str, int]:
+    """anchor JSON → ``{anthology_volume_id: paper_count}``。"""
+    return {v["anthology_volume_id"]: v["paper_count"] for v in anchor["volumes"]}
 
 
 def assert_matches_anchor(
-    main_counts: dict[str, int], findings_count: int, anchor_by_volume: dict[str, int]
+    main_counts: dict[str, int], findings_count: int, anchor: dict[str, Any]
 ) -> None:
-    """独立正确性校验（非仅算术自洽，F4/S1 审计）：手抄分卷计数须与 anchor 逐项相等。
+    """独立正确性校验（非仅算术自洽，F4/S1 审计）：手抄分卷计数须与 anchor 逐项相等，
+    且集合与合计均与 anchor 自身记录值交叉核对（F4 审查追加，见模块 docstring）。
 
     `TOTAL_EMNLP_2023 == 2241` 式的内部求和自检只证明"手抄数字彼此自洽"——即便
-    `main_counts`/`findings_count` 手抄错误，只要凑出同一个合计仍能通过。这里逐项
-    对照**独立加载**的 anchor 表，任一卷漂移立即响亮 `AssertionError`。
+    `main_counts`/`findings_count` 手抄错误，只要凑出同一个合计仍能通过。这里：
+    ①逐项对照**独立加载**的 anchor 表，任一卷漂移立即响亮 `AssertionError`；
+    ②集合等值——防"anchor 多出一卷、我方从未覆盖"这一逐项断言查不出的反向漂移；
+    ③合计交叉核对——防手抄总数与手抄分项"凑得很自洽但一起漂移离真实 anchor 越
+    来越远"（`TOTAL_EMNLP_2023==2241` 是手抄字面量，本身不构成外部校验）。
     """
+    anchor_by_volume = _anchor_by_volume(anchor)
+
     for volume_id, count in main_counts.items():
         anchor_count = anchor_by_volume.get(volume_id)
         assert count == anchor_count, (
@@ -60,6 +79,23 @@ def assert_matches_anchor(
         f"{findings_anchor_count!r} 不一致（anchor-emnlp-2023.json）"
     )
 
+    # 反向断言 ①：集合等值。
+    our_keys = set(main_counts) | {"findings"}
+    anchor_keys = set(anchor_by_volume)
+    assert our_keys == anchor_keys, (
+        f"卷集合不一致：main_counts∪{{'findings'}}={sorted(our_keys)} 与 anchor 卷集合"
+        f"={sorted(anchor_keys)} 不相等——anchor 独有 {sorted(anchor_keys - our_keys)}、"
+        f"本模块独有 {sorted(our_keys - anchor_keys)}"
+    )
+
+    # 反向断言 ②：合计交叉核对（对照 anchor 自己的 total 字段，非手抄字面量自洽）。
+    computed_total = sum(main_counts.values()) + findings_count
+    anchor_total = anchor["total"]
+    assert computed_total == anchor_total, (
+        f"main_counts 求和 + findings_count = {computed_total} 与 anchor total="
+        f"{anchor_total!r} 不一致（anchor-emnlp-2023.json）"
+    )
+
 
 # 与 anchor-emnlp-2023.json 逐字段对齐——改动任一处务必同步更新该锚点文件（下方
 # assert_matches_anchor 调用会在两处漂移时立即响亮报错，不必只靠人工纪律记住）。
@@ -71,7 +107,7 @@ FINDINGS_OTHER_VENUE_COUNT = 3
 
 TOTAL_EMNLP_2023 = sum(MAIN_VOLUME_COUNTS.values()) + FINDINGS_EMNLP_COUNT
 assert TOTAL_EMNLP_2023 == 2241  # 锚点表 §2/§7 合计校验（防未来改动悄悄漂移不被发现）
-assert_matches_anchor(MAIN_VOLUME_COUNTS, FINDINGS_EMNLP_COUNT, _load_anchor_by_volume())
+assert_matches_anchor(MAIN_VOLUME_COUNTS, FINDINGS_EMNLP_COUNT, _load_anchor())
 
 
 def _paper_xml(collection_id: str, volume_id: str, n: int) -> str:

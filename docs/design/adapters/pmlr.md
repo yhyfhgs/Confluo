@@ -2,7 +2,7 @@
 title: Adapter 设计 · PMLR
 status: implemented
 owner: fable5
-updated: 2026-07-23
+updated: 2026-07-26
 ---
 
 # Adapter · `pmlr`
@@ -147,6 +147,26 @@ PaperStub(
 - `landing_url` 存于 meta 供参考，不产可下载 AssetPlan（落地页 abs html 非下载目标）。
 - **supplementary**：部分卷有 `-supp.pdf`；若 enumerate 从辅源（bib supp 字段 / `_posts` md）解析到 supp url 并入 meta，则产 `kind=SI` 同域 AssetPlan；无则产 0 个（正常非错误）。本期 SI 为条件产出（勘察未深探 supp 覆盖率，实现期按源字段判定）。
 - 防御：PMLR 每篇必有 PDF；若 meta 缺 `pdf_url`（不应发生）→ 产 0 个 pdf plan（非错误，openreview note-no-pdf 先例）。
+
+**全卷零 `pdf_url` 的可观测性设计取舍**（F4 静默降级审计追加，2026-07-26；S1 台账）：
+`[Download PDF]` 链接正则（`parse.py` 的 `_LINK_RE`）对该卷 markup 漂移（如属性顺序、
+引号风格变化导致锚文本匹配全体落空）会使**全卷**论文的 `pdf_url` 一并解析为 None——
+这与上一条"单篇偶发缺失"性质不同，是解析器层面的系统性漂移信号。`enumerate_issue`
+对此取**响亮 WARNING**（经 obslog）而非硬 `PARSE` 停机，理由：
+
+- **与 cvf 的关键差异**：cvf 的 identifier（`stem`）直接从 `[pdf]` href 派生（见
+  [cvf.md](cvf.md)），故其"缺 pdf 链接"必然判 `PARSE`——identifier 都构造不出来，
+  是结构性缺陷，无法产出合法 stub。pmlr 的 identifier 由 `[abs]` 链接的 slug 构造
+  （`pmlr-v{N}-{slug}`，本节前述），与 `pdf_url` 结构上**无关**——即便 markup 漂移让
+  全卷 pdf_url 消失，title/authors/identifier 仍可正常构造，metadata 层面的
+  enumerate 并未真正失败，不该被牵连拒收。
+- 硬 `PARSE` 会让整卷（含本已正确的 title/authors/identifier）全部拒收，用"更快
+  发现漂移"换掉已抓到的正确元数据；WARNING 保留 metadata 产出、只把异常信号浮出到
+  obslog，交人工据此判断是否需要热修正则、或临时切 §3.2 判据表的 bib 降级兜底路径。
+- 实现：`src/paper_crawler/adapters/pmlr/adapter.py::enumerate_issue`；专测
+  `tests/unit/test_pmlr_adapter.py::test_enumerate_all_papers_missing_pdf_url_logs_warning_for_markup_drift`
+  （全卷 WARNING）与 `test_enumerate_partial_pdf_url_coverage_does_not_log_drift_warning`
+  （反证：卷内部分论文仍有 pdf_url 时不触发，保持"单篇缺失非错误"的既有宽松判定）。
 
 ### 3.4 fetch_asset（闭合 B3 的 Content-Type 陷阱）
 
