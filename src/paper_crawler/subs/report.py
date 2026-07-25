@@ -28,16 +28,26 @@
   `outcome`/`truncated` 正交（`subs/types.py` 模块 docstring已述）——故熔断
   提示文案不因 dry-run 而改变措辞："未入库"陈述在两种情形下都成立（真实熔断=
   护栏拦截；dry-run=预览本就不入库），状态行的标记已足够区分原因。
-- **`entries` 在熔断路径下的含义**：本渲染器假设 `entries` 在熔断时仍由 T5
-  填充为本地过滤+去重后的全量候选（供"过载分布"按来源/分类聚合），只是
-  **不**展示逐条"新增清单"表格——design/09 §6.1 熔断只产出"过载报告"，逐条
-  列出成百条标题不是过载报告该做的事。若 T5 的实现选择熔断时不填充
-  `entries`，过载分布退化为空表占位行（"-"/0），不报错、不崩溃。
-- **过载分布的接缝**（plan §4 T6"接缝裁决"③）：本卡完成时 main 尚无
-  `subs/guard.py`（T3 未合并），`OverloadReport` 类型不存在。本模块因此不
-  导入 T3 任何东西——分布完全由本模块自行从 `RunSummary.entries` 的
-  `source`/`categories` 字段聚合计算，并在渲染文本内注明这是过渡实现，供
-  T5 集成 T3 后与正式 `OverloadReport` 口径对齐（若不一致）。
+- **过载分布的数据源（双路径，T5 卡已裁决歧义③+T6 设计决策）**：T1b 接缝终裁
+  后 `RunSummary.distribution` 是 `(axis, label, count)` 三元组序列
+  （`axis ∈ {"source", "category"}`，T5 从 `subs.guard.OverloadReport` 的
+  `by_source`/`by_category` 两轴分布打标签拼装）——本模块**优先**消费它：非空时
+  按 `axis` 过滤拆回"按来源分布"/"按分类分布"两张表，不再自行从 `entries`
+  聚合。`distribution` 为空（T5 该路径未装配，或熔断时确实只带 distribution
+  不带全量 `entries` 的场景）时，退化为旧路径——本模块自行从 `entries` 的
+  `source`/`categories` 字段聚合（`_count_sources`/`_count_categories`，同
+  `subs.guard._counts_by` 的条目内标签去重修法对齐）；两条路径共享同一张表格
+  渲染与收窄建议逻辑，只是计数字典的来源不同。收窄建议句始终由本模块（而非
+  `narrowing_hints`——该字段 T5 现阶段恒留空，`subs/types.py` `RunSummary`
+  docstring 已述）从（无论哪条路径产出的）计数现算，分母统一用
+  `RunSummary.new_count`（而非 `len(entries)`——熔断时 `entries` 可能不完整
+  或为空，`new_count` 才是护栏比对时的权威净新增数）。
+- **`entries` 在熔断路径下的含义（entries-派生兜底路径专属）**：仅当
+  `distribution` 为空、退化到 entries 兜底聚合时才涉及——本渲染器假设此时
+  `entries` 仍由 T5 填充为本地过滤+去重后的全量候选。无论走哪条数据源路径，
+  熔断时都**不**展示逐条"新增清单"表格——design/09 §6.1 熔断只产出"过载报告"，
+  逐条列出成百条标题不是过载报告该做的事。两条路径下若聚合结果仍为空，过载
+  分布退化为空表占位行（"-"/0），不报错、不崩溃。
 - **凭证脱敏纵深防御**（Global Constraints §6，同 `pipeline/report.py`/
   `unpaywall/report.py` 先例）：`FailureEvent.message` 是自由文本，可能透传
   上游异常消息——渲染前经 `obslog.redact()` 处理。
@@ -48,16 +58,13 @@
 
 from __future__ import annotations
 
-from collections.abc import Sequence
+from collections.abc import Callable, Iterable, Sequence
 
 from paper_crawler.obslog import redact
 from paper_crawler.subs.types import FailureEvent, ReportEntry, RunSummary
 
-_OVERLOAD_SEAM_NOTE = (
-    "注：过载分布基于本次运行 entries 的来源/分类聚合计算——main 当前无 "
-    "`subs/guard.py`（T3 `OverloadReport` 未合并）；正式接入后如聚合口径不同，"
-    "需在 T5 集成时对齐（phase6-implementation-plan.md §4 T6 接缝裁决）。"
-)
+_AXIS_SOURCE = "source"
+_AXIS_CATEGORY = "category"
 
 
 def render_daily(summaries: Sequence[RunSummary], *, date: str) -> str:
@@ -200,21 +207,18 @@ def _failures_section(failures: Sequence[FailureEvent]) -> list[str]:
 
 
 # ---------------------------------------------------------------------------
-# 过载分布（熔断专属；接缝见模块 docstring）
+# 过载分布（熔断专属；数据源优先级见模块 docstring "过载分布的数据源"）
 # ---------------------------------------------------------------------------
 
 
 def _overload_section(summary: RunSummary) -> list[str]:
-    source_counts = _count_sources(summary.entries)
-    category_counts = _count_categories(summary.entries)
+    source_counts, category_counts = _resolve_distribution(summary)
 
     lines = [
         f"熔断：本次新增 {summary.new_count} 篇超过阈值 {summary.guard_limit}"
         "（guard.max_new_per_run），已按护栏规则暂停入库；请收窄查询条件后重试。",
         "",
         "### 过载分布",
-        "",
-        _OVERLOAD_SEAM_NOTE,
         "",
         "按来源分布：",
         "",
@@ -224,25 +228,60 @@ def _overload_section(summary: RunSummary) -> list[str]:
         "",
         *_distribution_table("分类", category_counts),
         "",
-        _narrowing_suggestion(source_counts, category_counts, len(summary.entries)),
+        _narrowing_suggestion(source_counts, category_counts, summary.new_count),
     ]
     return lines
 
 
-def _count_sources(entries: Sequence[ReportEntry]) -> dict[str, int]:
+def _resolve_distribution(summary: RunSummary) -> tuple[dict[str, int], dict[str, int]]:
+    """按 axis 拆 `RunSummary.distribution` 为（来源计数, 分类计数）——优先路径。
+
+    `distribution` 非空时以它为准（T5 从 `subs.guard.OverloadReport` 装配，权威
+    数据源）；为空时退化为从 `entries` 自行聚合（旧路径，兜底不报错——熔断时
+    `entries` 可能不完整或本就为空，见模块 docstring）。
+    """
+    if summary.distribution:
+        source_counts = _counts_from_distribution(summary.distribution, _AXIS_SOURCE)
+        category_counts = _counts_from_distribution(summary.distribution, _AXIS_CATEGORY)
+        return source_counts, category_counts
+    return _count_sources(summary.entries), _count_categories(summary.entries)
+
+
+def _counts_from_distribution(
+    distribution: Sequence[tuple[str, str, int]], axis: str
+) -> dict[str, int]:
+    """`distribution` 里 `axis` 匹配的 `(label, count)` 项 → 计数字典（同 label 累加，防御性）。"""
+    counts: dict[str, int] = {}
+    for item_axis, label, count in distribution:
+        if item_axis == axis:
+            counts[label] = counts.get(label, 0) + count
+    return counts
+
+
+def _counts_by(
+    entries: Sequence[ReportEntry], labels_of: Callable[[ReportEntry], Iterable[str]]
+) -> dict[str, int]:
+    """entries 兜底路径的通用计数：按 `labels_of` 抽取的标签计数。
+
+    **条目内去重、跨条目正常累计**——与 `subs.guard._counts_by` 同款修法对齐
+    （审查 P2#4）：`labels_of(entry)` 在同一条目内重复的标签（如
+    `ReportEntry.categories` 内 arXiv 主分类与 cross-list 同值）只计一次
+    （`dict.fromkeys` 保序去重），否则单条目内的重复会让某个桶的计数超过实际
+    拥有该标签的条目数，收窄建议算出的份额可能溢出 100%。
+    """
     counts: dict[str, int] = {}
     for entry in entries:
-        if entry.source:
-            counts[entry.source] = counts.get(entry.source, 0) + 1
+        for label in dict.fromkeys(labels_of(entry)):
+            counts[label] = counts.get(label, 0) + 1
     return counts
+
+
+def _count_sources(entries: Sequence[ReportEntry]) -> dict[str, int]:
+    return _counts_by(entries, lambda entry: (entry.source,) if entry.source else ())
 
 
 def _count_categories(entries: Sequence[ReportEntry]) -> dict[str, int]:
-    counts: dict[str, int] = {}
-    for entry in entries:
-        for category in entry.categories:
-            counts[category] = counts.get(category, 0) + 1
-    return counts
+    return _counts_by(entries, lambda entry: entry.categories)
 
 
 def _sorted_counts(counts: dict[str, int]) -> list[tuple[str, int]]:
@@ -261,19 +300,23 @@ def _distribution_table(header: str, counts: dict[str, int]) -> list[str]:
 
 
 def _narrowing_suggestion(
-    source_counts: dict[str, int], category_counts: dict[str, int], total: int
+    source_counts: dict[str, int], category_counts: dict[str, int], new_count: int
 ) -> str:
+    """双轴收窄建议句（本模块生成，不消费 `RunSummary.narrowing_hints`——该字段
+    T5 现阶段恒留空）。分母用 `new_count`（`RunSummary.new_count`，护栏比对的权威
+    净新增数），不用 `len(entries)`——熔断时 `entries` 可能不完整或为空。
+    """
     if not source_counts and not category_counts:
         return "收窄建议：暂无可用于建议收窄的来源/分类分布数据。"
 
     parts: list[str] = []
     if source_counts:
         name, count = _sorted_counts(source_counts)[0]
-        pct = count / total if total else 0.0
+        pct = count / new_count if new_count else 0.0
         parts.append(f"来源 `{name}`（{count} 篇，占 {pct:.1%}）")
     if category_counts:
         name, count = _sorted_counts(category_counts)[0]
-        pct = count / total if total else 0.0
+        pct = count / new_count if new_count else 0.0
         parts.append(f"分类 `{name}`（{count} 篇，占 {pct:.1%}）")
     return "收窄建议：优先考虑收窄 " + " 或 ".join(parts) + "。"
 

@@ -18,8 +18,6 @@
 
 ### 过载分布
 
-注：过载分布基于本次运行 entries 的来源/分类聚合计算——main 当前无 `subs/guard.py`（T3 `OverloadReport` 未合并）；正式接入后如聚合口径不同，需在 T5 集成时对齐（phase6-implementation-plan.md §4 T6 接缝裁决）。
-
 按来源分布：
 
 | 来源 | 数量 |

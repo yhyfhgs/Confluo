@@ -175,7 +175,11 @@ def test_golden_normal_multi_subscription() -> None:
 
 
 def test_golden_truncated_and_failure() -> None:
-    """一订阅熔断（250>阈值100，过载分布）+ 另一订阅含失败事件（含凭证脱敏）。"""
+    """一订阅熔断（250>阈值100，过载分布数据驱动源=distribution）+ 另一订阅含
+    失败事件（含凭证脱敏）。T1b 接缝终裁后：熔断路径只带 `distribution`（T5 从
+    `subs.guard.OverloadReport` 装配），不带全量 `entries`（真实场景：T5 不会为
+    过载报告物化 250 条 `ReportEntry`）。
+    """
     truncated = _summary(
         subscription="asset-pricing-wp",
         outcome=WatchOutcome.TRUNCATED,
@@ -183,9 +187,13 @@ def test_golden_truncated_and_failure() -> None:
         ingested_count=0,
         library_total=900,
         guard_limit=100,
-        entries=_overload_entries(
-            [("arxiv", 150), ("nber", 70), ("ssrn", 30)],
-            ["cs.AI"] * 120 + ["cs.LG"] * 130,
+        entries=(),
+        distribution=(
+            ("source", "arxiv", 150),
+            ("source", "nber", 70),
+            ("source", "ssrn", 30),
+            ("category", "cs.LG", 130),
+            ("category", "cs.AI", 120),
         ),
     )
     with_failure = _summary(
@@ -349,6 +357,7 @@ def test_table_cell_pipe_character_is_escaped() -> None:
 
 
 def test_truncated_suppresses_entries_table_shows_overload_section() -> None:
+    """`distribution` 留空（默认）——走 entries 兜底聚合路径。"""
     summary = _summary(
         outcome=WatchOutcome.TRUNCATED,
         new_count=250,
@@ -364,6 +373,7 @@ def test_truncated_suppresses_entries_table_shows_overload_section() -> None:
 
 
 def test_overload_distribution_sorted_by_count_desc_then_name_asc() -> None:
+    """entries 兜底路径：`distribution` 留空。"""
     summary = _summary(
         outcome=WatchOutcome.TRUNCATED,
         new_count=6,
@@ -377,6 +387,7 @@ def test_overload_distribution_sorted_by_count_desc_then_name_asc() -> None:
 
 
 def test_overload_category_distribution_tie_breaks_by_name() -> None:
+    """entries 兜底路径：`distribution` 留空。"""
     summary = _summary(
         outcome=WatchOutcome.TRUNCATED,
         new_count=4,
@@ -389,6 +400,7 @@ def test_overload_category_distribution_tie_breaks_by_name() -> None:
 
 
 def test_narrowing_suggestion_names_top_source_and_category() -> None:
+    """entries 兜底路径：`distribution` 留空。"""
     summary = _summary(
         outcome=WatchOutcome.TRUNCATED,
         new_count=10,
@@ -404,7 +416,7 @@ def test_narrowing_suggestion_names_top_source_and_category() -> None:
 
 
 def test_narrowing_suggestion_when_only_category_distribution_available() -> None:
-    """entries 缺失 source（空字符串，`_count_sources` 跳过）——按分类分布仍可用。"""
+    """entries 兜底路径：缺失 source（空字符串，`_count_sources` 跳过）——按分类分布仍可用。"""
     summary = _summary(
         outcome=WatchOutcome.TRUNCATED,
         new_count=3,
@@ -423,7 +435,7 @@ def test_narrowing_suggestion_when_only_category_distribution_available() -> Non
 
 
 def test_narrowing_suggestion_when_only_source_distribution_available() -> None:
-    """entries 无分类信息（如某些源天然无分类）——按来源分布仍可用，分类分布为空。"""
+    """entries 兜底路径：无分类信息（如某些源天然无分类）——按来源分布仍可用。"""
     summary = _summary(
         outcome=WatchOutcome.TRUNCATED,
         new_count=2,
@@ -438,9 +450,11 @@ def test_narrowing_suggestion_when_only_source_distribution_available() -> None:
     assert "收窄建议：优先考虑收窄 来源 `ssrn`（2 篇，占 100.0%）。" in md
 
 
-def test_overload_distribution_falls_back_to_placeholder_when_entries_empty() -> None:
-    """防御性边界：熔断但 entries 为空（T5 实现选择不填充）——不崩溃，占位行。"""
-    summary = _summary(outcome=WatchOutcome.TRUNCATED, new_count=500, guard_limit=100, entries=())
+def test_overload_distribution_falls_back_to_placeholder_when_both_sources_empty() -> None:
+    """防御性边界：`distribution` 与 `entries` 均为空——不崩溃，占位行。"""
+    summary = _summary(
+        outcome=WatchOutcome.TRUNCATED, new_count=500, guard_limit=100, entries=(), distribution=()
+    )
     md = render_daily([summary], date="2026-07-26")
 
     assert "| 来源 | 数量 |" in md
@@ -449,15 +463,90 @@ def test_overload_distribution_falls_back_to_placeholder_when_entries_empty() ->
     assert "暂无可用于建议收窄的来源/分类分布数据" in md
 
 
-def test_overload_section_notes_the_guard_py_seam() -> None:
-    """任务卡接缝裁决③：main 无 subs/guard.py 时须在输出中注明。"""
+# ---------------------------------------------------------------------------
+# distribution 优先路径（T1b 接缝终裁：RunSummary.distribution 三元组）
+# ---------------------------------------------------------------------------
+
+
+def test_distribution_field_takes_priority_over_entries_when_both_present() -> None:
+    """`distribution` 非空时优先消费——即便 `entries` 同时给出不同的数据，也应
+    被忽略（design 决策：T5 可能只带 distribution 不带全量 entries；两者都给出
+    时 distribution 是权威——T3 `OverloadReport` 装配的量，entries 未必完整）。
+    """
     summary = _summary(
-        outcome=WatchOutcome.TRUNCATED, new_count=500, guard_limit=100, entries=(_entry(),)
+        outcome=WatchOutcome.TRUNCATED,
+        new_count=5,
+        guard_limit=1,
+        entries=_overload_entries([("nber", 5)], ["cs.GT"]),  # 若被消费会呈现 nber/cs.GT
+        distribution=(("source", "arxiv", 5), ("category", "cs.AI", 5)),
     )
     md = render_daily([summary], date="2026-07-26")
 
-    assert "subs/guard.py" in md
-    assert "OverloadReport" in md
+    assert "| arxiv | 5 |" in md
+    assert "| cs.AI | 5 |" in md
+    assert "nber" not in md
+    assert "cs.GT" not in md
+    prefix = "收窄建议：优先考虑收窄 来源 `arxiv`（5 篇，占 100.0%） 或 "
+    assert prefix + "分类 `cs.AI`（5 篇，占 100.0%）。" in md
+
+
+def test_distribution_axis_filter_ignores_unknown_axis_values() -> None:
+    """防御性：非文档取值域的 axis（如拼写错误）被静默忽略，不进两张表也不崩溃。"""
+    summary = _summary(
+        outcome=WatchOutcome.TRUNCATED,
+        new_count=3,
+        guard_limit=1,
+        distribution=(("source", "arxiv", 3), ("venue", "ignored-axis", 99)),
+    )
+    md = render_daily([summary], date="2026-07-26")
+
+    assert "| arxiv | 3 |" in md
+    assert "ignored-axis" not in md
+    assert "99" not in md
+
+
+def test_distribution_empty_falls_back_to_entries_derivation() -> None:
+    """`distribution` 显式留空元组（T5 默认值）——落回 entries 聚合，行为不变。"""
+    summary = _summary(
+        outcome=WatchOutcome.TRUNCATED,
+        new_count=2,
+        guard_limit=1,
+        distribution=(),
+        entries=_overload_entries([("arxiv", 2)], ["cs.AI"]),
+    )
+    md = render_daily([summary], date="2026-07-26")
+
+    assert "| arxiv | 2 |" in md
+
+
+# ---------------------------------------------------------------------------
+# entries 兜底路径：条目内重复标签去重（审查 P2#4，同 subs.guard._counts_by 修法对齐）
+# ---------------------------------------------------------------------------
+
+
+def test_entries_fallback_dedupes_repeated_category_within_single_entry() -> None:
+    """单条目内 `categories` 重复标签（如 arXiv 主分类与 cross-list 同值）只计一次，
+    不应让该分类计数超过实际拥有该标签的条目数（P2#4，与 `subs.guard._counts_by`
+    同款修法对齐）。3 个条目：条目 1 categories=("cs.AI","cs.AI")（条目内重复）、
+    条目 2 categories=("cs.AI",)、条目 3 categories=("cs.LG",)——正确计数应是
+    cs.AI=2（按条目数，不是标签出现次数 3）、cs.LG=1。
+    """
+    summary = _summary(
+        outcome=WatchOutcome.TRUNCATED,
+        new_count=3,
+        guard_limit=1,
+        distribution=(),  # 走 entries 兜底路径
+        entries=(
+            _entry(source="arxiv", categories=("cs.AI", "cs.AI")),
+            _entry(source="arxiv", categories=("cs.AI",)),
+            _entry(source="arxiv", categories=("cs.LG",)),
+        ),
+    )
+    md = render_daily([summary], date="2026-07-26")
+
+    assert "| cs.AI | 2 |" in md
+    assert "| cs.AI | 3 |" not in md
+    assert "| cs.LG | 1 |" in md
 
 
 # ---------------------------------------------------------------------------
@@ -498,6 +587,56 @@ def test_failures_coexist_with_entries_for_same_subscription() -> None:
 
     assert "### 新增清单" in md
     assert "### 失败事件" in md
+
+
+# ---------------------------------------------------------------------------
+# WatchOutcome.FAILED（P2 补测：状态行 + 无新增 + 失败事件表，三者同现）
+# ---------------------------------------------------------------------------
+
+
+def test_failed_outcome_renders_status_line_no_new_papers_and_failures_table() -> None:
+    """FAILED（本订阅整体失败，`subs/types.py` `WatchOutcome` docstring："全部源
+    失败等"）的典型形态：总览/状态行标 `failed`；零新增走"无新增论文。"（与
+    TRUNCATED 的"过载分布"分支互斥——FAILED 不熔断，`truncated` property 为
+    False）；失败事件表照常列出每个失败源。"""
+    summary = _summary(
+        subscription="asset-pricing-wp",
+        outcome=WatchOutcome.FAILED,
+        new_count=0,
+        ingested_count=0,
+        library_total=900,
+        guard_limit=100,
+        entries=(),
+        failures=(
+            _failure(source="ssrn", error_class="transient", message="连接超时"),
+            _failure(source="nber", error_class="transient", message="连接超时"),
+        ),
+    )
+    md = render_daily([summary], date="2026-07-26")
+
+    assert "| asset-pricing-wp | failed | 0 | 0 | - |" in md  # 总览行：非熔断，熔断列为 "-"
+    assert "- 状态: failed" in md
+    assert "无新增论文。" in md
+    assert "### 过载分布" not in md  # FAILED ≠ TRUNCATED：不产过载分布
+    assert "### 新增清单" not in md
+    assert "### 失败事件" in md
+    assert "| ssrn | transient | 连接超时 |" in md
+    assert "| nber | transient | 连接超时 |" in md
+
+
+def test_failed_outcome_with_dry_run_marker() -> None:
+    """FAILED + dry_run=True（正交：预览运行也可能整体失败）——状态行两个标记并存。"""
+    summary = _summary(
+        outcome=WatchOutcome.FAILED,
+        dry_run=True,
+        new_count=0,
+        ingested_count=0,
+        entries=(),
+        failures=(_failure(),),
+    )
+    md = render_daily([summary], date="2026-07-26")
+
+    assert "- 状态: failed（预览，未入库）" in md
 
 
 # ---------------------------------------------------------------------------
