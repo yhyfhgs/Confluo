@@ -70,7 +70,7 @@
 | [design/adapters/cvf.md](design/adapters/cvf.md) | CVF Open Access | implemented | 2026-07-23 |
 | [design/adapters/acl-anthology.md](design/adapters/acl-anthology.md) | ACL Anthology | implemented | 2026-07-23 |
 | [design/adapters/neurips-proceedings.md](design/adapters/neurips-proceedings.md) | NeurIPS Proceedings | implemented | 2026-07-24 |
-| [design/adapters/aaai-ojs.md](design/adapters/aaai-ojs.md) | AAAI OJS | implemented | 2026-07-24 |
+| [design/adapters/aaai-ojs.md](design/adapters/aaai-ojs.md) | AAAI OJS | implemented | 2026-07-26 |
 | [design/adapters/acm-dl.md](design/adapters/acm-dl.md) | ACM Digital Library（D-020：Phase 2 出列；D-024：Phase 4 重评维持出列，全文改道 unpaywall OA-fallback） | review | 2026-07-23 |
 | [design/adapters/ieee-xplore.md](design/adapters/ieee-xplore.md) | IEEE Xplore | review | 2026-07-20 |
 | [design/adapters/aggregators.md](design/adapters/aggregators.md) | 聚合元数据源（6 合册） | implemented | 2026-07-23 |

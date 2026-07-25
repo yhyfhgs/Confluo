@@ -2,7 +2,7 @@
 title: Adapter 设计 · AAAI OJS
 status: implemented
 owner: fable5
-updated: 2026-07-24
+updated: 2026-07-26
 ---
 
 # Adapter · `aaai_ojs`
@@ -85,6 +85,8 @@ updated: 2026-07-24
   - **协议**：`GET {oai_base}?verb=ListRecords&metadataPrefix=oai_dc`（+ `resumptionToken` 翻页 100/页），`oai_base = https://ojs.aaai.org/index.php/{ojs_code}/oai`（`ojs_code` 来自 `quirks.ojs_code`，默认 `venue.id.upper()`）。
   - **客户端过滤 = DOI 卷号**：保留 DOI 解析出 `v{V}` == `issue.volume` 的记录（`dc:source` "Vol. N No. M" 作二次校验）。这是 arxiv"按 primary_category 客户端过滤"的同构落点——**过滤维度是 DOI-卷号，不是 OAI set**（set 过滤 ⚠ 不可靠，见下）。
   - **⚠ 关键点：`from/until` 按 datestamp（入库时间）过滤，非发表日期**（survey §6：2019 论文 datestamp=2021）——故**无法用"发表年窗口"选出一届**，membership 判据是 DOI-卷号过滤而非日期窗。**枚举策略（★A 附属已裁决，2026-07-22 复审后正文同步）——零接口变更，先例 arxiv 方案 A**：①**历史回填 = 一次全库收割**（一趟 262 页级收割按 DOI 卷号 partition 落盘所有届，pipeline upsert 去重；~262 请求 @30rpm ≈9 分钟可接受）；②**当前届增量 = 对当前届 IssueRef 的重复 `enumerate_issue`**——adapter 内部以**固定回看窗**（`from=<今日−回看天数>`，adapter 常量、非持久化 watermark）做全库 datestamp 窗收割 + DOI 卷号过滤出属于该届的新增记录；去重由 `identifier('doi')` 主键天然保证。**enumerate_issue 不新增形参、不依赖 subscription 表**（与 arxiv"当月桶+整窗+回看"完全同构）。③历史旧届按需 `pull` = 命中已入库 DB（design/05 新鲜度跳过）；**HTML issue-TOC 兜底路径已否决**（单路径原则，见文末裁决记录 ★A 附属）。
+  - **"一次全库收割"的落地机制：跨卷分区缓存（2026-07-26 补齐，审计 S1-P1）**。上条①说的"一趟"是**跨所有历史届共享的一趟**，但冻结的 `enumerate_issue(venue, issue)` 一次只被问一个届——首版实现照字面逐届各发一趟全库收割，于是 16 个历史届 = 16 × 262 页 ≈ 4200 请求/~140 分钟，与本条承诺相悖（[post-phase5-audit §3 S1-P1](../../reports/2026-07-24-post-phase5-audit.md)）。修复：**首个历史届触发单趟全库收割，边流式产出目标卷、边把其余已注册历史卷就地 partition 进实例内存缓存；其余历史届零请求命中缓存**（key=`(venue_id, oai_base)`，姊妹刊互不串味）。语义护栏四条：①**当前届永不读写缓存**（恒走回看窗，新鲜度优先）；②缓存只在收割**自然跑完**时发布（调用方提前 break 不留残缺分区）；③收割后才登记的新卷查无此键 → 退回真收割，不静默产空序列；④记录数触顶 `_BACKFILL_CACHE_MAX_RECORDS`（50k，≈全库活记录 22.4k 的 2×）→ WARN 事件 + 关缓存回退逐卷收割（响亮降级；缓存是纯性能设施，关掉只慢不错）。缓存**实例内存态、不落盘、不跨进程**——一次 CLI 进程内有效。
+  - **⚠ 为何不用"按卷切日期窗"分区（已否决，理由入档以免重蹈）**：`from/until` 过滤 `datestamp` 而非发表日（本节 ⚠ 关键点），survey §11.2 实测 Vol.26 的 383 条里 362 条 `dc:date` 因批量勘误落在 2021；且 `datestamp` 会被站点侧再编辑改写——"今天正确的窗"明天就**静默少收**。故历史届不存在安全的日期窗，单趟全库 + 跨卷 partition 是唯一既省请求又不漏收的路径。
   - **字段映射（每记录→PaperStub）**：`title=dc:title`、`abstract=dc:description`、`authors=(dc:creator, …)`、`year=int(dc:date[:4])`、`pub_date=dc:date`、`identifiers=(('doi', doi_lower),)`、`meta` 见 §3.3。
   - **空态**：OAI `noRecordsMatch` = **非错误**（空记录序列正常完成——arxiv 先例，parse.py 已落地）；空届/空卷同理。
   - **墓碑**：`deletedRecord=persistent`（[LIVE]），`<header status="deleted">` 记录跳过并计数 → obslog debug（arxiv `OaiListPage.skipped_tombstones` 先例，复用）。
@@ -137,6 +139,7 @@ updated: 2026-07-24
 ## 8. 风险与维护
 
 - **OAI datestamp≠发表日期**（§4 ⚠ 关键点）：是"届不可日期窗化"的根因——枚举窗口/路由策略随 ★A 一并定；canary 监控 `Identify` 存活与 oai_dc 结构。
+- **跨卷分区缓存的内存占用**（§4 修复项）：单趟全库回填期间，除当前届外的全部已注册历史卷 `PaperStub` 常驻内存直到进程结束——按实测 22.4k 活记录、平均含摘要 ~2KB/条估，量级 ~50MB。硬顶 `_BACKFILL_CACHE_MAX_RECORDS=50000` 是站点规模异常增长时的响亮泄压阀（超顶 → WARN + 关缓存回退逐卷收割），不是常态路径；若日后全库规模逼近该值，应重评"分区落磁盘/直接改用一次多届 upsert"而非简单抬高常量。
 - **单届拆分粒度逐年逐 venue 可变**（AAAI 48 issue vs ICWSM 1 issue/年，最新届才拆）：方案 B 把"No.M"降为 per-paper meta 已规避硬编码风险；姊妹 venue 复用本 adapter 时各自 volume_map。
 - **OJS 平台升级改 URL/schema**：fixture + canary 覆盖；oai_dc 是标准协议，较 HTML 选择器稳。
 - **覆盖下界与早年归属**（§3.1，`[LIVE 2026-07-23]` 已核实下界＝2010/Vol.24，非 2019）：全库收割已取代"取最小值精确核实"的原计划——直接实测 `dc:date` 最小值为 2010-07-03（Vol.24）。`volume_map` 已扩容纳入 2010–2018（2026-07-24 裁决落地，见 §10 ★F），这些届现纳入本 adapter 运行时覆盖；D-012（DBLP/Wayback）覆盖范围相应收窄至 <2010。

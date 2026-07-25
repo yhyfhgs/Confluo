@@ -15,6 +15,9 @@ pmlr §1）。
   发表日，§4 ⚠）。**先全库回填、后当前届固定回看窗增量**（★A 附属，零接口变更、arxiv
   同构）：历史届无日期窗全库收割按卷 partition；当前届（volume_map 最大年之卷）加
   ``from=<今日−回看天数>`` datestamp 窗做增量。去重由 `identifier('doi')` 主键天然保证。
+  历史届的那"一趟"全库收割由**跨卷分区缓存**兑现（见 `_backfill_pages`）：首个历史届
+  触发单趟收割并把所有已注册历史卷就地 partition 缓存，其余历史届零请求命中缓存——
+  否则每届各自重扫全库，请求成本随已注册届数线性放大（审计 S1-P1）。
 - `resolve_assets`（零网络）：读 `meta['pdf_url']`（dc:relation 的 galley view URL）→
   ``/view/``→``/download/`` 预换终态 URL（survey §4，省一跳）→ 单个 PDF `AssetPlan`。
 - `fetch_asset`（流式）：`HttpClient.stream` → `io.write_stream`；首字节嗅探——PDF url
@@ -72,6 +75,11 @@ _METADATA_PREFIX = "oai_dc"
 # 抗 datestamp 滞后（survey §6：2019 论文 datestamp=2021 的 2 年滞后），但当前届的初始
 # 完整基线由"历史全库回填"建立，本窗口只负责捕获增量新增（去重由 DOI 主键保证）。
 _LOOKBACK_DAYS = 30
+# 跨卷分区缓存的记录数硬顶（审计 S1-P1 修复）。全库活记录实测 ~22.4k（survey §11.1，
+# completeListSize=26185 含 4.26% 墓碑），本常量取其 ~2× 余量：正常运行永不触顶；真触顶
+# 说明站点规模已远超勘察量级，此时**响亮降级**（WARN 事件 + 关缓存回退逐卷收割）而非
+# 静默吃内存——缓存是纯性能设施，关掉只慢不错。
+_BACKFILL_CACHE_MAX_RECORDS = 50_000
 _HEALTHCHECK_CODE = "AAAI"  # 主会 context（healthcheck Identify 用）
 _PDF_MAGIC = b"%PDF-"
 _SNIFF_BYTES = 4096  # 首字节嗅探缓冲：足以覆盖 OJS 登录页顶部的 login 表单标记
@@ -124,6 +132,11 @@ class AaaiOjsAdapter(AdapterBase):
     def __init__(self, http: HttpClient | None = None) -> None:
         # http=None：首次网络调用时惰性自建（见模块 docstring 的注入说明）。
         self._http = http
+        # 跨卷分区缓存（审计 S1-P1）：单趟全库收割的产物，key=(venue_id, oai_base)，
+        # value=已注册历史卷→该卷 PaperStub 序列。**实例内存态、非持久化**：随 adapter
+        # 实例（= 一次 CLI 进程内的 registry 实例）生灭，跨进程不复用、不落盘。
+        self._backfill_key: tuple[str, str] | None = None
+        self._backfill: dict[str, tuple[PaperStub, ...]] | None = None
 
     def set_http_client(self, client: HttpClient) -> None:
         """注入组装好的 `HttpClient`（`adapter.HttpClientConsumer` 协议，同 arxiv 先例）。"""
@@ -167,23 +180,97 @@ class AaaiOjsAdapter(AdapterBase):
         """届 IssueRef → OAI-PMH `ListRecords` 收割（DOI-卷号客户端过滤 + resumptionToken）。
 
         目标/窗口构造在此**急切**求值（非法 issue 早失败为 CONFIG）；翻页与网络在返回的
-        生成器惰性执行。**先全库回填、后当前届固定回看窗增量**（★A 附属，§4/§9）：当前届
-        （volume_map 最大年之卷）加 ``from=<今日−回看天数>`` datestamp 窗；历史届无日期窗
-        全库收割。去重由下游 `identifier('doi')` 主键天然保证（重叠窗口不产重复行）。
+        生成器惰性执行。**先全库回填、后当前届固定回看窗增量**（★A 附属，§4/§9）：
+
+        - **当前届**（volume_map 最大年之卷）：加 ``from=<今日−回看天数>`` datestamp 窗，
+          **永不读写跨卷缓存**——新鲜度优先，每次都要真去看站点有没有新增。
+        - **历史届**：无日期窗全库收割，但**一趟喂所有历史届**（跨卷分区缓存）——首个历史
+          届触发收割并 partition 缓存全部已注册历史卷，其余历史届零请求命中缓存。
+
+        去重由下游 `identifier('doi')` 主键天然保证（重叠窗口不产重复行）。
         """
         volume = _issue_volume(issue, venue)
         oai_base = _oai_base(_ojs_code(venue))
-        frm = _lookback_from() if volume == _latest_volume(venue) else None
-        url = _oai_list_url(oai_base, frm)
-        return self._enumerate_pages(venue, issue, volume, oai_base, url)
+        if volume == _latest_volume(venue):
+            url = _oai_list_url(oai_base, _lookback_from())
+            return self._enumerate_pages(venue, issue, volume, oai_base, url)
+        cached = self._cached_partition(venue, oai_base, volume)
+        if cached is not None:
+            log_event(
+                "DEBUG",
+                "aaai backfill partition cache hit",
+                venue=venue.id,
+                stage="enumerate",
+                bucket=issue.label,
+                volume=volume,
+                papers=len(cached),
+            )
+            return iter(cached)
+        return self._backfill_pages(venue, issue, volume, oai_base, _oai_list_url(oai_base, None))
 
     def _enumerate_pages(
         self, venue: VenueSpec, issue: IssueRef, volume: str, oai_base: str, url: str
     ) -> Iterator[PaperStub]:
+        """单卷收割：翻页 + DOI-卷号过滤，只产本卷（当前届回看窗增量路径）。"""
+        for page in self._iter_pages(venue, issue, oai_base, url):
+            for record in page.records:
+                # DOI-卷号客户端过滤（§4）：只保留 DOI 解析出的卷号 == 本届卷号者。
+                if record.volume != volume:
+                    continue
+                yield parse.to_paper_stub(record)
+
+    # -- 跨卷分区缓存（审计 S1-P1：历史卷冷回填单趟化）----------------------------------------
+
+    def _backfill_pages(
+        self, venue: VenueSpec, issue: IssueRef, volume: str, oai_base: str, url: str
+    ) -> Iterator[PaperStub]:
+        """历史届全库回填：单趟收割 → 目标卷即时产出 + 其余已注册历史卷就地 partition 缓存。
+
+        为什么不用日期窗替代（**已否决**，理由入档以免后人重蹈）：OAI `from/until` 过滤的
+        是 `datestamp`（入库/修改时间）而非发表日，survey §11.2 实测 Vol.26 的 383 条里
+        362 条 `dc:date` 因批量勘误落在 2021——按发表年切窗必然漏收；且 `datestamp` 会被
+        站点侧再编辑改写，"今天正确的窗"明天就静默少收。故窗口分区对历史届不可用，
+        单趟全库 + 跨卷 partition 才是 design §4 ★A "一次全库收割按卷 partition" 的原意。
+
+        缓存只在收割**自然跑完**（resumptionToken 耗尽）时发布：调用方提前 break 而中断
+        生成器，则本趟不发布任何缓存（宁可下次重扫，不要发布残缺分区）。
+        """
+        cacheable = self._cacheable_volumes(venue)
+        partitions: dict[str, list[PaperStub]] | None = {v: [] for v in cacheable}
+        buffered = 0
+        for page in self._iter_pages(venue, issue, oai_base, url):
+            for record in page.records:
+                vol = record.volume
+                # DOI-卷号 partition（§4）：目标卷即时产出；其余已注册历史卷进缓存；
+                # 未注册卷号/非 AAAI 形态（volume=None）不属任何届，丢弃。
+                if vol is None or (vol != volume and vol not in cacheable):
+                    continue
+                stub = parse.to_paper_stub(record)
+                if vol == volume:
+                    yield stub
+                if partitions is not None and vol in partitions:
+                    partitions[vol].append(stub)
+                    buffered += 1
+                    if buffered > _BACKFILL_CACHE_MAX_RECORDS:
+                        partitions = None
+                        log_event(
+                            "WARN",
+                            "aaai backfill partition cache disabled (record cap exceeded)",
+                            venue=venue.id,
+                            stage="enumerate",
+                            bucket=issue.label,
+                            cap=_BACKFILL_CACHE_MAX_RECORDS,
+                        )
+        if partitions is not None:
+            self._publish_backfill(venue, oai_base, partitions)
+
+    def _iter_pages(
+        self, venue: VenueSpec, issue: IssueRef, oai_base: str, url: str
+    ) -> Iterator[parse.OaiListPage[parse.AaaiRecord]]:
+        """`ListRecords` 翻页循环（resumptionToken 直到耗尽）+ 墓碑跳过数可观测。"""
         client = self._client()
         while True:
-            data = client.get_bytes(url)
-            page = parse.parse_oai_page(data)
+            page = parse.parse_oai_page(client.get_bytes(url))
             if page.skipped_tombstones:
                 # 墓碑可观测（design §4）：venue/届/跳过数落 obslog debug 事件。
                 log_event(
@@ -194,14 +281,42 @@ class AaaiOjsAdapter(AdapterBase):
                     bucket=issue.label,
                     skipped_tombstones=page.skipped_tombstones,
                 )
-            for record in page.records:
-                # DOI-卷号客户端过滤（§4）：只保留 DOI 解析出的卷号 == 本届卷号者。
-                if record.volume != volume:
-                    continue
-                yield parse.to_paper_stub(record)
+            yield page
             if page.resumption_token is None:
                 return
             url = _oai_resume_url(oai_base, page.resumption_token)
+
+    def _cacheable_volumes(self, venue: VenueSpec) -> frozenset[str]:
+        """可进缓存的卷集合 = 已注册卷 − 当前届卷（当前届恒走回看窗，不吃缓存）。"""
+        registered = {str(v) for v in _volume_map(venue).values()}
+        return frozenset(registered - {_latest_volume(venue)})
+
+    def _cached_partition(
+        self, venue: VenueSpec, oai_base: str, volume: str
+    ) -> tuple[PaperStub, ...] | None:
+        """命中则返回该卷分区（**空届返回空元组也算命中**，不触发重扫）；未命中 None。
+
+        命中判据三合一：缓存已发布、`(venue_id, oai_base)` 同源、且该卷在上趟收割的
+        `cacheable` 集合内。第三条挡住"收割后 volume_map 才新增的卷"——那种卷在旧分区表
+        里查无此键，退回真收割而非静默产空序列。
+        """
+        if self._backfill is None or self._backfill_key != (venue.id, oai_base):
+            return None
+        return self._backfill.get(volume)
+
+    def _publish_backfill(
+        self, venue: VenueSpec, oai_base: str, partitions: dict[str, list[PaperStub]]
+    ) -> None:
+        self._backfill_key = (venue.id, oai_base)
+        self._backfill = {vol: tuple(stubs) for vol, stubs in partitions.items()}
+        log_event(
+            "DEBUG",
+            "aaai backfill partition cache published",
+            venue=venue.id,
+            stage="enumerate",
+            volumes=len(self._backfill),
+            papers=sum(len(stubs) for stubs in self._backfill.values()),
+        )
 
     # -- resolve（零网络，view→download 预换）-----------------------------------------------
 
