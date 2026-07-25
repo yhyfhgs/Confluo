@@ -1,7 +1,7 @@
 # 文档索引（唯一权威清单）
 
 > 本表是全仓库文档的单一事实来源（D-008）。任何新增/改名/废弃文档必须同一提交内更新本表（AGENTS.md §4）。
-> status 取值与流转见 [process/status-workflow.md](process/status-workflow.md)。最后盘点：2026-07-26（Phase 6 R1 browser-fetch 详设草案登记）。
+> status 取值与流转见 [process/status-workflow.md](process/status-workflow.md)。最后盘点：2026-07-26（Phase 6 T9 AC-6 离线端到端验收 + 在线冒烟记录登记）。
 
 ## 按意图导航（先于逐目录清单）
 
@@ -108,6 +108,7 @@
 | [testing/records/2026-07-23-ac4-acceptance.md](testing/records/2026-07-23-ac4-acceptance.md) | AC-4 离线端到端验收汇总记录（AC-4.2~4.6 离线 DoD 达成，T7a draft；AC-4.1 真实凭证归 T7b） | approved | 2026-07-23 |
 | [testing/records/2026-07-24-ac3-acceptance.md](testing/records/2026-07-24-ac3-acceptance.md) | AC-3.1~3.4 独立汇总验收记录（数据模型与合并引擎，Phase 3 判据补记收口） | approved | 2026-07-24 |
 | [testing/records/2026-07-24-ac5-acceptance.md](testing/records/2026-07-24-ac5-acceptance.md) | AC-5 离线端到端汇总验收记录（AC-5.1a/5.2/5.3/5.4 离线 DoD 达成，T7 draft；AC-5.1b defer Phase 6） | approved | 2026-07-24 |
+| [testing/records/2026-07-26-ac6-acceptance.md](testing/records/2026-07-26-ac6-acceptance.md) | AC-6 离线端到端验收 + 在线冒烟记录（订阅与搜索，AC-6.1~6.4 离线 DoD 建议 PASS，T9 draft；在线冒烟发现 arxiv watch 集成缺陷已 spawn_task） | draft | 2026-07-26 |
 | [testing/records/canary/README.md](testing/records/canary/README.md) | Canary 健康矩阵记录目录（`crawler canary --record` 落盘，按日覆盖；+周跑 launchd/cron 模板说明） | approved | 2026-07-26 |
 
 ## process/ — 流程规范
