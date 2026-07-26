@@ -725,14 +725,14 @@ def test_ingest_arxiv_clue_builds_reverse_direction_edge(
 ) -> None:
     """cvf/openreview 先例：meta['arxiv'] 线索命中 → from=目标（预印本），自身=to（发表版）。"""
     repo, engine, _ = env
-    engine.ingest(_stub(title="Preprint", ids=(("arxiv", "2401.6"),)), source="official")
+    engine.ingest(_stub(title="Preprint", ids=(("arxiv", "2401.06001"),)), source="official")
     engine.ingest(
-        _stub(title="Published", ids=(("cvf", "cvpr2024/x"),), meta=(("arxiv", "2401.6"),)),
+        _stub(title="Published", ids=(("cvf", "cvpr2024/x"),), meta=(("arxiv", "2401.06001"),)),
         source="official",
     )
     edges = _preprint_edges(repo)
     assert len(edges) == 1
-    preprint_id = _paper_id_by_identifier(repo, "arxiv", "2401.6")
+    preprint_id = _paper_id_by_identifier(repo, "arxiv", "2401.06001")
     published_id = _paper_id_by_identifier(repo, "cvf", "cvpr2024/x")
     assert edges[0]["from_paper"] == preprint_id
     assert edges[0]["to_paper"] == published_id
@@ -825,6 +825,64 @@ def test_ingest_preprint_clue_idempotent_reingest(env: tuple[Repo, MergeEngine, 
     assert len(_preprint_edges(repo)) == 1
 
 
+def test_ingest_conflicting_doi_and_arxiv_clues_same_target_keeps_doi_direction(
+    env: tuple[Repo, MergeEngine, Path],
+) -> None:
+    """独立审查 P1-1：`MergeEngine.ingest()` 路径同一场景（同调用内 doi/arxiv 两线索解析到
+    同一 target）——doi 优先、arxiv 侧跳过，不建反向边（见 test_repo.py 同名场景的 pull
+    路径对应用例）。"""
+    repo, engine, _ = env
+    engine.ingest(
+        _stub(title="Aggregated Target", ids=(("doi", "10.1/conflict"), ("arxiv", "2401.06013"))),
+        source="official",
+    )
+    engine.ingest(
+        _stub(
+            title="Self",
+            ids=(("cvf", "cvpr2024/conflict"),),
+            meta=(("doi", "10.1/conflict"), ("arxiv", "2401.06013")),
+        ),
+        source="official",
+    )
+    edges = _preprint_edges(repo)
+    assert len(edges) == 1
+    self_id = _paper_id_by_identifier(repo, "cvf", "cvpr2024/conflict")
+    target_id = _paper_id_by_identifier(repo, "doi", "10.1/conflict")
+    assert edges[0]["from_paper"] == self_id
+    assert edges[0]["to_paper"] == target_id
+    assert json.loads(edges[0]["evidence_json"])["clue_key"] == "doi"
+
+
+def test_ingest_preprint_clue_evidence_includes_source(
+    env: tuple[Repo, MergeEngine, Path],
+) -> None:
+    """独立审查 P1-2：evidence_json 记 source（`MergeEngine.ingest` 的 `incoming.source`）
+    ——controller 裁决③（openreview doi 语义存疑靠 evidence 溯源核实）的前提。"""
+    repo, engine, _ = env
+    engine.ingest(_stub(title="Published", ids=(("doi", "10.1/pub6"),)), source="crossref")
+    engine.ingest(
+        _stub(title="Preprint", ids=(("arxiv", "2401.12"),), meta=(("doi", "10.1/pub6"),)),
+        source="official",
+    )
+    evidence = json.loads(_preprint_edges(repo)[0]["evidence_json"])
+    assert evidence["source"] == "official"
+    assert "venue_id" not in evidence  # aggregator 路径 venue-agnostic（paper.venue_id=NULL）
+
+
+def test_ingest_arxiv_clue_normalizes_versioned_form(
+    env: tuple[Repo, MergeEngine, Path],
+) -> None:
+    """独立审查 P1-3：`MergeEngine.ingest()` 路径同样需要版本号归一（与 test_repo.py 的
+    参数化用例同构，机制在 repo.py 共享，此处单点验证不重复穷举各形态）。"""
+    repo, engine, _ = env
+    engine.ingest(_stub(title="Preprint", ids=(("arxiv", "2401.06014"),)), source="official")
+    engine.ingest(
+        _stub(title="Published", ids=(("cvf", "cvpr2024/y"),), meta=(("arxiv", "2401.06014v2"),)),
+        source="official",
+    )
+    assert len(_preprint_edges(repo)) == 1
+
+
 def test_ingest_preprint_clue_does_not_merge_papers(
     env: tuple[Repo, MergeEngine, Path],
 ) -> None:
@@ -838,6 +896,9 @@ def test_ingest_preprint_clue_does_not_merge_papers(
     )
     assert result.action == "created"
     assert len(_papers(repo)) == 2  # 两条 paper 都保留，未被合并成一条
+    # 独立审查 P2-3：补边存在性断言——否则"正确建边未合并"与"啥也没建"两种变异体
+    # 在本测试下不可分（前两条断言单独成立于两者）。
+    assert len(_preprint_edges(repo)) == 1
 
 
 # -- 幂等 --------------------------------------------------------------------

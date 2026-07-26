@@ -13,6 +13,7 @@
 from __future__ import annotations
 
 import json
+import re
 import sqlite3
 from collections.abc import Mapping
 from dataclasses import dataclass
@@ -80,8 +81,42 @@ _PREPRINT_CLUE_ROLES: dict[str, tuple[str, Literal["from", "to"]]] = {
 # 线索均为归一 identifier 精确匹配（非启发式），强度对等、无 weak/strong 分级——故
 # `_upsert_preprint_relation` 不需要 `_upsert_candidate` 那套 `_EVIDENCE_STRENGTH` 序，
 # 刷新规则简化为"未裁决 + 证据有变化即刷新"（仍不覆盖已裁决行、不物理删行，同构于
-# `_upsert_candidate` 的两条底线）。
+# `_upsert_candidate` 的两条底线；证据终态取末次观测、非并集、可降级——与
+# `_upsert_candidate` 的不降级族刻意分岔，见 `_upsert_preprint_relation` docstring）。
 _PREPRINT_CLUE_CONFIDENCE = 1.0
+
+# 'arxiv' 线索值的 URL 包装前缀（`https://arxiv.org/abs/...`、`http://www.arxiv.org/abs/...`
+# 等）——独立审查 P1-3：cvf `_arxiv_id_from_href` 对不匹配形状的 href"原样返回（防御性）"、
+# openreview `note.arxiv` 是用户自由填写字段，均可能把完整 URL 落入 meta，需在归一前剥离。
+_ARXIV_CLUE_URL_PREFIX_RE = re.compile(r"^(?:https?://)?(?:www\.)?arxiv\.org/abs/", re.IGNORECASE)
+
+
+def _normalize_arxiv_clue(raw_value: str) -> str | None:
+    """'arxiv' 线索值 → 规范 base id（去版本号+去 URL 前缀+旧代小写）；解析失败→None。
+
+    独立审查 P1-3（实测 #8/#9）：`_apply_preprint_clues` 原先对 'arxiv' 线索走通用
+    `normalize_identifier`（非 doi scheme 直通、零改动），而 `identifier(scheme='arxiv')`
+    的写入侧按 design/adapters/arxiv.md §3 是**去版本号的规范 base id**（`adapters.arxiv.
+    ids.normalize`）——带版本（`2401.07v2`）/URL 形（`https://arxiv.org/abs/...`，cvf 兜底
+    路径与 openreview 自由文本字段均可能产出）/旧代（`hep-th/9901001v1`）线索值与库内裸
+    base id 逐字比对必然不相等，静默悬空、边建不出来。本函数复用 `adapters.arxiv.ids`
+    同一条归一链（先剥 URL 前缀，再走该模块的去版本+旧代小写逻辑），使线索值与写入侧同
+    规范形。
+
+    局部 import（避免 storage 层顶层依赖 adapter 子包，沿 `_row_to_subscription`/
+    `db.py::_backfill_title_norm` "局部 import 避免 storage 层顶层依赖上层模块"先例）。
+    `adapters.arxiv.ids.normalize` 对非法形态 raise `CrawlerError(PARSE)`——该设计面向
+    adapter 自身受控解析（细分类交 catalog 层），但线索值是自由文本 meta（非受控解析），
+    坏值不应传播异常炸掉整个 ingest 事务，故此处捕获后降级为 None（调用方按"无法解析"
+    处理，同悬空语义：DEBUG 记录、跳过、不建边）。
+    """
+    from paper_crawler.adapters.arxiv import ids as arxiv_ids
+
+    stripped = _ARXIV_CLUE_URL_PREFIX_RE.sub("", raw_value.strip())
+    try:
+        return arxiv_ids.normalize(stripped)
+    except CrawlerError:
+        return None
 
 
 @dataclass(frozen=True)
@@ -388,7 +423,7 @@ class Repo:
                 self._merge_paper_fields(conn, paper_id, stub, now)
 
             self._ensure_identifiers(conn, paper_id, identifiers)
-            self._apply_preprint_clues(conn, paper_id, stub.meta)
+            self._apply_preprint_clues(conn, paper_id, stub.meta, venue_id=venue_id)
 
             if issue_id is not None:
                 conn.execute(
@@ -502,7 +537,7 @@ class Repo:
                 # ——`IngestResult` 三枚举是冻结件，候审边只作为 DB 副作用记录，不改口径。
                 self._apply_weak_signal(conn, paper_id, incoming)
                 # preprint_of 建边（T10）同为 DB 副作用，不改变 action 口径。
-                self._apply_preprint_clues(conn, paper_id, incoming.meta)
+                self._apply_preprint_clues(conn, paper_id, incoming.meta, source=incoming.source)
                 return IngestOutcome(paper_id, "merged", tuple(matched))
             return self._merge_ingest_conflict(
                 conn, distinct, incoming, identifiers, tuple(matched)
@@ -523,7 +558,8 @@ class Repo:
         """
         new_id = self._create_paper(conn, incoming, identifiers)
         matches = self._apply_weak_signal(conn, new_id, incoming)
-        self._apply_preprint_clues(conn, new_id, incoming.meta)  # T10：DB 副作用，不改 action
+        # T10：DB 副作用，不改 action。
+        self._apply_preprint_clues(conn, new_id, incoming.meta, source=incoming.source)
         if not matches:
             return IngestOutcome(new_id, "created", ())
         return IngestOutcome(new_id, "candidate_flagged", ())
@@ -558,7 +594,8 @@ class Repo:
                 )
         # 冲突边先落（证据更强，见 `_upsert_candidate` 的强度序），再记本次观测的弱信号键。
         self._apply_weak_signal(conn, winner, incoming)
-        self._apply_preprint_clues(conn, winner, incoming.meta)  # T10：DB 副作用，不改 action
+        # T10：DB 副作用，不改 action。
+        self._apply_preprint_clues(conn, winner, incoming.meta, source=incoming.source)
         return IngestOutcome(winner, "candidate_flagged", matched)
 
     def _create_paper(
@@ -860,32 +897,70 @@ class Repo:
     # -- preprint_of 建边（T10；检查单 #5，design/06 §3 单一事实源） --------
 
     def _apply_preprint_clues(
-        self, conn: sqlite3.Connection, paper_id: str, meta: tuple[tuple[str, str], ...]
+        self,
+        conn: sqlite3.Connection,
+        paper_id: str,
+        meta: tuple[tuple[str, str], ...],
+        *,
+        source: str | None = None,
+        venue_id: str | None = None,
     ) -> None:
         """消费本次观测 meta 里的 preprint 线索，建/刷新 preprint_of 边。
 
-        逐键查 `_PREPRINT_CLUE_ROLES`：命中键→按其目标 scheme 归一（`normalize_identifier`，
-        与 identifier 写入同一入口）→ 查 `identifier` 表解析目标端。**建边时机**＝本次
-        ingest 消费到线索的当下、一次性尝试（controller 已裁决③）：查不到目标端（线索悬空）
-        → DEBUG 记录后跳过、不建悬空边、**不回溯重判**——不同于弱信号候审的观测级键集合
-        机制，本卡接受顺序敏感的 best-effort 语义：目标端若晚于线索到达入库，这条线索就此
-        错过，除非同一 paper 的后续观测重复携带该线索（下次 ingest 会重新尝试查找）。
+        逐键查 `_PREPRINT_CLUE_ROLES`：命中键→按其目标 scheme 归一（doi 走
+        `normalize_identifier`，与 identifier 写入同一入口；arxiv 走 `_normalize_arxiv_clue`
+        ——独立审查 P1-3：通用 `normalize_identifier` 对非 doi scheme 直通，与
+        `identifier(scheme='arxiv')` 写入侧"去版本号的规范 base id"链不同，带版本/URL 形/
+        旧代线索值会静默悬空）→ 查 `identifier` 表解析目标端。**建边时机**＝本次 ingest
+        消费到线索的当下、一次性尝试（controller 已裁决③）：查不到目标端（线索悬空）或
+        线索值本身无法解析（P1-3：`_normalize_arxiv_clue` 返回 None）→ DEBUG 记录后跳过、
+        不建边、**不回溯重判**——不同于弱信号候审的观测级键集合机制，本卡接受顺序敏感的
+        best-effort 语义：目标端若晚于线索到达入库，这条线索就此错过，除非同一 paper 的
+        后续观测重复携带该线索（下次 ingest 会重新尝试查找）。
 
         方向固定不看快照（controller 裁决①，与 `candidate_duplicate` 的定向快照/无序对语义
         不同——preprint_of 方向本身是语义不变量）：`role="from"` 即自身是预印本、目标是
         发表版；`role="to"` 反之。'journal_ref'（arxiv 专属自由文本）不可独立驱动查找，只在
         'doi' 线索命中时作为补充证据搭车进 evidence_json。
 
+        **同调用内目标冲突（独立审查 P1-1）**：doi 线索与 arxiv 线索各自独立解析目标端，
+        先前实现两者互不知情——若目标 paper 已把 doi/arxiv 两个 scheme 聚合到同一行（如
+        openreview 双键场景：目标此前经强合并同时持有这两个 identifier），doi 线索会建
+        `paper_id→target`（role=from）而 arxiv 线索会建 `target→paper_id`（role=to），
+        两条方向相反的边并存，构成双向矛盾环。本方法先**全量解析**两条线索各自的目标端，
+        解析完毕后才判定：两者非空且相等 → 只保留 doi 方向（design/06 §3 是 preprint_of
+        的字面语义源，故 doi 线索优先），DEBUG 记录后丢弃 arxiv 侧、不建反向边。
+
+        `evidence_json` 溯源字段（独立审查 P1-2）：`merge_ingest`（`incoming.source`）与
+        `upsert_paper`（`venue_id` 参数）分别传入各自持有的 provenance，供人工核实线索本
+        身的语义是否如设想（如 openreview 历史 'doi' 字段可能指"同一著作的另一 DOI"而非
+        真正预印本/发表版关系——见 merge.py NEEDS_DECISION）——不这样落证据，controller
+        裁决③"靠 evidence 溯源核实"就无从执行。二者互斥（pull 路径无 source 概念、
+        aggregator 路径 venue-agnostic），只按调用方实际持有的那个填。
+
         调用方（`upsert_paper` 与 `merge_ingest` 分支树）都在同一事务、拿到 `paper_id` 后
         调用本方法——两条写路径共享同一套判定，见 merge.py 裁决点 7。
         """
         meta_map = dict(meta)
         journal_ref = meta_map.get("journal_ref")
-        for clue_key, (target_scheme, role) in _PREPRINT_CLUE_ROLES.items():
+        resolved: dict[str, str] = {}  # clue_key -> target paper_id；先解析全量，后判冲突
+        for clue_key, (target_scheme, _role) in _PREPRINT_CLUE_ROLES.items():
             raw_value = meta_map.get(clue_key)
             if not raw_value:
                 continue
-            scheme, value = normalize_identifier(target_scheme, raw_value)
+            if target_scheme == "arxiv":
+                normalized_value = _normalize_arxiv_clue(raw_value)
+                if normalized_value is None:
+                    log_event(
+                        "DEBUG",
+                        f"preprint_of clue unparseable: {clue_key}={raw_value!r} is not a "
+                        "recognizable arxiv id (even after URL/version stripping); skipped",
+                        paper_id=paper_id,
+                    )
+                    continue
+                scheme, value = target_scheme, normalized_value
+            else:
+                scheme, value = normalize_identifier(target_scheme, raw_value)
             row = conn.execute(
                 "SELECT paper_id FROM identifier WHERE scheme = ? AND value = ?",
                 (scheme, value),
@@ -901,14 +976,33 @@ class Repo:
             target_id = str(row["paper_id"])
             if target_id == paper_id:
                 continue  # 自指防御：正常数据不会出现，保守跳过（不建自环边）
+            resolved[clue_key] = target_id
+
+        # P1-1：doi 与 arxiv 线索同解析到一个 target → 双向矛盾环，doi 优先、丢弃 arxiv 侧。
+        if "doi" in resolved and "arxiv" in resolved and resolved["doi"] == resolved["arxiv"]:
+            log_event(
+                "DEBUG",
+                "preprint_of clue conflict: doi and arxiv clues both resolve to paper "
+                f"{resolved['doi']!r}; keeping doi (design/06 §3 semantic source), dropping "
+                "arxiv to avoid a bidirectional edge",
+                paper_id=paper_id,
+            )
+            del resolved["arxiv"]
+
+        for clue_key, target_id in resolved.items():
+            _, role = _PREPRINT_CLUE_ROLES[clue_key]
             from_paper, to_paper = (
                 (paper_id, target_id) if role == "from" else (target_id, paper_id)
             )
             evidence: dict[str, object] = {
                 "reason": f"meta-clue:{clue_key}",
                 "clue_key": clue_key,
-                "clue_value": raw_value,
+                "clue_value": meta_map[clue_key],
             }
+            if source is not None:
+                evidence["source"] = source
+            if venue_id is not None:
+                evidence["venue_id"] = venue_id
             if clue_key == "doi" and journal_ref:
                 evidence["journal_ref"] = journal_ref
             self._upsert_preprint_relation(
@@ -934,6 +1028,14 @@ class Repo:
         ③`decided` 语义按表设计是"NULL=有效待复核"（controller 裁决⑤）而非
         `candidate_duplicate` 的"待审阻塞"——但仍尊重已人工裁决的行：已裁决（decided 非空）
         绝不覆盖，与 `_upsert_candidate` 同一底线。
+
+        独立审查 P2-1（如实记录既定简化）：证据终态取**末次观测**、非并集、可降级——同一
+        `(from,to)` 若先后被强度不同的观测触及（如首次带 `journal_ref` 补充证据、二次
+        观测缺失该字段），后者会整体覆盖前者、`journal_ref` 随之丢失。这与 `_upsert_candidate`
+        的"新证据强度不弱于既有才刷新、反向不降级"刻意分岔：本 kind 无 weak/strong 分级
+        （见 `_PREPRINT_CLUE_CONFIDENCE` 注释），"证据是否变化"是唯一刷新判据，没有强度
+        序可比较、也就没有"防降级"的锚点可依附——取舍成本上界很小（evidence_json 只是审计
+        辅助字段，不参与查询/去重语义，`decided` 才是真正需要保护的不变量）。
         """
         evidence_json = json.dumps(evidence, ensure_ascii=False, sort_keys=True)
         row = conn.execute(

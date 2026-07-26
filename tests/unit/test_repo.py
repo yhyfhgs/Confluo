@@ -399,6 +399,156 @@ def test_upsert_paper_preprint_clue_idempotent_reingest(repo: Repo) -> None:
     assert len(_preprint_edges(repo)) == 1
 
 
+def test_upsert_paper_conflicting_doi_and_arxiv_clues_same_target_keeps_doi_direction(
+    repo: Repo,
+) -> None:
+    """独立审查 P1-1：同一调用内 doi(role=from) 与 arxiv(role=to) 解析到**同一** target
+    （目标 paper 已聚合 doi+arxiv 两 identifier——openreview 双键场景可达）→ 双向矛盾环
+    风险（A→B 与 B→A 并存）。裁决：doi 线索优先（design/06 §3 字面语义源），跳过 arxiv
+    侧、不建反向边，只留 doi 方向一条。"""
+    repo.upsert_paper(
+        VENUE_ID,
+        None,
+        PaperStub(
+            title="Aggregated Target",
+            identifiers=(("doi", "10.9999/conflict"), ("arxiv", "2401.00700")),
+        ),
+    )
+    repo.upsert_paper(
+        VENUE_ID,
+        None,
+        PaperStub(
+            title="Self",
+            identifiers=(("cvf", "cvpr2024/conflict"),),
+            meta=(("doi", "10.9999/conflict"), ("arxiv", "2401.00700")),
+        ),
+    )
+    edges = _preprint_edges(repo)
+    assert len(edges) == 1  # 不是两条（无反向环）
+    assert edges[0]["from_title"] == "Self"
+    assert edges[0]["to_title"] == "Aggregated Target"
+    assert json.loads(edges[0]["evidence_json"])["clue_key"] == "doi"
+
+
+def test_upsert_paper_preprint_clue_evidence_includes_venue_id(repo: Repo) -> None:
+    """独立审查 P1-2：evidence_json 记 venue_id（`upsert_paper` pull 路径持有）——
+    controller 裁决③（openreview doi 语义存疑靠 evidence 溯源核实）的前提。"""
+    repo.upsert_paper(VENUE_ID, None, _stub(doi="10.9999/withvenue", title="Published"))
+    repo.upsert_paper(
+        VENUE_ID,
+        None,
+        PaperStub(
+            title="Preprint",
+            identifiers=(("arxiv", "2401.00800"),),
+            meta=(("doi", "10.9999/withvenue"),),
+        ),
+    )
+    evidence = json.loads(_preprint_edges(repo)[0]["evidence_json"])
+    assert evidence["venue_id"] == VENUE_ID
+    assert "source" not in evidence  # pull 路径无 source 概念（upsert_paper 签名无此参数）
+
+
+@pytest.mark.parametrize(
+    "raw_arxiv_value",
+    [
+        "2401.00900v2",  # 新代带版本
+        "https://arxiv.org/abs/2401.00900",  # URL 形（新代无版本）
+        "http://www.arxiv.org/abs/2401.00900v3",  # URL 形 + 版本 + www
+    ],
+)
+def test_upsert_paper_arxiv_clue_normalizes_versioned_and_url_forms(
+    repo: Repo, raw_arxiv_value: str
+) -> None:
+    """独立审查 P1-3：'arxiv' 线索值须与 identifier(scheme='arxiv') 同一归一链（去版本号
+    +去 URL 前缀），否则带版本/URL 形线索静默悬空（实测 #8/#9）。"""
+    repo.upsert_paper(
+        VENUE_ID, None, PaperStub(title="Preprint", identifiers=(("arxiv", "2401.00900"),))
+    )
+    repo.upsert_paper(
+        VENUE_ID,
+        None,
+        PaperStub(
+            title="Conference Version",
+            identifiers=(("cvf", "cvpr2024/normalize"),),
+            meta=(("arxiv", raw_arxiv_value),),
+        ),
+    )
+    edges = _preprint_edges(repo)
+    assert len(edges) == 1
+    assert edges[0]["from_title"] == "Preprint"
+    assert edges[0]["to_title"] == "Conference Version"
+
+
+def test_upsert_paper_arxiv_clue_old_style_with_version_normalizes(repo: Repo) -> None:
+    """旧代 id 带版本号+大小写异形（`HEP-TH/9901001v1`）→ 去版本号+小写归一后与库内裸旧代
+    id（`hep-th/9901001`）匹配（design/adapters/arxiv.md §3：旧代小写归一、保留斜杠）。"""
+    repo.upsert_paper(
+        VENUE_ID, None, PaperStub(title="Preprint", identifiers=(("arxiv", "hep-th/9901001"),))
+    )
+    repo.upsert_paper(
+        VENUE_ID,
+        None,
+        PaperStub(
+            title="Conference Version",
+            identifiers=(("cvf", "cvpr2024/oldstyle"),),
+            meta=(("arxiv", "HEP-TH/9901001v1"),),
+        ),
+    )
+    assert len(_preprint_edges(repo)) == 1
+
+
+def test_upsert_paper_arxiv_clue_unparseable_value_skipped_no_edge(
+    repo: Repo, caplog: pytest.LogCaptureFixture
+) -> None:
+    """既非新代也非旧代形态（非 URL、非法结构）→ 视为无法解析，DEBUG 记录后跳过，不建边、
+    不抛异常炸 ingest 事务（线索值是自由文本，非 adapter 内部受控解析——`arxiv.ids.normalize`
+    对非法输入本会 raise，消费侧须降级捕获，不能让单条脏线索拖垮整批 ingest）。"""
+    with caplog.at_level(logging.DEBUG, logger="paper_crawler"):
+        repo.upsert_paper(
+            VENUE_ID,
+            None,
+            PaperStub(
+                title="Conference Version",
+                identifiers=(("cvf", "cvpr2024/garbage"),),
+                meta=(("arxiv", "not-an-arxiv-id-at-all"),),
+            ),
+        )
+    assert _preprint_edges(repo) == []
+    assert any("unparseable" in r.getMessage() for r in caplog.records)
+
+
+def test_upsert_paper_decided_preprint_edge_not_rewritten_via_pull_path(repo: Repo) -> None:
+    """独立审查 P2-3：`decided` 保护规则须在 `upsert_paper` pull 路径也覆盖到（此前只在
+    test_merge.py 经 `MergeEngine.ingest` 验证过，两条写路径共享同一 `_upsert_preprint_relation`
+    机制，但缺 pull 路径直测）。"""
+    repo.upsert_paper(VENUE_ID, None, _stub(doi="10.9999/decided-pub", title="Published"))
+    repo.upsert_paper(
+        VENUE_ID,
+        None,
+        PaperStub(
+            title="Preprint",
+            identifiers=(("arxiv", "2401.01000"),),
+            meta=(("doi", "10.9999/decided-pub"), ("journal_ref", "v1")),
+        ),
+    )
+    repo.db.execute("UPDATE paper_relation SET decided = 'rejected' WHERE kind = 'preprint_of'")
+    before = _preprint_edges(repo)[0]["evidence_json"]
+
+    repo.upsert_paper(
+        VENUE_ID,
+        None,
+        PaperStub(
+            title="Preprint",
+            identifiers=(("arxiv", "2401.01000"),),
+            meta=(("doi", "10.9999/decided-pub"), ("journal_ref", "v2")),
+        ),
+    )
+    edges = _preprint_edges(repo)
+    assert len(edges) == 1
+    assert edges[0]["decided"] == "rejected"
+    assert edges[0]["evidence_json"] == before
+
+
 # -- paper_issue_link 幂等 ---------------------------------------------------
 
 

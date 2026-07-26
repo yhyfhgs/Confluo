@@ -84,7 +84,8 @@
    自由文本）不可解析为 identifier、不可独立驱动查找，只在同 stub 也带 'doi' 时作为补充
    证据搭车进 `evidence_json`。design/06 §3 另列的"Crossref/OpenAlex 的 preprint 关系
    字段"与"SSRN→DOI 提示"两类：grep 实况核验现有三个 adapter 均未产出此类字段（如实见
-   `repo.py` 线索表注释），暂无输入、不在表中。
+   `repo.py` 线索表注释），暂无输入、不在表中——该缺口已在 design/06 §3 补一条注记
+   （独立审查 P2-2：产出侧未实现、消费通道已预留、产出侧挂 P8 评估）。
    **方向是语义不变量、不是快照**（与 candidate_duplicate 相反）：from(预印本)→to(发表版)
    写死，同一 (from,to) 组合无论哪一侧线索先发现都落到同一方向，故不需要 candidate 那样
    的双向查询或无序对归一。**建边时机**＝ingest 消费到线索的当下、一次性尝试、不回溯：
@@ -95,6 +96,28 @@
    流程（那条流程只消费 candidate_duplicate）。**双条 paper 双份全文、不合并**（design/06
    §3 明文：preprint_of 是关联边不是去重合并）——不改动任何既有强合并/弱信号/冲突分支，
    `IngestResult.action` 口径不变（同第 4 条候审边的先例，纯 DB 副作用）。
+
+   **独立审查三处 P1 修复（Opus 14 场景实测矩阵，回派）**：
+   ①**同调用内目标冲突**（`repo.py::_apply_preprint_clues`）：doi 与 arxiv 两条线索各自
+   独立解析目标端，若目标 paper 已把两 scheme 聚合到同一行（openreview 双键+目标聚合，
+   可达性高），先前实现会同时写出 `self→target`（doi，role=from）与
+   `target→self`（arxiv，role=to）两条方向相反的边——双向矛盾环。修复：先全量解析两条
+   线索各自目标，解析完毕后若两者非空且相等，只留 doi 方向（design/06 §3 是 preprint_of
+   的字面语义源），DEBUG 记录后丢弃 arxiv 侧，不建反向边。
+   ②**证据溯源字段缺失**：`evidence_json` 原先只记 `reason`/`clue_key`/`clue_value`，
+   没有落 `source`（`merge_ingest` 侧 `incoming.source`）/`venue_id`（`upsert_paper` 侧
+   同名参数）——controller 裁决③"openreview 历史 'doi' 字段语义存疑，需要靠 evidence
+   溯源核实"的前提未落地，裁决即失效。修复：两条写路径各自把自己持有的 provenance
+   传入 `_apply_preprint_clues`（关键字参数，互斥——pull 路径无 source、aggregator 路径
+   venue-agnostic），写入 evidence（如实记录：不并集、不追加历史，见 P2-1）。
+   ③**arxiv 线索归一链错位**：`_apply_preprint_clues` 原对 'arxiv' 线索走通用
+   `normalize_identifier`（非 doi scheme 直通、零改动），但 `identifier(scheme='arxiv')`
+   写入侧的规范形是**去版本号的 base id**（design/adapters/arxiv.md §3，
+   `adapters.arxiv.ids.normalize`）——带版本（`2401.07v2`）/URL 形（cvf 兜底路径、
+   openreview 自由文本字段均可能产出）/旧代（`hep-th/9901001v1`）线索值与库内裸 base id
+   逐字比对必然不相等，静默悬空。修复：新增 `repo.py::_normalize_arxiv_clue`，复用
+   `adapters.arxiv.ids.normalize` 同一条归一链（局部 import，见该函数 docstring 的层次
+   纪律先例），解析失败（非法形态）降级为 None、按悬空语义处理，不传播异常炸 ingest。
 
 首作者姓氏：`PaperStub.authors` 冻结为名字串组（types.py），不改 types——由 `authors[0]`
 启发式取姓（逗号前段，或末词）再经 `normalize_title` 归一为比对键（best-effort 弱信号）。
