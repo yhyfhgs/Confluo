@@ -767,6 +767,47 @@ def test_papers_in_scope_dedupes_paper_shared_across_issues(
         db.close()
 
 
+def test_list_folds_merged_duplicates_and_no_aggregate_expands(tmp_path: Path) -> None:
+    """T13/AC-7.3 查询层聚合：人工 `dedupe decide … merge` 后 `list` 折叠重复行显示，
+    `--no-aggregate` 原样展开；两种模式下 paper 行都还在库里（物理不删行）。"""
+    home = _make_home(tmp_path)
+    assert runner.invoke(app, ["list", VENUE, "--year", "2024", "--home", str(home)]).exit_code == 0
+
+    db = Database(home / "catalog.sqlite")
+    try:
+        repo = Repo(db)
+        issue_id = str(repo.list_issues(VENUE, year=2024)[0]["id"])
+        papers = repo.list_papers(VENUE, issue_id=issue_id)
+        a, b = str(papers[0]["id"]), str(papers[1]["id"])
+        db.execute(
+            "INSERT INTO paper_relation "
+            "(from_paper, to_paper, kind, confidence, evidence_json, decided) "
+            "VALUES (?,?,?,?,?,?)",
+            (a, b, "candidate_duplicate", 0.5, '{"reason": "weak-signal-title-author"}', None),
+        )
+        repo.decide_candidate(a, b, "merge")
+        total_rows = db.query("SELECT COUNT(*) AS n FROM paper")[0]["n"]
+    finally:
+        db.close()
+
+    folded = runner.invoke(app, ["list", VENUE, "--year", "2024", "--home", str(home)])
+    expanded = runner.invoke(
+        app, ["list", VENUE, "--year", "2024", "--no-aggregate", "--home", str(home)]
+    )
+
+    assert folded.exit_code == 0, folded.output
+    assert expanded.exit_code == 0, expanded.output
+    assert "折叠 1 行" in folded.output
+    assert "折叠" not in expanded.output
+    assert folded.output.count("Mock Paper") == expanded.output.count("Mock Paper") - 1
+
+    db = Database(home / "catalog.sqlite")
+    try:
+        assert db.query("SELECT COUNT(*) AS n FROM paper")[0]["n"] == total_rows  # 零删行
+    finally:
+        db.close()
+
+
 # ---------------------------------------------------------------------------
 # subprocess 冒烟：验证 crawler console-script entry point 真实可用
 # ---------------------------------------------------------------------------

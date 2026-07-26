@@ -15,7 +15,7 @@ from __future__ import annotations
 import json
 import re
 import sqlite3
-from collections.abc import Mapping
+from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Literal
 
@@ -243,15 +243,25 @@ def _evidence_strength(reason: object) -> float:
     return _EVIDENCE_STRENGTH.get(reason, _UNKNOWN_RANK)
 
 
-def _evidence_reason(evidence_json: object) -> object:
-    """从既有边的 `evidence_json` 取 reason 标签；空/非 JSON 对象 → None（强度即最强）。"""
+def _evidence_dict(evidence_json: object) -> dict[str, object]:
+    """把 `evidence_json` 解析为 dict；空/非法 JSON/非对象一律降级为 `{}`（绝不抛）。
+
+    审核工具是**只读诊断面**，读到人工手改坏的 evidence 时应照常列出该条候选（证据显示
+    为空）而不是整张列表崩掉；写路径（`_upsert_candidate` 等）读它只为取 reason 判强度，
+    读不出即"未知 reason"→ 视为最强不可覆盖（保守侧），与降级为 `{}` 完全一致。
+    """
     if not isinstance(evidence_json, str) or not evidence_json:
-        return None
+        return {}
     try:
         parsed = json.loads(evidence_json)
-    except json.JSONDecodeError:  # pragma: no cover - 库内 evidence 恒由本模块写出
-        return None
-    return parsed.get("reason") if isinstance(parsed, dict) else None
+    except json.JSONDecodeError:
+        return {}
+    return parsed if isinstance(parsed, dict) else {}
+
+
+def _evidence_reason(evidence_json: object) -> object:
+    """从既有边的 `evidence_json` 取 reason 标签；空/非 JSON 对象 → None（强度即最强）。"""
+    return _evidence_dict(evidence_json).get("reason")
 
 
 def _weak_key(incoming: MergeInput) -> tuple[str, str] | None:
@@ -262,6 +272,119 @@ def _weak_key(incoming: MergeInput) -> tuple[str, str] | None:
     if not incoming.title_norm or not incoming.first_author:
         return None
     return (incoming.title_norm, incoming.first_author)
+
+
+# ---------------------------------------------------------------------------
+# dedupe review 与 `same_as(decided='merged')` 聚合语义（T13 冻结件；AC-7.3；
+# design/06 §3「审核工具」：merge 保留两 paper 行 + 置边，物理不删行，查询层聚合，可回滚）
+#
+# 这是本卡冻结的**权威说明**（消费方 T14 verify / T16 preprint 报告按此对齐）。六条：
+#
+# 1. **kind 隔离**：审核流程只认 `candidate_duplicate`（"这两篇疑似同一著作"，无序对）。
+#    `preprint_of` 的 `decided=NULL` 语义是"边已生效、可选复核"而非"待审阻塞"
+#    （merge.py 裁决 7），**不进**本流程：既不出现在待审列表，也不能被 `decide_candidate`
+#    裁决，更不参与聚合——预印本与发表版是两条独立著作记录（design/06 §3：双条 paper
+#    双份全文），合并它们会丢失"同一著作的两个版本各有各的资产"这一事实。
+#
+# 2. **裁决落库**：`merge` → ①候审行 `decided='merged'`（出待审队列、留审计痕迹）
+#    ②新增/复活 `same_as(decided='merged')` 行——**聚合的唯一载体是 same_as**，候审行
+#    自身的 `decided` 不驱动任何聚合（否则"改判"就无处安放）。`reject` → 候审行
+#    `decided='rejected'`，并把该对可能存在的 same_as 行降级（`decided=NULL`）。
+#    `same_as` 端点按 paper_id 字典序定向（`(from,to,kind)` 主键唯一 ⇒ 同一对至多一行，
+#    且不随 CLI 参数顺序摆动），`confidence=1.0`（人工裁决=确定），自动信号的原始强度与
+#    reason 存进 `evidence_json` 备查。
+#
+# 3. **聚合 = 类**：`same_as(decided='merged')` 边的**无向连通分量**（传递闭包）即一篇
+#    著作的全部行。必须取闭包：A~B 与 B~C 两次独立裁决若不并成一类，聚合视图会同时显示
+#    A 与 C 两行，自相矛盾。
+#
+# 4. **主行（canonical）**：类内 `(-identifier 数, paper_id)` 最小者——identifier 最多者胜、
+#    平局取 paper_id 字典序最小者，与 merge.py 裁决 3 的跨 paper 冲突胜者规则同构。它是
+#    **当前库态的函数**：不看边方向（same_as 语义对称）、不看裁决顺序（AC-3.4 精神）。
+#    **代价如实记**：paper 后续补进 identifier 可能让主行易主，故"主行"是显示层的当前
+#    最佳代表、**不是稳定标识符**；需要稳定引用的消费方请引用整个类（`members`）。
+#
+# 5. **归并视图**：identifier 取类内并集（`(scheme,value)` 全局唯一，天然去重）、asset 取
+#    类内全集（**不去重**：两行各自的 PDF 是两次独立取回、磁盘上是两个文件，verify 仍需
+#    逐个对账）。**字段（title/abstract/year…）不跨行收敛、不回写 paper 行**——聚合纯粹
+#    发生在查询层，写库的字段收敛另有 provenance 体系（design/06 §3），二者不得互相污染；
+#    这也正是"可回滚"成立的根据。
+#
+# 6. **折叠是"结果集内"的，不是全局过滤**（`fold_merged`）：同类多行在**同一次查询结果**
+#    里只保留一行代表（类主行若在结果集内则取之，否则取集内成员按同一序的最小者），
+#    其余行删除、**不重排**幸存行。绝不写成"非主行一律过滤"——主行可能不在本次范围内
+#    （如它属于另一个 venue/issue），那样会让一篇著作从某个清单里**整体消失**。
+#    `list_papers(aggregate=…)` 默认 **False**：pull 级联（`runner._select_papers`）必须
+#    看到全部行，否则被折叠的一侧永远拿不到 resolve/fetch——聚合是显示语义，不是数据过滤。
+#
+# **回滚**（AC-7.3）：`revert_candidate` 把候审行 `decided` 置回 NULL、same_as 行降级为
+# NULL（`evidence_json` 记 `reverted_at` 留痕）。因为整条链从未改动 paper/identifier/asset
+# 任何一行，回滚是**完全**的：聚合视图消失、候选回到待审队列、实体三表逐行不变
+# （`tests/unit/test_dedupe.py` 以三表快照前后相等锁定）。关系行**绝不物理删除**——沿
+# `_upsert_candidate`/`_upsert_preprint_relation` 的同一条底线。
+# ---------------------------------------------------------------------------
+
+# `list_candidates(state=…)` 的取值域；"pending" = 待审（decided IS NULL）。
+CANDIDATE_STATES: tuple[str, ...] = ("pending", "merged", "rejected", "all")
+# `decide_candidate(decision=…)` 的取值域 → 落库的 `decided` 值。
+DEDUPE_DECISIONS: dict[str, str] = {"merge": "merged", "reject": "rejected"}
+_SAME_AS_MERGE_REASON = "dedupe-review-merge"
+# 人工裁决的 same_as 边置信度恒 1.0（自动信号的原始 confidence 另存 evidence_json）。
+_SAME_AS_CONFIDENCE = 1.0
+# 批量 IN 查询的参数分块上限（SQLite 默认 999 变量上限的保守分片）。
+_SQL_PARAM_CHUNK = 400
+
+
+@dataclass(frozen=True)
+class PaperBrief:
+    """dedupe 呈现用的一侧 paper 只读投影（`identifiers` 为 `"scheme:value"` 升序）。"""
+
+    paper_id: str
+    title: str
+    venue_id: str | None
+    year: int | None
+    identifiers: tuple[str, ...]
+    asset_count: int
+
+
+@dataclass(frozen=True)
+class DedupeCandidate:
+    """一条 `candidate_duplicate`（无序对归一：`paper_a.paper_id < paper_b.paper_id`）。"""
+
+    paper_a: PaperBrief
+    paper_b: PaperBrief
+    confidence: float | None
+    reason: str | None
+    evidence: Mapping[str, object]
+    decided: str | None
+
+
+@dataclass(frozen=True)
+class DecisionOutcome:
+    """`decide_candidate`/`revert_candidate` 的结果；`changed=False` 即幂等重放。"""
+
+    paper_a: str
+    paper_b: str
+    decided: str | None
+    changed: bool
+
+
+@dataclass(frozen=True)
+class MergedGroup:
+    """一个合并类：`members` 按 paper_id 升序（含 `canonical`），见上文聚合语义 3/4。"""
+
+    canonical: str
+    members: tuple[str, ...]
+
+
+@dataclass(frozen=True)
+class MergedView:
+    """合并类的归并视图（上文聚合语义 5）：主行 + 全成员 + identifier 并集 + asset 全集。"""
+
+    canonical: PaperBrief
+    members: tuple[PaperBrief, ...]
+    identifiers: tuple[str, ...]
+    asset_count: int
 
 
 class Repo:
@@ -1121,19 +1244,392 @@ class Repo:
             "         r.from_paper, r.to_paper"
         )
 
-    def list_papers(self, venue_id: str, issue_id: str | None = None) -> list[sqlite3.Row]:
-        """列出某 venue 的 paper；给定 issue_id 时限定该期内（经 paper_issue_link）。按标题排序。"""
+    # -- dedupe review（T13；AC-7.3）：候审列表 / 裁决 / 回滚 -------------------
+    #
+    # 语义总纲见本模块「dedupe review 与 same_as 聚合语义」注释块——那里是权威说明，
+    # 以下方法只是它的机制载体（策略/呈现在 `dedupe_cli.py`，同 repo↔merge 的分工先例）。
+
+    def list_candidates(
+        self, *, state: str = "pending", limit: int | None = None
+    ) -> list[DedupeCandidate]:
+        """列出 `candidate_duplicate`（kind 隔离，语义 1），按证据强度降序、无序对字典序。
+
+        `state`：`pending`（默认，`decided IS NULL`）/`merged`/`rejected`/`all`。
+        排序在 Python 侧完成而非 SQL：无序对的"小端/大端"需要 `MIN/MAX(a,b)` 标量函数，
+        SQLite 与 PostgreSQL 写法不同（后者是 `LEAST/GREATEST`），会破坏方言中性
+        （D-001）；候审集是人工审核尺度（数十~数百条），Python 排序代价可忽略。
+        `limit` 在排序**之后**截断，故"只看最强的 N 条"语义稳定。
+        """
+        if state not in CANDIDATE_STATES:
+            raise CrawlerError(
+                ErrorClass.CONFIG,
+                f"未知的候选状态 {state!r}；可选：{', '.join(CANDIDATE_STATES)}",
+            )
+        sql = (
+            "SELECT from_paper, to_paper, confidence, evidence_json, decided "
+            "FROM paper_relation WHERE kind = ?"
+        )
+        params: list[object] = ["candidate_duplicate"]
+        if state == "pending":
+            sql += " AND decided IS NULL"
+        elif state != "all":
+            sql += " AND decided = ?"
+            params.append(state)
+        rows = self.db.query(sql, params)
+
+        pairs: list[tuple[float, str, str, sqlite3.Row]] = []
+        for row in rows:
+            low, high = sorted((str(row["from_paper"]), str(row["to_paper"])))
+            strength = float(row["confidence"]) if row["confidence"] is not None else 0.0
+            pairs.append((-strength, low, high, row))
+        pairs.sort(key=lambda item: item[:3])
+        if limit is not None:
+            pairs = pairs[:limit]
+        out: list[DedupeCandidate] = []
+        for _rank, low, high, row in pairs:
+            evidence = _evidence_dict(row["evidence_json"])
+            reason = evidence.get("reason")
+            out.append(
+                DedupeCandidate(
+                    paper_a=self._paper_brief(low),
+                    paper_b=self._paper_brief(high),
+                    confidence=row["confidence"],
+                    reason=reason if isinstance(reason, str) else None,
+                    evidence=evidence,
+                    decided=row["decided"],
+                )
+            )
+        return out
+
+    def count_candidates(self, *, state: str = "pending") -> int:
+        """按 state 数候审对的条数（只 COUNT、不构造 brief——供 CLI 判断是否被 `--limit` 截断）。"""
+        if state not in CANDIDATE_STATES:
+            raise CrawlerError(
+                ErrorClass.CONFIG,
+                f"未知的候选状态 {state!r}；可选：{', '.join(CANDIDATE_STATES)}",
+            )
+        sql = "SELECT COUNT(*) AS n FROM paper_relation WHERE kind = ?"
+        params: list[object] = ["candidate_duplicate"]
+        if state == "pending":
+            sql += " AND decided IS NULL"
+        elif state != "all":
+            sql += " AND decided = ?"
+            params.append(state)
+        return int(self.db.query(sql, params)[0]["n"])
+
+    def _paper_brief(self, paper_id: str) -> PaperBrief:
+        """paper 行 + identifier 列表 + asset 计数的只读投影（外键保证 paper 行存在）。"""
+        row = self.db.query(
+            "SELECT id, title, venue_id, year FROM paper WHERE id = ?", (paper_id,)
+        )[0]
+        identifiers = self.db.query(
+            "SELECT scheme, value FROM identifier WHERE paper_id = ? ORDER BY scheme, value",
+            (paper_id,),
+        )
+        assets = self.db.query("SELECT COUNT(*) AS n FROM asset WHERE paper_id = ?", (paper_id,))[0]
+        return PaperBrief(
+            paper_id=str(row["id"]),
+            title=str(row["title"]),
+            venue_id=row["venue_id"],
+            year=row["year"],
+            identifiers=tuple(f"{r['scheme']}:{r['value']}" for r in identifiers),
+            asset_count=int(assets["n"]),
+        )
+
+    def decide_candidate(self, paper_a: str, paper_b: str, decision: str) -> DecisionOutcome:
+        """人工裁决一对候审（语义 2）：`merge` 落 `same_as(decided='merged')`；`reject` 只置态。
+
+        无序对：两个 paper_id 的给出顺序不影响结果（merge.py 裁决 5）。幂等：重复同一裁决
+        不改库、`changed=False`。**可改判**：`merge` 后再 `reject` 会把 same_as 边降级
+        （聚合撤销、行留痕），反之亦然——`decided` 是人的判断，不是一次性写死的墓碑。
+        两 paper 之间没有 `candidate_duplicate` 边（含只有 `preprint_of` 的情形）→
+        `CrawlerError(CONFIG)` 响亮拒绝：绝不凭空造 same_as，人工合并也必须有候审证据在先。
+        """
+        if decision not in DEDUPE_DECISIONS:
+            raise CrawlerError(
+                ErrorClass.CONFIG,
+                f"未知裁决 {decision!r}；可选：{', '.join(DEDUPE_DECISIONS)}",
+            )
+        decided = DEDUPE_DECISIONS[decision]
+        low, high = self._normalize_pair(paper_a, paper_b)
+        with self.db.tx() as conn:
+            self._require_paper(conn, low)
+            self._require_paper(conn, high)
+            row = self._find_relation(conn, low, high, "candidate_duplicate")
+            if row is None:
+                raise CrawlerError(
+                    ErrorClass.CONFIG,
+                    f"{low} 与 {high} 之间没有 candidate_duplicate 边"
+                    "（preprint_of 边不进 dedupe 流程）",
+                )
+            changed = row["decided"] != decided
+            if changed:
+                conn.execute(
+                    "UPDATE paper_relation SET decided = ? "
+                    "WHERE from_paper = ? AND to_paper = ? AND kind = ?",
+                    (decided, row["from_paper"], row["to_paper"], "candidate_duplicate"),
+                )
+            if decision == "merge":
+                changed = self._promote_same_as(conn, low, high, row) or changed
+            else:
+                changed = self._demote_same_as(conn, low, high) or changed
+        log_event(
+            "INFO",
+            f"dedupe decision {decision} for {low} ~ {high} (changed={changed})",
+            paper_a=low,
+            paper_b=high,
+        )
+        return DecisionOutcome(paper_a=low, paper_b=high, decided=decided, changed=changed)
+
+    def revert_candidate(self, paper_a: str, paper_b: str) -> DecisionOutcome:
+        """回滚一对已裁决的候审（AC-7.3）：候审行与 same_as 行的 `decided` 双双置回 NULL。
+
+        聚合视图随之还原（语义 3 的谓词是 `decided='merged'`），paper/identifier/asset
+        三表全程零改动。已是待审态 → `changed=False` 幂等空操作（不报错）；两 paper 之间
+        本就没有候审边 → `CrawlerError(CONFIG)`（多半是 id 敲错，响亮好过静默成功）。
+        """
+        low, high = self._normalize_pair(paper_a, paper_b)
+        with self.db.tx() as conn:
+            self._require_paper(conn, low)
+            self._require_paper(conn, high)
+            row = self._find_relation(conn, low, high, "candidate_duplicate")
+            if row is None:
+                raise CrawlerError(
+                    ErrorClass.CONFIG, f"{low} 与 {high} 之间没有 candidate_duplicate 边可回滚"
+                )
+            changed = row["decided"] is not None
+            if changed:
+                conn.execute(
+                    "UPDATE paper_relation SET decided = NULL "
+                    "WHERE from_paper = ? AND to_paper = ? AND kind = ?",
+                    (row["from_paper"], row["to_paper"], "candidate_duplicate"),
+                )
+            changed = self._demote_same_as(conn, low, high) or changed
+        log_event(
+            "INFO",
+            f"dedupe revert for {low} ~ {high} (changed={changed})",
+            paper_a=low,
+            paper_b=high,
+        )
+        return DecisionOutcome(paper_a=low, paper_b=high, decided=None, changed=changed)
+
+    @staticmethod
+    def _normalize_pair(paper_a: str, paper_b: str) -> tuple[str, str]:
+        """无序对归一为 (小 id, 大 id)；自指对响亮拒绝。"""
+        if paper_a == paper_b:
+            raise CrawlerError(ErrorClass.CONFIG, f"不能把 paper {paper_a} 与自身裁决为重复")
+        return (paper_a, paper_b) if paper_a < paper_b else (paper_b, paper_a)
+
+    @staticmethod
+    def _require_paper(conn: sqlite3.Connection, paper_id: str) -> None:
+        row = conn.execute("SELECT 1 FROM paper WHERE id = ?", (paper_id,)).fetchone()
+        if row is None:
+            raise CrawlerError(ErrorClass.CONFIG, f"未知 paper id: {paper_id}")
+
+    @staticmethod
+    def _find_relation(
+        conn: sqlite3.Connection, paper_a: str, paper_b: str, kind: str
+    ) -> sqlite3.Row | None:
+        """按**无序对**查一条关系边（两个方向都查——`(from,to,kind)` 主键不认方向，
+        而 `candidate_duplicate` 的落行方向是建边时刻的快照，见 `_upsert_candidate`）。"""
+        row: sqlite3.Row | None = conn.execute(
+            "SELECT from_paper, to_paper, confidence, evidence_json, decided FROM paper_relation "
+            "WHERE kind = ? AND ((from_paper = ? AND to_paper = ?) "
+            "                 OR (from_paper = ? AND to_paper = ?))",
+            (kind, paper_a, paper_b, paper_b, paper_a),
+        ).fetchone()
+        return row
+
+    def _promote_same_as(
+        self, conn: sqlite3.Connection, low: str, high: str, candidate: sqlite3.Row
+    ) -> bool:
+        """建/复活 `same_as(decided='merged')`；返回是否改变了库态（幂等重放 → False）。"""
+        existing = self._find_relation(conn, low, high, "same_as")
+        if existing is not None and existing["decided"] == "merged":
+            return False
+        evidence = json.dumps(
+            {
+                "reason": _SAME_AS_MERGE_REASON,
+                "candidate_reason": _evidence_reason(candidate["evidence_json"]),
+                "candidate_confidence": candidate["confidence"],
+                "decided_at": utcnow_iso(),
+            },
+            ensure_ascii=False,
+            sort_keys=True,
+        )
+        if existing is None:
+            conn.execute(
+                "INSERT INTO paper_relation "
+                "(from_paper, to_paper, kind, confidence, evidence_json, decided) "
+                "VALUES (?,?,?,?,?,?)",
+                (low, high, "same_as", _SAME_AS_CONFIDENCE, evidence, "merged"),
+            )
+            return True
+        conn.execute(
+            "UPDATE paper_relation SET confidence = ?, evidence_json = ?, decided = ? "
+            "WHERE from_paper = ? AND to_paper = ? AND kind = ?",
+            (
+                _SAME_AS_CONFIDENCE,
+                evidence,
+                "merged",
+                existing["from_paper"],
+                existing["to_paper"],
+                "same_as",
+            ),
+        )
+        return True
+
+    def _demote_same_as(self, conn: sqlite3.Connection, low: str, high: str) -> bool:
+        """把该对的 same_as 边降级为 `decided=NULL`（聚合撤销）；**绝不删行**，只留痕。"""
+        existing = self._find_relation(conn, low, high, "same_as")
+        if existing is None or existing["decided"] is None:
+            return False
+        evidence = _evidence_dict(existing["evidence_json"])
+        evidence["reverted_at"] = utcnow_iso()
+        conn.execute(
+            "UPDATE paper_relation SET evidence_json = ?, decided = NULL "
+            "WHERE from_paper = ? AND to_paper = ? AND kind = ?",
+            (
+                json.dumps(evidence, ensure_ascii=False, sort_keys=True),
+                existing["from_paper"],
+                existing["to_paper"],
+                "same_as",
+            ),
+        )
+        return True
+
+    # -- same_as 聚合视图（T13 冻结件；消费方 T14/T16） -------------------------
+
+    def merged_groups(self) -> list[MergedGroup]:
+        """全部合并类（语义 3/4）：`same_as(decided='merged')` 的无向连通分量，按主行排序。"""
+        return self._merged_index()[0]
+
+    def merged_group(self, paper_id: str) -> MergedGroup | None:
+        """该 paper 所属的合并类；未参与任何已裁决合并 → None（单元素不成类）。"""
+        return next((g for g in self.merged_groups() if paper_id in g.members), None)
+
+    def merged_view(self, paper_id: str) -> MergedView | None:
+        """合并类的归并视图（语义 5）：主行 + 全成员 + identifier 并集 + asset 全集计数。"""
+        group = self.merged_group(paper_id)
+        return None if group is None else self._view_of(group)
+
+    def merged_views(self) -> list[MergedView]:
+        """全部合并类的归并视图（一次索引、逐类投影；T16 报告与 `dedupe groups` 的入口）。"""
+        return [self._view_of(group) for group in self.merged_groups()]
+
+    def _view_of(self, group: MergedGroup) -> MergedView:
+        members = tuple(self._paper_brief(pid) for pid in group.members)
+        return MergedView(
+            canonical=next(m for m in members if m.paper_id == group.canonical),
+            members=members,
+            identifiers=tuple(sorted({i for m in members for i in m.identifiers})),
+            asset_count=sum(m.asset_count for m in members),
+        )
+
+    def fold_merged(self, rows: Sequence[sqlite3.Row]) -> list[sqlite3.Row]:
+        """**结果集内**按合并类折叠 paper 行（语义 6）：同类只留一行代表，幸存行不重排。
+
+        代表 = 结果集内该类成员按 `(-identifier 数, paper_id)` 的最小者——类主行在集内时
+        它自然就是代表；主行不在集内（如属于另一 venue/issue）时退化为集内最佳者，
+        **绝不整类丢弃**。无任何已裁决合并时是恒等函数（零开销路径）。
+        """
+        groups, counts = self._merged_index()
+        if not groups:
+            return list(rows)
+        group_of = {pid: index for index, group in enumerate(groups) for pid in group.members}
+        present: dict[int, list[str]] = {}
+        for row in rows:
+            index = group_of.get(str(row["id"]))
+            if index is not None:
+                present.setdefault(index, []).append(str(row["id"]))
+        representative = {
+            index: min(members, key=lambda pid: (-counts.get(pid, 0), pid))
+            for index, members in present.items()
+        }
+        out: list[sqlite3.Row] = []
+        for row in rows:
+            paper_id = str(row["id"])
+            index = group_of.get(paper_id)
+            if index is None or representative[index] == paper_id:
+                out.append(row)
+        return out
+
+    def _merged_index(self) -> tuple[list[MergedGroup], dict[str, int]]:
+        """合并类索引 + 类成员的 identifier 计数（主行判据的输入），一次算好两处复用。"""
+        edges = self.db.query(
+            "SELECT from_paper, to_paper FROM paper_relation WHERE kind = ? AND decided = ?",
+            ("same_as", "merged"),
+        )
+        if not edges:
+            return [], {}
+
+        parent: dict[str, str] = {}
+
+        def find(node: str) -> str:
+            """并查集查根（**不做路径压缩**：合并类是人工裁决尺度的几个元素，链长天然极短，
+            压缩只会换来一段几乎跑不到的分支；用 union-by-min 保证根的选取确定即可）。"""
+            parent.setdefault(node, node)
+            while parent[node] != node:
+                node = parent[node]
+            return node
+
+        for edge in edges:
+            root_a, root_b = find(str(edge["from_paper"])), find(str(edge["to_paper"]))
+            if root_a != root_b:
+                parent[max(root_a, root_b)] = min(root_a, root_b)
+
+        components: dict[str, list[str]] = {}
+        for node in list(parent):
+            components.setdefault(find(node), []).append(node)
+        counts = self._identifier_counts(sorted(parent))
+        groups = [
+            MergedGroup(
+                canonical=min(members, key=lambda pid: (-counts.get(pid, 0), pid)),
+                members=tuple(sorted(members)),
+            )
+            for members in components.values()
+        ]
+        groups.sort(key=lambda group: group.canonical)
+        return groups, counts
+
+    def _identifier_counts(self, paper_ids: Sequence[str]) -> dict[str, int]:
+        """逐 paper 的 identifier 条数（分块 IN 查询，避开 SQLite 变量数上限）。"""
+        counts: dict[str, int] = {}
+        for start in range(0, len(paper_ids), _SQL_PARAM_CHUNK):
+            chunk = list(paper_ids[start : start + _SQL_PARAM_CHUNK])
+            placeholders = ",".join("?" * len(chunk))
+            rows = self.db.query(
+                "SELECT paper_id, COUNT(*) AS n FROM identifier "
+                f"WHERE paper_id IN ({placeholders}) GROUP BY paper_id",
+                chunk,
+            )
+            for row in rows:
+                counts[str(row["paper_id"])] = int(row["n"])
+        return counts
+
+    def list_papers(
+        self, venue_id: str, issue_id: str | None = None, *, aggregate: bool = False
+    ) -> list[sqlite3.Row]:
+        """列出某 venue 的 paper；给定 issue_id 时限定该期内（经 paper_issue_link）。按标题排序。
+
+        `aggregate=True` 时对结果集施加 `same_as(decided='merged')` 折叠（`fold_merged`，
+        T13 聚合语义 6）。**默认 False**：pull 级联（`runner._select_papers`）依赖本方法
+        取全部行派生 resolve/fetch 任务，折叠会让被合并的一侧永远拿不到资产——聚合是
+        显示层语义，绝不作为数据过滤器接进流水线。
+        """
         if issue_id is not None:
-            return self.db.query(
+            rows = self.db.query(
                 "SELECT p.* FROM paper p "
                 "JOIN paper_issue_link l ON p.id = l.paper_id "
                 "WHERE p.venue_id = ? AND l.issue_id = ? "
                 "ORDER BY p.title, p.id",
                 (venue_id, issue_id),
             )
-        return self.db.query(
-            "SELECT * FROM paper WHERE venue_id = ? ORDER BY title, id", (venue_id,)
-        )
+        else:
+            rows = self.db.query(
+                "SELECT * FROM paper WHERE venue_id = ? ORDER BY title, id", (venue_id,)
+            )
+        return self.fold_merged(rows) if aggregate else rows
 
     def set_paper_state(self, paper_id: str, ingest_state: str) -> None:
         """更新 paper.ingest_state（metadata_only|resolved|fetched|extracted）。"""

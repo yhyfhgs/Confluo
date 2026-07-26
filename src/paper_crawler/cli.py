@@ -99,6 +99,7 @@ from paper_crawler.canary import (
     run_canary,
 )
 from paper_crawler.config import Config, ConfigLayer, describe_config
+from paper_crawler.dedupe_cli import dedupe_app
 from paper_crawler.errors import CrawlerError, ErrorClass, IllegalTransition
 from paper_crawler.http import HttpClient
 from paper_crawler.ids import normalize_doi
@@ -494,6 +495,9 @@ app.add_typer(auth_app, name="auth")
 # E-2（检查单 #7 / D-030 裁决点④）：cooldown 子命令组（status/clear）——实现与纯逻辑
 # 在 `pipeline/cooldown_cli.py` + `pipeline/cooldown.py`，此处只挂载（同 auth 分工）。
 app.add_typer(cooldown_app, name="cooldown")
+# T13（AC-7.3）：dedupe 子命令组（review/decide/revert/groups）——呈现在
+# `dedupe_cli.py`、语义与事务在 `storage/repo.py`，此处只挂载（同 auth/cooldown 分工）。
+app.add_typer(dedupe_app, name="dedupe")
 
 
 # -- venues -------------------------------------------------------------------
@@ -570,12 +574,25 @@ def list_cmd(
     volume: Annotated[str | None, typer.Option("--volume")] = None,
     issue: Annotated[str | None, typer.Option("--issue")] = None,
     year: Annotated[int | None, typer.Option("--year")] = None,
+    aggregate: Annotated[
+        bool,
+        typer.Option(
+            "--aggregate/--no-aggregate",
+            help="按人工裁决的 same_as(merged) 折叠重复行显示（默认开）",
+        ),
+    ] = True,
     home: HomeOpt = None,
     verbose: VerboseOpt = False,
 ) -> None:
     """清单预览：discover+enumerate 圈定范围内的 papers，不下载资产（design/05 §6）。
 
     实现选择见模块 docstring 第 2 条。
+
+    **聚合显示（T13/AC-7.3）**：默认按 `same_as(decided='merged')` 折叠——即 design/06 §3
+    的"查询层聚合"（人工 `dedupe decide … merge` 过的两行只显示一行代表，另一行仍在库里、
+    未删除，`crawler dedupe groups` 可逐类查看，`crawler dedupe revert` 可回滚）。折叠只
+    发生在**本命令的展示层**：`pull` 级联仍对全部行派生 resolve/fetch 任务（`Repo.list_papers`
+    的 `aggregate` 默认 False），故"折叠"不会让任何一侧漏下载。`--no-aggregate` 关闭。
     """
     if volume is not None and year is not None:
         _usage_error("--volume 与 --year 不能同时指定")
@@ -594,7 +611,17 @@ def list_cmd(
             reports.append(runner.run_single_stage("enumerate", venue, {"issue": str(row["id"])}))
 
         papers = _papers_in_scope(env.ctx.repo, venue, issues)
-        _print_paper_table(papers)
+        # 折叠点必须与最终展示的结果集同一层（T13 聚合语义 6："结果集内"折叠）：此处在
+        # **跨 issue 汇总之后**折，而不是让 `_papers_in_scope` 改走 `list_papers(aggregate=True)`
+        # 逐 issue 折——同一著作的两行若分属不同 issue，逐 issue 折时各自都是"类内唯一在场
+        # 者"、谁也折不掉，汇总后又双双出现。
+        shown = env.ctx.repo.fold_merged(papers) if aggregate else papers
+        _print_paper_table(shown)
+        if len(shown) < len(papers):
+            typer.echo(
+                f"（已按 same_as(merged) 折叠 {len(papers) - len(shown)} 行重复显示；"
+                "行仍在库中，`crawler dedupe groups` 查看、`--no-aggregate` 展开）"
+            )
         totals = _fold_reports(reports)
         typer.echo(
             f"成功 {totals.succeeded} 失败 {totals.failed} "

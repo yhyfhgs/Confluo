@@ -2,7 +2,7 @@
 title: 术语表（Glossary）
 status: review
 owner: fable5
-updated: 2026-07-26
+updated: 2026-07-27
 ---
 
 # 术语表
@@ -25,6 +25,8 @@ updated: 2026-07-26
 | **Fulltext** | extract 阶段产出的全文文本/结构化产物指针（1─1 于 paper） |
 | **preprint_of** | 预印本→刊发版的关系边；两版**保留双条 paper 双份全文**，不合并（D-007） |
 | **candidate_duplicate** | 弱信号（标题+作者模糊匹配）疑似同文关系，**只进人工候审队列，绝不自动合并** |
+| **same_as** | 人工 `dedupe decide … merge` 后落的"确认同一著作"关系边（`decided='merged'`）；两 paper 行**物理保留**，只在查询层聚合显示，`dedupe revert` 可完全回滚（[design/06 §3](design/06-data-model.md)，T13） |
+| **合并类 / 主行（canonical）** | `same_as(decided='merged')` 边的无向连通分量＝一篇著作的全部行（合并类）；类内 `(-identifier 数, paper_id)` 最小者为**主行**——聚合显示时的代表行，是当前库态的函数（补进 identifier 可能易主，故非稳定标识符；实现与权威说明见 `storage/repo.py` 的聚合语义注释块） |
 | **paper_count_claimed** | 源头宣称的每期篇数，用于枚举完整性对账（[design/08 §6](design/08-venue-tracking.md)） |
 
 ## 2. 插件与路由（详见 [design/02](design/02-plugin-framework.md)）
