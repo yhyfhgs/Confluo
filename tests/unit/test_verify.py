@@ -378,6 +378,32 @@ def test_verify_store_detects_si_orphan_file_at_file_level_not_directory_level(
     ]
 
 
+# -- _optional_text（T7/T14 合并顺序兼容的读列 helper）---------------------------
+#
+# T7（真实 extract 落地，含 0004 迁移）已合并 main——`Database.migrate()` 产出的库
+# 现在恒含五列，`tests/helpers/fulltext_schema.py::ensure_fulltext_asset_columns`
+# 对这些库退化为空操作（列已存在，PRAGMA 探测后跳过）。但 `_optional_text` 的"列
+# 缺席"分支仍是有意义的防御性代码——`verify.py` 模块 docstring 承诺的"T7/T14 任一
+# 合并顺序均可正确运行"不应随 T7 已落地而失去验证，故直接构造一张真不含该列的表
+# 单测这一分支（同 `cli_module._pdf_layout_scope` 直调私有函数的既有先例）。
+
+
+def test_optional_text_returns_none_when_column_truly_absent() -> None:
+    """列在表结构中确实不存在（而非存在但为 NULL）时返回 None（不抛 KeyError）。"""
+    import sqlite3
+
+    from paper_crawler import verify as verify_module
+
+    conn = sqlite3.connect(":memory:")
+    conn.row_factory = sqlite3.Row
+    conn.execute("CREATE TABLE t (paper_id TEXT)")
+    conn.execute("INSERT INTO t (paper_id) VALUES ('p1')")
+    row = conn.execute("SELECT * FROM t").fetchone()
+    conn.close()
+
+    assert verify_module._optional_text(row, "asset_id") is None
+
+
 # -- fulltext（design/12 §9.2 T14 扩展）-------------------------------------------
 
 
