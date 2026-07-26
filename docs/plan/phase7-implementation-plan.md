@@ -37,7 +37,7 @@ candidate_duplicate 审核 CLI、preprint↔published 关联报告;DoD=AC-7.x+�
 | 冻结件 | 内容 | 产出卡 | 消费方 |
 |---|---|---|---|
 | D-033 extract 语义 | `TextExtractor` Protocol、stage 5 幂等键 paper 级→asset 级、`fulltext.text_path` 落盘契约、GROBID 开/关降级链 | T1 | T7/T12/T14/T19 |
-| D-034 FTS5 决策 | title+abstract 索引范围、`0004_*.sql` 迁移形态、rebuild 策略、D-017 修订(PG 路径关系) | T2 | T12 |
+| D-034 FTS5 决策 | title+abstract 索引范围、`0005_*.sql` 迁移形态(T7 先行占 0004,先合者取小号)、rebuild 策略、D-017 修订(PG 路径关系) | T2 | T12 |
 | D-035 repec 接入 | `SOURCE_PRIORITY` 扩位(D-021 修订)、`_ENRICH_SOURCES` 接入形态、`state/repec/` bulk 快照契约、DOI↔handle 映射边界(仅 NBER) | T2 | T8 |
 | `browserfetch.BrowserFetchHandle` | Protocol(goto/download_via/close)+`fetch_one` 纯函数签名+config 4 槽 | T6 | T11/T19 |
 | 参数化谓词签名 | `PREDICATE_REGISTRY` 构造器形态 + `PlanStep` 参数承载 | T9 | (subs 链全体后续) |
@@ -75,7 +75,7 @@ GROBID 为本地服务,零外网请求;真实 GROBID 冒烟列为 T19 条件项(
 - 产出:decision-log **D-034**、**D-035** 两条 + `docs/design/06-data-model.md` 索引节增补 +
   enrich 设计增补(落 `docs/research/enrich-eval-p6.md` 附录或 design 侧,agent 依 doc-conventions 定)。
 - D-034 必须裁决:FTS5 范围=**title+abstract 二字段**(controller 已裁,正文索引 defer 见 §8);
-  external-content vs contentless 形态;`0004_fts_title.sql` 迁移+rebuild 命令形态;D-017"不用 FTS5"
+  external-content vs contentless 形态;`0005_fts_paper.sql` 迁移+rebuild 命令形态(落地实名;T7 占 0004);D-017"不用 FTS5"
   原则修订(债务承认+PG 迁移路径替代论证)。
 - D-035 必须裁决:`SOURCE_PRIORITY` 6 源闭表(D-021)扩位 repec 的位次;接入形态=`_ENRICH_SOURCES`
   元组扩位(最小改)vs registry role 声明式(controller 预裁:**P7 走元组扩位**,role 声明式挂 P8 评估);
@@ -150,7 +150,7 @@ GROBID 为本地服务,零外网请求;真实 GROBID 冒烟列为 T19 条件项(
 - ssrn 模式 B(`adapters/ssrn/adapter.py`,D-029 案 B 接线)/aea pubs 全文(`_deferred_fulltext_url`
   转真实 AssetPlan)/wiley 页面兜底(TDM 失败路径),三处消费 `BrowserFetchHandle` 接缝;逐处极薄,
   合规注记(AC-0)每处复述。
-**T12【Sonnet/Sonnet 审】FTS5 落地**(依赖 T2/D-034):`0004_*.sql` 迁移 + rebuild + `crawler search`
+**T12【Sonnet/Opus 审】FTS5 落地**(依赖 T2/D-034;迁移器扩展入卡后审查升 Opus):`0005_*.sql` 迁移 + rebuild + `crawler search`
   最小命令(title+abstract)。
 **T13【Opus/Opus 审】dedupe review CLI + 聚合语义**(AC-7.3;依赖无,W2 起防 repo.py 冲突面)
 - `repo.py` 新增 `list_candidates`/`decide_candidate`;`same_as(decided=merged)` 的查询层聚合语义
