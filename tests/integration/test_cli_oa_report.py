@@ -10,6 +10,7 @@ healthcheck` 的既有手法），未打猴补丁的路径仍受 `tests/conftest
 
 from __future__ import annotations
 
+from contextlib import closing
 from pathlib import Path
 
 import pytest
@@ -69,16 +70,15 @@ def _make_home(tmp_path: Path, *, with_venues_dir: bool = False) -> Path:
 
 def _seed_dois(home: Path, dois_by_venue: dict[str, list[str]]) -> None:
     """直接经 `Repo` 往 `home/catalog.sqlite` 插入 paper+doi identifier 行（绕过 pull 流水线）。"""
-    db = Database(home / "catalog.sqlite")
-    db.migrate()
-    repo = Repo(db)
-    for venue_id, dois in dois_by_venue.items():
-        repo.upsert_venue(_venue_spec(venue_id))
-        for index, doi in enumerate(dois):
-            repo.upsert_paper(
-                venue_id, None, PaperStub(title=f"paper {index}", identifiers=(("doi", doi),))
-            )
-    db.close()
+    with closing(Database(home / "catalog.sqlite")) as db:
+        db.migrate()
+        repo = Repo(db)
+        for venue_id, dois in dois_by_venue.items():
+            repo.upsert_venue(_venue_spec(venue_id))
+            for index, doi in enumerate(dois):
+                repo.upsert_paper(
+                    venue_id, None, PaperStub(title=f"paper {index}", identifiers=(("doi", doi),))
+                )
 
 
 def _record(

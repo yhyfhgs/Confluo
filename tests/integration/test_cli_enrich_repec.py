@@ -14,6 +14,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+from contextlib import closing
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
@@ -80,40 +81,36 @@ def _seed_crossref_paper(home: Path, doi: str, *, title: str, abstract: str | No
     """经 `MergeEngine.ingest(source="crossref")` 建行——**带 provenance**，故 repec 的低位
     优先级会被真正行使（对照 `upsert_paper` 的 pull 路径：无 provenance ⇒ 视为最高优先，
     那条路径验不出优先级表本身）。"""
-    db = Database(home / "catalog.sqlite")
-    db.migrate()
-    repo = Repo(db)
-    repo.upsert_venue(_venue_spec())
-    MergeEngine(repo).ingest(
-        PaperStub(title=title, identifiers=(("doi", doi),), abstract=abstract, year=2022),
-        source="crossref",
-    )
-    db.close()
+    with closing(Database(home / "catalog.sqlite")) as db:
+        db.migrate()
+        repo = Repo(db)
+        repo.upsert_venue(_venue_spec())
+        MergeEngine(repo).ingest(
+            PaperStub(title=title, identifiers=(("doi", doi),), abstract=abstract, year=2022),
+            source="crossref",
+        )
 
 
 def _paper_row(home: Path, doi: str) -> dict[str, object]:
-    db = Database(home / "catalog.sqlite")
-    rows = db.query(
-        "SELECT p.id, p.title, p.abstract, p.year, p.meta_json FROM paper p "
-        "JOIN identifier i ON i.paper_id = p.id WHERE i.scheme = 'doi' AND i.value = ?",
-        (doi,),
-    )
-    db.close()
+    with closing(Database(home / "catalog.sqlite")) as db:
+        rows = db.query(
+            "SELECT p.id, p.title, p.abstract, p.year, p.meta_json FROM paper p "
+            "JOIN identifier i ON i.paper_id = p.id WHERE i.scheme = 'doi' AND i.value = ?",
+            (doi,),
+        )
     assert rows, f"no paper row for {doi}"
     return dict(rows[0])
 
 
 def _identifiers(home: Path, paper_id: object) -> set[tuple[str, str]]:
-    db = Database(home / "catalog.sqlite")
-    rows = db.query("SELECT scheme, value FROM identifier WHERE paper_id = ?", (paper_id,))
-    db.close()
+    with closing(Database(home / "catalog.sqlite")) as db:
+        rows = db.query("SELECT scheme, value FROM identifier WHERE paper_id = ?", (paper_id,))
     return {(str(r["scheme"]), str(r["value"])) for r in rows}
 
 
 def _paper_count(home: Path) -> int:
-    db = Database(home / "catalog.sqlite")
-    rows = db.query("SELECT COUNT(*) AS n FROM paper", ())
-    db.close()
+    with closing(Database(home / "catalog.sqlite")) as db:
+        rows = db.query("SELECT COUNT(*) AS n FROM paper", ())
     return int(rows[0]["n"])
 
 

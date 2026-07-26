@@ -201,6 +201,7 @@ def _oa_http() -> HttpClient:
 def _setup(
     tmp_path: Path,
     *,
+    request: pytest.FixtureRequest,
     auth_mock: _AuthGatedMock,
     unpaywall: object | None = None,
     http: HttpClient | None = None,
@@ -235,6 +236,7 @@ def _setup(
         object.__setattr__(config, key, value)  # frozen dataclass 测试注入（Config 无该键时）
     setup_logging(config.log_dir, console_level="CRITICAL")
     db = Database(config.db_path)
+    request.addfinalizer(db.close)  # 资源纪律（post-phase5-audit §3[S4]）：测试结束必关连接
     db.migrate()
     repo = Repo(db)
     queue = TaskQueue(db)
@@ -317,7 +319,9 @@ def _ok_provider() -> _FakeProvider:
 # -- §8.1/8.5 no_entitlement 独立终态 → OA-fallback direct 取回落盘 --------------
 
 
-def test_no_entitlement_triggers_oa_fallback_direct_fetch(tmp_path: Path) -> None:
+def test_no_entitlement_triggers_oa_fallback_direct_fetch(
+    tmp_path: Path, request: pytest.FixtureRequest
+) -> None:
     """no_entitlement（不计 failed）→ 派生 oa_fallback → unpaywall 规格化 OA pdf plan →
     `_fetch_oa_direct` 无凭证取回落盘 OA asset（AC-4.3 主方向 / 检查单 #12）。"""
     auth_mock = _AuthGatedMock(fetch_mode="no_entitlement")
@@ -332,7 +336,9 @@ def test_no_entitlement_triggers_oa_fallback_direct_fetch(tmp_path: Path) -> Non
             )
         ]
     )
-    env = _setup(tmp_path, auth_mock=auth_mock, unpaywall=ua, http=_oa_http(), n_papers=1)
+    env = _setup(
+        tmp_path, request=request, auth_mock=auth_mock, unpaywall=ua, http=_oa_http(), n_papers=1
+    )
     _enqueue_fetches(env)
     report = _runner(env, provider=_ok_provider(), clock=_OK_CLOCK()).drain()
 
@@ -349,11 +355,15 @@ def test_no_entitlement_triggers_oa_fallback_direct_fetch(tmp_path: Path) -> Non
     assert len(env.repo.list_assets(venue_id=_VENUE, state="no_entitlement")) == 1
 
 
-def test_no_entitlement_no_oa_link_no_download(tmp_path: Path) -> None:
+def test_no_entitlement_no_oa_link_no_download(
+    tmp_path: Path, request: pytest.FixtureRequest
+) -> None:
     """unpaywall 无 PDF 直链（resolve 空）→ oa_fallback done、无副本落盘（landing-only 不下载）。"""
     auth_mock = _AuthGatedMock(fetch_mode="no_entitlement")
     ua = _FakeUnpaywall([])  # 无 OA 直链
-    env = _setup(tmp_path, auth_mock=auth_mock, unpaywall=ua, http=_oa_http(), n_papers=1)
+    env = _setup(
+        tmp_path, request=request, auth_mock=auth_mock, unpaywall=ua, http=_oa_http(), n_papers=1
+    )
     _enqueue_fetches(env)
     report = _runner(env, provider=_ok_provider(), clock=_OK_CLOCK()).drain()
 
@@ -365,10 +375,12 @@ def test_no_entitlement_no_oa_link_no_download(tmp_path: Path) -> None:
 # -- §8.2 健康门：EXPIRED 检出 → 整批 BLOCKED，无 401 轰炸 ---------------------
 
 
-def test_first_fetch_auth_expired_blocks_batch_no_bombardment(tmp_path: Path) -> None:
+def test_first_fetch_auth_expired_blocks_batch_no_bombardment(
+    tmp_path: Path, request: pytest.FixtureRequest
+) -> None:
     """auth_mock fetch 首发 401 → 整批 BLOCKED(auth) 连带；handler 恰 1 次 401（AC-4.2 双源）。"""
     auth_mock = _AuthGatedMock(fetch_mode="auth_expired")
-    env = _setup(tmp_path, auth_mock=auth_mock, n_papers=8)
+    env = _setup(tmp_path, request=request, auth_mock=auth_mock, n_papers=8)
     _enqueue_fetches(env)
     report = _runner(env, provider=_ok_provider(), clock=_OK_CLOCK()).drain()
 
@@ -378,11 +390,19 @@ def test_first_fetch_auth_expired_blocks_batch_no_bombardment(tmp_path: Path) ->
     assert auth_mock.auth_fail_calls == 1  # ≤1，无 401 轰炸
 
 
-def test_health_gate_detects_expired_within_interval(tmp_path: Path) -> None:
+def test_health_gate_detects_expired_within_interval(
+    tmp_path: Path, request: pytest.FixtureRequest
+) -> None:
     """周期性健康门（每 N 篇）检出 EXPIRED（refresh→None）→ 整批 BLOCKED，fetch 未撞 401。"""
     auth_mock = _AuthGatedMock(fetch_mode="ok")
     provider = _FakeProvider(health_seq=[HealthStatus.EXPIRED], refresh_returns=None)
-    env = _setup(tmp_path, auth_mock=auth_mock, n_papers=10, overrides={"auth_health_interval": 2})
+    env = _setup(
+        tmp_path,
+        request=request,
+        auth_mock=auth_mock,
+        n_papers=10,
+        overrides={"auth_health_interval": 2},
+    )
     _enqueue_fetches(env)
     report = _runner(env, provider=provider, clock=_OK_CLOCK()).drain()
 
@@ -394,7 +414,9 @@ def test_health_gate_detects_expired_within_interval(tmp_path: Path) -> None:
     assert auth_mock.auth_fail_calls == 0
 
 
-def test_health_gate_aging_triggers_check_and_refresh_continues(tmp_path: Path) -> None:
+def test_health_gate_aging_triggers_check_and_refresh_continues(
+    tmp_path: Path, request: pytest.FixtureRequest
+) -> None:
     """老化门（max_age=0 → 每篇 health_check）：EXPIRED→refresh 成功续期 → 继续取回。"""
     auth_mock = _AuthGatedMock(fetch_mode="ok")
     new_session = SessionHandle(
@@ -408,6 +430,7 @@ def test_health_gate_aging_triggers_check_and_refresh_continues(tmp_path: Path) 
     )
     env = _setup(
         tmp_path,
+        request=request,
         auth_mock=auth_mock,
         n_papers=2,
         overrides={"auth_health_max_age_s": 0.0, "auth_health_interval": 999},
@@ -424,12 +447,13 @@ def test_health_gate_aging_triggers_check_and_refresh_continues(tmp_path: Path) 
 # -- §8.3 日配额：达 cap → BLOCKED(config) ------------------------------------
 
 
-def test_daily_quota_reached_blocks(tmp_path: Path) -> None:
+def test_daily_quota_reached_blocks(tmp_path: Path, request: pytest.FixtureRequest) -> None:
     """auth 平台域当日 fetch 尝试篇次达 cap → BLOCKED(config)，fetch handler 不被调用（AC-4.4）。"""
     auth_mock = _AuthGatedMock(fetch_mode="ok")
     # cap 覆盖为 3（机制等价默认 200，测试快）；预置 3 行 fetch_log 占满当日配额
     env = _setup(
         tmp_path,
+        request=request,
         auth_mock=auth_mock,
         n_papers=2,
         seed_fetch_logs=3,
@@ -450,12 +474,15 @@ def test_default_daily_cap_is_200() -> None:
     assert _DEFAULT_AUTH_DAILY_CAP == 200
 
 
-def test_runner_reads_real_config_field_not_getattr_default(tmp_path: Path) -> None:
+def test_runner_reads_real_config_field_not_getattr_default(
+    tmp_path: Path, request: pytest.FixtureRequest
+) -> None:
     """对照测试（controller 令）：Config 有真实字段（config.toml [auth].daily_cap=3）时，runner
     读到真实值 3 而非 getattr 兜底默认 200——达 3 即 BLOCKED（若走默认 200 则不会阻塞）。"""
     auth_mock = _AuthGatedMock(fetch_mode="ok")
     env = _setup(
         tmp_path,
+        request=request,
         auth_mock=auth_mock,
         n_papers=1,
         seed_fetch_logs=3,
@@ -472,7 +499,9 @@ def test_runner_reads_real_config_field_not_getattr_default(tmp_path: Path) -> N
 # -- §8.4 challenge → BLOCKED(challenge) + 平台冷却 24h ------------------------
 
 
-def test_challenge_blocks_and_writes_cooldown(tmp_path: Path) -> None:
+def test_challenge_blocks_and_writes_cooldown(
+    tmp_path: Path, request: pytest.FixtureRequest
+) -> None:
     """fetch 命中挑战 → BLOCKED(challenge) + 域冷却落盘；同批后续经冷却门连带 BLOCKED。
 
     **键粒度回归锁定（E-1，D-030 裁决③）**：落盘文件名此前是 `<adapter_id>.json`，
@@ -480,7 +509,7 @@ def test_challenge_blocks_and_writes_cooldown(tmp_path: Path) -> None:
     旧键仍被**读**到（向前兼容），见 `test_challenge_cooldown_persists_across_runs`。
     """
     auth_mock = _AuthGatedMock(fetch_mode="challenge")
-    env = _setup(tmp_path, auth_mock=auth_mock, n_papers=3)
+    env = _setup(tmp_path, request=request, auth_mock=auth_mock, n_papers=3)
     _enqueue_fetches(env)
     report = _runner(env, provider=_ok_provider(), clock=_OK_CLOCK()).drain()
 
@@ -492,14 +521,16 @@ def test_challenge_blocks_and_writes_cooldown(tmp_path: Path) -> None:
     assert any("challenge" in str(r["blocked_reason"]) for r in reasons)
 
 
-def test_challenge_cooldown_persists_across_runs(tmp_path: Path) -> None:
+def test_challenge_cooldown_persists_across_runs(
+    tmp_path: Path, request: pytest.FixtureRequest
+) -> None:
     """冷却期内新一次运行（新 runner 进程语义）：从 config-home JSON 加载冷却 → 该平台 BLOCKED。
 
     预置的是**旧格式** `<adapter_id>.json` 键——E-1 后读时两键都查，故上一版本落盘的
     冷却文件仍然生效（向前兼容，无迁移脚本）。
     """
     auth_mock = _AuthGatedMock(fetch_mode="ok")  # 若门放行本会成功——但冷却应拦截
-    env = _setup(tmp_path, auth_mock=auth_mock, n_papers=1)
+    env = _setup(tmp_path, request=request, auth_mock=auth_mock, n_papers=1)
     # 预置冷却文件（未来 12h）——模拟前次运行已进入冷却
     cooldown_dir = env.config.home / "state" / "cooldown"
     cooldown_dir.mkdir(parents=True, exist_ok=True)
@@ -516,10 +547,12 @@ def test_challenge_cooldown_persists_across_runs(tmp_path: Path) -> None:
 # -- §8.6 工作时段窗：窗外延迟不失败 / 窗内放行 --------------------------------
 
 
-def test_work_hours_window_outside_blocks_batch(tmp_path: Path) -> None:
+def test_work_hours_window_outside_blocks_batch(
+    tmp_path: Path, request: pytest.FixtureRequest
+) -> None:
     """本地 02:00 在窗（8-23）外 → auth_gated 批延迟（BLOCKED，非失败），fetch 不被调用。"""
     auth_mock = _AuthGatedMock(fetch_mode="ok")
-    env = _setup(tmp_path, auth_mock=auth_mock, n_papers=3)
+    env = _setup(tmp_path, request=request, auth_mock=auth_mock, n_papers=3)
     _enqueue_fetches(env)
     clock = _MutableClock(datetime(2026, 7, 23, 2, 0, 0))  # 02:00 窗外
     report = _runner(env, provider=_ok_provider(), clock=clock).drain()
@@ -532,10 +565,10 @@ def test_work_hours_window_outside_blocks_batch(tmp_path: Path) -> None:
     assert env.queue.resume(all_blocked=True) == 3
 
 
-def test_work_hours_window_inside_proceeds(tmp_path: Path) -> None:
+def test_work_hours_window_inside_proceeds(tmp_path: Path, request: pytest.FixtureRequest) -> None:
     """本地 10:00 在窗内 → 正常放行取回（窗仅约束 auth_gated，不误拦窗内批）。"""
     auth_mock = _AuthGatedMock(fetch_mode="ok")
-    env = _setup(tmp_path, auth_mock=auth_mock, n_papers=2)
+    env = _setup(tmp_path, request=request, auth_mock=auth_mock, n_papers=2)
     _enqueue_fetches(env)
     report = _runner(
         env, provider=_ok_provider(), clock=_MutableClock(datetime(2026, 7, 23, 10, 0, 0))
@@ -544,10 +577,16 @@ def test_work_hours_window_inside_proceeds(tmp_path: Path) -> None:
     assert report.succeeded == 2 and report.blocked == 0
 
 
-def test_work_hours_window_disabled_all_day(tmp_path: Path) -> None:
+def test_work_hours_window_disabled_all_day(tmp_path: Path, request: pytest.FixtureRequest) -> None:
     """窗配置为空串 = 关闭 → 全天放行（即便时刻在旧窗外）。"""
     auth_mock = _AuthGatedMock(fetch_mode="ok")
-    env = _setup(tmp_path, auth_mock=auth_mock, n_papers=1, overrides={"auth_work_hours": ""})
+    env = _setup(
+        tmp_path,
+        request=request,
+        auth_mock=auth_mock,
+        n_papers=1,
+        overrides={"auth_work_hours": ""},
+    )
     _enqueue_fetches(env)
     report = _runner(
         env, provider=_ok_provider(), clock=_MutableClock(datetime(2026, 7, 23, 3, 0, 0))
@@ -559,10 +598,16 @@ def test_work_hours_window_disabled_all_day(tmp_path: Path) -> None:
 # -- 回归：oa_fallback 默认关（直建 StageContext）时 no_entitlement 无兜底任务 ----
 
 
-def test_oa_fallback_disabled_no_derivation(tmp_path: Path) -> None:
+def test_oa_fallback_disabled_no_derivation(tmp_path: Path, request: pytest.FixtureRequest) -> None:
     """StageContext.oa_fallback=False（默认）→ no_entitlement 独立终态但**不派生** oa_fallback。"""
     auth_mock = _AuthGatedMock(fetch_mode="no_entitlement")
-    env = _setup(tmp_path, auth_mock=auth_mock, unpaywall=_FakeUnpaywall([]), http=_oa_http())
+    env = _setup(
+        tmp_path,
+        request=request,
+        auth_mock=auth_mock,
+        unpaywall=_FakeUnpaywall([]),
+        http=_oa_http(),
+    )
     object.__setattr__(env.ctx, "oa_fallback", False)  # 关闭兜底
     _enqueue_fetches(env)
     report = _runner(env, provider=_ok_provider(), clock=_OK_CLOCK()).drain()
@@ -575,10 +620,12 @@ def test_oa_fallback_disabled_no_derivation(tmp_path: Path) -> None:
 # -- 边界/降级路径覆盖 ---------------------------------------------------------
 
 
-def test_ensure_session_unavailable_blocks_batch(tmp_path: Path) -> None:
+def test_ensure_session_unavailable_blocks_batch(
+    tmp_path: Path, request: pytest.FixtureRequest
+) -> None:
     """批入口 ensure_session 抛 AuthRequired（无 session 非交互）→ 整批 BLOCKED(auth)，未 fetch。"""
     auth_mock = _AuthGatedMock(fetch_mode="ok")
-    env = _setup(tmp_path, auth_mock=auth_mock, n_papers=3)
+    env = _setup(tmp_path, request=request, auth_mock=auth_mock, n_papers=3)
     _enqueue_fetches(env)
     runner = PipelineRunner(
         env.ctx,
@@ -591,12 +638,18 @@ def test_ensure_session_unavailable_blocks_batch(tmp_path: Path) -> None:
     assert auth_mock.fetch_calls == 0
 
 
-def test_health_check_challenged_blocks_and_cooldown(tmp_path: Path) -> None:
+def test_health_check_challenged_blocks_and_cooldown(
+    tmp_path: Path, request: pytest.FixtureRequest
+) -> None:
     """健康门 health_check→CHALLENGED（非 fetch 抛）→ BLOCKED(challenge) + 平台冷却落盘。"""
     auth_mock = _AuthGatedMock(fetch_mode="ok")
     provider = _FakeProvider(health_seq=[HealthStatus.CHALLENGED])
     env = _setup(
-        tmp_path, auth_mock=auth_mock, n_papers=3, overrides={"auth_health_max_age_s": 0.0}
+        tmp_path,
+        request=request,
+        auth_mock=auth_mock,
+        n_papers=3,
+        overrides={"auth_health_max_age_s": 0.0},
     )
     _enqueue_fetches(env)
     report = _runner(env, provider=provider, clock=_OK_CLOCK()).drain()
@@ -606,11 +659,14 @@ def test_health_check_challenged_blocks_and_cooldown(tmp_path: Path) -> None:
     assert (env.config.home / "state" / "cooldown" / f"{_DOMAIN}.json").is_file()
 
 
-def test_no_entitlement_paper_without_doi_no_oa_fallback(tmp_path: Path) -> None:
+def test_no_entitlement_paper_without_doi_no_oa_fallback(
+    tmp_path: Path, request: pytest.FixtureRequest
+) -> None:
     """no_entitlement 但 paper 无 doi → 不派生 oa_fallback（AC-4.3：仅有 DOI 才兜底）。"""
     auth_mock = _AuthGatedMock(fetch_mode="no_entitlement")
     env = _setup(
         tmp_path,
+        request=request,
         auth_mock=auth_mock,
         unpaywall=_FakeUnpaywall([]),
         http=_oa_http(),
@@ -623,10 +679,12 @@ def test_no_entitlement_paper_without_doi_no_oa_fallback(tmp_path: Path) -> None
     assert env.db.query("SELECT id FROM task WHERE kind = 'oa_fallback'") == []
 
 
-def test_oa_fallback_no_unpaywall_adapter_skips(tmp_path: Path) -> None:
+def test_oa_fallback_no_unpaywall_adapter_skips(
+    tmp_path: Path, request: pytest.FixtureRequest
+) -> None:
     """oa_fallback 开启但未装配 unpaywall adapter → `_stage_oa_fallback` skipped（不失败）。"""
     auth_mock = _AuthGatedMock(fetch_mode="no_entitlement")
-    env = _setup(tmp_path, auth_mock=auth_mock, unpaywall=None, http=_oa_http())
+    env = _setup(tmp_path, request=request, auth_mock=auth_mock, unpaywall=None, http=_oa_http())
     _enqueue_fetches(env)
     report = _runner(env, provider=_ok_provider(), clock=_OK_CLOCK()).drain()
 
@@ -635,7 +693,9 @@ def test_oa_fallback_no_unpaywall_adapter_skips(tmp_path: Path) -> None:
     assert env.repo.list_assets(venue_id=_VENUE, state="fetched") == []
 
 
-def test_oa_direct_fetch_no_http_client_skips(tmp_path: Path) -> None:
+def test_oa_direct_fetch_no_http_client_skips(
+    tmp_path: Path, request: pytest.FixtureRequest
+) -> None:
     """OA plan 已产但 StageContext.http 未注入 → `_fetch_oa_direct` skipped（asset 停 planned）。"""
     auth_mock = _AuthGatedMock(fetch_mode="no_entitlement")
     ua = _FakeUnpaywall(
@@ -648,7 +708,7 @@ def test_oa_direct_fetch_no_http_client_skips(tmp_path: Path) -> None:
             )
         ]
     )
-    env = _setup(tmp_path, auth_mock=auth_mock, unpaywall=ua, http=None)  # 无 http
+    env = _setup(tmp_path, request=request, auth_mock=auth_mock, unpaywall=ua, http=None)  # 无 http
     _enqueue_fetches(env)
     report = _runner(env, provider=_ok_provider(), clock=_OK_CLOCK()).drain()
 
@@ -657,7 +717,9 @@ def test_oa_direct_fetch_no_http_client_skips(tmp_path: Path) -> None:
     assert len(env.repo.list_assets(venue_id=_VENUE, state="planned")) == 1  # OA asset 停 planned
 
 
-def test_oa_direct_fetch_non_pdf_fails_integrity(tmp_path: Path) -> None:
+def test_oa_direct_fetch_non_pdf_fails_integrity(
+    tmp_path: Path, request: pytest.FixtureRequest
+) -> None:
     """OA host 返非 %PDF → INTEGRITY（fetch_log 记 error + .part 清理），OA asset 未 fetched。"""
     auth_mock = _AuthGatedMock(fetch_mode="no_entitlement")
     ua = _FakeUnpaywall(
@@ -674,7 +736,7 @@ def test_oa_direct_fetch_non_pdf_fails_integrity(tmp_path: Path) -> None:
         user_agent="pc-test",
         transport=httpx.MockTransport(lambda req: httpx.Response(200, content=b"<html>x</html>")),
     )
-    env = _setup(tmp_path, auth_mock=auth_mock, unpaywall=ua, http=bad_http)
+    env = _setup(tmp_path, request=request, auth_mock=auth_mock, unpaywall=ua, http=bad_http)
     _enqueue_fetches(env)
     report = _runner(env, provider=_ok_provider(), clock=_OK_CLOCK()).drain()
 
@@ -710,7 +772,9 @@ def test_work_hours_ok_boundaries(window: str, hour: int, expected: bool) -> Non
 # -- MAJOR-1：elsevier_sd resolve 阶段 entitlement 预检否 → NE → OA-fallback（AC-4.3 真实载体）--
 
 
-def test_elsevier_resolve_entitlement_false_derives_oa_fallback(tmp_path: Path) -> None:
+def test_elsevier_resolve_entitlement_false_derives_oa_fallback(
+    tmp_path: Path, request: pytest.FixtureRequest
+) -> None:
     """MAJOR-1 / AC-4.3 真实载体（fable 审查必修）：真实 `ElsevierScienceDirectAdapter` 在
     **resolve** 阶段 entitlement 预检 entitled:false → 抛 NE（非 fetch 阶段）→ runner 从
     params["paper"] 派生 oa_fallback → unpaywall OA 副本 direct 落盘。不计 failed（§8.5）。
@@ -753,6 +817,7 @@ def test_elsevier_resolve_entitlement_false_derives_oa_fallback(tmp_path: Path) 
     config = Config.load(home)
     setup_logging(config.log_dir, console_level="CRITICAL")
     db = Database(config.db_path)
+    request.addfinalizer(db.close)  # 资源纪律（post-phase5-audit §3[S4]）：测试结束必关连接
     db.migrate()
     repo = Repo(db)
     queue = TaskQueue(db)
@@ -794,18 +859,19 @@ def test_elsevier_resolve_entitlement_false_derives_oa_fallback(tmp_path: Path) 
     fetched = repo.list_assets(venue_id="els_venue", state="fetched")
     assert len(fetched) == 1 and fetched[0]["source_adapter"] == "unpaywall"
     assert Path(str(fetched[0]["file_path"])).is_file()  # OA 副本 %PDF 落盘
-    db.close()
 
 
 # -- MAJOR-2：INTEGRITY（伪装 PDF）→ 强制下个 fetch 健康门（§8.2 文件验证器联动）--------------
 
 
-def test_integrity_forces_health_check_on_next_fetch(tmp_path: Path) -> None:
+def test_integrity_forces_health_check_on_next_fetch(
+    tmp_path: Path, request: pytest.FixtureRequest
+) -> None:
     """MAJOR-2（fable 审查必修）：auth_gated fetch 得非 %PDF（拦截页伪装）→ INTEGRITY → 门龄
     归零 → 下个 fetch（重试）**强制 health_check**（防伪装 PDF 连环命中）。此前未实现。"""
     auth_mock = _AuthGatedMock(fetch_mode="bad_pdf")
     provider = _ok_provider()  # health 恒 OK（验证"强制探测发生"，非探测结果）
-    env = _setup(tmp_path, auth_mock=auth_mock, n_papers=1)
+    env = _setup(tmp_path, request=request, auth_mock=auth_mock, n_papers=1)
     _enqueue_fetches(env)
     report = _runner(env, provider=provider, clock=_OK_CLOCK()).drain()
 
@@ -819,11 +885,15 @@ def test_integrity_forces_health_check_on_next_fetch(tmp_path: Path) -> None:
 # -- MINOR-1：OA-direct 幂等跳过（已 fetched 不因再入队/--force 重下）--------------------------
 
 
-def test_oa_direct_fetch_idempotent_skip_when_already_fetched(tmp_path: Path) -> None:
+def test_oa_direct_fetch_idempotent_skip_when_already_fetched(
+    tmp_path: Path, request: pytest.FixtureRequest
+) -> None:
     """MINOR-1：OA 副本已 fetched 且文件校验合格 → `_fetch_oa_direct` 幂等跳过（不真实重下）。"""
     import hashlib
 
-    env = _setup(tmp_path, auth_mock=_AuthGatedMock(fetch_mode="ok"), http=_oa_http())
+    env = _setup(
+        tmp_path, request=request, auth_mock=_AuthGatedMock(fetch_mode="ok"), http=_oa_http()
+    )
     paper_id = env.repo.upsert_paper(
         "auth_venue", None, PaperStub(title="oa", identifiers=(("doi", "10.9/oa"),))
     )

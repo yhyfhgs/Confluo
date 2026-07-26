@@ -47,6 +47,7 @@ from __future__ import annotations
 
 import itertools
 import tempfile
+from contextlib import closing
 from pathlib import Path
 
 from hypothesis import HealthCheck, given, settings
@@ -134,12 +135,11 @@ def _run(order: list[_Observation]) -> tuple[dict[str, list[object]], list[objec
     """按给定顺序 ingest 到隔离库，返回 (行序无关 canonical_dump, relation dump, 弱信号键 dump)。"""
     with tempfile.TemporaryDirectory() as tmp:
         db_path = Path(tmp) / "prop.sqlite"
-        database = Database(db_path)
-        database.migrate()
-        engine = MergeEngine(Repo(database))
-        for stub, source in order:
-            engine.ingest(stub, source=source)
-        database.close()
+        with closing(Database(db_path)) as database:
+            database.migrate()
+            engine = MergeEngine(Repo(database))
+            for stub, source in order:
+                engine.ingest(stub, source=source)
         return (
             _content(canonical_dump(db_path)),
             dump_paper_relations(db_path),
@@ -168,23 +168,21 @@ def test_reingest_whole_batch_is_idempotent(
     order1, _ = batch
     with tempfile.TemporaryDirectory() as tmp:
         db_path = Path(tmp) / "idem.sqlite"
-        database = Database(db_path)
-        database.migrate()
-        engine = MergeEngine(Repo(database))
-        for stub, source in order1:
-            engine.ingest(stub, source=source)
-        database.close()
+        with closing(Database(db_path)) as database:
+            database.migrate()
+            engine = MergeEngine(Repo(database))
+            for stub, source in order1:
+                engine.ingest(stub, source=source)
         once = (
             _content(canonical_dump(db_path)),
             dump_paper_relations(db_path),
             dump_weak_keys(db_path),
         )
 
-        database = Database(db_path)
-        engine = MergeEngine(Repo(database))
-        for stub, source in order1:  # 再来一遍
-            engine.ingest(stub, source=source)
-        database.close()
+        with closing(Database(db_path)) as database:
+            engine = MergeEngine(Repo(database))
+            for stub, source in order1:  # 再来一遍
+                engine.ingest(stub, source=source)
         assert (
             _content(canonical_dump(db_path)),
             dump_paper_relations(db_path),

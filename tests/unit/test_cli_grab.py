@@ -8,6 +8,7 @@ mock_platform 的 resolve/fetch 本地确定性（%PDF 字节，无 http）；so
 
 from __future__ import annotations
 
+from contextlib import closing
 from pathlib import Path
 
 import pytest
@@ -48,22 +49,21 @@ def _make_home(tmp_path: Path) -> Path:
 
 def _seed_paper(home: Path, venue_id: str, doi: str) -> None:
     """预入库一个绑定 venue 的 paper+doi（走 grab 的"库内反查"路径）。"""
-    db = Database(home / "catalog.sqlite")
-    db.migrate()
-    repo = Repo(db)
-    repo.upsert_venue(
-        VenueSpec(
-            id=venue_id,
-            kind="journal",
-            names={"full": venue_id, "aliases": []},
-            field=["cs_ai"],
-            identifiers={"issn": ["0000-0000"]},
-            metadata_source="mock_platform",
-            fulltext_source="mock_platform",
+    with closing(Database(home / "catalog.sqlite")) as db:
+        db.migrate()
+        repo = Repo(db)
+        repo.upsert_venue(
+            VenueSpec(
+                id=venue_id,
+                kind="journal",
+                names={"full": venue_id, "aliases": []},
+                field=["cs_ai"],
+                identifiers={"issn": ["0000-0000"]},
+                metadata_source="mock_platform",
+                fulltext_source="mock_platform",
+            )
         )
-    )
-    repo.upsert_paper(venue_id, None, PaperStub(title="seeded", identifiers=(("doi", doi),)))
-    db.close()
+        repo.upsert_paper(venue_id, None, PaperStub(title="seeded", identifiers=(("doi", doi),)))
 
 
 def _pdf_files(home: Path) -> list[Path]:
@@ -160,11 +160,10 @@ def test_not_in_db_creates_row_via_crossref(
     assert seen == [_DOI]  # 走了 crossref 单篇 lookup
     assert len(_pdf_files(home)) == 1  # 资产落盘
     # 建了 paper 行且绑定到目标 venue（fetch 路由前提）
-    db = Database(home / "catalog.sqlite")
-    rows = db.query(
-        "SELECT p.venue_id FROM paper p JOIN identifier i ON i.paper_id = p.id "
-        "WHERE i.scheme = 'doi' AND i.value = ?",
-        (_DOI,),
-    )
-    db.close()
+    with closing(Database(home / "catalog.sqlite")) as db:
+        rows = db.query(
+            "SELECT p.venue_id FROM paper p JOIN identifier i ON i.paper_id = p.id "
+            "WHERE i.scheme = 'doi' AND i.value = ?",
+            (_DOI,),
+        )
     assert len(rows) == 1 and rows[0]["venue_id"] == _VENUE

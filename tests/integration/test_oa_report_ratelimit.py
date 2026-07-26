@@ -30,6 +30,7 @@ _prepare_unpaywall_adapter` 把二者接线到 `oa-report` 命令这段**装配�
 from __future__ import annotations
 
 from collections.abc import Callable
+from contextlib import closing
 from pathlib import Path
 
 import httpx
@@ -80,15 +81,14 @@ def _venue_spec() -> VenueSpec:
 def _seed_dois(home: Path, dois: list[str]) -> None:
     """直接经 `Repo` 往 `home/catalog.sqlite` 插入 paper+doi identifier 行（同
     test_cli_oa_report.py 既有手法，绕过 pull 流水线）。"""
-    db = Database(home / "catalog.sqlite")
-    db.migrate()
-    repo = Repo(db)
-    repo.upsert_venue(_venue_spec())
-    for index, doi in enumerate(dois):
-        repo.upsert_paper(
-            _VENUE, None, PaperStub(title=f"paper {index}", identifiers=(("doi", doi),))
-        )
-    db.close()
+    with closing(Database(home / "catalog.sqlite")) as db:
+        db.migrate()
+        repo = Repo(db)
+        repo.upsert_venue(_venue_spec())
+        for index, doi in enumerate(dois):
+            repo.upsert_paper(
+                _VENUE, None, PaperStub(title=f"paper {index}", identifiers=(("doi", doi),))
+            )
 
 
 def _install_seams(

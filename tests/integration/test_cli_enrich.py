@@ -11,6 +11,7 @@ CLI 层"取 DOI → 分派 source → 回注 MergeEngine → 渲染摘要"这条
 from __future__ import annotations
 
 from collections.abc import Sequence
+from contextlib import closing
 from pathlib import Path
 
 import pytest
@@ -84,26 +85,24 @@ def _make_home(
 
 def _seed_dois(home: Path, dois_by_venue: dict[str, list[str]]) -> None:
     """直接经 `Repo` 往 `home/catalog.sqlite` 插入 paper+doi identifier 行（绕过 pull 流水线）。"""
-    db = Database(home / "catalog.sqlite")
-    db.migrate()
-    repo = Repo(db)
-    for venue_id, dois in dois_by_venue.items():
-        repo.upsert_venue(_venue_spec(venue_id))
-        for index, doi in enumerate(dois):
-            repo.upsert_paper(
-                venue_id, None, PaperStub(title=f"paper {index}", identifiers=(("doi", doi),))
-            )
-    db.close()
+    with closing(Database(home / "catalog.sqlite")) as db:
+        db.migrate()
+        repo = Repo(db)
+        for venue_id, dois in dois_by_venue.items():
+            repo.upsert_venue(_venue_spec(venue_id))
+            for index, doi in enumerate(dois):
+                repo.upsert_paper(
+                    venue_id, None, PaperStub(title=f"paper {index}", identifiers=(("doi", doi),))
+                )
 
 
 def _abstract_of(home: Path, doi: str) -> str | None:
-    db = Database(home / "catalog.sqlite")
-    rows = db.query(
-        "SELECT p.abstract FROM paper p JOIN identifier i ON i.paper_id = p.id "
-        "WHERE i.scheme = 'doi' AND i.value = ?",
-        (doi,),
-    )
-    db.close()
+    with closing(Database(home / "catalog.sqlite")) as db:
+        rows = db.query(
+            "SELECT p.abstract FROM paper p JOIN identifier i ON i.paper_id = p.id "
+            "WHERE i.scheme = 'doi' AND i.value = ?",
+            (doi,),
+        )
     return str(rows[0]["abstract"]) if rows and rows[0]["abstract"] is not None else None
 
 

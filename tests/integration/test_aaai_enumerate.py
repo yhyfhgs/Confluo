@@ -13,6 +13,7 @@ from __future__ import annotations
 
 import json
 from collections.abc import Callable, Iterator
+from contextlib import closing
 from pathlib import Path
 
 import httpx
@@ -155,36 +156,38 @@ def test_cold_backfill_whole_timeline_costs_one_full_pass(tmp_path: Path) -> Non
     修复前每个历史届各自重扫全库（审计 S1-P1，请求成本随已注册届数线性放大）；修复后
     请求数 = 全库页数 + 当前届窗口页数，与已注册历史届数**解耦**。
     """
-    db = Database(tmp_path / "aaai-cold.sqlite")
-    db.migrate()
-    repo = Repo(db)
-    venue = make_aaai_venue(volume_map=dict(_COLD_VOLUME_MAP))
-    repo.upsert_venue(venue)
+    with closing(Database(tmp_path / "aaai-cold.sqlite")) as db:
+        db.migrate()
+        repo = Repo(db)
+        venue = make_aaai_venue(volume_map=dict(_COLD_VOLUME_MAP))
+        repo.upsert_venue(venue)
 
-    seen: list[httpx.URL] = []
-    adapter = _adapter(_cold_handler(seen))
+        seen: list[httpx.URL] = []
+        adapter = _adapter(_cold_handler(seen))
 
-    issues = list(adapter.discover_timeline(venue))
-    assert [i.volume for i in issues] == ["24", "33", "34", "40"]  # 升序：历史届先于当前届
+        issues = list(adapter.discover_timeline(venue))
+        assert [i.volume for i in issues] == ["24", "33", "34", "40"]  # 升序：历史届先于当前届
 
-    per_issue: dict[str, set[str]] = {}
-    for ref in issues:
-        issue_id = repo.upsert_issue(ref, source="aaai_ojs")
-        for stub in adapter.enumerate_issue(venue, ref):
-            repo.upsert_paper(_VENUE_ID, issue_id, stub)
-        rows = repo.list_papers(_VENUE_ID, issue_id=issue_id)
-        per_issue[str(ref.volume)] = {str(r["title"]) for r in rows}
+        per_issue: dict[str, set[str]] = {}
+        for ref in issues:
+            issue_id = repo.upsert_issue(ref, source="aaai_ojs")
+            for stub in adapter.enumerate_issue(venue, ref):
+                repo.upsert_paper(_VENUE_ID, issue_id, stub)
+            rows = repo.list_papers(_VENUE_ID, issue_id=issue_id)
+            per_issue[str(ref.volume)] = {str(r["title"]) for r in rows}
 
-    # 请求账：3 页全库（v24 触发，v33/v34 零请求命中缓存）+ 1 页当前届回看窗 = 4。
-    assert len(seen) == len(_COLD_PAGES) + 1 == 4
-    assert sum(1 for u in seen if "from" in u.params) == 1  # 只有当前届带日期窗
-    # 修复前同一条时间轴的基线：3 历史届 × 3 页 + 1 = 10（降幅 2.5×，随届数增长而放大）。
-    assert len(seen) < 3 * len(_COLD_PAGES) + 1
+        # 请求账：3 页全库（v24 触发，v33/v34 零请求命中缓存）+ 1 页当前届回看窗 = 4。
+        assert len(seen) == len(_COLD_PAGES) + 1 == 4
+        assert sum(1 for u in seen if "from" in u.params) == 1  # 只有当前届带日期窗
+        # 修复前同一条时间轴的基线：3 历史届 × 3 页 + 1 = 10（降幅 2.5×，随届数增长而放大）。
+        assert len(seen) < 3 * len(_COLD_PAGES) + 1
 
-    # 分区落盘正确：每届只装自己卷号的论文（缓存命中路径与真收割路径同一判据）。
-    assert {v: len(t) for v, t in per_issue.items()} == {"24": 2, "33": 2, "34": 2, "40": 1}
-    assert all(f"v{volume} " in title for volume, titles in per_issue.items() for title in titles)
-    assert len(repo.list_papers(_VENUE_ID)) == 7
+        # 分区落盘正确：每届只装自己卷号的论文（缓存命中路径与真收割路径同一判据）。
+        assert {v: len(t) for v, t in per_issue.items()} == {"24": 2, "33": 2, "34": 2, "40": 1}
+        assert all(
+            f"v{volume} " in title for volume, titles in per_issue.items() for title in titles
+        )
+        assert len(repo.list_papers(_VENUE_ID)) == 7
 
 
 # --- 当前届固定回看窗重复 enumerate：无重复无遗漏（DOI 主键去重）--------------------------------

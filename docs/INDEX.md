@@ -177,3 +177,4 @@
 | [reports/2026-07-24-phase5-report.md](reports/2026-07-24-phase5-report.md) | Phase 5 阶段报告（8 卡 4 波次交付 + D-027/028/029 + AC-5 引用 + 事件教训 + Phase 6 检查单，判定：**达成**——controller 合并裁决签署，tag `phase-5`） |
 | [reports/2026-07-24-post-phase5-audit.md](reports/2026-07-24-post-phase5-audit.md) | Phase 5 终审后独立全库审计报告（8 subagent：4 Opus 深审+4 Sonnet 面审；八域附条件达标、零 P0；P1×3/P2×12 台账 + AC-0 复核全 PASS + Phase 6 处置建议） |
 | [reports/2026-07-26-phase6-report.md](reports/2026-07-26-phase6-report.md) | Phase 6 阶段报告（订阅与搜索：21 卡——主线 T1+T1b/T2–T10 + 修复批 F1–F7 + 设计批 R1/R2 + 在线批 M1 交付清单 + D-030/D-031 + 事件教训 + Phase 7 开工检查单；opus 终审"放行附条件"，六项文档修正条件已闭合，`tag phase-6` 待 controller） |
+| [reports/2026-07-27-db-construction-audit.md](reports/2026-07-27-db-construction-audit.md) | Phase 7 T17 全库 `Database` 构造审计（检查单 #10 收口；88 处/43 文件四分类甄别——A 已兜底 52 处/33 文件不动，B 无兜底 36 处/10 文件已修（`closing()`/`request.addfinalizer`），C/D 各零命中；含 76→82→88 口径演进说明） |
