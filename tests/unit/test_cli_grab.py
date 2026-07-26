@@ -93,6 +93,30 @@ def test_undetermined_venue_exits_2(tmp_path: Path) -> None:
     assert result.exit_code == 2, result.output
 
 
+def test_browser_flag_without_config_exits_2(tmp_path: Path) -> None:
+    """`--browser` 但 `[browserfetch].enabled` 未开 → **响亮拒绝**（退出 2），不静默降级
+    （11-browser-fetch §7.1 L1 三级门；D-029 该通道默认关）。"""
+    home = _make_home(tmp_path)
+    _seed_paper(home, _VENUE, _DOI)
+    result = runner.invoke(app, ["grab", "--doi", _DOI, "--browser", "--home", str(home)])
+    assert result.exit_code == 2, result.output
+    assert "[browserfetch].enabled" in result.output
+    assert _pdf_files(home) == []  # 拒绝发生在任何取回动作之前
+
+
+def test_browser_flag_with_config_opens_channel(tmp_path: Path) -> None:
+    """三级门全开：flag 只置 `ctx.browser_fetch`——mock venue 产 direct 计划，既有路径
+    逐字不变（分支只对 render_page 计划生效，非 render_page 零回归）。"""
+    home = _make_home(tmp_path)
+    (home / "config.toml").write_text(
+        '[paths]\nvenues_dirs = ["venues"]\n\n[browserfetch]\nenabled = true\n', encoding="utf-8"
+    )
+    _seed_paper(home, _VENUE, _DOI)
+    result = runner.invoke(app, ["grab", "--doi", _DOI, "--browser", "--home", str(home)])
+    assert result.exit_code == 0, result.output
+    assert len(_pdf_files(home)) == 1
+
+
 # -- 退出码 1：业务失败 -------------------------------------------------------
 
 
