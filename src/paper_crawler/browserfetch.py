@@ -30,7 +30,7 @@ D-006 人在回路）；批量/并发（并发恒 1）；挑战求解/重试/UA 
 `fetch_one` 之上加**调用方作用域**的 context 复用器（追加一个 keyword-only 形参即可，
 对本签名纯附加、零破坏）——不引入常驻进程/账本表/批量 CLI。
 
-## 已知边界（清账指针；T6 审查登记，除 #1 已由 T11 controller 裁决闭合外均**不改行为**）
+## 已知边界（清账指针；T6 审查登记，#1/#2 已由 T11 controller 裁决闭合，全部**不改行为**）
 
 1. **【已闭合，T11 controller 前置裁决】open_access 消费方干净上下文 by design**：
    `storage_state` 只来自 runner 的 auth 健康门，而该门对 `family != "auth_gated"` 早
@@ -41,14 +41,15 @@ D-006 人在回路）；批量/并发（并发恒 1）；挑战求解/重试/UA 
    属 `auth_gated`，消费 runner 已为其建立的真实 session（既有路径覆盖，零改动）。
    同一裁决同步 `pipeline/stages.py::_browser_storage_state` docstring 与
    `tests/manual/browser_fetch_runbook.md` §5 清账表第 1 行。
-2. **下载触发的第二次导航不再过判定器**（T11 已复核，提案见 T11 卡报告，本卡**不改行为**，
-   待 controller 裁决）：`goto` 判定 OK 后，`download_via(trigger=…)` 内的导航结果不重新
-   分类（与 §4.2 设计伪码同形）。若站点在第二跳才发质询，本次表现为**下载未发生 →
-   归 `TRANSIENT`**（非 CrawlerError 的下载异常统一映射 TRANSIENT）——**不是绕过**，但会
-   **进重试表**（4 次尝试 / 2·8·30s 退避），即对刚发过质询的域再敲三次。T11 提案：改判
-   `CHALLENGE`（→ 域冷却，零重试）更贴合"检测到风控即停手"精神，但需
-   `BrowserFetchHandle.download_via` 在失败路径暴露响应快照才可行，属接口面扩张——本卡
-   不擅自改冻结接口，留待仲裁。
+2. **【已闭合，T11 controller 裁决：本 Phase 不动】下载触发的第二次导航不再过判定器**：
+   `goto` 判定 OK 后，`download_via(trigger=…)` 内的导航结果不重新分类（与 §4.2 设计伪码
+   同形）。若站点在第二跳才发质询，本次表现为**下载未发生 → 归 `TRANSIENT`**（非
+   CrawlerError 的下载异常统一映射 TRANSIENT）——**不是绕过**，但会**进重试表**（4 次
+   尝试 / 2·8·30s 退避），即对刚发过质询的域再敲三次。T11 提案：改判 `CHALLENGE`（→ 域
+   冷却，零重试）更贴合"检测到风控即停手"精神，但需 `BrowserFetchHandle.download_via`
+   在失败路径暴露响应快照才可行，属接口面扩张。**裁决**：现状"过度重试"方向安全、
+   与 §4.2 设计伪码同形属设计既定——本 Phase 不改冻结接口，提案原文登记
+   `tests/manual/browser_fetch_runbook.md` §5 清账表，标 P8/T18（AC-BF 转正时评估）。
 3. **AC-BF.4② 时序载体不足** → 归 T18（AC-BF 转正时定审计载体）：obslog 每次调用只记
    `rate_wait_ms` 汇总，无请求发起时刻序列，"相邻两次请求间隔 ≥ 域声明下限"只能间接推算；
    限速的真实约束在 `RateLimiter` 桶上，不在日志上。
@@ -56,6 +57,15 @@ D-006 人在回路）；批量/并发（并发恒 1）；挑战求解/重试/UA 
    `pipeline/cooldown.read_until`（T3），但仍只查**单个域键**，不遍历 `resolve_keys` 给出的
    `<adapter_id>` 旧兼容键——本通道手上只有 URL（无 venue→adapter 路由），域键是它能如实
    主张的全部。经 pipeline 走时由 runner 的 pre-stage 冷却门（读全键集）先拦，不受影响。
+5. **【已登记，T11 controller 裁决：已知缺口，不改行为】aea browser-fetch 通道可达性**：
+   `AeaAdapter.family` 仍 `auth_gated`（未改）；本通道激活前提是配置 aea profile（机构
+   订阅用户，首登人工，D-006 语义）——无 profile 时 runner 的 auth 健康门
+   （`_auth_gate_fetch`）在到达 `pipeline/stages.py` 的 RENDER_PAGE 分支**之前**即
+   `CONFIG`-BLOCK，与本模块/`ctx.browser_fetch` 开关无关。OA 刊（jel/jep）全文由既有
+   unpaywall OA-fallback（D-024）承载；订阅刊（aer/aeri/aej_*）在未配置 profile 前如实
+   BLOCKED——非本模块缺陷，是 D-006 aea 认证未落地的已知外部依赖（同构 elsevier T7b
+   dormant 语义）。详见 `tests/manual/browser_fetch_runbook.md` §5 清账表第 5 行 +
+   `docs/design/adapters/aea.md` §10。
 """
 
 from __future__ import annotations

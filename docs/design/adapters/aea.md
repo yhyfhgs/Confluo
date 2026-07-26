@@ -2,7 +2,7 @@
 title: Adapter 设计 · AEA（AER + AEJ 四系 + AER:Insights + JEL/JEP，实现级）
 status: implemented
 owner: D2
-updated: 2026-07-26
+updated: 2026-07-27
 ---
 
 # Adapter · `aea`(实现级详设)
@@ -204,6 +204,16 @@ updated: 2026-07-26
   订阅版全文的现实兜底是跨源 WP（NBER/SSRN，另 DOI，D-007 合并），非 unpaywall。
 - **A-3 pandp venue 归属**：**裁决=独立 venue 暂缓**（不入本 Phase 8 刊清单；年刊特刊、勘察未覆盖、非主线）——解析器容 pnp 形态、venue 留将来（§7）。
 - **勘察事实无内部冲突**：aea.md [LIVE 2026-07-24] 与 catalog 一致（除命名写法 A-2）；env-TLS-障碍 vs 站点-CF-判罚 勘察已严格甄别、不构成事实冲突。
+- **aea browser-fetch 通道可达性缺口**（Phase 7 T11 落地后新发现，NEEDS_DECISION，**fable 已裁：登记已知缺口，不改 family、不注册
+  no-op provider**）：本文 §1/§4 既定 `family=auth_gated` 未变；`resolve_assets` 现已产模式 B `RENDER_PAGE` `AssetPlan`（T11，
+  design/11 §4.6 ★接缝 A-1，本节以上 §3.3/§3.4/§4 关于"不产平台 AssetPlan/deferred 占位"的描述属 T11 落地前状态，实现已推进，
+  文字尚未逐段回填——见 `adapters/aea/adapter.py` 实码为准）——但通道**激活前提是配置 aea profile**（机构订阅用户，首登人工，
+  D-006 语义）：无 profile 时 runner 的 auth 健康门（`_auth_gate_fetch`）在到达 stages 分支**之前**即 `CONFIG`-BLOCK，与
+  `browser_fetch` 开关无关。OA 刊（jel/jep）全文由既有 unpaywall OA-fallback（D-024）承载，可正常演练；订阅刊
+  （aer/aeri/aej_\*）在未配置 aea profile 前如实 BLOCKED——非 browser-fetch 缺陷，是 D-006 aea 认证未落地的已知外部依赖
+  （同构 elsevier T7b dormant 语义，OA 面有替代路径，伤害面可控）。"auth 门 family 级→plan 级细化"挂 **P8 评估候选**（属
+  runner 行为变更，影响四个 auth_gated adapter，非本 Phase 债）。详见
+  [tests/manual/browser_fetch_runbook.md](../../../tests/manual/browser_fetch_runbook.md) §5 清账表第 5 行。
 
 ## 11. 修订记录
 

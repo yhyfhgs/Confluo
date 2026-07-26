@@ -73,9 +73,10 @@
 | # | 边界 | 对本 runbook 的影响 | 闭合归属 |
 |---|---|---|---|
 | 1 | ~~open_access 消费方无凭证注入面~~ **已闭合**（T11 controller 前置裁决）：`storage_state` 只来自 runner 的 auth 健康门，该门对 `family != "auth_gated"` 早返回 ⇒ ssrn/aea（`open_access` family）恒以干净上下文启动——**这是设计，非缺陷**：browser-fetch 对二者的语义=公开内容的浏览器渲染取回（非"需要登录"）；Cloudflare 拦截由既有 S-c 头级判定 + 域级冷却处置 | ssrn 模式 B、aea gold OA（jel/jep）可正常演练（干净上下文即预期姿态）；aea 订阅刊（aer/aeri/aej_\*）遇 CF/付费墙页按 challenge/no_entitlement 既有链处置——非阻塞性缺口，如实记录即可 | **已闭合**——见 design/11 controller 裁决 + `browserfetch.py` 模块 docstring 清账 #1 + `pipeline/stages.py::_browser_storage_state` docstring |
-| 2 | 下载触发的第二次导航不再过判定器（与设计伪码同形） | 若站点在第二跳才发质询，本次归 **`TRANSIENT`**（下载未发生）而非 challenge——**不是绕过**，但**会进重试表**（4 次 / 2·8·30s），即对刚发过质询的域再敲三次。请在记录里如实区分，并留意 obslog 里同域连续 TRANSIENT | T11 按站点实况复核（是否把第二跳也喂判定器）——**本卡评估结论**：建议改判 CHALLENGE 而非留 TRANSIENT，提案见 T11 卡报告，本卡不改行为 |
+| 2 | 下载触发的第二次导航不再过判定器（与设计伪码同形） | 若站点在第二跳才发质询，本次归 **`TRANSIENT`**（下载未发生）而非 challenge——**不是绕过**，但**会进重试表**（4 次 / 2·8·30s），即对刚发过质询的域再敲三次。请在记录里如实区分，并留意 obslog 里同域连续 TRANSIENT | T11 已复核，提案：改判 `CHALLENGE`（需 `BrowserFetchHandle.download_via` 失败路径暴露响应快照，属接口面扩张）。**fable 裁决（本 Phase 不动）**：现状"过度重试"方向安全、design/11 §4.2 伪代码同形属设计既定——提案原文登记于此，标 **P8/T18（AC-BF 转正时评估）** |
 | 3 | AC-BF.4② 的"相邻请求间隔"在 obslog 里只有 `rate_wait_ms` 汇总，无请求时刻序列 | 限速合规需靠 `RateLimiter` 桶配置 + 人工计时佐证，日志不能单独作为时序证据 | T18（AC-BF 转正时定审计载体） |
 | 4 | 直调 `fetch_one` 时冷却读侧只认**域**键，不读旧 `<adapter_id>.json` 兼容键 | 经 `crawler grab` 走时由 runner 的 pre-stage 冷却门先拦，不受影响 | T3（抽 `pipeline/cooldown.py` 后改委派） |
+| 5 | **aea browser-fetch 通道可达性缺口**（T11 NEEDS_DECISION，fable 已裁）：`AeaAdapter.family` 仍 `auth_gated`；激活前提=配置 aea profile（机构订阅用户，首登人工，D-006 语义）——无 profile 时 runner 的 auth 健康门在**到达 stages 分支之前**即 `CONFIG`-BLOCK（与 `browser_fetch` 开关无关） | OA 刊（jel/jep）全文由既有 unpaywall OA-fallback（D-024）承载，可正常演练；订阅刊（aer/aeri/aej_\*）在未配置 aea profile 前**如实 BLOCKED**——非 browser-fetch 缺陷，是 D-006 aea 认证未落地的已知外部依赖（同构 elsevier T7b dormant 语义） | **已登记为已知缺口**（不改 `family`、不注册 no-op provider，OA 面有替代路径，伤害面可控）；"auth 门 family 级→plan 级细化"挂 **P8 评估候选**（属 runner 行为变更，影响四个 auth_gated adapter，非本 Phase 债） |
 
 ## 6. 开放问题回填（design/11 §11，本 runbook 是其唯一取证途径）
 
