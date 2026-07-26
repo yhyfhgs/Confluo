@@ -119,10 +119,16 @@ def test_minimal_document_takes_all_defaults() -> None:
 
 
 def test_all_six_sources_parse() -> None:
-    """SOURCE_FIELDS 的每个源 × 每个字段都能被解析（能力面自断言，防清单漂移）。"""
+    """SOURCE_FIELDS 的每个源 × 每个字段都能被解析（能力面自断言，防清单漂移）。
+
+    `query` 的合法样例按源区分：arxiv 自 Phase 7 T9 起校验布尔语法（范围=ti/abs
+    字段，见 `_require_arxiv_query_syntax`），裸词 `"x"` 不再合法；s2 的同名字段
+    仍是自由文本，裸词照旧合法。
+    """
     sources: dict[str, object] = {}
     for source, fields in SOURCE_FIELDS.items():
-        sources[source] = {name: ("x" if name == "query" else ["x"]) for name in fields}
+        query_value = 'ti:"x"' if source == "arxiv" else "x"
+        sources[source] = {name: (query_value if name == "query" else ["x"]) for name in fields}
     sub = parse_subscription({"name": "everything", "sources": sources})
     assert sub.source_names() == tuple(SOURCE_FIELDS)
     for selector in sub.sources:
@@ -227,6 +233,27 @@ _INVALID: list[tuple[str, dict[str, object], str]] = [
     ("guard bool 落数值位", _doc(guard={"max_new_per_run": True}), "必须是整数"),
     ("dedupe 非布尔", _doc(guard={"dedupe_against_library": 1}), "必须是布尔"),
     ("schedule_hint 非串", _doc(schedule_hint=3), "必须是字符串"),
+    # --- arxiv query 布尔式语法早验（Phase 7 T9；范围=ti/abs 字段，决策⑤ YAGNI）---
+    (
+        "arxiv query 缺字段前缀",
+        {"name": "probe", "sources": {"arxiv": {"query": "agent"}}},
+        "arXiv 查询式语法非法",
+    ),
+    (
+        "arxiv query 不支持的字段前缀",
+        {"name": "probe", "sources": {"arxiv": {"query": 'au:"Smith"'}}},
+        "arXiv 查询式语法非法",
+    ),
+    (
+        "arxiv query 括号不配对",
+        {"name": "probe", "sources": {"arxiv": {"query": '(ti:"agent"'}}},
+        "arXiv 查询式语法非法",
+    ),
+    (
+        "arxiv query 悬空算子",
+        {"name": "probe", "sources": {"arxiv": {"query": 'ti:"agent" OR'}}},
+        "arXiv 查询式语法非法",
+    ),
 ]
 
 
@@ -252,6 +279,42 @@ def test_invalid_matrix_covers_at_least_twelve_cases() -> None:
 def test_sources_must_be_a_mapping() -> None:
     with pytest.raises(SubscriptionInvalid, match="必须是映射"):
         parse_subscription({"name": "probe", "sources": ["arxiv"]}, where="probe.yaml")
+
+
+# --- 4. arxiv query 布尔式语法早验的正例 + 范围边界（Phase 7 T9）--------------
+
+
+def test_arxiv_query_with_valid_boolean_syntax_parses_fine() -> None:
+    """反例：语法合法的复合布尔式（OR 分组 + ANDNOT + 混合大小写 + 折叠空白）正常通过。
+
+    与 9 个真实 preset 的实况同构（`tests/unit/test_subs_presets.py` 逐一验证真实
+    文件），此处只需一条代表性用例证明校验没有过度收紧。
+    """
+    sub = parse_subscription(
+        {
+            "name": "probe",
+            "sources": {
+                "arxiv": {
+                    "categories": ["cs.AI"],
+                    "query": '(ti:"agent" OR abs:"agentic")\n      and not ti:"survey"',
+                }
+            },
+        }
+    )
+    assert sub.selector_for("arxiv") is not None
+
+
+def test_s2_query_free_text_is_not_subject_to_arxiv_boolean_syntax() -> None:
+    """s2 的 `query` 是自由文本（直送 bulk search），不受 arxiv 专属语法校验管辖——
+
+    这里刻意用一个**不符合** arxiv 语法（无字段前缀）的裸词，证明校验只对 arxiv 生效。
+    """
+    sub = parse_subscription(
+        {"name": "probe", "sources": {"s2": {"query": "large language models"}}}
+    )
+    s2 = sub.selector_for("s2")
+    assert s2 is not None
+    assert s2.query == "large language models"
 
 
 # --- 文件层：坏 YAML / 空文件 / 编码 / 文件名 --------------------------------

@@ -18,7 +18,12 @@
 
 arxiv 行两栏都要看细则（`_compile_arxiv` docstring）：分类条目由 T5 逐条展开成独立请求
 并成对补上派生的 `arxiv_set`（经 venue quirks 进 OAI `set=`）；`query` 的关键词布尔式
-**既无下推通道、也无本地补偿谓词**，实际只有 `filters` 三谓词生效，如实列账不假装。
+**无下推通道**（OAI-PMH 无关键词能力），但自 Phase 7 T9 起有了参数化本地补偿谓词
+`arxiv.query_bool`（挂 `PlanStep.predicate_params`，`filter.PREDICATE_REGISTRY` 新登记
+的构造器）——该谓词标记**未混入** `local_predicates`，`subs/watch.py` 现有运行时通道
+尚未消费它（T9 任务卡边界：本卡不改 watch.py），故当前实际生效、影响 `subs watch`
+真实运行结果的仍只有 `filters` 三谓词；`predicate_params` 是已建好、经单元测试验证、
+等待后续卡接入的机制，如实列账不假装已经接通。
 
 ## 三条不变量（下游可依赖）
 
@@ -70,6 +75,8 @@ from paper_crawler.subs.types import (
     LOCAL_PREDICATE_TITLE_REGEX_ANY,
     CompiledPlan,
     PlanStep,
+    normalize_arxiv_query,
+    wrap_arxiv_query,
 )
 from paper_crawler.types import VenueSpec
 
@@ -101,6 +108,12 @@ _ISSN_PATTERN = re.compile(r"^\d{4}-\d{3}[\dxX]$")
 SSRN_TOPIC_FILTER_QUIRK = "topic_filter"
 PREDICATE_SSRN_TOPIC_FILTER = "ssrn.topic_filter"
 
+# arxiv `query` 布尔式的参数化补偿谓词（Phase 7 T9；plan §4 T9"参数化谓词签名"
+# 冻结件）。谓词名同 `filter.ARXIV_QUERY_BOOL`——两处各自独立定义同一字面量，沿用
+# 本文件 `PREDICATE_SSRN_TOPIC_FILTER`/`filter.SSRN_TOPIC_FILTER` 的既有先例（不
+# 建一个跨模块 import 只为共享一个字符串常量）。
+PREDICATE_ARXIV_QUERY_BOOL = "arxiv.query_bool"
+
 # `quirks.topic_filter` 的合法取值域：目前**只有** `econ_fin` 有实现（= `ECON_FIN_FIELDS`
 # 是全库唯一落地的主题集）。写了别的值（拼错的 `econ-fin`、臆造的集合名）→ CONFIG 响亮，
 # 不静默当成"某个不存在的集合"跑出一份空清单。新增集合须同时落 parse.py 与本白名单。
@@ -112,12 +125,13 @@ _ARXIV_NOTE = (
     "arxiv categories → **逐分类 fan-out 下推**：每条请求带一个 arxiv_category + 派生的 "
     "arxiv_set，经 venue quirks 通道进 OAI-PMH 的 set= 与客户端 primary_category 过滤"
     "（T5 展开；请求量 = N 分类 × M 月桶，每个分类独立收割其 archive 的 set）；"
-    "query → search_query **仅诊断呈现**：OAI 通道无关键词查询能力，既下达不了、"
-    "也没有本地补偿谓词，实际生效的只有订阅 filters: 三谓词"
-    "（镜像词族须手工写进 filters.title_regex_any；布尔操作符 AND/OR/ANDNOT 以 "
-    "site-survey/arxiv.md 实测为准）；"
+    "query → 编译为参数化本地补偿谓词 arxiv.query_bool（Phase 7 T9；挂 "
+    "predicate_params，不进 pushdown——OAI-PMH 无关键词查询能力，下推通道不存在）："
+    "范围=ti/abs 字段 + AND/OR/ANDNOT + 引号短语；该谓词标记未混入 local_predicates，"
+    "subs/watch.py 现有运行时通道尚未消费（本卡边界，接入留后续卡）——9 个 preset 的 "
+    "filters.title_regex_any 镜像目前仍是唯一实际生效的本地收窄，继续保留（防御纵深，"
+    "决策④）；"
     "增量窗由 T4 产出、T5 经 SourceRequest.since 下推为月桶起点"
-    "（有 query 时窗同时以 submittedDate:[A TO B]（GMT）AND 进 search_query 保持宿主形态）"
 )
 
 _CROSSREF_NOTE = (
@@ -182,94 +196,15 @@ def _reject_date_window(text: str, *, source: str, field: str) -> None:
             )
 
 
-# --- arXiv 查询式归一（语法以 site-survey/arxiv.md 实测为准）-----------------
+# --- s2 查询式空白折叠（s2 的 `query` 是自由文本，直送 bulk search，无布尔语法）---
 
-# 引号短语：arXiv 用 `"…"` 表短语（`abs:"tool use"`）。归一只在引号**外**动手——
-# 引号内是用户的检索词，动它就是改语义。
-_QUOTED_PHRASE = re.compile(r'"[^"]*"')
 _WHITESPACE_RUN = re.compile(r"\s+")
-# `AND NOT` → `ANDNOT`：arXiv 实测的否定操作符是**单词 `ANDNOT`**（site-survey/arxiv.md
-# "布尔 AND/OR/ANDNOT"），而 design/09 §2 示例写作 `AND NOT`——两者指同一语义，此处归一，
-# 否则 `NOT` 会被 arXiv 当成检索词而静默改变结果集。
-_AND_NOT = re.compile(r"\bAND\s+NOT\b", re.IGNORECASE)
-# 裸布尔词大写化：arXiv 操作符须大写，小写 `and`/`or` 会被当作检索词。
-_BARE_OPERATOR = re.compile(r"\b(and|or|andnot)\b", re.IGNORECASE)
 
-
-def _outside_quotes(expr: str, transform: Callable[[str], str]) -> str:
-    """只对引号外的片段施 `transform`，引号内原样保留（拼回原序）。"""
-    chunks: list[str] = []
-    cursor = 0
-    for match in _QUOTED_PHRASE.finditer(expr):
-        chunks.append(transform(expr[cursor : match.start()]))
-        chunks.append(match.group(0))
-        cursor = match.end()
-    chunks.append(transform(expr[cursor:]))
-    return "".join(chunks)
-
-
-def _normalize_arxiv_query(raw: str) -> str:
-    """归一用户写的 arXiv 布尔式：折行空白 + `AND NOT`→`ANDNOT` + 操作符大写。
-
-    DSL 里的 `query` 常写成 YAML 折叠标量（design/09 §2 示例一的 `query: >`），折出来带
-    换行与多余空格；且示例用 `AND NOT` 而实测操作符是 `ANDNOT`。归一**全部只在引号外**
-    进行（`abs:"tool use"` 里的空格、`ti:"cats and dogs"` 里的 `and` 都不动）。
-
-    不做的事：不校验字段前缀合法性、不补括号、不处理一元 `NOT`（arXiv 无此语义）——
-    编译器不臆造语法，非法查询在运行期由 arXiv 明确报错，好过在此静默改写。
-
-    **已知行为（引号不配对）**：`"` 落单时 `_QUOTED_PHRASE` 匹配不到成对短语，那截文本
-    按**引号外**处理——即照样折空白、照样大写化操作符。这是刻意不救的：引号配不上本就
-    是写错了，猜"用户想在哪里闭合"只会把一个显式错误变成一个隐式错误。查询原样交给
-    arXiv 报错，用户看到的是自己的引号问题，而不是编译器替他改过的某个陌生查询。
-    """
-
-    def normalize(chunk: str) -> str:
-        chunk = _WHITESPACE_RUN.sub(" ", chunk)
-        chunk = _AND_NOT.sub("ANDNOT", chunk)
-        return _BARE_OPERATOR.sub(lambda m: m.group(1).upper(), chunk)
-
-    return _outside_quotes(raw, normalize).strip()
-
-
-def _is_atom(expr: str) -> bool:
-    """表达式是否"原子"（引号外无空白）——原子无需加括号（`ti:"tool use"`、`abs:agentic`）。"""
-    return not any(char.isspace() for char in _QUOTED_PHRASE.sub("", expr))
-
-
-def _is_fully_wrapped(expr: str) -> bool:
-    """整条表达式是否已被**一对**括号完整包住（`(a OR b)` 真，`(a) OR (b)` 假）。
-
-    用于避免拼接时产生 `((…))` 这类无意义嵌套（不影响语义，只为可读与快照稳定）。
-    """
-    if not (expr.startswith("(") and expr.endswith(")")):
-        return False
-    depth = 0
-    in_quote = False
-    for index, char in enumerate(expr):
-        if char == '"':
-            in_quote = not in_quote
-        elif in_quote:
-            continue
-        elif char == "(":
-            depth += 1
-        elif char == ")":
-            depth -= 1
-            if depth == 0:
-                return index == len(expr) - 1
-    return False  # 括号不配对（用户写错）——不加戏，原样交给 arXiv 报错
-
-
-def _wrap(expr: str) -> str:
-    """按需加括号：原子与"已整体括起"者原样返回，其余包一层。
-
-    复合式**恒**带外层括号（哪怕它是 `search_query` 的唯一成分），因为 T4 的增量窗是
-    `AND submittedDate:[A TO B]` **追加**在末尾的（`watch._compose_arxiv`）：少了这层
-    括号，`ti:a OR ti:b AND <日期窗>` 会被读成 `ti:a OR (ti:b AND 日期窗)`——第一个析取项
-    悄悄逃出增量窗，是那种日报上看不出、对账才发现的漏收。
-    """
-    return expr if _is_atom(expr) or _is_fully_wrapped(expr) else f"({expr})"
-
+# arxiv `query` 布尔式的归一/包裹（`normalize_arxiv_query`/`wrap_arxiv_query`）与解析
+# （`parse_arxiv_query`）自 Phase 7 T9 起迁至叶子模块 `subs/types.py`——`model.py`
+# 早验语法 / 本模块产出 `predicate_params` 值 / `filter.py` 求值三方共同消费，住在
+# 任一方都会让另两方反向依赖（同 `DATE_WINDOW_PARAMS` 的既有守法）。逻辑本身逐字
+# 未变，只是搬家；本模块从 `subs.types` import 需要的两个公开函数。
 
 # --- 通用：本地补偿谓词 -----------------------------------------------------
 
@@ -295,40 +230,61 @@ def local_predicates_of(filters: LocalFilter) -> tuple[str, ...]:
 
 
 def _compile_arxiv(selector: SourceSelector, venue: VenueSpec | None) -> PlanStep:
-    """arxiv：`categories` → 逐分类 `arxiv_category` 条目；`query` → 仅诊断用 `search_query`。
+    """arxiv：`categories` → 逐分类 `arxiv_category` 条目；`query` → 参数化本地补偿
+    谓词（Phase 7 T9；plan §4 T9"参数化谓词签名"冻结件，替代此前"仅诊断呈现"的纯
+    `search_query` pushdown 串——AC-6 验收记录 §4 第 6 条记录的缺口）。
 
     - **分类**：每个分类一条 `(ARXIV_CATEGORY_PARAM, category)` 重复键条目（保序保重复），
       由 T5 (`watch._compose_arxiv`) 逐条展开成独立请求并成对补上派生的 `arxiv_set`。
       这是它**真实的**下达通道：两个键经 `AdapterFetcher.venue_for` 并进 venue `quirks`
       后正是 `adapters/arxiv/adapter.py::_oai_target` 读的键（键名同源见 `subs/types.py`
       的 `ARXIV_CATEGORY_PARAM`/`ARXIV_SET_PARAM` 注释）。
-    - **查询式**：用户的字段级布尔式，经 `_normalize_arxiv_query` 归一后装进 `search_query`。
-      该参数**下达不了**（OAI-PMH 无关键词查询能力），保留它只为诊断呈现与 T5 的响亮
-      WARNING；语法出处 = site-survey/arxiv.md「关键机制」段（字段前缀
-      `ti/au/abs/co/jr/cat/rn/all`、布尔 `AND/OR/ANDNOT`、短语用引号）。
+    - **查询式**：用户的字段级布尔式，经 `types.normalize_arxiv_query`/`wrap_arxiv_query`
+      归一后，作为**订阅级参数**挂到 `PlanStep.predicate_params`（键
+      `PREDICATE_ARXIV_QUERY_BOOL = "arxiv.query_bool"`）。`filter.PREDICATE_REGISTRY`
+      新登记的构造器据此参数构造一个真正会被求值的 `PaperStub -> bool` 本地补偿谓词
+      （范围=ti/abs 字段 + AND/OR/ANDNOT + 引号短语，决策⑤ YAGNI；语法出处 =
+      site-survey/arxiv.md「关键机制」段）。语法非法在**订阅加载期**已被 `model.py`
+      的 `_require_arxiv_query_syntax` 挡下，故这里可以假定 `selector.query` 已是
+      语法合法的表达式。
 
-    **分类不再拼进 `search_query`**（本次修复的要点）：旧实现把 `cat:` 组与查询式合成
-    单个 `search_query`，而该参数进不了 OAI 通道——分类整批失效（AC-6 验收记录 §4 第 6
-    条）。改成结构化条目后分类真的生效了；若仍把 `cat:` 组留在 `search_query` 里，T5 那
-    条"`search_query` 无法下达"的 WARNING 对分类部分就成了**假警报**，违背 F7 确立的
-    "响亮降级不撒谎"纪律。"分类 AND 查询式"的合取语义改由「fan-out（每分类一次收割）
-    × 本地 `filters` 三谓词」承载。
+    **不再把 `query` 塞进 `pushdown`**（本次修复替代的旧形态）：`search_query` 参数
+    从未被真实下达（OAI-PMH 无关键词能力，`watch.py`"下达不了的"参数表恒含它），旧
+    实现把归一后的查询式塞进这个死胡同纯属诊断展示；现在同一段归一逻辑改喂一个真
+    会被求值的谓词。
 
-    归一后为空串的 `query`（如只写了空白）不产 `search_query` 条目——空查询串没有诊断
-    价值，旧形态还会留下 `(cat:…) AND ` 这样的残尾。
+    **本卡不改 `subs/watch.py`**（Phase 7 T9 任务卡边界）：新谓词标记连同其参数只挂
+    在 `predicate_params`，**不**混入 `local_predicates`——后者是 `watch._scoped_
+    predicates` 唯一读取、进而喂给现有 `filter_papers(..., extra_predicates=...)`
+    调用点的字段；那个调用点目前不传 `predicate_params`，若把需要参数的谓词名也放
+    进 `local_predicates`，构造器会在缺参数时报错，现有生产路径 `subs watch` 会被
+    直接破坏。`predicate_params` 因此是一条**尚未被 watch.py 消费**的新接缝，实际
+    接入留给后续卡（plan §2 冻结表"参数化谓词签名"行：消费方=subs 链全体后续）。9
+    个 preset 现有的 `filters.title_regex_any` 镜像继续保留（决策④，防御纵深，新
+    机制叠加非替换）。
 
-    `query` 里手写日期窗（`submittedDate:[…]` 等）→ 拒载，见 `_reject_date_window`。
+    归一后为空串的 `query`（如只写了空白）不产 `predicate_params` 条目——空查询串
+    没有诊断价值。
+
+    `query` 里手写日期窗（`submittedDate:[…]` 等）→ 拒载，见 `_reject_date_window`
+    （不变）。
     """
     del venue  # arxiv 不消费 venue quirks（分类即 DSL 直给；venue 侧的静态 quirks 由 T5 覆盖）
     pushdown: list[tuple[str, str]] = [
         (ARXIV_CATEGORY_PARAM, category) for category in selector.categories
     ]
+    predicate_params: list[tuple[str, str]] = []
     if selector.query is not None:
         _reject_date_window(selector.query, source="arxiv", field="query")
-        expression = _normalize_arxiv_query(selector.query)
+        expression = normalize_arxiv_query(selector.query)
         if expression:
-            pushdown.append(("search_query", _wrap(expression)))
-    return PlanStep(source="arxiv", pushdown=tuple(pushdown), note=_ARXIV_NOTE)
+            predicate_params.append((PREDICATE_ARXIV_QUERY_BOOL, wrap_arxiv_query(expression)))
+    return PlanStep(
+        source="arxiv",
+        pushdown=tuple(pushdown),
+        predicate_params=tuple(predicate_params),
+        note=_ARXIV_NOTE,
+    )
 
 
 def _compile_crossref(selector: SourceSelector, venue: VenueSpec | None) -> PlanStep:
@@ -592,6 +548,7 @@ def compile_subscription(
 
 __all__ = [
     "DATE_WINDOW_PARAMS",
+    "PREDICATE_ARXIV_QUERY_BOOL",
     "PREDICATE_SSRN_TOPIC_FILTER",
     "SSRN_TOPIC_FILTER_QUIRK",
     "SSRN_TOPIC_FILTER_VALUES",

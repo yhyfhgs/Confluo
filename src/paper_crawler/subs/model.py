@@ -50,6 +50,7 @@ from typing import Any, Literal, NoReturn
 import yaml
 
 from paper_crawler.errors import SubscriptionInvalid
+from paper_crawler.subs.types import parse_arxiv_query
 
 # --- DSL 词表（T2 编译器的能力面契约）---------------------------------------
 
@@ -160,6 +161,27 @@ def _require_regex(pattern: str, *, where: str, path: str) -> str:
     except re.error as exc:
         _fail(where, path, f"正则非法: {exc}")
     return pattern
+
+
+def _require_arxiv_query_syntax(text: str, *, where: str, path: str) -> None:
+    """arxiv `query` 布尔式的语法早验（Phase 7 T9；plan §4 T9"参数化谓词签名"冻结件，
+    范围=ti/abs 字段 + AND/OR/ANDNOT + 引号短语，决策⑤ YAGNI）。
+
+    订阅**加载期**就响亮拒载语法错误（本模块开篇 fail-loud 纪律的同款适用），而
+    非留到 `compile.py` 编译 / `filter.py` 求值期才炸——同 `_require_regex` 的
+    先例（正则合法性同样在此层把关）。只验语法能否解析成树，不在此处构造真正的
+    求值闭包——那是 `filter.PREDICATE_REGISTRY` 的 `arxiv.query_bool` 构造器在
+    编译产物被消费时才做的事，两处各自独立解析一次，不跨模块传递解析结果（同
+    `_require_regex` 校验后仍把原始字符串交回、`filter._compile_case_insensitive`
+    照样重新编译一遍的先例，非新增的重复劳动）。
+
+    只对 `arxiv` 源的 `query` 字段生效——`s2` 同名字段是自由文本，交给 S2 的
+    bulk search 端点，没有本地布尔语法。
+    """
+    try:
+        parse_arxiv_query(text)
+    except ValueError as exc:
+        _fail(where, path, f"arXiv 查询式语法非法: {exc}")
 
 
 # --- 值对象（冻结件）-------------------------------------------------------
@@ -409,7 +431,10 @@ def _parse_selector(source: str, raw: object, *, where: str) -> SourceSelector:
     for key, value in mapping.items():
         child = f"{path}.{key}"
         if key in _TEXT_FIELDS:
-            texts[key] = _require_str(value, where=where, path=child)
+            text = _require_str(value, where=where, path=child)
+            if source == "arxiv" and key == "query":
+                _require_arxiv_query_syntax(text, where=where, path=child)
+            texts[key] = text
         else:
             lists[key] = _require_str_tuple(value, where=where, path=child)
 

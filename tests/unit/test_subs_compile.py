@@ -1,14 +1,19 @@
-"""查询编译器（Phase 6 T2；`subs/compile.py`，design/09 §3 能力映射表）。
+"""查询编译器（Phase 6 T2 + Phase 7 T9；`subs/compile.py`，design/09 §3 能力映射表）。
 
-四块：
+五块：
 1. **每源用例表 ≥6 例**——含边界：空 query / 多值（重复键）/ NOT / 该源未声明该字段；
 2. **ssrn `topic_filter` 接线**（检查单 #10）——从**真实** `venues/econ/ssrn.yaml` 读入，
    落 `PlanStep.local_predicates`；venue 缺声明 / 取值非法两侧都有专测；
 3. **接缝纪律**——编译产物**不含任何日期窗**（那是 T4 的槽位，plan §4 T2 接缝裁决①），
    注册表与 `SOURCE_FIELDS` 集合等值自断言；
 4. **双示例快照**——design/09 §2 的 llm-agents / asset-pricing-wp 编译结果按
-   `(source, pushdown, local_predicates)` 三元组逐字锁定（`note` 按冻结件定义"不参与判定"，
-   故只做关键词 spot-check，不进快照——否则改一句措辞就要动快照，快照会退化成噪声）。
+   `(source, pushdown, local_predicates, predicate_params)` 四元组逐字锁定（`note` 按
+   冻结件定义"不参与判定"，故只做关键词 spot-check，不进快照——否则改一句措辞就要动
+   快照，快照会退化成噪声）；
+5. **arxiv 参数化谓词**（Phase 7 T9）——`query` 归一/包裹后的字符串落
+   `PlanStep.predicate_params`（键 `PREDICATE_ARXIV_QUERY_BOOL`），**不再**落
+   `pushdown`（旧 `search_query` 纯诊断形态已被替代）；归一逻辑本身的用例（空白折叠/
+   `AND NOT`→`ANDNOT`/括号包裹/引号不配对等）逐字保留，只是断言的取值位置改变。
 """
 
 from __future__ import annotations
@@ -22,6 +27,7 @@ from helpers import make_ssrn_venue
 from paper_crawler.errors import CrawlerError, ErrorClass, SubscriptionInvalid
 from paper_crawler.subs.compile import (
     DATE_WINDOW_PARAMS,
+    PREDICATE_ARXIV_QUERY_BOOL,
     PREDICATE_SSRN_TOPIC_FILTER,
     SUPPORTED_SOURCES,
     compile_subscription,
@@ -74,21 +80,27 @@ def _ssrn_step(selector_fields: dict[str, object], venue: VenueSpec | None) -> P
 
 
 def _arxiv_pushdown(**selector_fields: object) -> tuple[tuple[str, str], ...]:
-    """arxiv 编译产物的**完整**条目序列——分类断言一律看它，不看 `as_params()`。
+    """arxiv 编译产物的**完整** `pushdown` 条目序列——分类断言一律看它，不看 `as_params()`。
 
-    分类现在是重复键 `arxiv_category` 条目，dict 视图的 last-wins 会静默只留最后一个
-    （正是 `PlanStep.pushdown` 用元组而非 dict 的理由）。
+    分类是重复键 `arxiv_category` 条目，dict 视图的 last-wins 会静默只留最后一个
+    （正是 `PlanStep.pushdown` 用元组而非 dict 的理由）。自 Phase 7 T9 起 `query`
+    不再落 `pushdown`（改落 `predicate_params`，见 `_arxiv_predicate_param`）。
     """
     return _step("arxiv", dict(selector_fields)).pushdown
 
 
-def _search_query(**selector_fields: object) -> str:
-    """**query-only 场景**的 `search_query` 取值（不得传 categories，见 `_arxiv_pushdown`）。"""
+def _arxiv_predicate_param(**selector_fields: object) -> str:
+    """**query-only 场景**的 `predicate_params[PREDICATE_ARXIV_QUERY_BOOL]` 取值
+    （不得传 categories，见 `_arxiv_pushdown`）。Phase 7 T9：取代旧 `_search_query`
+    辅助函数——归一/包裹逻辑本身逐字未变，只是存放位置从 `pushdown`（`search_query`
+    键）改为 `predicate_params`。
+    """
     assert "categories" not in selector_fields
-    return _step("arxiv", dict(selector_fields)).as_params()["search_query"]
+    step = _step("arxiv", dict(selector_fields))
+    return dict(step.predicate_params)[PREDICATE_ARXIV_QUERY_BOOL]
 
 
-# --- arxiv：categories → 逐分类 fan-out 条目；query → 仅诊断用 search_query ----
+# --- arxiv：categories → 逐分类 fan-out 条目；query → 参数化本地补偿谓词 --------
 
 
 def test_arxiv_multi_categories_fan_out_as_repeated_entries() -> None:
@@ -117,23 +129,49 @@ def test_arxiv_hyphenated_category_is_carried_verbatim() -> None:
     assert _arxiv_pushdown(categories=("q-fin.PR",)) == (("arxiv_category", "q-fin.PR"),)
 
 
-def test_arxiv_query_only_is_pushed_down_verbatim() -> None:
-    """未声明 categories（边界：空分类）→ search_query 就是归一后的查询式本身。"""
-    assert _search_query(query='ti:"agent"') == 'ti:"agent"'
-
-
-def test_arxiv_categories_and_query_compile_to_separate_entries() -> None:
-    """并存时：分类条目在前、`search_query` 在后，且后者**不含** `cat:`。
-
-    "分类 AND 查询式"的合取语义改由「fan-out（每分类一次 OAI 收割）× 本地 `filters`
-    三谓词」承载。把 `cat:` 组仍拼进一个下达不了的 `search_query`，只会让 T5 那条
-    "无法下达"的 WARNING 对分类部分变成假警报——分类现在是真的生效了。
+def test_arxiv_query_only_produces_no_pushdown_entry() -> None:
+    """query-only（边界：空分类）→ `pushdown` 恒空（Phase 7 T9：参数化谓词走
+    `predicate_params`，`query` 从此不再落 `pushdown`——旧 `search_query` 纯诊断
+    形态已被替代，见 `test_arxiv_query_only_predicate_param_is_normalized_verbatim`）。
     """
-    assert _arxiv_pushdown(categories=("cs.AI", "cs.MA"), query='abs:"tool use" OR ti:"agent"') == (
+    assert _arxiv_pushdown(query='ti:"agent"') == ()
+
+
+def test_arxiv_query_only_predicate_param_is_normalized_verbatim() -> None:
+    """未声明 categories → `predicate_params` 就是归一后的查询式本身。"""
+    assert _arxiv_predicate_param(query='ti:"agent"') == 'ti:"agent"'
+
+
+def test_arxiv_categories_and_query_compile_to_separate_channels() -> None:
+    """并存时：分类条目进 `pushdown`（fan-out 键），查询式进 `predicate_params`——
+    二者自 Phase 7 T9 起**不再共享**一个"下达不了的 search_query"通道。
+
+    "分类 AND 查询式"的合取语义改由「fan-out（每分类一次 OAI 收割）× 本地
+    `arxiv.query_bool` 谓词 × `filters` 三谓词」承载。
+    """
+    step = _step(
+        "arxiv", {"categories": ("cs.AI", "cs.MA"), "query": 'abs:"tool use" OR ti:"agent"'}
+    )
+    assert step.pushdown == (
         ("arxiv_category", "cs.AI"),
         ("arxiv_category", "cs.MA"),
-        ("search_query", '(abs:"tool use" OR ti:"agent")'),
     )
+    assert dict(step.predicate_params) == {
+        PREDICATE_ARXIV_QUERY_BOOL: '(abs:"tool use" OR ti:"agent")'
+    }
+
+
+def test_arxiv_query_bool_predicate_is_not_mixed_into_local_predicates() -> None:
+    """`arxiv.query_bool` 标记只挂 `predicate_params`，**不**混入 `local_predicates`
+
+    （Phase 7 T9 任务卡边界：不改 `subs/watch.py`）——`watch._scoped_predicates`
+    唯一读取的字段是 `local_predicates`，若这里混入需要参数的谓词名，现有
+    `filter_papers(..., extra_predicates=...)` 调用点会在缺参数下让构造器报错，
+    破坏现有生产路径。此断言即该边界的守门测试。
+    """
+    step = _step("arxiv", {"query": 'ti:"agent"'})
+    assert PREDICATE_ARXIV_QUERY_BOOL not in step.local_predicates
+    assert step.local_predicates == ()
 
 
 def test_arxiv_and_not_is_normalized_to_andnot() -> None:
@@ -141,59 +179,71 @@ def test_arxiv_and_not_is_normalized_to_andnot() -> None:
 
     不归一的话 `NOT` 会被当成检索词——结果集静默变样，正是编译器该挡住的失真。
     """
-    assert _search_query(query='ti:"agent" AND NOT ti:"survey"') == (
+    assert _arxiv_predicate_param(query='ti:"agent" AND NOT ti:"survey"') == (
         '(ti:"agent" ANDNOT ti:"survey")'
     )
 
 
 def test_arxiv_folded_yaml_whitespace_is_collapsed() -> None:
     """YAML 折叠标量折出的换行/连续空格 → 单空格（引号内的空格不动）。"""
-    assert _search_query(query='ti:"tool  use"   OR\n  abs:"agentic"') == (
+    assert _arxiv_predicate_param(query='ti:"tool  use"   OR\n  abs:"agentic"') == (
         '(ti:"tool  use" OR abs:"agentic")'
     )
 
 
 def test_arxiv_lowercase_operators_are_uppercased_outside_quotes() -> None:
     """裸 `and`/`or` 大写化（arXiv 操作符须大写）；引号内的同名词是检索词，绝不动。"""
-    assert _search_query(query='ti:"cats and dogs" or abs:"agentic" and not ti:"survey"') == (
+    query = 'ti:"cats and dogs" or abs:"agentic" and not ti:"survey"'
+    assert _arxiv_predicate_param(query=query) == (
         '(ti:"cats and dogs" OR abs:"agentic" ANDNOT ti:"survey")'
     )
 
 
 def test_arxiv_compound_expression_is_parenthesized_for_safe_appending() -> None:
-    """复合 **query** 恒带外层括号——T5 的 `AND submittedDate:[…]` 是**追加**在末尾的。
-
-    少了这层括号，`ti:a OR ti:b AND <日期窗>` 会被 arXiv 读成
-    `ti:a OR (ti:b AND 日期窗)`：第一个析取项悄悄逃出增量窗，正是"边界丢失"那类难查的错。
+    """复合 **query** 恒带外层括号（可读性/快照稳定；`parse_arxiv_query` 无论有无这层
+    外括号都能正确解析，`wrap_arxiv_query` 的包裹纯是规范化，不影响求值语义）。
     """
-    assert _search_query(query='ti:"a" OR ti:"b"') == '(ti:"a" OR ti:"b")'
+    assert _arxiv_predicate_param(query='ti:"a" OR ti:"b"') == '(ti:"a" OR ti:"b")'
 
 
 def test_arxiv_already_wrapped_query_is_not_double_wrapped() -> None:
-    assert _search_query(query='(ti:"a" OR ti:"b")') == '(ti:"a" OR ti:"b")'
+    assert _arxiv_predicate_param(query='(ti:"a" OR ti:"b")') == '(ti:"a" OR ti:"b")'
 
 
 def test_arxiv_unbalanced_parentheses_are_left_alone() -> None:
-    """括号不配对 = 用户写错：编译器不猜、不补（只按常规加自己的那层），交 arXiv 明确报错。"""
-    assert _search_query(query='((ti:"a" OR ti:"b")') == '(((ti:"a" OR ti:"b"))'
+    """括号不配对 = 用户写错：编译器不猜、不补（只按常规加自己的那层）。
+
+    这条经 `_step` 直构选择器、绕过 `model.py` 的语法早验（`test_subs_model.py` 另有
+    专测覆盖"正常加载路径下括号不配对会被拒载"），单独验证 `_compile_arxiv` 自身的
+    归一/包裹步骤不臆造修复。
+    """
+    assert _arxiv_predicate_param(query='((ti:"a" OR ti:"b")') == '(((ti:"a" OR ti:"b"))'
 
 
 def test_arxiv_unpaired_quote_is_normalized_as_if_unquoted() -> None:
     """已知行为：引号落单时那截按引号外处理（照样折空白、照样大写操作符）。
 
     钉住而非"修复"：引号配不上本就是写错了，猜用户想在哪闭合只会把显式错误变成隐式错误。
+    同上条，本例经 `_step` 绕过 `model.py` 早验，只测 `_compile_arxiv` 自身的归一步骤。
     """
-    assert _search_query(query='ti:"agent   and  abs:x') == '(ti:"agent AND abs:x)'
+    assert _arxiv_predicate_param(query='ti:"agent   and  abs:x') == '(ti:"agent AND abs:x)'
 
 
 def test_arxiv_empty_selector_yields_no_pushdown() -> None:
-    """兜底：绕过解析器直构的空选择器不产 `search_query=`（空查询串会拉回全站）。"""
-    assert _step("arxiv", {}).pushdown == ()
+    """兜底：绕过解析器直构的空选择器不产任何条目（既不进 `pushdown` 也不进
+    `predicate_params`）。"""
+    step = _step("arxiv", {})
+    assert step.pushdown == ()
+    assert step.predicate_params == ()
 
 
-def test_arxiv_blank_query_yields_no_search_query_entry() -> None:
-    """只写空白的 query 归一后是空串 → 不产条目（旧形态会留下 `(cat:…) AND ` 残尾）。"""
-    assert _arxiv_pushdown(categories=("cs.AI",), query="   ") == (("arxiv_category", "cs.AI"),)
+def test_arxiv_blank_query_yields_no_predicate_params_entry() -> None:
+    """只写空白的 query 归一后是空串 → 不产 `predicate_params` 条目（Phase 7 T9；
+    旧形态曾在 `pushdown` 留下 `(cat:…) AND ` 残尾，新形态干脆不产条目）。
+    """
+    step = _step("arxiv", {"categories": ("cs.AI",), "query": "   "})
+    assert step.pushdown == (("arxiv_category", "cs.AI"),)
+    assert step.predicate_params == ()
 
 
 @pytest.mark.parametrize(
@@ -214,7 +264,7 @@ def test_arxiv_handwritten_date_window_is_rejected(query: str) -> None:
 
 def test_arxiv_query_without_date_window_compiles_fine() -> None:
     """反例：正常查询式不受日期窗守卫影响（守卫不能宽到误伤普通检索词）。"""
-    assert _search_query(query='ti:"submitted manuscript"') == 'ti:"submitted manuscript"'
+    assert _arxiv_predicate_param(query='ti:"submitted manuscript"') == 'ti:"submitted manuscript"'
 
 
 def test_date_window_guard_names_are_derived_from_the_seam_table() -> None:
@@ -670,11 +720,19 @@ def test_every_step_is_serializable_as_string_params() -> None:
 # --- design/09 §2 双示例的编译快照 ---------------------------------------------
 
 
-def _snapshot(name: str) -> tuple[tuple[str, tuple[tuple[str, str], ...], tuple[str, ...]], ...]:
+_StepSnapshot = tuple[
+    str, tuple[tuple[str, str], ...], tuple[str, ...], tuple[tuple[str, str], ...]
+]
+
+
+def _snapshot(name: str) -> tuple[_StepSnapshot, ...]:
+    """`(source, pushdown, local_predicates, predicate_params)` 四元组（Phase 7 T9
+    起新增第四位——此前是三元组，`predicate_params` 是本卡新增字段）。
+    """
     subscription = load_subscription_file(_FIXTURES / f"{name}.yaml")
     plan = compile_subscription(subscription, venues={"ssrn": _load_repo_ssrn_venue()})
     assert plan.subscription == name
-    return tuple((s.source, s.pushdown, s.local_predicates) for s in plan.steps)
+    return tuple((s.source, s.pushdown, s.local_predicates, s.predicate_params) for s in plan.steps)
 
 
 def test_llm_agents_example_compiles_to_expected_plan() -> None:
@@ -686,15 +744,17 @@ def test_llm_agents_example_compiles_to_expected_plan() -> None:
                 ("arxiv_category", "cs.LG"),
                 ("arxiv_category", "cs.CL"),
                 ("arxiv_category", "cs.MA"),
-                (
-                    "search_query",
-                    '((ti:"agent" OR abs:"agentic" OR abs:"tool use") ANDNOT ti:"survey")',
-                ),
             ),
             (
                 LOCAL_PREDICATE_TITLE_REGEX_ANY,
                 LOCAL_PREDICATE_EXCLUDE_REGEX,
                 LOCAL_PREDICATE_MIN_YEAR,
+            ),
+            (
+                (
+                    PREDICATE_ARXIV_QUERY_BOOL,
+                    '((ti:"agent" OR abs:"agentic" OR abs:"tool use") ANDNOT ti:"survey")',
+                ),
             ),
         ),
         (
@@ -705,6 +765,7 @@ def test_llm_agents_example_compiles_to_expected_plan() -> None:
                 LOCAL_PREDICATE_EXCLUDE_REGEX,
                 LOCAL_PREDICATE_MIN_YEAR,
             ),
+            (),
         ),
     )
 
@@ -715,6 +776,7 @@ def test_asset_pricing_wp_example_compiles_to_expected_plan() -> None:
             "ssrn",
             (),
             (LOCAL_PREDICATE_TITLE_REGEX_ANY, PREDICATE_SSRN_TOPIC_FILTER),
+            (),
         ),
         (
             "arxiv",
@@ -724,11 +786,13 @@ def test_asset_pricing_wp_example_compiles_to_expected_plan() -> None:
                 ("arxiv_category", "q-fin.ST"),
             ),
             (LOCAL_PREDICATE_TITLE_REGEX_ANY,),
+            (),  # 本示例未声明 query（design/09 §2 示例二本就没有）
         ),
         (
             "nber",
             (("program", "AP"),),
             (LOCAL_PREDICATE_TITLE_REGEX_ANY,),
+            (),
         ),
     )
 

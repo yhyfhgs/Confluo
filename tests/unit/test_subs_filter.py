@@ -1,8 +1,9 @@
-"""本地过滤器（Phase 6 T3；design/09 §2 `filters:` + §3 本地补偿）。
+"""本地过滤器（Phase 6 T3 + Phase 7 T9；design/09 §2 `filters:` + §3 本地补偿）。
 
 覆盖：`title_regex_any`/`exclude_regex`/`min_year` 正则命中矩阵（含 Unicode 标题、
 无 title 的 meta、坏输入）；`exclude_regex` 永不出现在 `matched_rules`；源专属谓词
-注册表（ssrn `topic_filter`）+ 未登记谓词 fail-loud（含空输入流也报错）。
+注册表（ssrn `topic_filter` + arxiv `query_bool`，构造器形态）+ 未登记谓词 fail-loud
+（含空输入流也报错）。
 """
 
 from __future__ import annotations
@@ -13,10 +14,12 @@ import logging
 import pytest
 
 from paper_crawler.subs.filter import (
+    ARXIV_QUERY_BOOL,
     PREDICATE_REGISTRY,
     SSRN_TOPIC_FILTER,
     FilteredPaper,
     apply_predicate,
+    build_predicate,
     filter_papers,
     reset_predicate_warnings,
 )
@@ -29,8 +32,11 @@ def _stub(
     *,
     year: int | None = 2024,
     meta: tuple[tuple[str, str], ...] = (),
+    abstract: str | None = None,
 ) -> PaperStub:
-    return PaperStub(title=title, identifiers=(("doi", "10.1/x"),), year=year, meta=meta)
+    return PaperStub(
+        title=title, identifiers=(("doi", "10.1/x"),), year=year, meta=meta, abstract=abstract
+    )
 
 
 # --- 正则命中矩阵（≥10 例，含 Unicode/无 title/坏输入）------------------------
@@ -169,9 +175,12 @@ def test_empty_filters_pass_everything_with_empty_matched_rules() -> None:
 # --- 谓词注册表（源专属本地补偿）--------------------------------------------
 
 
-def test_registry_contains_only_ssrn_topic_filter() -> None:
-    """集合等值自断言：登记表内容与预期完全一致（防悄悄新增/漏登记漂移）。"""
-    assert set(PREDICATE_REGISTRY) == {SSRN_TOPIC_FILTER}
+def test_registry_contains_exactly_ssrn_and_arxiv_predicates() -> None:
+    """集合等值自断言：登记表内容与预期完全一致（防悄悄新增/漏登记漂移）。
+
+    Phase 7 T9 新增 `ARXIV_QUERY_BOOL`——此前本断言只含 `SSRN_TOPIC_FILTER`。
+    """
+    assert set(PREDICATE_REGISTRY) == {SSRN_TOPIC_FILTER, ARXIV_QUERY_BOOL}
 
 
 def test_apply_predicate_ssrn_topic_filter_true_for_econ_fin_field() -> None:
@@ -221,6 +230,140 @@ def test_apply_predicate_ssrn_topic_filter_still_judges_when_signal_present(
 def test_apply_predicate_ssrn_topic_filter_false_for_other_field() -> None:
     stub = _stub("Engineering Paper", meta=(("openalex_field", "Engineering"),))
     assert apply_predicate(SSRN_TOPIC_FILTER, stub) is False
+
+
+def test_build_predicate_ssrn_topic_filter_ignores_param() -> None:
+    """`ssrn.topic_filter` 的构造器忽略 `param`——判定完全来自 `stub.meta`。"""
+    econ = _stub("WP", meta=(("openalex_field", "Economics, Econometrics and Finance"),))
+    predicate = build_predicate(SSRN_TOPIC_FILTER, "any-ignored-value")
+    assert predicate(econ) is True
+
+
+def test_build_predicate_unknown_name_fails_loud() -> None:
+    with pytest.raises(ValueError, match="未登记的本地补偿谓词"):
+        build_predicate("bogus.thing", "x")
+
+
+# --- arxiv.query_bool（构造器形态谓词，Phase 7 T9）---------------------------
+
+
+def test_construct_arxiv_query_bool_blank_param_fails_loud() -> None:
+    """构造器需要非空查询式参数——空串/纯空白视为接线错误，响亮拒绝。"""
+    with pytest.raises(ValueError, match=ARXIV_QUERY_BOOL):
+        build_predicate(ARXIV_QUERY_BOOL, "")
+    with pytest.raises(ValueError, match=ARXIV_QUERY_BOOL):
+        build_predicate(ARXIV_QUERY_BOOL, "   ")
+
+
+def test_construct_arxiv_query_bool_unsupported_field_fails_loud() -> None:
+    """构造时即解析查询式——不支持的字段前缀（范围外，决策⑤ YAGNI）响亮报错。"""
+    with pytest.raises(ValueError, match="不支持的字段前缀"):
+        build_predicate(ARXIV_QUERY_BOOL, 'au:"Smith"')
+
+
+def test_construct_arxiv_query_bool_matches_title_field() -> None:
+    predicate = build_predicate(ARXIV_QUERY_BOOL, 'ti:"agent"')
+    assert predicate(_stub("Agentic Tool Use")) is True
+    assert predicate(_stub("Quantum Computing Basics")) is False
+
+
+def test_construct_arxiv_query_bool_matches_abstract_field() -> None:
+    predicate = build_predicate(ARXIV_QUERY_BOOL, 'abs:"tool use"')
+    assert predicate(_stub("Some Title", abstract="A paper about tool use in agents.")) is True
+    assert predicate(_stub("Some Title", abstract="Unrelated abstract.")) is False
+
+
+def test_construct_arxiv_query_bool_missing_abstract_field_is_false() -> None:
+    """`abs:` 原子遇 `stub.abstract is None` → 判 False（无法确认时诚实剔除，同
+    `min_year`/`ssrn.topic_filter` 的既有取舍）。
+    """
+    predicate = build_predicate(ARXIV_QUERY_BOOL, 'abs:"agentic"')
+    assert predicate(_stub("Agentic Title", abstract=None)) is False
+
+
+def test_construct_arxiv_query_bool_or_semantics() -> None:
+    predicate = build_predicate(ARXIV_QUERY_BOOL, '(ti:"agent" OR ti:"llm")')
+    assert predicate(_stub("Agentic Systems")) is True
+    assert predicate(_stub("LLM Reasoning")) is True
+    assert predicate(_stub("Unrelated Paper")) is False
+
+
+def test_construct_arxiv_query_bool_andnot_semantics() -> None:
+    predicate = build_predicate(ARXIV_QUERY_BOOL, '(ti:"agent" ANDNOT ti:"survey")')
+    assert predicate(_stub("Agentic Tool Use")) is True
+    assert predicate(_stub("A Survey of Agentic Systems")) is False
+
+
+def test_construct_arxiv_query_bool_and_semantics() -> None:
+    """`AND`（非 `ANDNOT`）语义：语法支持但 9 个 preset 现状不用（决策⑤范围仍含它）。"""
+    predicate = build_predicate(ARXIV_QUERY_BOOL, '(ti:"agent" AND abs:"tool")')
+    assert predicate(_stub("Agentic Systems", abstract="uses a tool")) is True
+    assert predicate(_stub("Agentic Systems", abstract="no such thing")) is False
+
+
+def test_construct_arxiv_query_bool_case_insensitive_matching() -> None:
+    """标题/短语大小写不敏感（同 `title_regex_any`/`exclude_regex` 的既有约定）。"""
+    predicate = build_predicate(ARXIV_QUERY_BOOL, 'ti:"AGENT"')
+    assert predicate(_stub("agentic tool use")) is True
+
+
+def test_apply_predicate_arxiv_query_bool_with_param_kwarg() -> None:
+    stub = _stub("Agentic Tool Use")
+    assert apply_predicate(ARXIV_QUERY_BOOL, stub, param='ti:"agent"') is True
+    assert apply_predicate(ARXIV_QUERY_BOOL, stub, param='ti:"quantum"') is False
+
+
+def test_filter_papers_wires_predicate_params_to_arxiv_query_bool() -> None:
+    """端到端：`filter_papers(extra_predicates=..., predicate_params=...)` 正确
+    构造并应用 `arxiv.query_bool`——模拟未来 watch.py 集成会怎样驱动这条新接缝
+    （本卡不改 watch.py，但机制本身在此完整验证）。
+    """
+    hit = _stub("Agentic Tool Use")
+    miss = _stub("Quantum Computing Basics")
+    result = filter_papers(
+        [hit, miss],
+        LocalFilter(),
+        extra_predicates=(ARXIV_QUERY_BOOL,),
+        predicate_params={ARXIV_QUERY_BOOL: '(ti:"agent" OR ti:"tool")'},
+    )
+    assert [f.stub.title for f in result] == ["Agentic Tool Use"]
+    assert result[0].matched_rules == (ARXIV_QUERY_BOOL,)
+
+
+def test_filter_papers_arxiv_query_bool_without_predicate_params_fails_loud() -> None:
+    """未提供 `predicate_params` 时该谓词取空参数 → 构造器响亮报错（不静默放行/
+    误判）——这正是 `compile._compile_arxiv` docstring 里"不能把这条标记混进
+    `local_predicates`"的理由：现有 `watch.py` 调用点不传 `predicate_params`。
+    """
+    with pytest.raises(ValueError, match=ARXIV_QUERY_BOOL):
+        filter_papers(
+            [_stub("Agentic Tool Use")], LocalFilter(), extra_predicates=(ARXIV_QUERY_BOOL,)
+        )
+
+
+def test_filter_papers_constructs_each_predicate_only_once_per_call() -> None:
+    """效率契约：谓词只在遍历 `stubs` **之前**构造一次（尤其 `arxiv.query_bool` 的
+    语法树解析），不随 `stubs` 数量重复——多篇论文共用同一个已解析的树。
+    """
+    calls: list[str] = []
+    original = PREDICATE_REGISTRY[ARXIV_QUERY_BOOL]
+
+    def _counting_constructor(param: str) -> object:
+        calls.append(param)
+        return original(param)
+
+    PREDICATE_REGISTRY[ARXIV_QUERY_BOOL] = _counting_constructor  # type: ignore[assignment]
+    try:
+        stubs = [_stub("Agentic A"), _stub("Agentic B"), _stub("Agentic C")]
+        filter_papers(
+            stubs,
+            LocalFilter(),
+            extra_predicates=(ARXIV_QUERY_BOOL,),
+            predicate_params={ARXIV_QUERY_BOOL: 'ti:"agent"'},
+        )
+    finally:
+        PREDICATE_REGISTRY[ARXIV_QUERY_BOOL] = original
+    assert calls == ['ti:"agent"']  # 恰好一次，不是每 stub 一次
 
 
 def test_apply_predicate_unknown_name_fails_loud() -> None:

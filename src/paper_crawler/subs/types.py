@@ -21,6 +21,8 @@ T2（编译器）、T3（过滤+护栏）、T5（watch runner）、T6（日报�
 hashable，故弹性字段一律 tuple-of-tuples 而非 dict；时间戳 UTC ISO8601 字符串。
 """
 
+import re
+from collections.abc import Callable
 from dataclasses import dataclass
 from enum import StrEnum
 
@@ -106,6 +108,245 @@ ARXIV_SET_PARAM = "arxiv_set"
 
 
 # ---------------------------------------------------------------------------
+# T9 接缝：arxiv `query` 布尔式的语法（叶子模块——`model.py` 早验 / `filter.py` 求值
+# 两方共同消费，住在任一消费方都会让另一方反向依赖，同 `DATE_WINDOW_PARAMS` 的守法）。
+# ---------------------------------------------------------------------------
+#
+# 范围=现有 9 个 preset 实测覆盖面（plan §4 T9 已裁决歧义⑤，YAGNI，不造全功能查询
+# 语言）：字段前缀仅 `ti`（标题）/`abs`（摘要）；布尔算子 `OR`/`AND`/`ANDNOT`；短语可
+# 加引号也可裸写；括号可任意嵌套。语法出处 = site-survey/arxiv.md「关键机制」段
+# （字段前缀全集 ti/au/abs/co/jr/cat/rn/all，本表只启用其中两个——其余前缀在词法上
+# 仍会被识别成候选原子，但 `_ArxivQueryParser._parse_atom` 会为不支持的字段名响亮
+# 报错，不静默忽略）。
+
+ARXIV_QUERY_FIELDS: frozenset[str] = frozenset({"ti", "abs"})
+
+_ARXIV_QUOTED_PHRASE = re.compile(r'"[^"]*"')
+_ARXIV_WHITESPACE_RUN = re.compile(r"\s+")
+_ARXIV_AND_NOT = re.compile(r"\bAND\s+NOT\b", re.IGNORECASE)
+_ARXIV_BARE_OPERATOR = re.compile(r"\b(and|or|andnot)\b", re.IGNORECASE)
+# 词法单元：括号 / `field:"phrase"` 或 `field:bareword` 原子 / 裸算子词（OR/AND/ANDNOT）。
+_ARXIV_TOKEN = re.compile(r'[()]|[A-Za-z][\w.-]*:(?:"[^"]*"|[^\s()]+)|[A-Za-z]+')
+
+
+def _arxiv_outside_quotes(expr: str, transform: Callable[[str], str]) -> str:
+    """只对引号外的片段施 `transform`，引号内原样保留（拼回原序）。"""
+    chunks: list[str] = []
+    cursor = 0
+    for match in _ARXIV_QUOTED_PHRASE.finditer(expr):
+        chunks.append(transform(expr[cursor : match.start()]))
+        chunks.append(match.group(0))
+        cursor = match.end()
+    chunks.append(transform(expr[cursor:]))
+    return "".join(chunks)
+
+
+def normalize_arxiv_query(raw: str) -> str:
+    """归一用户写的 arXiv 布尔式：折行空白 + `AND NOT`→`ANDNOT` + 操作符大写。
+
+    （原 `compile._normalize_arxiv_query`，Phase 7 T9 移至本叶子模块并转为公开——
+    `model.py` 早验语法 / `compile.py` 产出 `predicate_params` 值 / `filter.py`
+    求值三方共同消费，住在任一方都会让另两方反向依赖。归一逻辑本身逐字未变。）
+
+    DSL 里的 `query` 常写成 YAML 折叠标量，折出来带换行与多余空格；且允许 `AND NOT`
+    与 `ANDNOT` 两种写法（实测操作符是单词 `ANDNOT`，site-survey/arxiv.md）。归一
+    **全部只在引号外**进行（`abs:"tool use"` 里的空格、`ti:"cats and dogs"` 里的
+    `and` 都不动）。
+
+    不做的事：不校验字段前缀合法性、不补括号、不处理一元 `NOT`——本函数只管表层
+    空白/大小写折叠，语法是否合法（字段名/括号配对/悬空算子）由 `parse_arxiv_query`
+    另行把关。
+    """
+
+    def normalize(chunk: str) -> str:
+        chunk = _ARXIV_WHITESPACE_RUN.sub(" ", chunk)
+        chunk = _ARXIV_AND_NOT.sub("ANDNOT", chunk)
+        return _ARXIV_BARE_OPERATOR.sub(lambda m: m.group(1).upper(), chunk)
+
+    return _arxiv_outside_quotes(raw, normalize).strip()
+
+
+def _arxiv_query_is_atom(expr: str) -> bool:
+    """表达式是否"原子"（引号外无空白）——原子无需加括号（`ti:"tool use"`、`abs:agentic`）。"""
+    return not any(char.isspace() for char in _ARXIV_QUOTED_PHRASE.sub("", expr))
+
+
+def _arxiv_query_is_fully_wrapped(expr: str) -> bool:
+    """整条表达式是否已被**一对**括号完整包住（`(a OR b)` 真，`(a) OR (b)` 假）。"""
+    if not (expr.startswith("(") and expr.endswith(")")):
+        return False
+    depth = 0
+    in_quote = False
+    for index, char in enumerate(expr):
+        if char == '"':
+            in_quote = not in_quote
+        elif in_quote:
+            continue
+        elif char == "(":
+            depth += 1
+        elif char == ")":
+            depth -= 1
+            if depth == 0:
+                return index == len(expr) - 1
+    return False  # 括号不配对（用户写错）——不加戏，交 `parse_arxiv_query` 响亮报错
+
+
+def wrap_arxiv_query(expr: str) -> str:
+    """按需加括号：原子与"已整体括起"者原样返回，其余包一层。
+
+    （原 `compile._wrap`，Phase 7 T9 移至本叶子模块并转为公开，逻辑逐字未变。）
+    纯为 `predicate_params` 存的规范化字符串好读/可快照——`parse_arxiv_query` 无论
+    有无这层外括号都能正确解析（顶层与括号内用同一套产生式，见 `_ArxivQueryParser`）。
+    """
+    return (
+        expr if _arxiv_query_is_atom(expr) or _arxiv_query_is_fully_wrapped(expr) else f"({expr})"
+    )
+
+
+@dataclass(frozen=True)
+class ArxivQueryAtom:
+    """一个 `field:"phrase"` 原子（语法树叶节点）。`field` ∈ `ARXIV_QUERY_FIELDS`；
+    `phrase` 已去除外层引号（如声明过），大小写原样保留，由消费方决定匹配时是否
+    大小写不敏感（`filter.py` 的求值器按大小写不敏感处理）。
+    """
+
+    field: str
+    phrase: str
+
+
+@dataclass(frozen=True)
+class ArxivQueryOp:
+    """一个二元布尔节点。`op` 取值域 ∈ {"OR", "AND", "ANDNOT"}（仅 docstring 约定，
+    同 `types.RunSummary.distribution` 的先例，非类型系统强制）。`AND`/`ANDNOT`
+    结合力强于 `OR`（标准约定：`a OR b ANDNOT c` 读作 `a OR (b ANDNOT c)`）——9 个
+    preset 现状恒显式加括号消歧，此优先级只在用户省略括号时才会生效。
+    """
+
+    op: str
+    left: "ArxivQueryAtom | ArxivQueryOp"
+    right: "ArxivQueryAtom | ArxivQueryOp"
+
+
+ArxivQueryNode = ArxivQueryAtom | ArxivQueryOp
+
+
+def _tokenize_arxiv_query(text: str) -> list[str]:
+    """把已归一的查询式切成词法单元（括号 / `field:phrase` 原子 / 裸算子词）。
+
+    识别不了的片段（如落单的引号、缺字段前缀的裸词紧跟冒号）→ `ValueError`，带出
+    出错位置——不猜测用户想表达什么，交调用方（`model.py`/`filter.py`）决定如何报告。
+    """
+    tokens: list[str] = []
+    pos = 0
+    length = len(text)
+    while pos < length:
+        if text[pos].isspace():
+            pos += 1
+            continue
+        match = _ARXIV_TOKEN.match(text, pos)
+        if match is None:
+            raise ValueError(f"无法识别的查询片段: {text[pos:]!r}（位置 {pos}）")
+        tokens.append(match.group(0))
+        pos = match.end()
+    return tokens
+
+
+class _ArxivQueryParser:
+    """递归下降解析器：
+
+    ```
+    or_expr  := and_expr ("OR" and_expr)*
+    and_expr := term (("AND" | "ANDNOT") term)*
+    term     := "(" or_expr ")" | atom
+    atom     := FIELD ":" phrase        # FIELD ∈ ARXIV_QUERY_FIELDS
+    ```
+    """
+
+    def __init__(self, tokens: list[str]) -> None:
+        self._tokens = tokens
+        self._pos = 0
+
+    def parse_and_expect_exhausted(self) -> ArxivQueryNode:
+        """解析整条表达式并确认词元恰好用尽——残留片段（如多余的右括号）响亮报错。"""
+        node = self._parse_or()
+        if self._pos != len(self._tokens):
+            raise ValueError(f"查询式解析后仍有残留片段: {self._tokens[self._pos :]!r}")
+        return node
+
+    def _peek(self) -> str | None:
+        return self._tokens[self._pos] if self._pos < len(self._tokens) else None
+
+    def _advance(self) -> str:
+        token = self._peek()
+        if token is None:
+            raise ValueError("查询式提前结束（缺少操作数）")
+        self._pos += 1
+        return token
+
+    def _parse_or(self) -> ArxivQueryNode:
+        node = self._parse_and()
+        while self._peek() == "OR":
+            self._advance()
+            node = ArxivQueryOp(op="OR", left=node, right=self._parse_and())
+        return node
+
+    def _parse_and(self) -> ArxivQueryNode:
+        node = self._parse_term()
+        while self._peek() in ("AND", "ANDNOT"):
+            op = self._advance()
+            node = ArxivQueryOp(op=op, left=node, right=self._parse_term())
+        return node
+
+    def _parse_term(self) -> ArxivQueryNode:
+        if self._peek() == "(":
+            self._advance()
+            node = self._parse_or()
+            closing = self._advance()
+            if closing != ")":
+                raise ValueError(f"括号不配对：期望 ')'，实际 {closing!r}")
+            return node
+        return self._parse_atom()
+
+    def _parse_atom(self) -> ArxivQueryAtom:
+        token = self._advance()
+        if token in ("(", ")", "OR", "AND", "ANDNOT"):
+            raise ValueError(f'期望字段原子（如 ti:"..."），实际是操作符/括号 {token!r}')
+        field, sep, phrase = token.partition(":")
+        if not sep:
+            raise ValueError(f'原子缺少字段前缀（须形如 ti:"..."）：{token!r}')
+        if field not in ARXIV_QUERY_FIELDS:
+            raise ValueError(
+                f"不支持的字段前缀 {field!r}（本地谓词只支持: "
+                f"{', '.join(sorted(ARXIV_QUERY_FIELDS))}；YAGNI 范围=现有 preset 实测覆盖面）"
+            )
+        if len(phrase) >= 2 and phrase.startswith('"') and phrase.endswith('"'):
+            phrase = phrase[1:-1]
+        if not phrase:
+            raise ValueError(f"字段 {field!r} 的短语为空：{token!r}")
+        return ArxivQueryAtom(field=field, phrase=phrase)
+
+
+def parse_arxiv_query(text: str) -> ArxivQueryNode:
+    """把 arXiv 查询布尔式解析成可求值的语法树（Phase 7 T9；plan §4 T9 冻结件
+    "参数化谓词签名"）。
+
+    两方消费：`model.py`（`_require_arxiv_query_syntax`）在订阅**加载期**调用本
+    函数只为验证语法（丢弃返回值，`ValueError` 转 `SubscriptionInvalid`）；
+    `filter.py` 的 `arxiv.query_bool` 谓词构造器调用本函数取真正求值用的树。传入
+    **原始**（未归一）文本即安全——本函数内部先调用 `normalize_arxiv_query`。
+
+    范围=ti/abs 字段 + OR/AND/ANDNOT + 引号短语/裸词，括号任意嵌套（决策⑤ YAGNI，
+    不造全功能查询语言）。空表达式/未闭合引号/不支持的字段前缀/括号不配对/悬空
+    算子/残留片段 → `ValueError`。
+    """
+    normalized = normalize_arxiv_query(text)
+    if not normalized:
+        raise ValueError("查询式为空（归一后不剩任何内容）")
+    tokens = _tokenize_arxiv_query(normalized)
+    return _ArxivQueryParser(tokens).parse_and_expect_exhausted()
+
+
+# ---------------------------------------------------------------------------
 # 编译计划（T2 产出 → T5 执行）
 # ---------------------------------------------------------------------------
 
@@ -118,7 +359,21 @@ class PlanStep:
       多个 `filter=`），且 frozen dataclass 需 hashable（模块 docstring 约定）。
       值一律字符串——编译产物直接就是查询参数形态；需要 dict 视图时用 `as_params()`。
     - `local_predicates` 列出该源**下推不了**、必须在本地过滤器（T3）补偿的谓词
-      标记。空元组 = 该源已完整下推。
+      标记。空元组 = 该源已完整下推。**免参数**——`filter.PREDICATE_REGISTRY`
+      按名字直接取到构造器、以空参数构造即可执行（如 `ssrn.topic_filter`）；这条
+      通道正是 `subs/watch.py` 现有 `_scoped_predicates`/`extra_predicates=` 唯一
+      消费的字段。
+    - `predicate_params`（Phase 7 T9 新增；plan §4 T9"参数化谓词签名"冻结件）是
+      **参数化补偿谓词**的 (谓词名, 订阅级参数) 有序 k-v 序列——`PREDICATE_REGISTRY`
+      的构造器形态谓词（如 arxiv 的 `arxiv.query_bool`，`compile._compile_arxiv`
+      产出）据此参数构造出真正的 `PaperStub -> bool` 闭包。与 `local_predicates`
+      **刻意分离、互不混入**：本卡（T9）不改 `subs/watch.py`，`local_predicates`
+      仍是唯一喂给现有 `filter_papers(..., extra_predicates=...)` 调用点的字段——
+      若把需要参数的谓词名也混进 `local_predicates`，现有调用点在缺
+      `predicate_params` 的情况下会把它当"免参谓词"处理，构造器发现参数为空即
+      报错，生产路径 `subs watch` 会被直接破坏。本字段因此是一条**尚未被
+      watch.py 消费**的新接缝，实际接入（把 `predicate_params` 也传给
+      `filter_papers`）留给后续卡（plan §2 冻结表"消费方=subs 链全体后续"）。
     - `note` 是编译期备注（如 "ssrn 无关键词下推能力，关键词全量本地补偿"），
       供日报/诊断呈现，不参与判定。
     """
@@ -126,6 +381,7 @@ class PlanStep:
     source: str
     pushdown: tuple[tuple[str, str], ...] = ()
     local_predicates: tuple[str, ...] = ()
+    predicate_params: tuple[tuple[str, str], ...] = ()
     note: str = ""
 
     def as_params(self) -> dict[str, str]:
@@ -272,11 +528,15 @@ class RunSummary:
 
 __all__ = [
     "ARXIV_CATEGORY_PARAM",
+    "ARXIV_QUERY_FIELDS",
     "ARXIV_SET_PARAM",
     "DATE_WINDOW_PARAMS",
     "LOCAL_PREDICATE_EXCLUDE_REGEX",
     "LOCAL_PREDICATE_MIN_YEAR",
     "LOCAL_PREDICATE_TITLE_REGEX_ANY",
+    "ArxivQueryAtom",
+    "ArxivQueryNode",
+    "ArxivQueryOp",
     "CompiledPlan",
     "FailureEvent",
     "PlanStep",
@@ -284,4 +544,7 @@ __all__ = [
     "RunSummary",
     "WatchOutcome",
     "is_source_scoped_predicate",
+    "normalize_arxiv_query",
+    "parse_arxiv_query",
+    "wrap_arxiv_query",
 ]

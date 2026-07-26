@@ -1,8 +1,10 @@
-"""订阅域冻结件（`subs/types.py`）的结构与语义（Phase 6 T1；plan §2）。
+"""订阅域冻结件（`subs/types.py`）的结构与语义（Phase 6 T1 + Phase 7 T9；plan §2）。
 
 这些类型是 T2-T6 的共同契约，测试的重点是**契约性质**而非实现细节：不可变、
 `truncated` 由 `outcome` 单一决定、补偿谓词标记与 `LocalFilter` 字段名同源、
-`pushdown` 的重复键语义。
+`pushdown` 的重复键语义。Phase 7 T9 增补：`PlanStep.predicate_params`（参数化谓词的
+新接缝）+ arXiv 查询布尔式语法（`normalize_arxiv_query`/`wrap_arxiv_query`/
+`parse_arxiv_query`，"参数化谓词签名"冻结件的语法层）。
 """
 
 from __future__ import annotations
@@ -13,10 +15,13 @@ import pytest
 
 from paper_crawler.subs.model import SOURCE_FIELDS, LocalFilter
 from paper_crawler.subs.types import (
+    ARXIV_QUERY_FIELDS,
     DATE_WINDOW_PARAMS,
     LOCAL_PREDICATE_EXCLUDE_REGEX,
     LOCAL_PREDICATE_MIN_YEAR,
     LOCAL_PREDICATE_TITLE_REGEX_ANY,
+    ArxivQueryAtom,
+    ArxivQueryOp,
     CompiledPlan,
     FailureEvent,
     PlanStep,
@@ -24,6 +29,9 @@ from paper_crawler.subs.types import (
     RunSummary,
     WatchOutcome,
     is_source_scoped_predicate,
+    normalize_arxiv_query,
+    parse_arxiv_query,
+    wrap_arxiv_query,
 )
 
 
@@ -82,7 +90,22 @@ def test_date_window_params_re_exported_from_compile_is_the_same_object() -> Non
 def test_plan_step_defaults_and_params_view() -> None:
     step = PlanStep(source="arxiv")
     assert step.pushdown == () and step.local_predicates == () and step.note == ""
+    assert step.predicate_params == ()  # Phase 7 T9 新增字段，缺省同样空元组
     assert step.as_params() == {}
+
+
+def test_plan_step_predicate_params_is_independent_of_local_predicates() -> None:
+    """`predicate_params`（Phase 7 T9）与 `local_predicates` 是两个独立字段——可以
+    只设其一，互不干扰（`compile._compile_arxiv` 正是只设 `predicate_params` 那侧，
+    刻意不让 `arxiv.query_bool` 混入 `local_predicates`，见其 docstring）。
+    """
+    step = PlanStep(
+        source="arxiv",
+        local_predicates=(LOCAL_PREDICATE_MIN_YEAR,),
+        predicate_params=(("arxiv.query_bool", 'ti:"agent"'),),
+    )
+    assert step.local_predicates == (LOCAL_PREDICATE_MIN_YEAR,)
+    assert step.predicate_params == (("arxiv.query_bool", 'ti:"agent"'),)
 
 
 def test_plan_step_pushdown_allows_repeated_keys() -> None:
@@ -100,6 +123,12 @@ def test_plan_step_is_frozen_and_hashable() -> None:
     assert {step, dataclasses.replace(step, source="nber")} == {step}  # hashable + 值语义
     with pytest.raises(dataclasses.FrozenInstanceError):
         step.source = "arxiv"  # type: ignore[misc]
+
+
+def test_plan_step_with_predicate_params_stays_hashable() -> None:
+    """新字段同样是 tuple-of-tuples（frozen dataclass 需 hashable 的既有守法）。"""
+    step = PlanStep(source="arxiv", predicate_params=(("arxiv.query_bool", 'ti:"agent"'),))
+    assert hash(step) == hash(dataclasses.replace(step))  # 不炸即通过（值相等 → hash 相等）
 
 
 def test_compiled_plan_lookup_and_predicate_union() -> None:
@@ -258,3 +287,123 @@ def test_report_entry_carries_daily_report_columns() -> None:
 def test_failure_event_shape() -> None:
     event = FailureEvent(source="ssrn", error_class="transient", message="连接超时")
     assert (event.source, event.error_class, event.message) == ("ssrn", "transient", "连接超时")
+
+
+# --- arXiv 查询布尔式语法（Phase 7 T9；plan §4 T9"参数化谓词签名"冻结件）--------
+#
+# 范围=ti/abs 字段 + AND/OR/ANDNOT + 引号短语/裸词，括号任意嵌套（决策⑤ YAGNI）。
+# `compile.py`（归一/包裹）与 `filter.py`（求值）两侧的用例见各自测试文件；这里只
+# 测叶子模块本身：`ARXIV_QUERY_FIELDS`、归一/包裹的独立行为、解析出的语法树形状、
+# 各类语法错误的响亮报错。
+
+
+def test_arxiv_query_fields_scope_is_exactly_title_and_abstract() -> None:
+    """集合等值自断言：范围=现有 9 个 preset 实测覆盖面（决策⑤），防悄悄扩大/缩小。"""
+    assert ARXIV_QUERY_FIELDS == {"ti", "abs"}
+
+
+def test_normalize_arxiv_query_folds_whitespace_and_uppercases_operators() -> None:
+    assert normalize_arxiv_query('ti:"tool  use"   or\n  abs:"agentic"') == (
+        'ti:"tool  use" OR abs:"agentic"'
+    )
+
+
+def test_normalize_arxiv_query_joins_and_not_into_andnot() -> None:
+    assert normalize_arxiv_query('ti:"a" AND NOT ti:"b"') == 'ti:"a" ANDNOT ti:"b"'
+
+
+def test_wrap_arxiv_query_wraps_compound_but_not_atoms() -> None:
+    assert wrap_arxiv_query('ti:"a" OR ti:"b"') == '(ti:"a" OR ti:"b")'
+    assert wrap_arxiv_query('ti:"already atomic"') == 'ti:"already atomic"'
+    assert wrap_arxiv_query('(ti:"a" OR ti:"b")') == '(ti:"a" OR ti:"b")'  # 不重复包
+
+
+def test_parse_arxiv_query_single_atom() -> None:
+    assert parse_arxiv_query('ti:"agent"') == ArxivQueryAtom(field="ti", phrase="agent")
+
+
+def test_parse_arxiv_query_accepts_unquoted_bareword_phrase() -> None:
+    """语法允许裸词（无引号）——9 个 preset 现状不用，但语法本身支持（决策⑤范围含它）。"""
+    assert parse_arxiv_query("ti:agent") == ArxivQueryAtom(field="ti", phrase="agent")
+
+
+def test_parse_arxiv_query_or_chain_is_left_associative() -> None:
+    tree = parse_arxiv_query('ti:"a" OR ti:"b" OR ti:"c"')
+    assert tree == ArxivQueryOp(
+        op="OR",
+        left=ArxivQueryOp(
+            op="OR",
+            left=ArxivQueryAtom(field="ti", phrase="a"),
+            right=ArxivQueryAtom(field="ti", phrase="b"),
+        ),
+        right=ArxivQueryAtom(field="ti", phrase="c"),
+    )
+
+
+def test_parse_arxiv_query_andnot_binds_tighter_than_or_without_parens() -> None:
+    """无括号消歧时 `AND`/`ANDNOT` 结合力强于 `OR`（标准约定，`ArxivQueryOp` docstring）。
+
+    9 个 preset 现状恒显式加括号（不依赖此优先级），此处单独验证该规则本身。
+    """
+    tree = parse_arxiv_query('ti:"a" OR ti:"b" ANDNOT ti:"c"')
+    assert tree == ArxivQueryOp(
+        op="OR",
+        left=ArxivQueryAtom(field="ti", phrase="a"),
+        right=ArxivQueryOp(
+            op="ANDNOT",
+            left=ArxivQueryAtom(field="ti", phrase="b"),
+            right=ArxivQueryAtom(field="ti", phrase="c"),
+        ),
+    )
+
+
+def test_parse_arxiv_query_parenthesized_group_then_andnot() -> None:
+    """9 个 preset 的实际形态：`(A OR B OR C) ANDNOT D`。"""
+    tree = parse_arxiv_query('(ti:"a" OR abs:"b") ANDNOT ti:"c"')
+    assert tree == ArxivQueryOp(
+        op="ANDNOT",
+        left=ArxivQueryOp(
+            op="OR",
+            left=ArxivQueryAtom(field="ti", phrase="a"),
+            right=ArxivQueryAtom(field="abs", phrase="b"),
+        ),
+        right=ArxivQueryAtom(field="ti", phrase="c"),
+    )
+
+
+def test_parse_arxiv_query_is_robust_to_raw_unnormalized_text() -> None:
+    """传入**原始**（未归一）文本同样安全——内部先调用 `normalize_arxiv_query`。"""
+    tree = parse_arxiv_query('ti:"a"   and \n not  ti:"b"')
+    assert tree == ArxivQueryOp(
+        op="ANDNOT",
+        left=ArxivQueryAtom(field="ti", phrase="a"),
+        right=ArxivQueryAtom(field="ti", phrase="b"),
+    )
+
+
+def test_parse_arxiv_query_ignores_the_optional_outer_wrap() -> None:
+    """有无 `wrap_arxiv_query` 包的外括号，解析出的树完全相同——包裹只为可读/快照。"""
+    assert parse_arxiv_query('ti:"a" OR ti:"b"') == parse_arxiv_query('(ti:"a" OR ti:"b")')
+
+
+@pytest.mark.parametrize(
+    ("text", "needle"),
+    [
+        ("", "为空"),
+        ("   ", "为空"),
+        ('au:"Smith"', "不支持的字段前缀"),
+        ('cat:"cs.AI"', "不支持的字段前缀"),
+        ('(ti:"a" OR ti:"b"', "提前结束"),  # 结尾处缺右括号——连"期望的 token"都没了
+        ('(ti:"a" ti:"b")', "括号不配对"),  # 两原子间缺算子，"关闭符"位置读到别的 token
+        ('ti:"a" OR ti:"b")', "残留片段"),
+        ('ti:"a" OR', "提前结束"),
+        ("agent", "缺少字段前缀"),
+        ('ti:"a" ti:"b"', "残留片段"),  # 两个原子之间缺算子（顶层，无外括号兜底）
+        ('"stray quote"', "无法识别的查询片段"),  # 引号前没有 field: 前缀，词法层面就认不出
+        ('ti:""', "短语为空"),  # 空引号短语（field: 后紧跟一对空引号）
+        ('(ti:"a" OR)', "期望字段原子"),  # OR 之后紧跟右括号——原子位置读到了算子/括号
+    ],
+)
+def test_parse_arxiv_query_rejects_invalid_syntax(text: str, needle: str) -> None:
+    with pytest.raises(ValueError, match=needle):
+        parse_arxiv_query(text)
