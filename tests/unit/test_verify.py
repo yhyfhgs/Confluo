@@ -12,10 +12,11 @@ from pathlib import Path
 
 import pytest
 
+from helpers.fulltext_schema import write_fulltext_row, write_legacy_fulltext_row
 from paper_crawler.storage.db import Database
 from paper_crawler.storage.repo import Repo
 from paper_crawler.types import AssetKind, AssetPlan, AuthLevel, PaperStub, VenueSpec
-from paper_crawler.verify import VerifyIssue, verify_store
+from paper_crawler.verify import VerifyIssue, count_pending_extraction, verify_store
 
 VENUE_ID = "mock_journal"
 _PDF_BYTES = b"%PDF-1.4\n%test\n"
@@ -34,8 +35,23 @@ def _pdf_plan(version: str | None = None) -> AssetPlan:
     )
 
 
+def _si_plan(version: str | None = None) -> AssetPlan:
+    return AssetPlan(
+        kind=AssetKind.SI,
+        url="https://mock.local/si/x/supplement.zip",
+        expected_type="application/zip",
+        auth_needed=AuthLevel.NONE,
+        version=version,
+    )
+
+
 def _write_pdf(path: Path, content: bytes = _PDF_BYTES) -> str:
-    """把 content 写到 path（自动建父目录），返回其 sha256 十六进制摘要。"""
+    """把 content 写到 path（自动建父目录），返回其 sha256 十六进制摘要。
+
+    名字沿用 T8a 先例，但内容不限于 PDF——si/fulltext 测试同样复用本 helper 写
+    zip/txt 等任意字节内容（`verify_store` 本就只做字节级 sha256 比对，不关心
+    文件语义类型）。
+    """
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_bytes(content)
     return hashlib.sha256(content).hexdigest()
@@ -144,10 +160,27 @@ def test_verify_store_known_file_is_not_orphan(repo: Repo, data_dir: Path) -> No
     assert verify_store(repo, data_dir) == []
 
 
-def test_verify_store_ignores_files_outside_pdf_subtree(repo: Repo, data_dir: Path) -> None:
-    """data_dir 下 pdf/ 以外的目录（如 si/）不在 orphan 扫描范围内（design/06 §4 范围声明）。"""
-    (data_dir / "si").mkdir()
-    _write_pdf(data_dir / "si" / "supplement.pdf")
+def test_verify_store_ignores_files_outside_known_subtrees(repo: Repo, data_dir: Path) -> None:
+    """data_dir 下 pdf/si/fulltext 以外的目录（如 export/、tmp/）不在孤儿扫描范围内
+    （design/12 §9.2：T14 把扫描范围显式扩到 pdf/si/fulltext 三棵子树，export/tmp
+    仍不产出对账产物）。si/ 自 T14 起已纳入扫描范围——本用例原以 si/ 作越界例证，
+    现已不成立，改测真正越界的 export/tmp（见下方 si 专属测试组的孤儿检出用例）。
+    """
+    (data_dir / "export").mkdir()
+    _write_pdf(data_dir / "export" / "report.pdf")
+    (data_dir / "tmp").mkdir()
+    _write_pdf(data_dir / "tmp" / "some.part")
+
+    assert verify_store(repo, data_dir) == []
+
+
+def test_verify_store_handles_missing_si_and_fulltext_directories(
+    repo: Repo, data_dir: Path
+) -> None:
+    """`data_dir/si`、`data_dir/fulltext` 尚不存在时不应报错（同 `pdf/` 既有先例，见
+    `test_verify_store_handles_missing_pdf_directory`）。"""
+    assert not (data_dir / "si").exists()
+    assert not (data_dir / "fulltext").exists()
 
     assert verify_store(repo, data_dir) == []
 
@@ -274,3 +307,370 @@ def test_verify_store_is_read_only(repo: Repo, data_dir: Path) -> None:
     assert after_row is not None
     assert dict(after_row) == before
     assert orphan_path.read_bytes() == _PDF_BYTES
+
+
+# -- si（asset 表面；孤儿判定=文件级，design/12 §9.2 裁决）-----------------------------
+#
+# si asset 与 pdf 同构（同一 `asset` 表、同一 `repo.list_assets()`，kind 无关）——
+# missing_file/hash_mismatch 的判据与 pdf 完全一致，故不逐类重复整套用例，只各补一例
+# 锁定"si 确实被扫描到"；孤儿判定单独用一例证明是**文件级**而非目录级。
+
+
+def test_verify_store_detects_si_missing_file(repo: Repo, data_dir: Path) -> None:
+    paper_id = repo.upsert_paper(VENUE_ID, None, _stub(doi="10.9999/si-miss", title="SI Missing"))
+    asset_id = repo.plan_asset(paper_id, _si_plan(), "mock_platform")
+    file_path = data_dir / "si" / VENUE_ID / "2024" / paper_id / "supplement.zip"
+    repo.mark_asset(
+        asset_id, state="fetched", file_path=str(file_path), bytes_=10, sha256="deadbeef"
+    )
+    # 注意：从未真的写文件——磁盘上不存在
+
+    issues = verify_store(repo, data_dir)
+    assert issues == [
+        VerifyIssue(
+            kind="missing_file", asset_id=asset_id, file_path=str(file_path), suggestion="re-fetch"
+        )
+    ]
+
+
+def test_verify_store_detects_si_hash_mismatch(repo: Repo, data_dir: Path) -> None:
+    paper_id = repo.upsert_paper(VENUE_ID, None, _stub(doi="10.9999/si-hash", title="SI Hash"))
+    asset_id = repo.plan_asset(paper_id, _si_plan(), "mock_platform")
+    file_path = data_dir / "si" / VENUE_ID / "2024" / paper_id / "supplement.zip"
+    _write_pdf(file_path, b"PK\x03\x04actual-zip-bytes")
+    repo.mark_asset(
+        asset_id, state="fetched", file_path=str(file_path), bytes_=1, sha256="not-the-real-hash"
+    )
+
+    issues = verify_store(repo, data_dir)
+    assert issues == [
+        VerifyIssue(
+            kind="hash_mismatch",
+            asset_id=asset_id,
+            file_path=str(file_path),
+            suggestion="quarantine",
+        )
+    ]
+
+
+def test_verify_store_detects_si_orphan_file_at_file_level_not_directory_level(
+    repo: Repo, data_dir: Path
+) -> None:
+    """si"每 paper 一目录多文件"结构按**文件级**孤儿判定（design/12 §9.2 裁决，T14 卡
+    指名由 design/12 裁决）：同一 paper 的 si 目录下，一个文件被正确记录、另一个未
+    记录，后者仍须单独检出——若误做目录级判定（"该目录下已有被记录的文件，判定该
+    paper 的 si 已对齐"），这条用例会被错误地判成一致，正好掩盖它要检出的缺口。
+    """
+    paper_id = repo.upsert_paper(VENUE_ID, None, _stub(doi="10.9999/si-file", title="SI File"))
+    asset_id = repo.plan_asset(paper_id, _si_plan(), "mock_platform")
+    tracked_path = data_dir / "si" / VENUE_ID / "2024" / paper_id / "keep.zip"
+    sha = _write_pdf(tracked_path, b"tracked-si-bytes")
+    repo.mark_asset(asset_id, state="fetched", file_path=str(tracked_path), bytes_=1, sha256=sha)
+
+    stray_path = data_dir / "si" / VENUE_ID / "2024" / paper_id / "stray.pdf"
+    _write_pdf(stray_path, b"untracked-extra-file-in-same-paper-directory")
+
+    issues = verify_store(repo, data_dir)
+    assert issues == [
+        VerifyIssue(
+            kind="orphan_file", asset_id=None, file_path=str(stray_path), suggestion="adopt"
+        )
+    ]
+
+
+# -- fulltext（design/12 §9.2 T14 扩展）-------------------------------------------
+
+
+def test_verify_store_fulltext_no_issues_when_consistent(repo: Repo, data_dir: Path) -> None:
+    paper_id = repo.upsert_paper(VENUE_ID, None, _stub(doi="10.9999/ft-ok", title="FT Ok"))
+    asset_id = repo.plan_asset(paper_id, _pdf_plan(), "mock_platform")
+    pdf_path = data_dir / "pdf" / VENUE_ID / "2024" / f"{paper_id}.pdf"
+    pdf_sha = _write_pdf(pdf_path)
+    repo.mark_asset(asset_id, state="fetched", file_path=str(pdf_path), bytes_=1, sha256=pdf_sha)
+
+    text_path = data_dir / "fulltext" / VENUE_ID / "2024" / f"{paper_id}.txt"
+    text_sha = _write_pdf(text_path, b"extracted plain text")
+    write_fulltext_row(
+        repo,
+        paper_id,
+        text_path=str(text_path),
+        text_sha256=text_sha,
+        asset_id=asset_id,
+        source_sha256=pdf_sha,
+        state="extracted",
+    )
+
+    assert verify_store(repo, data_dir) == []
+
+
+def test_verify_store_fulltext_text_path_relative_form_resolves_correctly(
+    repo: Repo, data_dir: Path
+) -> None:
+    """`fulltext.text_path` 落盘为相对 `data_dir`、**不含** `data/` 前缀的形态
+    （design/12 §5.4 正误对照块）——`verify.py::_resolve` 的既有相对路径展开逻辑对
+    fulltext 域同样适用（与 asset 域共用同一 `_resolve`，零改造）。本用例显式锁定
+    这一契约点：误加 `data/` 前缀会使全库每一行都假性报 `missing_file`（design/12
+    §5.4 明文警示），本用例证明正确形态下不会。
+    """
+    paper_id = repo.upsert_paper(VENUE_ID, None, _stub(doi="10.9999/relpath", title="Rel Path"))
+    relative_text_path = f"fulltext/{VENUE_ID}/2024/{paper_id}.txt"
+    absolute_text_path = data_dir / "fulltext" / VENUE_ID / "2024" / f"{paper_id}.txt"
+    text_sha = _write_pdf(absolute_text_path, b"relative-path-contract text")
+    write_fulltext_row(
+        repo, paper_id, text_path=relative_text_path, text_sha256=text_sha, state="extracted"
+    )
+
+    assert verify_store(repo, data_dir) == []
+
+
+def test_verify_store_detects_fulltext_missing_file(repo: Repo, data_dir: Path) -> None:
+    paper_id = repo.upsert_paper(VENUE_ID, None, _stub(doi="10.9999/ft-miss", title="FT Missing"))
+    text_path = data_dir / "fulltext" / VENUE_ID / "2024" / f"{paper_id}.txt"
+    write_fulltext_row(repo, paper_id, text_path=str(text_path), text_sha256="deadbeef")
+    # 注意：从未真的写文件——磁盘上不存在
+
+    issues = verify_store(repo, data_dir)
+    assert issues == [
+        VerifyIssue(
+            kind="missing_file", asset_id=None, file_path=str(text_path), suggestion="re-extract"
+        )
+    ]
+
+
+def test_verify_store_detects_fulltext_hash_mismatch(repo: Repo, data_dir: Path) -> None:
+    paper_id = repo.upsert_paper(VENUE_ID, None, _stub(doi="10.9999/ft-hash", title="FT Hash"))
+    text_path = data_dir / "fulltext" / VENUE_ID / "2024" / f"{paper_id}.txt"
+    _write_pdf(text_path, b"actual on-disk text")
+    write_fulltext_row(repo, paper_id, text_path=str(text_path), text_sha256="not-the-real-hash")
+
+    issues = verify_store(repo, data_dir)
+    assert issues == [
+        VerifyIssue(
+            kind="hash_mismatch", asset_id=None, file_path=str(text_path), suggestion="re-extract"
+        )
+    ]
+
+
+def test_verify_store_detects_fulltext_orphan_file(repo: Repo, data_dir: Path) -> None:
+    orphan_path = data_dir / "fulltext" / VENUE_ID / "2024" / "orphan.txt"
+    _write_pdf(orphan_path, b"nobody points at me")
+
+    issues = verify_store(repo, data_dir)
+    assert issues == [
+        VerifyIssue(
+            kind="orphan_file", asset_id=None, file_path=str(orphan_path), suggestion="prune"
+        )
+    ]
+
+
+def test_verify_store_ignores_legacy_fulltext_rows_without_text_path(
+    repo: Repo, data_dir: Path
+) -> None:
+    """`state='noop'`/`'extract_failed'`（两者 `text_path IS NULL`）不参与文件对账
+    （design/12 §9.2「legacy 行不参与文件对账」裁决）——两态各造一行，断言零 issue。
+    """
+    noop_paper = repo.upsert_paper(VENUE_ID, None, _stub(doi="10.9999/ft-noop", title="FT Noop"))
+    write_fulltext_row(repo, noop_paper, text_path=None, state="noop")
+
+    failed_paper = repo.upsert_paper(
+        VENUE_ID, None, _stub(doi="10.9999/ft-failed", title="FT Failed")
+    )
+    write_fulltext_row(repo, failed_paper, text_path=None, state="extract_failed")
+
+    assert verify_store(repo, data_dir) == []
+
+
+def test_verify_store_ignores_legacy_pre_t7_schema_noop_row(repo: Repo, data_dir: Path) -> None:
+    """main 存量 schema（T7 未合并，无 state/asset_id 等列）下的 noop 行同样不误报——
+    `text_path IS NULL` 是唯一需要的判据，T7 增量列缺席不影响这一条。
+    """
+    paper_id = repo.upsert_paper(VENUE_ID, None, _stub(doi="10.9999/ft-legacy", title="FT Legacy"))
+    write_legacy_fulltext_row(repo, paper_id)
+
+    assert verify_store(repo, data_dir) == []
+
+
+# -- stale_fulltext（信息级；design/12 §9.2 新增第四类）---------------------------
+
+
+def test_verify_store_detects_stale_fulltext_as_info_severity(repo: Repo, data_dir: Path) -> None:
+    """asset 被 re-fetch（sha256 变化）后，fulltext 行仍指向旧版 PDF 抽出的文本——
+    前三类判据全绿（文件在、哈希对、路径对），只有 stale_fulltext 能检出这类静默
+    错配。`severity='info'`：不是缺陷，cli.py 消费面须与前三类分开呈现、不计入退出码。
+    """
+    paper_id = repo.upsert_paper(VENUE_ID, None, _stub(doi="10.9999/stale", title="Stale Paper"))
+    asset_id = repo.plan_asset(paper_id, _pdf_plan(), "mock_platform")
+    pdf_path = data_dir / "pdf" / VENUE_ID / "2024" / f"{paper_id}.pdf"
+    new_sha = _write_pdf(pdf_path, b"brand-new-re-fetched-content")
+    repo.mark_asset(asset_id, state="fetched", file_path=str(pdf_path), bytes_=1, sha256=new_sha)
+
+    text_path = data_dir / "fulltext" / VENUE_ID / "2024" / f"{paper_id}.txt"
+    text_sha = _write_pdf(text_path, b"text extracted from the OLD pdf content")
+    write_fulltext_row(
+        repo,
+        paper_id,
+        text_path=str(text_path),
+        text_sha256=text_sha,
+        asset_id=asset_id,
+        source_sha256="old-pdf-sha-before-refetch",  # != new_sha：陈旧
+        state="extracted",
+    )
+
+    issues = verify_store(repo, data_dir)
+    assert issues == [
+        VerifyIssue(
+            kind="stale_fulltext",
+            asset_id=asset_id,
+            file_path=str(text_path),
+            suggestion="re-extract",
+            severity="info",
+        )
+    ]
+    assert [issue for issue in issues if issue.severity == "defect"] == []
+
+
+def test_verify_store_no_stale_fulltext_when_source_sha256_matches_current_asset(
+    repo: Repo, data_dir: Path
+) -> None:
+    paper_id = repo.upsert_paper(VENUE_ID, None, _stub(doi="10.9999/fresh", title="Fresh Paper"))
+    asset_id = repo.plan_asset(paper_id, _pdf_plan(), "mock_platform")
+    pdf_path = data_dir / "pdf" / VENUE_ID / "2024" / f"{paper_id}.pdf"
+    sha = _write_pdf(pdf_path)
+    repo.mark_asset(asset_id, state="fetched", file_path=str(pdf_path), bytes_=1, sha256=sha)
+
+    text_path = data_dir / "fulltext" / VENUE_ID / "2024" / f"{paper_id}.txt"
+    text_sha = _write_pdf(text_path, b"matching extraction")
+    write_fulltext_row(
+        repo,
+        paper_id,
+        text_path=str(text_path),
+        text_sha256=text_sha,
+        asset_id=asset_id,
+        source_sha256=sha,  # 与当前 asset.sha256 一致——不陈旧
+        state="extracted",
+    )
+
+    assert verify_store(repo, data_dir) == []
+
+
+def test_verify_store_stale_fulltext_excludes_legacy_asset_id_null_row(
+    repo: Repo, data_dir: Path
+) -> None:
+    """`asset_id IS NULL` 的 legacy 行不参与 stale_fulltext 判定（design/12 §9.2：
+    「asset_id IS NULL 的 legacy 行不参与本类判定」）——即便凑巧填了 source_sha256。
+    """
+    paper_id = repo.upsert_paper(VENUE_ID, None, _stub(doi="10.9999/nullasset", title="Null Asset"))
+    text_path = data_dir / "fulltext" / VENUE_ID / "2024" / f"{paper_id}.txt"
+    text_sha = _write_pdf(text_path, b"orphaned-from-asset-identity text")
+    write_fulltext_row(
+        repo,
+        paper_id,
+        text_path=str(text_path),
+        text_sha256=text_sha,
+        asset_id=None,
+        source_sha256="some-sha-that-would-otherwise-look-stale",
+        state="extracted",
+    )
+
+    assert verify_store(repo, data_dir) == []
+
+
+# -- T7 崩溃窗 2/3 残留回归锁（design/12 §5.5；T14 合并后一次全库 verify 收口承诺）-----
+
+
+def test_verify_store_fulltext_same_suffix_overwrite_crash_window_reports_hash_mismatch(
+    repo: Repo, data_dir: Path
+) -> None:
+    """崩溃窗 2（design/12 §5.5）同后缀覆写场景：重跑 extract 已把新内容原子 rename
+    到与旧产物相同的路径/后缀，但进程在"DB upsert"之前崩溃——DB 仍是旧行（旧
+    `text_sha256`），磁盘已是新内容。design 明文裁决：此形态须报 `hash_mismatch`
+    （旧行仍引用该路径、盘上已是新内容），**不是** `orphan_file`。
+    """
+    paper_id = repo.upsert_paper(VENUE_ID, None, _stub(doi="10.9999/crash-w2a", title="Crash W2a"))
+    text_path = data_dir / "fulltext" / VENUE_ID / "2024" / f"{paper_id}.txt"
+    old_sha = _write_pdf(text_path, b"pre-crash extracted text (stale)")
+    # DB 行记录的是崩溃前的产物哈希——模拟"DB upsert 尚未发生"。
+    write_fulltext_row(
+        repo, paper_id, text_path=str(text_path), text_sha256=old_sha, state="extracted"
+    )
+    # 崩溃后重跑的原子 rename 已完成（同路径覆写），DB 却还没来得及更新到新哈希。
+    _write_pdf(text_path, b"post-crash re-extracted text (new content, same path)")
+
+    issues = verify_store(repo, data_dir)
+    assert issues == [
+        VerifyIssue(
+            kind="hash_mismatch", asset_id=None, file_path=str(text_path), suggestion="re-extract"
+        )
+    ]
+
+
+def test_verify_store_fulltext_suffix_change_crash_window_reports_orphan_file(
+    repo: Repo, data_dir: Path
+) -> None:
+    """崩溃窗 3（design/12 §5.5）换后缀场景：DB 已 upsert 到新路径（如 GROBID 升级
+    产出 `.tei.xml` 取代旧 `.txt`），但进程在"删旧产物文件"之前崩溃——旧后缀文件在
+    磁盘上孤存，DB 不再引用它。design 明文裁决：报 `orphan_file` + suggestion
+    `prune`；重跑 extract 命中幂等键跳过、不会自愈，须由 verify 检出（不自愈本身
+    如实入档，是 R5 风险的验收载体）。
+    """
+    paper_id = repo.upsert_paper(VENUE_ID, None, _stub(doi="10.9999/crash-w3", title="Crash W3"))
+    old_path = data_dir / "fulltext" / VENUE_ID / "2024" / f"{paper_id}.txt"
+    _write_pdf(old_path, b"superseded pypdf extraction")  # 旧后缀产物，DB 已不再引用
+
+    new_path = data_dir / "fulltext" / VENUE_ID / "2024" / f"{paper_id}.tei.xml"
+    new_sha = _write_pdf(new_path, b"<TEI>grobid winner</TEI>")
+    write_fulltext_row(
+        repo, paper_id, text_path=str(new_path), text_sha256=new_sha, state="extracted"
+    )
+
+    issues = verify_store(repo, data_dir)
+    assert issues == [
+        VerifyIssue(kind="orphan_file", asset_id=None, file_path=str(old_path), suggestion="prune")
+    ]
+
+
+# -- count_pending_extraction（design/12 §9.2 附注："未真实抽取"信息计数，非缺陷）-----
+
+
+def test_count_pending_extraction_counts_noop_rows_without_text_path(repo: Repo) -> None:
+    p1 = repo.upsert_paper(VENUE_ID, None, _stub(doi="10.9999/cpe1", title="CPE1"))
+    p2 = repo.upsert_paper(VENUE_ID, None, _stub(doi="10.9999/cpe2", title="CPE2"))
+    write_fulltext_row(repo, p1, text_path=None, state="noop")
+    write_fulltext_row(repo, p2, text_path=None, state="noop")
+
+    assert count_pending_extraction(repo) == 2
+
+
+def test_count_pending_extraction_excludes_extract_failed_and_extracted_rows(
+    repo: Repo, data_dir: Path
+) -> None:
+    noop_paper = repo.upsert_paper(VENUE_ID, None, _stub(doi="10.9999/cpe-noop", title="Noop"))
+    write_fulltext_row(repo, noop_paper, text_path=None, state="noop")
+
+    failed_paper = repo.upsert_paper(
+        VENUE_ID, None, _stub(doi="10.9999/cpe-failed", title="Failed")
+    )
+    write_fulltext_row(repo, failed_paper, text_path=None, state="extract_failed")
+
+    ok_paper = repo.upsert_paper(VENUE_ID, None, _stub(doi="10.9999/cpe-ok", title="Ok"))
+    text_path = data_dir / "fulltext" / VENUE_ID / "2024" / f"{ok_paper}.txt"
+    text_sha = _write_pdf(text_path, b"real text")
+    write_fulltext_row(
+        repo, ok_paper, text_path=str(text_path), text_sha256=text_sha, state="extracted"
+    )
+
+    assert count_pending_extraction(repo) == 1  # 只有 noop 那一行
+
+
+def test_count_pending_extraction_treats_pre_t7_schema_rows_as_noop(repo: Repo) -> None:
+    """main 存量 schema（无 `state` 列）下，`_stage_extract` 唯一产出形态就是 noop——
+    列缺省时按 `"noop"` 处理（verify.py 模块 docstring「T7/T14 合并顺序兼容」一节）。
+    """
+    paper_id = repo.upsert_paper(VENUE_ID, None, _stub(doi="10.9999/cpe-legacy", title="Legacy"))
+    write_legacy_fulltext_row(repo, paper_id)
+
+    assert count_pending_extraction(repo) == 1
+
+
+def test_count_pending_extraction_zero_when_no_fulltext_rows(repo: Repo) -> None:
+    assert count_pending_extraction(repo) == 0

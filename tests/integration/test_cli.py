@@ -21,6 +21,7 @@ quirks 形状。
 
 from __future__ import annotations
 
+import hashlib
 import os
 import subprocess
 import sys
@@ -30,12 +31,14 @@ import pytest
 import yaml
 from typer.testing import CliRunner
 
+from helpers.fulltext_schema import write_fulltext_row
 from integration.test_pipeline_e2e import DEFAULT_QUIRKS, VENUE
 from paper_crawler import cli as cli_module
 from paper_crawler.cli import app
 from paper_crawler.storage.db import Database
 from paper_crawler.storage.repo import Repo
 from paper_crawler.types import IssueRef, PaperStub, VenueSpec
+from paper_crawler.verify import VerifyIssue
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 
@@ -534,6 +537,137 @@ def test_verify_hash_mismatch_fix_command_actually_repairs_it(tmp_path: Path) ->
 
 
 # ---------------------------------------------------------------------------
+# verify：T14 扩展（design/12 §9.2）—— si/fulltext 两个表面 + 信息级 stale_fulltext
+# ---------------------------------------------------------------------------
+
+
+def test_verify_detects_si_orphan_file_exits_1(tmp_path: Path) -> None:
+    """si 与 pdf 同构地纳入孤儿扫描范围（T14；design/12 §9.2 扫描范围扩展）——
+    `emit_si=True` quirk 驱动 mock adapter 真实落一份 si 资产，额外放一份未登记的
+    孤儿文件在同一 si/ 子树下，锁定"si 确实被端到端扫描到"（`tests/unit/test_verify.py`
+    已单测锁定文件级判定，本用例只补 CLI 端到端一次直路径回归）。
+    """
+    quirks = dict(DEFAULT_QUIRKS)
+    quirks["emit_si"] = True
+    home = _make_home(tmp_path, quirks)
+    pull_result = runner.invoke(app, ["pull", VENUE, "--year", "2024", "--home", str(home)])
+    assert pull_result.exit_code == 0, pull_result.output
+    orphan_path = home / "data" / "si" / "stray-orphan.zip"
+    orphan_path.parent.mkdir(parents=True, exist_ok=True)
+    orphan_path.write_bytes(b"PK\x03\x04stray-si-bytes")
+
+    result = runner.invoke(app, ["verify", "--home", str(home)])
+
+    assert result.exit_code == 1
+    assert "orphan_file" in result.output
+    assert "adopt" in result.output
+    assert str(orphan_path) in result.output
+
+
+def test_verify_detects_fulltext_orphan_file_exits_1(tmp_path: Path) -> None:
+    """fulltext/ 纳入孤儿扫描范围（T14；design/12 §9.2），suggestion 为 `prune`
+    （区别于 asset 侧的 `adopt`——全文产物可从源 PDF 重新派生，直接删除即可）。
+    """
+    home = _make_home(tmp_path)
+    pull_result = runner.invoke(app, ["pull", VENUE, "--year", "2024", "--home", str(home)])
+    assert pull_result.exit_code == 0, pull_result.output
+    orphan_path = home / "data" / "fulltext" / "stray-orphan.txt"
+    orphan_path.parent.mkdir(parents=True, exist_ok=True)
+    orphan_path.write_text("nobody points at me", encoding="utf-8")
+
+    result = runner.invoke(app, ["verify", "--home", str(home)])
+
+    assert result.exit_code == 1
+    assert "orphan_file" in result.output
+    assert "prune" in result.output
+    assert str(orphan_path) in result.output
+
+
+def test_verify_reports_pending_extraction_count_without_failing(tmp_path: Path) -> None:
+    """`count_pending_extraction`（`state='noop'` 占位行，design/12 §9.2 附注）经
+    `verify` 输出为一行提示，不影响退出码——覆盖 `verify()` 命令里 `pending` 分支。
+    """
+    home = _make_home(tmp_path)
+    pull_result = runner.invoke(app, ["pull", VENUE, "--year", "2024", "--home", str(home)])
+    assert pull_result.exit_code == 0, pull_result.output
+
+    db = Database(home / "catalog.sqlite")
+    try:
+        repo = Repo(db)
+        paper_id = str(repo.list_assets()[0]["paper_id"])
+        write_fulltext_row(repo, paper_id, text_path=None, state="noop")
+    finally:
+        db.close()
+
+    result = runner.invoke(app, ["verify", "--home", str(home)])
+
+    assert result.exit_code == 0, result.output
+    assert "另有 1 篇论文的全文仍是占位" in result.output
+
+
+def test_verify_stale_fulltext_alone_does_not_fail_exit_code(tmp_path: Path) -> None:
+    """T14 关键行为契约（design/12 §9.2）：`stale_fulltext` 是信息级，单独出现时
+    **不应**使 `verify` 非零退出——它是可自愈的静默错配提示（下次 extract 自动重抽
+    取代），不是需要人工立即处理的缺陷。若这条回归，AC-7.4"全库 verify 通过"就会
+    被一个本不该算数的信号误判为不通过。
+
+    T7（真实 extract 落地）尚未合并，直接经 `Database`/`Repo` 打开 CLI 用的同一份
+    `catalog.sqlite`，用 `write_fulltext_row`（T7 增量列契约）造一行"asset 已
+    re-fetch、fulltext 仍指向旧内容"的陈旧行——同 `tests/unit/test_verify.py::
+    test_verify_store_detects_stale_fulltext_as_info_severity` 的构造手法。
+    """
+    home = _make_home(tmp_path)
+    pull_result = runner.invoke(app, ["pull", VENUE, "--year", "2024", "--home", str(home)])
+    assert pull_result.exit_code == 0, pull_result.output
+
+    db = Database(home / "catalog.sqlite")
+    try:
+        repo = Repo(db)
+        asset = repo.list_assets()[0]
+        asset_id = str(asset["id"])
+        paper_id = str(asset["paper_id"])
+        old_sha = str(asset["sha256"])
+        pdf_path = Path(str(asset["file_path"]))
+
+        # 模拟"asset 被 re-fetch"：磁盘内容与 DB sha256 都变成新内容。
+        new_content = b"%PDF-1.4\n% re-fetched with new content\n%%EOF\n"
+        pdf_path.write_bytes(new_content)
+        new_sha = hashlib.sha256(new_content).hexdigest()
+        repo.mark_asset(
+            asset_id,
+            state="fetched",
+            file_path=str(pdf_path),
+            bytes_=len(new_content),
+            sha256=new_sha,
+        )
+
+        # fulltext 行自身完全自洽（文件在、哈希对、路径对）——只是内容出自旧版 PDF。
+        text_path = home / "data" / "fulltext" / VENUE / "2024" / f"{paper_id}.txt"
+        text_content = b"text extracted from the pre-refetch pdf content"
+        text_path.parent.mkdir(parents=True, exist_ok=True)
+        text_path.write_bytes(text_content)
+        text_sha = hashlib.sha256(text_content).hexdigest()
+        write_fulltext_row(
+            repo,
+            paper_id,
+            text_path=str(text_path),
+            text_sha256=text_sha,
+            asset_id=asset_id,
+            source_sha256=old_sha,
+            state="extracted",
+        )
+    finally:
+        db.close()
+
+    result = runner.invoke(app, ["verify", "--home", str(home)])
+
+    assert result.exit_code == 0, result.output
+    assert "stale_fulltext" in result.output
+    assert "re-extract" in result.output
+    assert "信息" in result.output
+
+
+# ---------------------------------------------------------------------------
 # verify 修复建议 helper：`_pdf_layout_scope`/`_pull_force_cmd` 边界分支直测
 #
 # 正向路径（venue_id+year 均能从真实 pull 产出的路径解析）已被上面的集成用例
@@ -586,6 +720,132 @@ def test_pull_force_cmd_neither_known_without_asset_id_omits_asset_marker() -> N
     cmd = cli_module._pull_force_cmd(None, None, None)
     assert "<venue_id>" in cmd
     assert "asset=" not in cmd  # 无 asset_id 时不留残缺占位
+
+
+# ---------------------------------------------------------------------------
+# verify 修复建议 helper（T14 扩展）：`_si_layout_scope`/`_fulltext_layout_scope`/
+# `_asset_layout_scope`/`_pull_extract_cmd`/`_verify_fix_hint` 新分支边界直测
+#
+# 与上方 `_pdf_layout_scope`/`_pull_force_cmd` 同一先例：正向路径已被 CLI 端到端用例
+# 覆盖，这里直调私有函数补边界（si 多一层 paper 子目录、fulltext 域、prune/re-extract
+# 两条新 suggestion、stale_fulltext 的 info 措辞）。
+# ---------------------------------------------------------------------------
+
+
+def test_si_layout_scope_resolves_relative_path_with_paper_subdir(tmp_path: Path) -> None:
+    """si 比 pdf 多一层 paper ulid 子目录（design/06 §4），venue/year 段位次不变。"""
+    relative = "si/mock_journal/2024/paper123/supplement.zip"
+    assert cli_module._si_layout_scope(tmp_path, relative) == ("mock_journal", "2024")
+
+
+def test_si_layout_scope_path_outside_si_tree_returns_none_none(tmp_path: Path) -> None:
+    outside = str(tmp_path / "pdf" / "mock_journal" / "2024" / "extra.pdf")
+    assert cli_module._si_layout_scope(tmp_path, outside) == (None, None)
+
+
+def test_si_layout_scope_empty_file_path_returns_none_none(tmp_path: Path) -> None:
+    assert cli_module._si_layout_scope(tmp_path, "") == (None, None)
+
+
+def test_fulltext_layout_scope_resolves_relative_path_under_data_dir(tmp_path: Path) -> None:
+    """`fulltext.text_path` 相对形态（design/12 §5.4，不含 `data/` 前缀）能正确解析。"""
+    relative = "fulltext/mock_journal/2024/paper123.txt"
+    assert cli_module._fulltext_layout_scope(tmp_path, relative) == ("mock_journal", "2024")
+
+
+def test_fulltext_layout_scope_path_outside_fulltext_tree_returns_none_none(
+    tmp_path: Path,
+) -> None:
+    outside = str(tmp_path / "pdf" / "mock_journal" / "2024" / "extra.pdf")
+    assert cli_module._fulltext_layout_scope(tmp_path, outside) == (None, None)
+
+
+def test_fulltext_layout_scope_empty_file_path_returns_none_none(tmp_path: Path) -> None:
+    assert cli_module._fulltext_layout_scope(tmp_path, "") == (None, None)
+
+
+def test_asset_layout_scope_falls_back_to_si_when_not_pdf(tmp_path: Path) -> None:
+    """`_asset_layout_scope` 先试 pdf 布局，未命中再试 si——两域路径互斥，依次尝试
+    即可正确覆盖 missing_file/hash_mismatch 在 asset 域同时含 pdf/si 两种 kind 的场景。
+    """
+    si_path = "si/mock_journal/2024/paper123/supplement.zip"
+    assert cli_module._asset_layout_scope(tmp_path, si_path) == ("mock_journal", "2024")
+
+
+def test_asset_layout_scope_prefers_pdf_when_both_would_match_structurally(
+    tmp_path: Path,
+) -> None:
+    pdf_path = "pdf/mock_journal/2024/paper123.pdf"
+    assert cli_module._asset_layout_scope(tmp_path, pdf_path) == ("mock_journal", "2024")
+
+
+def test_asset_layout_scope_outside_both_trees_returns_none_none(tmp_path: Path) -> None:
+    outside = str(tmp_path / "fulltext" / "mock_journal" / "2024" / "paper123.txt")
+    assert cli_module._asset_layout_scope(tmp_path, outside) == (None, None)
+
+
+def test_pull_extract_cmd_venue_and_year_known_includes_extract_and_force() -> None:
+    cmd = cli_module._pull_extract_cmd("mock_journal", "2024", "asset-1")
+    assert "crawler pull mock_journal --year 2024 --extract --force" in cmd
+
+
+def test_pull_extract_cmd_venue_only_prompts_for_scope_flag() -> None:
+    cmd = cli_module._pull_extract_cmd("mock_journal", None, "asset-1")
+    assert "crawler pull mock_journal --extract --force" in cmd
+    assert "--volume" in cmd and "--year" in cmd and "--doi" in cmd
+
+
+def test_pull_extract_cmd_neither_known_includes_asset_id() -> None:
+    cmd = cli_module._pull_extract_cmd(None, None, "asset-42")
+    assert "<venue_id>" in cmd
+    assert "--extract --force" in cmd
+    assert "asset-42" in cmd
+
+
+def test_verify_fix_hint_prune_does_not_invent_command(tmp_path: Path) -> None:
+    """fulltext 域 orphan_file（suggestion=`prune`）：不像 asset 域 `adopt` 那样谨慎——
+    孤儿全文产物可安全直接删除（可从源 PDF 重新派生），措辞应体现这一点。
+    """
+    issue = VerifyIssue(
+        kind="orphan_file",
+        asset_id=None,
+        file_path=str(tmp_path / "data" / "fulltext" / "orphan.txt"),
+        suggestion="prune",
+    )
+    hint = cli_module._verify_fix_hint(issue, tmp_path / "data")
+    assert "删除" in hint
+
+
+def test_verify_fix_hint_re_extract_defect_suggests_pull_extract_force(tmp_path: Path) -> None:
+    data_dir = tmp_path / "data"
+    text_path = data_dir / "fulltext" / "mock_journal" / "2024" / "paper123.txt"
+    issue = VerifyIssue(
+        kind="missing_file",
+        asset_id="asset-1",
+        file_path=str(text_path),
+        suggestion="re-extract",
+    )
+    hint = cli_module._verify_fix_hint(issue, data_dir)
+    assert "crawler pull mock_journal --year 2024 --extract --force" in hint
+
+
+def test_verify_fix_hint_stale_fulltext_is_labeled_info_not_fix(tmp_path: Path) -> None:
+    """`stale_fulltext` 的提示措辞须与"缺陷"区分开（design/12 §9.2：信息级，不计入
+    退出码）——本用例锁定文案本身带有 info 标签而非 fix 标签。
+    """
+    data_dir = tmp_path / "data"
+    text_path = data_dir / "fulltext" / "mock_journal" / "2024" / "paper123.txt"
+    issue = VerifyIssue(
+        kind="stale_fulltext",
+        asset_id="asset-1",
+        file_path=str(text_path),
+        suggestion="re-extract",
+        severity="info",
+    )
+    hint = cli_module._verify_fix_hint(issue, data_dir)
+    assert "info:" in hint
+    assert "fix:" not in hint
+    assert "crawler pull mock_journal --year 2024 --extract --force" in hint
 
 
 # ---------------------------------------------------------------------------

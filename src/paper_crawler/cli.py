@@ -130,7 +130,7 @@ from paper_crawler.subs.watch import (
 from paper_crawler.tasks import TASK_STATES, TaskQueue
 from paper_crawler.types import SessionHandle, VenueSpec
 from paper_crawler.useragent import build_user_agent
-from paper_crawler.verify import VerifyIssue, verify_store
+from paper_crawler.verify import VerifyIssue, count_pending_extraction, verify_store
 
 # ---------------------------------------------------------------------------
 # 全局选项（每条命令各自声明——Click 的解析模型不支持父组选项出现在子命令 token
@@ -1166,6 +1166,15 @@ def retry(
 # 三个私有 helper 是 Phase 3 T2 补的差距——CLI 层把冻结的短关键词
 # suggestion（re-fetch/adopt/quarantine）翻成人可读、且与现有 CLI 命令面真实
 # 一致的修复建议文本（不发明不存在的命令）。
+#
+# T14（design/12 §9.2）同构扩展：`verify_store` 的扫描范围加 si/fulltext 两个表面，
+# 新增 suggestion `prune`（fulltext 侧孤儿）/`re-extract`（fulltext 侧 missing_file/
+# hash_mismatch 及信息级 `stale_fulltext`）。fulltext 是**本地派生产物**（源 PDF 重新
+# 抽取即可恢复，无需网络）——故其修复命令是 `crawler pull ... --extract --force`
+# （`_pull_extract_cmd`），而非 asset 侧的 `--force`（`_pull_force_cmd`，fetch 语义）；
+# `extract` 任务的 `FRESHNESS_TTL` 同为 `None`（tasks.py），已 DONE 的 extract 任务
+# 与 fetch 同理只有 `--force` 能绕过，故仍需要 `--force`。`stale_fulltext` 是信息级
+# （`severity="info"`）：不计入缺陷、不使 `verify` 判非零退出码，与前三类分开呈现。
 
 
 def _pdf_layout_scope(data_dir: Path, file_path: str) -> tuple[str | None, str | None]:
@@ -1195,6 +1204,64 @@ def _pdf_layout_scope(data_dir: Path, file_path: str) -> tuple[str | None, str |
     return venue_id, year
 
 
+def _si_layout_scope(data_dir: Path, file_path: str) -> tuple[str | None, str | None]:
+    """从 `data_dir/si/<venue_id>/<year>/<paper_ulid>/...` 前缀推断 (venue_id, year)
+    （design/06 §4：si 落位比 pdf 多一层 paper 子目录，但 venue/year 段位次相同）。
+
+    与 `_pdf_layout_scope` 同构（root 换成 "si"），独立成一个函数而非参数化共用，
+    理由同该函数——两者都已各自被直接单测锁定行为，参数化会牵动既有断言面。
+    """
+    if not file_path:
+        return None, None
+    candidate = Path(file_path)
+    if not candidate.is_absolute():
+        candidate = data_dir / candidate
+    try:
+        parts = candidate.relative_to(data_dir / "si").parts
+    except ValueError:
+        return None, None
+    venue_id = parts[0] if len(parts) >= 1 else None
+    year = parts[1] if len(parts) >= 2 and parts[1].isdigit() else None
+    return venue_id, year
+
+
+def _fulltext_layout_scope(data_dir: Path, file_path: str) -> tuple[str | None, str | None]:
+    """从 `data_dir/fulltext/<venue_id>/<year>/<paper_ulid>{.txt|.tei.xml}` 前缀推断
+    (venue_id, year)（design/12 §5.4 落盘布局）；与 `_pdf_layout_scope` 同构。
+
+    `fulltext.text_path` 落盘为**相对 data_dir、不含 `data/` 前缀**的形态（design/12
+    §5.4 正误对照块），但也兼容绝对路径写法——与 verify.py `_resolve` 的双形态兼容
+    对齐，本函数同样先展开成绝对路径再按 `data_dir/fulltext` 剥前缀。
+    """
+    if not file_path:
+        return None, None
+    candidate = Path(file_path)
+    if not candidate.is_absolute():
+        candidate = data_dir / candidate
+    try:
+        parts = candidate.relative_to(data_dir / "fulltext").parts
+    except ValueError:
+        return None, None
+    venue_id = parts[0] if len(parts) >= 1 else None
+    year = parts[1] if len(parts) >= 2 and parts[1].isdigit() else None
+    return venue_id, year
+
+
+def _asset_layout_scope(data_dir: Path, file_path: str) -> tuple[str | None, str | None]:
+    """asset 域（pdf 或 si）路径 → (venue_id, year)：先试 pdf 布局，未命中再试 si 布局。
+
+    `missing_file`/`hash_mismatch` 在 asset 域同时覆盖 pdf 与 si 两种 kind（design/12
+    §9.2，`repo.list_assets()` 本不按 kind 过滤），但两种 kind 的落位布局深度不同
+    （pdf 无 paper 子目录、si 有），修复提示需要知道走哪一条才能正确解析出
+    venue_id/year——两个方向互斥（一个路径不可能同时落在 `pdf/` 与 `si/` 下），依次
+    尝试即可，不影响 `_pdf_layout_scope` 自身被单测锁定的行为。
+    """
+    venue_id, year = _pdf_layout_scope(data_dir, file_path)
+    if venue_id is not None:
+        return venue_id, year
+    return _si_layout_scope(data_dir, file_path)
+
+
 def _pull_force_cmd(venue_id: str | None, year: str | None, asset_id: str | None) -> str:
     """拼一条真实可用的 `crawler pull ... --force` 提示（现状盘点结论见模块顶部）。
 
@@ -1220,52 +1287,134 @@ def _pull_force_cmd(venue_id: str | None, year: str | None, asset_id: str | None
     )
 
 
+def _pull_extract_cmd(venue_id: str | None, year: str | None, asset_id: str | None) -> str:
+    """拼一条真实可用的 `crawler pull ... --extract --force` 提示（T14；fulltext 侧
+    修复通道，design/12 §9.2）。
+
+    与 `_pull_force_cmd`（fetch 语义）同一现状盘点结论、同一理由，只多加 `--extract`
+    触发阶段 5：`tasks.py` `FRESHNESS_TTL["extract"] = None`——extract 任务一旦 DONE
+    同样永久视为新鲜，唯 `--force` 能绕过（`pull --extract` 不加 `--force` 只会
+    fresh_skip，不会真的重新调用 extract handler）。fulltext 是本地派生产物、不
+    需要网络，但触发重跑仍走同一条任务新鲜度机制，故命令形态与 `_pull_force_cmd`
+    平行，独立成一个函数（而非给 `_pull_force_cmd` 加参数）以免牵动其既有单测。
+    """
+    if venue_id and year:
+        return f"`crawler pull {venue_id} --year {year} --extract --force`"
+    if venue_id:
+        return (
+            f"`crawler pull {venue_id} --extract --force`"
+            "（须再加 `--volume <volume>`/`--year <year>`/`--doi <doi>` 之一定位该 asset）"
+        )
+    asset_part = f"；asset={asset_id}" if asset_id else ""
+    return (
+        "`crawler pull <venue_id> --extract --force`"
+        f"（须再加 `--volume <volume>`/`--year <year>`/`--doi <doi>` 定位该 asset{asset_part}）"
+    )
+
+
 def _verify_fix_hint(issue: VerifyIssue, data_dir: Path) -> str:
-    """把一条 `VerifyIssue` 翻成人可读的修复建议（AC-3.3"正确修复建议"）。
+    """把一条 `VerifyIssue` 翻成人可读的修复建议（AC-3.3"正确修复建议"；design/12
+    §9.2 T14 同构扩展至 si/fulltext 两个表面 + 信息级 `stale_fulltext`）。
 
     `verify_store` 本身只读、不自动修（design/05 §5.4）；本函数同样只读——只拼
-    文本，不执行任何命令、不碰 DB/磁盘。三类分别对应 AC-3.3 判据原文：
-    - missing_file →"re-fetch 提示"：见 `_pull_force_cmd`。
-    - hash_mismatch →"标记 corrupt+re-fetch"：verify 只读，"标记 corrupt"是本行
-      输出对该文件的判定说明（不是 DB 状态机新增一个 corrupt 值——`asset.state`
-      的合法取值见 migrations/0001_init.sql，没有 corrupt），随后同样给 re-fetch。
-    - orphan_file →"纳管或清理提示"：现有 CLI 命令面（`crawler --help`）核实结论
-      是没有任何"把磁盘文件登记为 asset"的命令，如实告知而非编造一个
-      `crawler adopt`。
+    文本，不执行任何命令、不碰 DB/磁盘。按 `issue.suggestion` 分派（比按 `kind`
+    更精确：`missing_file`/`hash_mismatch` 在 asset 域与 fulltext 域走的是不同的
+    修复命令，`suggestion` 已经携带了这个区分，`kind` 没有）：
+
+    - `re-fetch`（asset 域 missing_file）：见 `_pull_force_cmd`。
+    - `quarantine`（asset 域 hash_mismatch）："标记 corrupt+re-fetch"——verify 只读，
+      "标记 corrupt"是本行输出对该文件的判定说明（不是 DB 状态机新增一个 corrupt
+      值——`asset.state` 的合法取值见 migrations/0001_init.sql，没有 corrupt）。
+    - `adopt`（asset 域 orphan_file）："纳管或清理提示"：现有 CLI 命令面
+      （`crawler --help`）核实结论是没有任何"把磁盘文件登记为 asset"的命令，如实
+      告知而非编造一个 `crawler adopt`。
+    - `prune`（fulltext 域 orphan_file）：孤儿全文产物可直接删除——它是可重新派生
+      的本地产物，不像 asset 孤儿那样可能是唯一副本，故不像 `adopt` 那样谨慎措辞。
+    - `re-extract`（fulltext 域 missing_file/hash_mismatch，以及信息级
+      `stale_fulltext`）：见 `_pull_extract_cmd`；`stale_fulltext` 额外标注
+      "info"（不是缺陷，下次 extract 自动自愈）。
     """
-    if issue.kind == "missing_file":
-        venue_id, year = _pdf_layout_scope(data_dir, issue.file_path)
+    if issue.suggestion == "re-fetch":
+        venue_id, year = _asset_layout_scope(data_dir, issue.file_path)
         return (
             "    fix: DB 记录该 asset 已 fetched，但磁盘文件缺失；fetch 任务一旦 DONE "
             "永久视为新鲜（`resume`/`retry` 分别只对 BLOCKED/FAILED 任务生效，对本情形"
             f"无效），需强制重新拉取：{_pull_force_cmd(venue_id, year, issue.asset_id)}"
         )
-    if issue.kind == "hash_mismatch":
-        venue_id, year = _pdf_layout_scope(data_dir, issue.file_path)
+    if issue.suggestion == "quarantine":
+        venue_id, year = _asset_layout_scope(data_dir, issue.file_path)
         return (
             "    fix: 文件内容与记录的 sha256 不符，判定为 corrupt——不要信任现有文件，"
             f"先隔离/勿使用，再强制重新拉取覆盖：{_pull_force_cmd(venue_id, year, issue.asset_id)}"
         )
+    if issue.suggestion == "adopt":
+        return (
+            "    fix: 磁盘有文件但 DB 无对应记录；当前 CLI 无自动纳管（adopt）命令——"
+            "若确认是有效产物，需人工核实来源后手动登记；若为陈旧/无效文件，可直接删除该"
+            "路径清理。"
+        )
+    if issue.suggestion == "prune":
+        return (
+            "    fix: 全文产物文件没有任何 fulltext.text_path 引用它（常见于 extract "
+            "换后缀/同后缀覆写产物时中途崩溃的残留，design/12 §5.5）；可直接删除——它是"
+            "可从源 PDF 重新派生的本地产物，重跑 extract 命中幂等键会跳过、不会自动清理，"
+            "需人工删除该路径。"
+        )
+    # issue.suggestion == "re-extract"：fulltext 域 missing_file/hash_mismatch（缺陷）
+    # 或 stale_fulltext（信息级，见下方 kind 判断）。
+    venue_id, year = _fulltext_layout_scope(data_dir, issue.file_path)
+    cmd = _pull_extract_cmd(venue_id, year, issue.asset_id)
+    if issue.kind == "stale_fulltext":
+        return (
+            "    info: 该 asset 已被重新抓取（内容变化），但全文仍出自旧版 PDF——"
+            "前三类判据全绿，本项是这类静默错配的唯一检出面（design/12 §9.2）。信息级，"
+            f"不计入缺陷、不影响退出码；下次 extract 会自动重抽取代，如需立即刷新："
+            f"{cmd}"
+        )
     return (
-        "    fix: 磁盘有文件但 DB 无对应记录；当前 CLI 无自动纳管（adopt）命令——"
-        "若确认是有效产物，需人工核实来源后手动登记；若为陈旧/无效文件，可直接删除该"
-        "路径清理。"
+        "    fix: 全文产物缺失或与记录的 sha256 不符；全文是本地可重新派生的产物"
+        f"（抽取本身零外网请求），强制重新抽取：{cmd}"
     )
+
+
+def _echo_verify_issue(issue: VerifyIssue, data_dir: Path) -> None:
+    asset_part = f" asset={issue.asset_id}" if issue.asset_id else ""
+    typer.echo(f"[{issue.kind}] {issue.file_path} -> {issue.suggestion}{asset_part}")
+    typer.echo(_verify_fix_hint(issue, data_dir))
 
 
 @app.command()
 def verify(home: HomeOpt = None, verbose: VerboseOpt = False) -> None:
-    """DB↔文件双向对账（design/05 §5.4）；只读、不自动修，发现不一致退出 1。"""
+    """DB↔文件双向对账（design/05 §5.4 + design/12 §9.2 T14 全库扩展：pdf/si/fulltext
+    三个表面）；只读、不自动修，发现**缺陷**退出 1。
+
+    `stale_fulltext` 是信息级（`severity="info"`）——与前三类缺陷分开呈现，**不计入
+    退出码**（design/12 §9.2：它是可自愈的静默错配提示，不是需要立即处理的缺陷）。
+    """
     with _env(home, verbose) as env:
         data_dir = env.ctx.config.data_dir
         issues = verify_store(env.ctx.repo, data_dir)
-        for issue in issues:
-            asset_part = f" asset={issue.asset_id}" if issue.asset_id else ""
-            typer.echo(f"[{issue.kind}] {issue.file_path} -> {issue.suggestion}{asset_part}")
-            typer.echo(_verify_fix_hint(issue, data_dir))
-        if issues:
-            typer.echo(f"发现 {len(issues)} 处不一致。")
+        defects = [issue for issue in issues if issue.severity == "defect"]
+        info_issues = [issue for issue in issues if issue.severity == "info"]
+
+        for issue in defects:
+            _echo_verify_issue(issue, data_dir)
+
+        if info_issues:
+            typer.echo("-- 信息提示（非缺陷，不计入退出码）--")
+            for issue in info_issues:
+                _echo_verify_issue(issue, data_dir)
+
+        pending = count_pending_extraction(env.ctx.repo)
+        if pending:
+            typer.echo(f"提示：另有 {pending} 篇论文的全文仍是占位（尚未真实抽取），非缺陷。")
+
+        if defects:
+            typer.echo(f"发现 {len(defects)} 处不一致。")
             exit_code = 1
+        elif info_issues:
+            typer.echo(f"verify: 未发现缺陷（另有 {len(info_issues)} 条信息提示，见上）。")
+            exit_code = 0
         else:
             typer.echo("verify: 一致，未发现问题。")
             exit_code = 0

@@ -1797,6 +1797,16 @@ class Repo:
         sql += " ORDER BY a.paper_id, a.kind, a.version"
         return self.db.query(sql, params)
 
+    def list_fulltext(self) -> list[sqlite3.Row]:
+        """列出全部 `fulltext` 行；稳定排序（T14 `verify` 消费，只读，design/12 §9.2）。
+
+        `SELECT *` 故列集随 schema 版本自然浮动：T7 的 0004 迁移（design/12 §5.1）落地前
+        只有 Phase 1 四列（paper_id/extractor/extractor_ver/text_path/char_count/lang/
+        extracted_at），落地后另有 asset_id/source_sha256/text_sha256/state/note 五列——
+        调用方（verify.py）按列是否存在分别处理，本方法不对列集做假设。
+        """
+        return self.db.query("SELECT * FROM fulltext ORDER BY paper_id")
+
     def get_asset(self, asset_id: str) -> sqlite3.Row | None:
         """按 id 取单个 asset；不存在返回 None。"""
         rows = self.db.query("SELECT * FROM asset WHERE id = ?", (asset_id,))
