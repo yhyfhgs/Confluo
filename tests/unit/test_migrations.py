@@ -976,7 +976,8 @@ def test_v1_through_v5_realistic_upgrade_chain(
     assert database.migrate() == 5
 
     assert "paper_fts" in _table_names(database)
-    assert _FULLTEXT_V4_COLUMNS <= {r["name"] for r in database.query("PRAGMA table_info(fulltext)")}
+    fulltext_columns = {r["name"] for r in database.query("PRAGMA table_info(fulltext)")}
+    assert _FULLTEXT_V4_COLUMNS <= fulltext_columns
     database.close()
 
 
