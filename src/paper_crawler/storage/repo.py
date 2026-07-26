@@ -1064,6 +1064,48 @@ class Repo:
         )
         return int(rows[0]["n"])
 
+    def count_browser_fetch_today(self, venue_id: str, domain: str) -> int:
+        """某 venue×域 **当日（UTC）fetch 尝试篇次**（11-browser-fetch §7.2 派生查询）。
+
+        browser-fetch 日配额（§7.1 L3）的唯一数据源——**零新表、零新事实源**：venue 维度
+        经 `fetch_log ⋈ task` 派生（`fetch_log` 无 venue 列但有 `task_id`，`task.venue_id`
+        提供该维度）。口径与 `count_fetch_today` **一字不差**（成败均计、`DATE(ts)` UTC 日、
+        resolve 页不计），只是多一个 venue 维度。
+
+        ⚠ 该 join 依赖 `fetch_log.task_id` 非空（§11 开放问题④）：实码核实 `_stage_fetch`/
+        `_fetch_oa_direct`/`_fetch_via_browser` 三条写入路径**恒填** task_id（stage handler
+        的任务行 id）；`add_fetch_log` 签名允许 None（canary/直调场景），此类无 task 归属的
+        行不计入 venue 维度——方向 fail-safe：它们同样不消耗 venue 配额，而域维度上限仍由
+        `count_fetch_today` 语义的既有 auth 日配额兜住。
+        """
+        rows = self.db.query(
+            "SELECT COUNT(*) AS n FROM fetch_log f JOIN task t ON t.id = f.task_id "
+            "WHERE t.venue_id = ? AND f.domain = ? AND DATE(f.ts) = DATE('now')",
+            (venue_id, domain),
+        )
+        return int(rows[0]["n"])
+
+    def count_recent_fetch_failures(self, domain: str, *, limit: int = 3) -> int:
+        """某域**当日最近 `limit` 条** fetch_log 里自最新起**连续失败**的条数（遇成功即止）。
+
+        browser-fetch 熔断（11-browser-fetch §7.1 L4"连续非挑战失败 ≥3 → 该域当日停发"）的
+        判据。**偏离登记**：§7.3 原文把它写作进程内运行态计数（`_new_report` 重置）；此处改由
+        FetchLog 派生——① 与"唯一事实源 = FetchLog"（§3.4 维度 4）一致，零新状态；② "当日停发"
+        本就是**日**语义，跨进程重启不该清零（运行态版本一重启即失效，比设计意图更松）；
+        ③ 方向 fail-safe（更保守），且当日出现一次成功即自然解除。
+        """
+        rows = self.db.query(
+            "SELECT error_class FROM fetch_log "
+            "WHERE domain = ? AND DATE(ts) = DATE('now') ORDER BY ts DESC, id DESC LIMIT ?",
+            (domain, int(limit)),
+        )
+        streak = 0
+        for row in rows:
+            if row["error_class"] is None:
+                break
+            streak += 1
+        return streak
+
     # -- 对账 ----------------------------------------------------------------
 
     def counts(self, venue_id: str) -> dict[str, int]:

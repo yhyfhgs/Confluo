@@ -42,6 +42,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import random
 import sqlite3
 import time
 from collections.abc import Callable
@@ -50,6 +51,14 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Any, Literal
 from urllib.parse import urlsplit
 
+from paper_crawler.auth.store import CredentialStore
+from paper_crawler.browserfetch import (
+    BudgetGate,
+    challenge_cooldown_active,
+    fetch_one,
+    host_of,
+    playwright_launcher,
+)
 from paper_crawler.config import Config
 from paper_crawler.errors import CrawlerError, ErrorClass
 from paper_crawler.obslog import log_event
@@ -66,10 +75,12 @@ from paper_crawler.types import (
     IssueRef,
     PaperStub,
     RatePolicy,
+    SessionBackend,
     SessionHandle,
     UrlStrategy,
     utcnow_iso,
 )
+from paper_crawler.useragent import build_user_agent
 
 if TYPE_CHECKING:
     # 冻结面类型精度（spec §8）——`from __future__ import annotations` 使注解惰性，仅供
@@ -133,6 +144,12 @@ class StageContext:
     # 协议里自 Phase 1 即存在的 `session` 形参。默认空 → Phase 1-3 venue 恒读到 None（session=
     # None，与既有逐字一致）。
     auth_sessions: dict[str, SessionHandle] = field(default_factory=dict)
+    # ---- Phase 7 browser-fetch 接缝（11-browser-fetch §3.2 案 A 的**唯一**新增槽）----------
+    # 本次运行是否允许走浏览器上下文取回通道（§7.1 L1 三级门之一）：CLI `grab --browser` 置位。
+    # 默认 False = 关闭（D-029"非默认"）；与 `Config.browser_fetch_enabled` **同时为真**才生效，
+    # 二者皆关时 `RENDER_PAGE` 计划在 `_stage_fetch` 返回 `skipped`（不派生失败、不计 failures，
+    # 语义等价 §4.6 裁决的 "deferred"，且零冻结件改动）。
+    browser_fetch: bool = False
 
 
 StageOutcome = Literal["done", "skipped"]
@@ -474,6 +491,13 @@ def _stage_fetch(ctx: StageContext, task: sqlite3.Row, report: RunReport) -> Sta
     plan = _match_plan(plans, asset)
     ctx.repo.refresh_asset_plan(asset_id, url=plan.url, auth_needed=plan.auth_needed.value)
 
+    # browser-fetch 分支（11-browser-fetch §1.3/§3.2 案 A：**一个分支 + 一个函数**）：
+    # 计划声明 RENDER_PAGE（需渲染页面才能取回）→ 走浏览器上下文通道；其余 direct/api_call
+    # 计划逐字走下方既有路径（零改动）。放在 refresh 之后：asset.url 落的是 adapter 给的
+    # landing/稳定引用，同批 volatile URL 只活在 `fetch_one` 的栈上（§4.4 持久化纪律）。
+    if plan.url_strategy is UrlStrategy.RENDER_PAGE:
+        return _fetch_via_browser(ctx, task, asset, paper, venue_id, plan)
+
     wait = acquire_and_wait(ctx, domain)
     rate_wait_ms = round(wait * 1000)
     io = PartFileIO(ctx.config.data_dir / "tmp", asset_id)
@@ -543,6 +567,251 @@ def _stage_fetch(ctx: StageContext, task: sqlite3.Row, report: RunReport) -> Sta
 
 # OA 第三方 host 保守默认限速（=1 req/2s）；`Config.oa_fallback_rate_rpm` 可覆盖（§8.1）。
 _OA_FALLBACK_DEFAULT_RPM = 30
+
+# browser-fetch 通道的 Config 兜底（与 `Config` 字段默认逐一相同；11-browser-fetch §7.5）。
+_BROWSER_DEFAULT_DAILY_CAP = 50
+_BROWSER_DEFAULT_RATE_RPM = 10
+_BROWSER_DEFAULT_JITTER_S = (2.0, 5.0)
+# 失败态 → obslog `verdict` 词表（§7.4；四值 ok|challenge|login_redirect|no_entitlement）。
+_BROWSER_VERDICTS: dict[ErrorClass, str] = {
+    ErrorClass.CHALLENGE: "challenge",
+    ErrorClass.AUTH_EXPIRED: "login_redirect",
+    ErrorClass.NO_ENTITLEMENT: "no_entitlement",
+}
+
+
+def _browser_wait(ctx: StageContext, domain: str) -> float:
+    """browser 通道的域级限速闸 + 抖动（§7.1 L2）；返回实际等待秒数（经 `ctx.sleeper`）。
+
+    抖动叠加在既有 token bucket 之上——ssrn robots `crawl-delay:5` + 2–5s 抖动 ⇒ 有效
+    5–10s（ssrn.md §5 逐字）。测试注入假 sleeper + `jitter_s=[0,0]` 即可零延时精确断言。
+    """
+    low, high = getattr(ctx.config, "browser_jitter_s", _BROWSER_DEFAULT_JITTER_S)
+    jitter = random.uniform(float(low), float(high)) if high > 0 else 0.0
+    wait = ctx.limiter.acquire(domain) + jitter
+    if wait > 0:
+        ctx.sleeper(wait)
+    return wait
+
+
+def _browser_budget_gate(ctx: StageContext, waits: list[float]) -> BudgetGate:
+    """装配 §7 预算门：数据源全部是既有事实源（FetchLog 派生 + runner 写的冷却 JSON）。"""
+
+    def wait(domain: str) -> float:
+        elapsed = _browser_wait(ctx, domain)
+        waits.append(elapsed)
+        return elapsed
+
+    return BudgetGate(
+        daily_cap=int(getattr(ctx.config, "browser_daily_cap", _BROWSER_DEFAULT_DAILY_CAP)),
+        count_today=ctx.repo.count_browser_fetch_today,
+        cooldown_active=lambda domain: challenge_cooldown_active(ctx.config.home, domain),
+        consecutive_failures=ctx.repo.count_recent_fetch_failures,
+        wait=wait,
+    )
+
+
+def _browser_storage_state(ctx: StageContext, venue_id: str) -> bytes | None:
+    """取本 venue 的 `storage_state` 明文字节（§4.3 复用链；**只在内存**，不落明文临时文件）。
+
+    只消费 runner 健康门已建立的 session（`ctx.auth_sessions`，§8.2）——本通道**不自行管理
+    provider**。无 session / 非 `playwright_state` 后端 → None = **合法路径**（gold OA 或
+    未 opt-in 账号以干净上下文启动，遇挑战即 BLOCKED，符合红线）。条目缺失/密文损坏由
+    `CredentialStore.read_state` 抛 `AuthRequired`（→ BLOCKED(auth) + 重登指引）。
+    """
+    session = ctx.auth_sessions.get(venue_id)
+    if session is None or session.backend is not SessionBackend.PLAYWRIGHT_STATE:
+        return None
+    return CredentialStore(ctx.config.home).read_state(session.payload_ref)
+
+
+def _fetch_via_browser(
+    ctx: StageContext,
+    task: sqlite3.Row,
+    asset: sqlite3.Row,
+    paper: sqlite3.Row,
+    venue_id: str,
+    plan: AssetPlan,
+) -> StageOutcome:
+    """`RENDER_PAGE` 计划的浏览器上下文取回（11-browser-fetch §1.3 接线点 + §4.5 落盘纪律）。
+
+    三级门（§7.1 L1）全开才走：`Config.browser_fetch_enabled` + `StageContext.browser_fetch`
+    （CLI `--browser`）；任一关闭 → `skipped`（detail=`browser_fetch_disabled`，**不派生失败、
+    不计 failures**，§4.6 裁决）。
+
+    落盘复用主路径三原语一件不绕过：`PartFileIO` 原子写 → `validate_pdf_magic` 魔数校验
+    （失败判 `INTEGRITY(auth_leak)`，04 §4）→ `io.commit` → `finalize_fetch` 组合事务
+    （成功行）；失败路径同样落一条 `add_fetch_log`（error_class 填充）——两条路径都落行，
+    正是 §7.2"每次 fetch_one 调用 = 一次 fetch 尝试 = 一行 fetch_log"的兑现。
+
+    `no_entitlement` 判定**转 `CrawlerError(NO_ENTITLEMENT)` 上抛**，接既有 runner 链
+    （asset 标 no_entitlement、不计 failures、派生 OA-fallback；AC-BF.5 = AC-4.3 既有形态）。
+    """
+    task_id = str(task["id"])
+    asset_id = str(asset["id"])
+    if not (ctx.browser_fetch and getattr(ctx.config, "browser_fetch_enabled", False)):
+        log_event(
+            "INFO",
+            "skipped (browser-fetch 通道未开启)",
+            task_id=task_id,
+            venue=venue_id,
+            stage="fetch",
+            asset_id=asset_id,
+            channel="browser",
+            detail="browser_fetch_disabled",
+        )
+        return "skipped"
+
+    domain = host_of(plan.url)
+    rpm = float(getattr(ctx.config, "browser_rate_rpm", _BROWSER_DEFAULT_RATE_RPM))
+    # 桶登记幂等且单调不放宽（ratelimit 语义）：与 adapter 既有 default_rate 取更保守者。
+    ctx.limiter.register(
+        domain,
+        RatePolicy(
+            requests_per_minute=rpm,
+            burst=1,  # 并发恒 1（§7.1）
+            source_note="browser-fetch 保守默认 [Config.browser_rate_rpm]",
+        ),
+    )
+    waits: list[float] = []
+    gate = _browser_budget_gate(ctx, waits)
+    # 预算前置判定放在记账 try 之外：配额/熔断/冷却拒绝**不是一次 fetch 尝试**（零请求），
+    # 故不落 fetch_log（落了会自我抬高计数）。`fetch_one` 内部会再判一次（幂等只读，
+    # 为直调本模块的消费方兜底）。
+    quota_used = gate.check_or_raise(venue_id=venue_id, domain=domain)
+    storage_state = _browser_storage_state(ctx, venue_id)
+
+    io = PartFileIO(ctx.config.data_dir / "tmp", asset_id)
+    io.part_path.parent.mkdir(parents=True, exist_ok=True)  # 浏览器直接写 dest，先备好目录
+    started = time.monotonic()
+    try:
+        outcome = fetch_one(
+            plan=plan,
+            venue_id=venue_id,
+            dest=io.part_path,
+            storage_state=storage_state,
+            budget=gate,
+            launch=playwright_launcher(identity_header=build_user_agent(ctx.config.identity_email)),
+        )
+        if outcome.no_entitlement:
+            raise CrawlerError(
+                ErrorClass.NO_ENTITLEMENT,
+                "浏览器上下文判定无订阅权限（→ OA-fallback 既有链）",
+                detail="browser_no_entitlement",
+            )
+        if outcome.bytes_written <= 0:
+            raise CrawlerError(ErrorClass.INTEGRITY, "empty browser download (0 bytes)")
+        if plan.expected_type == "application/pdf" and not validate_pdf_magic(io.part_path):
+            raise CrawlerError(
+                ErrorClass.INTEGRITY,
+                "browser download lacks %PDF- magic",
+                detail="auth_leak",
+            )
+        final_path = _asset_final_path(ctx.config, venue_id, paper, plan)
+        # 浏览器把字节直接写进 dest（非经 `write_stream`），故哈希在此现算——口径与
+        # `fetched_file_ok` 的整读 sha256 一致（DB↔文件对账因此成立）。
+        sha256_hex = hashlib.sha256(io.part_path.read_bytes()).hexdigest()
+    except Exception as exc:
+        elapsed_ms = round((time.monotonic() - started) * 1000)
+        io.abort()
+        error_class = exc.error_class if isinstance(exc, CrawlerError) else ErrorClass.TRANSIENT
+        ctx.repo.add_fetch_log(
+            asset_id=asset_id,
+            task_id=task_id,
+            domain=domain,
+            url=plan.url,  # 失败时 volatile URL 未知/无意义，记 landing 引用（如实）
+            http_status=None,
+            bytes_=0,
+            elapsed_ms=elapsed_ms,
+            rate_wait_ms=round(sum(waits) * 1000),
+            error_class=error_class.value,
+        )
+        _log_browser_event(
+            level="WARNING",
+            task_id=task_id,
+            venue_id=venue_id,
+            asset_id=asset_id,
+            domain=domain,
+            url=plan.url,
+            verdict=_BROWSER_VERDICTS.get(error_class, error_class.value),
+            quota_used=quota_used,
+            quota_cap=gate.daily_cap,
+            rate_wait_ms=round(sum(waits) * 1000),
+            elapsed_ms=elapsed_ms,
+            msg=f"browser-fetch 停手: {exc}",
+        )
+        raise
+    elapsed_ms = round((time.monotonic() - started) * 1000)
+    rate_wait_ms = round(sum(waits) * 1000)
+
+    io.commit(final_path)
+    ctx.repo.finalize_fetch(
+        asset_id,
+        file_path=str(final_path),
+        bytes_=outcome.bytes_written,
+        sha256=sha256_hex,
+        fetch_log_row=FetchLogRow(
+            task_id=task_id,
+            domain=domain,
+            url=outcome.url,  # 实际请求的 URL（同批场景=volatile）；repo 落库前经 redact
+            http_status=None,
+            bytes_=outcome.bytes_written,
+            elapsed_ms=elapsed_ms,
+            rate_wait_ms=rate_wait_ms,
+            error_class=None,
+        ),
+    )
+    _log_browser_event(
+        level="INFO",
+        task_id=task_id,
+        venue_id=venue_id,
+        asset_id=asset_id,
+        domain=domain,
+        url=outcome.url,
+        verdict="ok",
+        quota_used=quota_used,
+        quota_cap=gate.daily_cap,
+        rate_wait_ms=rate_wait_ms,
+        elapsed_ms=elapsed_ms,
+        msg=f"browser-fetch fetched {outcome.bytes_written} bytes",
+    )
+    return "done"
+
+
+def _log_browser_event(
+    *,
+    level: str,
+    task_id: str,
+    venue_id: str,
+    asset_id: str,
+    domain: str,
+    url: str,
+    verdict: str,
+    quota_used: int,
+    quota_cap: int,
+    rate_wait_ms: int,
+    elapsed_ms: int,
+    msg: str,
+) -> None:
+    """§7.4 obslog 记账：`channel="browser"` 是**新字段值**（非新字段——`log_event` 自由
+    kwargs），用于把浏览器通道请求从 obslog 一键筛出，服务 AC-BF.4 的限速/配额审计。
+    `url` 由 `log_event` 统一经 `redact` 脱敏（既有单一权威脱敏源）。"""
+    log_event(
+        level,
+        msg,
+        task_id=task_id,
+        venue=venue_id,
+        stage="fetch",
+        domain=domain,
+        url=url,
+        asset_id=asset_id,
+        channel="browser",
+        verdict=verdict,
+        quota_used=quota_used,
+        quota_cap=quota_cap,
+        rate_wait_ms=rate_wait_ms,
+        elapsed_ms=elapsed_ms,
+    )
 
 
 def _fetch_oa_direct(ctx: StageContext, task: sqlite3.Row, asset: sqlite3.Row) -> StageOutcome:
