@@ -200,10 +200,24 @@ def fetch_files(
 def write_manifest(
     root: Path, *, mirror: str, urls: list[str], files: list[repec_parse.SnapshotFile]
 ) -> Path:
-    """写 `manifest.json`（D-035 决策 3 冻结的字段集）；`record_count` 由实际解析结果回填。"""
-    record_count = 0
-    for entry in files:
-        record_count += len(repec_parse.parse_redif((root / entry.name).read_bytes()))
+    """写 `manifest.json`（D-035 决策 3 冻结的字段集）；`record_count` 由实际解析结果回填。
+
+    **`record_count` 的口径＝唯一 handle 数（跨全部文件去重），不是解析出的记录条数。**
+    这与 `RepecAdapter._load_snapshot` 的 `records` dict（按 handle `setdefault` 去重、跨文件
+    合并）**逐字对齐**——两侧口径必须同源，否则一份**含重复 handle 的合法快照**会让加载期的
+    `_verify_record_count` 硬失败，而且**重取快照永远修不好**（重取会写回同一个未去重计数，
+    每次都撞同一堵墙）。重复 handle 本身是预期内的正常现象（上游同一条目可能在多份文件里
+    重复出现，加载器明确按"同 handle 取首条"处置），不该被完整性校验判成损坏。
+
+    manifest 语义随之明确为「**可用记录数**」——即这份快照能供 enrich join 的条目数，
+    比"文本里出现过几个记录块"更贴消费面。快照**原样字节不变**，只有 manifest 的数字口径。
+    """
+    handles = {
+        record.handle
+        for entry in files
+        for record in repec_parse.parse_redif((root / entry.name).read_bytes())
+    }
+    record_count = len(handles)
     payload = {
         "schema": _MANIFEST_SCHEMA,
         "archive": _ARCHIVE,

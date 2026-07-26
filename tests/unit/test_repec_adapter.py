@@ -11,6 +11,7 @@ from __future__ import annotations
 import hashlib
 import json
 import socket
+import sys
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
@@ -260,6 +261,69 @@ def test_record_count_mismatch_raises_integrity(tmp_path: Path) -> None:
         RepecAdapter(root).enrich_batch(["10.3386/w35506"])
     assert excinfo.value.error_class is ErrorClass.INTEGRITY
     assert "999" in str(excinfo.value)
+
+
+_DUPLICATE_HANDLE_SNAPSHOT = (
+    b"Template-Type: ReDIF-Paper 1.0\n"
+    b"Title: First Copy\n"
+    b"Classification-JEL: D1\n"
+    b"Handle: RePEc:nbr:nberwo:35506\n"
+    b"\n"
+    b"Template-Type: ReDIF-Paper 1.0\n"
+    b"Title: Duplicate Copy Of The Same Handle\n"
+    b"Handle: RePEc:nbr:nberwo:35506\n"
+    b"\n"
+    b"Template-Type: ReDIF-Paper 1.0\n"
+    b"Title: Another Paper\n"
+    b"Handle: RePEc:nbr:nberwo:3210\n"
+)
+
+
+def test_duplicate_handles_do_not_trip_integrity(tmp_path: Path) -> None:
+    """**回归锁**：含重复 handle 的**合法**快照曾被 `record_count` 校验判成损坏。
+
+    根因＝两侧口径不一致：加载器按 handle 去重（`setdefault`，"同 handle 取首条"是明写的
+    预期行为），而 `write_manifest` 记的是未去重条数。后果比"误报"更糟——**重取快照永远
+    修不好**，因为重取会写回同一个未去重计数，每次都撞同一堵墙。现两侧统一取唯一 handle 数。
+    """
+    # record_count 按**唯一 handle** 计（3 个记录块、2 个唯一 handle），模拟 write_manifest 的口径
+    root = _write_snapshot(tmp_path, payload=_DUPLICATE_HANDLE_SNAPSHOT, record_count=2)
+    adapter = RepecAdapter(root)
+    stubs = adapter.enrich_batch(["10.3386/w35506", "10.3386/w3210"])
+    assert len(stubs) == 2
+    # "同 handle 取首条"——后续重复块不挤掉首条
+    assert stubs[0].title == "First Copy"
+    assert adapter.stats.missing_handle == 0
+
+
+def test_write_manifest_and_loader_agree_on_record_count(tmp_path: Path) -> None:
+    """脚本侧写 manifest 与 adapter 侧校验必须口径同源（含重复 handle 时才看得出差别）。"""
+    import importlib.util
+
+    root = tmp_path / "state" / "repec"
+    (root / _REDIF_NAME).parent.mkdir(parents=True, exist_ok=True)
+    (root / _REDIF_NAME).write_bytes(_DUPLICATE_HANDLE_SNAPSHOT)
+
+    spec = importlib.util.spec_from_file_location(
+        "repec_snapshot_for_count",
+        Path(__file__).resolve().parents[2] / "scripts" / "repec_snapshot.py",
+    )
+    assert spec is not None and spec.loader is not None
+    script = importlib.util.module_from_spec(spec)
+    sys.modules[spec.name] = script
+    spec.loader.exec_module(script)
+
+    entry = parse.SnapshotFile(
+        name=_REDIF_NAME,
+        bytes=len(_DUPLICATE_HANDLE_SNAPSHOT),
+        sha256=hashlib.sha256(_DUPLICATE_HANDLE_SNAPSHOT).hexdigest(),
+    )
+    script.write_manifest(root, mirror="www2.nber.org", urls=["https://x/y.rdf"], files=[entry])
+    written = json.loads((root / "manifest.json").read_text(encoding="utf-8"))
+    assert written["record_count"] == 2  # 唯一 handle 数，非 3 个记录块
+
+    # 脚本产出的 manifest 必须被加载器接受——这才是"口径同源"的实证
+    assert RepecAdapter(root).healthcheck().healthy is True
 
 
 def test_integrity_failure_surfaces_as_unhealthy_in_canary(tmp_path: Path) -> None:

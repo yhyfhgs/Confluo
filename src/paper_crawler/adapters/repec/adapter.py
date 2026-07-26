@@ -85,11 +85,16 @@ def _verify_integrity(entry: parse.SnapshotFile, raw: bytes, root: Path) -> None
 
 
 def _verify_record_count(manifest: parse.SnapshotManifest, loaded: int) -> None:
-    """校验解析出的记录数与 manifest `record_count` 一致；不符 → `INTEGRITY`（响亮）。
+    """校验**唯一 handle 数**与 manifest `record_count` 一致；不符 → `INTEGRITY`（响亮）。
 
     与 sha256 校验互补、不冗余：sha256 保证**字节**没变，本校验保证**本地解析口径**仍与取
     快照时一致。二者会在不同场景分别报警——解析器改口径后字节不变而记录数变，正是这一条能
     抓到的（且那正是"快照该重取/解析器该复核"的信号，静默通过会让 join 覆盖率悄悄塌掉）。
+
+    **口径＝去重后的可用记录数**，与 `scripts/repec_snapshot.py::write_manifest` 逐字对齐
+    （该处按唯一 handle 计数）。两侧口径必须同源：若 manifest 记未去重条数、此处比去重后的
+    dict 大小，一份**含重复 handle 的合法快照**会硬失败，且**重取永远修不好**（重取写回同一
+    未去重计数）。重复 handle 是预期内现象——`_load_snapshot` 明确按"同 handle 取首条"处置。
     """
     if manifest.record_count and loaded != manifest.record_count:
         raise CrawlerError(
