@@ -65,6 +65,57 @@ def _to_int(raw: object) -> int:
     raise TypeError(f"expected an integer, got {type(raw).__name__}")
 
 
+_TRUE_LITERALS = frozenset({"1", "true", "yes", "on"})
+_FALSE_LITERALS = frozenset({"0", "false", "no", "off"})
+
+
+def _to_bool(raw: object) -> bool:
+    """toml 布尔 / env 字符串 → bool（11-browser-fetch §7.5 opt-in 开关）。
+
+    env 只认显式真假字面量（大小写不敏感）——**不把任意非空串当 True**：`=maybe` 这类
+    误写若被当成"打开"，会静默启用一个 D-029 明令默认关的敏感通道，故响亮拒绝。
+    """
+    if isinstance(raw, bool):
+        return raw
+    if isinstance(raw, int | float):
+        return bool(raw)
+    if isinstance(raw, str):
+        token = raw.strip().lower()
+        if token in _TRUE_LITERALS:
+            return True
+        if token in _FALSE_LITERALS:
+            return False
+    raise CrawlerError(
+        ErrorClass.CONFIG,
+        f"布尔配置项取值非法: {raw!r}（用 true/false）",
+        detail=str(raw),
+    )
+
+
+def _to_range(raw: object) -> tuple[float, float]:
+    """toml 二元数组 → `(lo, hi)` 浮点区间（抖动区间；11-browser-fetch §7.5）。
+
+    非二元/非数值/负值/lo>hi 一律 `CrawlerError(CONFIG)` 拒启动——抖动区间写错会直接
+    改变对站点的实际请求节奏（红线相关面），静默兜底默认值比响亮失败危险。
+    """
+    if isinstance(raw, str):
+        raw = [part for part in re.split(r"[,\s]+", raw.strip()) if part]
+    if isinstance(raw, list | tuple) and len(raw) == 2:
+        try:
+            lo, hi = (_to_float(item) for item in raw)
+        except TypeError as exc:
+            raise CrawlerError(
+                ErrorClass.CONFIG, f"抖动区间取值非法: {raw!r}（要两个数）", detail=str(raw)
+            ) from exc
+        if lo >= 0 and hi >= lo:
+            return (lo, hi)
+    raise CrawlerError(
+        ErrorClass.CONFIG,
+        f"抖动区间取值非法: {raw!r}（形如 [2, 5]，须 0 ≤ lo ≤ hi）",
+        detail=str(raw),
+    )
+
+
 # --- 分层解析核心（Config.load 与 describe_config 共享，防两条路径漂移）------------------------
 
 
@@ -294,6 +345,39 @@ _FIELD_SPECS: tuple[_FieldSpec, ...] = (
     ),
     # active_profile：platform→profile 映射（§3.4；无 env，config-home/项目级 TOML 表）。
     _FieldSpec("auth.active_profile", ("auth",), "active_profile", "mapping", default=None),
+    # browser-fetch 横切件四槽（11-browser-fetch §7.5，全部保守默认；非敏感，可入项目级）。
+    _FieldSpec(
+        "browserfetch.enabled",
+        ("browserfetch",),
+        "enabled",
+        "bool",
+        env="PAPER_CRAWLER_BROWSER_FETCH_ENABLED",
+        default=False,
+    ),
+    _FieldSpec(
+        "browserfetch.daily_cap",
+        ("browserfetch",),
+        "daily_cap",
+        "int",
+        env="PAPER_CRAWLER_BROWSER_DAILY_CAP",
+        default=50,
+    ),
+    _FieldSpec(
+        "browserfetch.rate_rpm",
+        ("browserfetch",),
+        "rate_rpm",
+        "int",
+        env="PAPER_CRAWLER_BROWSER_RATE_RPM",
+        default=10,
+    ),
+    _FieldSpec(
+        "browserfetch.jitter_s",
+        ("browserfetch",),
+        "jitter_s",
+        "range",
+        env="PAPER_CRAWLER_BROWSER_JITTER_S",
+        default=(2.0, 5.0),
+    ),
 )
 
 
@@ -339,6 +423,28 @@ def _resolve_field(
             raw = _lookup_toml(doc, spec.table, spec.leaf)
             if raw is not None:
                 return _Resolved(_to_int(raw), source)
+        return _Resolved(spec.default, "default")
+
+    if spec.kind == "bool":
+        if spec.env:
+            env_value = os.environ.get(spec.env, "").strip()
+            if env_value:
+                return _Resolved(_to_bool(env_value), "env")
+        for doc, source in ((project_doc, "project"), (home_doc, "home")):
+            raw = _lookup_toml(doc, spec.table, spec.leaf)
+            if raw is not None:
+                return _Resolved(_to_bool(raw), source)
+        return _Resolved(spec.default, "default")
+
+    if spec.kind == "range":
+        if spec.env:
+            env_value = os.environ.get(spec.env, "").strip()
+            if env_value:
+                return _Resolved(_to_range(env_value), "env")
+        for doc, source in ((project_doc, "project"), (home_doc, "home")):
+            raw = _lookup_toml(doc, spec.table, spec.leaf)
+            if raw is not None:
+                return _Resolved(_to_range(raw), source)
         return _Resolved(spec.default, "default")
 
     if spec.kind == "mapping":
@@ -447,6 +553,13 @@ class Config:
     oa_fallback_rate_rpm: int = 30  # §8.1 OA 第三方 host 保守限速
     # §3.4 AuthProvider 运行时选择：platform id → profiles.toml 键（`--profile` 可临时覆盖）。
     auth_active_profile: dict[str, str] | None = None
+    # Phase 7 T6 browser-fetch 横切件（11-browser-fetch §7.5；`[browserfetch]` 表，非敏感）。
+    # 四槽全部**保守默认**：默认关（D-029"非默认"红线）、日配额比 auth_daily_cap=200 更严
+    # （本通道是最敏感面）、限速 10 rpm = 1 req/6s（aea/wiley 基线）、抖动 2–5s（ssrn.md §5）。
+    browser_fetch_enabled: bool = False  # §7.1 L1 全局 opt-in（+CLI --browser 才生效）
+    browser_daily_cap: int = 50  # §7.1 L3 每 venue×域 每日 fetch 尝试篇次上限
+    browser_rate_rpm: int = 10  # §7.1 L2 域级限速（并发恒 1）
+    browser_jitter_s: tuple[float, float] = (2.0, 5.0)  # §7.1 L2 抖动区间（秒）
 
     @classmethod
     def load(cls, home: Path | None = None) -> "Config":
@@ -474,6 +587,17 @@ class Config:
         def _mapping(key: str) -> dict[str, str] | None:
             value = resolved[key].value
             return dict(value) if isinstance(value, dict) else None
+
+        def _bool(key: str) -> bool:
+            value = resolved[key].value
+            assert isinstance(value, bool)  # 解析器保证 bool 类字段恒有值
+            return value
+
+        def _range(key: str) -> tuple[float, float]:
+            value = resolved[key].value
+            assert isinstance(value, tuple) and len(value) == 2  # 同上
+            lo, hi = value
+            return (float(lo), float(hi))
 
         data_dir = resolved["paths.data_dir"].value
         assert isinstance(data_dir, Path)
@@ -503,6 +627,10 @@ class Config:
             auth_work_hours=_str("auth.work_hours") or "8-23",
             oa_fallback_rate_rpm=_int("oa_fallback.rate_rpm"),
             auth_active_profile=_mapping("auth.active_profile"),
+            browser_fetch_enabled=_bool("browserfetch.enabled"),
+            browser_daily_cap=_int("browserfetch.daily_cap"),
+            browser_rate_rpm=_int("browserfetch.rate_rpm"),
+            browser_jitter_s=_range("browserfetch.jitter_s"),
         )
 
     def ensure_dirs(self) -> None:

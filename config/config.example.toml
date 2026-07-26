@@ -73,3 +73,15 @@ token = ""        # Wiley-TDM-Client-Token（UUID 形态）；env PAPER_CRAWLER_
 # == OA-fallback（no_entitlement 的 unpaywall 兜底 direct 取回；非凭证）========================
 [oa_fallback]
 # rate_rpm = 30            # §8.1 OA 第三方 host 保守限速（req/min，=1 req/2s）；env PAPER_CRAWLER_OA_FALLBACK_RATE_RPM
+
+# == browser-fetch 横切件（design/11 §7.5；非凭证，可入项目级）================================
+# 浏览器上下文取回单篇全文的 opt-in 通道。**默认全关**（D-029：非默认、非批量、用户显式发起）；
+# 打开后还需每次显式 `crawler grab --doi <X> --browser` 才走该通道（三级门全开才生效）。
+# 红线（AC-0.2）：遇风控/CAPTCHA **只分类不求解**——立即 BLOCKED + 域冷却 24h，由你本人在
+# 自己的浏览器里完成站点验证后 `crawler resume --all`；系统绝不代替你"过验证"。
+# 依赖：pip install paper-crawler[auth-browser] && playwright install chromium
+[browserfetch]
+# enabled = false          # 全局开关；env PAPER_CRAWLER_BROWSER_FETCH_ENABLED
+# daily_cap = 50           # 每 venue×域 每日 fetch 尝试篇次上限（成败均计）；env _BROWSER_DAILY_CAP
+# rate_rpm = 10            # 域级限速（req/min，=1 req/6s；并发恒 1）；env _BROWSER_RATE_RPM
+# jitter_s = [2, 5]        # 每次请求前的额外抖动区间（秒）；env _BROWSER_JITTER_S（"2,5"）

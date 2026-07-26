@@ -22,6 +22,10 @@ _PC_ENV_VARS = (
     "PAPER_CRAWLER_AUTH_HEALTH_MAX_AGE_S",
     "PAPER_CRAWLER_AUTH_WORK_HOURS",
     "PAPER_CRAWLER_OA_FALLBACK_RATE_RPM",
+    "PAPER_CRAWLER_BROWSER_FETCH_ENABLED",
+    "PAPER_CRAWLER_BROWSER_DAILY_CAP",
+    "PAPER_CRAWLER_BROWSER_RATE_RPM",
+    "PAPER_CRAWLER_BROWSER_JITTER_S",
 )
 
 
@@ -678,3 +682,83 @@ def test_to_int_accepts_numeric_forms_rejects_bool_and_type() -> None:
         _to_int(True)  # bool 显式拒绝（避免 True→1）
     with pytest.raises(TypeError):
         _to_int([1])  # 非 int/float/str 类型
+
+
+# ---------------------------------------------------------------------------
+# Phase 7 T6：browser-fetch 四槽（11-browser-fetch §7.5）——默认 / home / env / 畸形拒启动。
+# ---------------------------------------------------------------------------
+
+
+def test_browserfetch_slots_default_when_unset(tmp_path: Path) -> None:
+    """无 config.toml + 无 env → 保守默认（D-029：**默认关**）。"""
+    cfg = Config.load(home=tmp_path)
+    assert cfg.browser_fetch_enabled is False
+    assert cfg.browser_daily_cap == 50  # 严于 auth_daily_cap=200（本通道最敏感）
+    assert cfg.browser_rate_rpm == 10  # = 1 req/6s
+    assert cfg.browser_jitter_s == (2.0, 5.0)
+
+
+def test_browserfetch_slots_from_home_config_toml(tmp_path: Path) -> None:
+    home = tmp_path / "home"
+    home.mkdir()
+    (home / "config.toml").write_text(
+        "[browserfetch]\nenabled = true\ndaily_cap = 3\nrate_rpm = 12\njitter_s = [1, 4]\n",
+        encoding="utf-8",
+    )
+    cfg = Config.load(home=home)
+    assert cfg.browser_fetch_enabled is True
+    assert cfg.browser_daily_cap == 3
+    assert cfg.browser_rate_rpm == 12
+    assert cfg.browser_jitter_s == (1.0, 4.0)
+
+
+def test_browserfetch_env_overrides_home(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    home = tmp_path / "home"
+    home.mkdir()
+    (home / "config.toml").write_text("[browserfetch]\nenabled = true\n", encoding="utf-8")
+    monkeypatch.setenv("PAPER_CRAWLER_BROWSER_FETCH_ENABLED", "false")
+    monkeypatch.setenv("PAPER_CRAWLER_BROWSER_JITTER_S", "0,0")
+    cfg = Config.load(home=home)
+    assert cfg.browser_fetch_enabled is False  # env > home
+    assert cfg.browser_jitter_s == (0.0, 0.0)
+
+
+@pytest.mark.parametrize("literal", ["1", "TRUE", "yes", "on"])
+def test_browserfetch_enabled_accepts_true_literals(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, literal: str
+) -> None:
+    monkeypatch.setenv("PAPER_CRAWLER_BROWSER_FETCH_ENABLED", literal)
+    assert Config.load(home=tmp_path).browser_fetch_enabled is True
+
+
+def test_browserfetch_enabled_rejects_ambiguous_env(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """非真假字面量 → 拒启动（绝不把 `maybe` 当"打开"这一敏感通道）。"""
+    monkeypatch.setenv("PAPER_CRAWLER_BROWSER_FETCH_ENABLED", "maybe")
+    with pytest.raises(CrawlerError) as excinfo:
+        Config.load(home=tmp_path)
+    assert excinfo.value.error_class is ErrorClass.CONFIG
+
+
+@pytest.mark.parametrize("bad", ["jitter_s = [5, 2]", "jitter_s = [-1, 2]", "jitter_s = [2]"])
+def test_browserfetch_jitter_malformed_is_loud(tmp_path: Path, bad: str) -> None:
+    home = tmp_path / "home"
+    home.mkdir()
+    (home / "config.toml").write_text(f"[browserfetch]\n{bad}\n", encoding="utf-8")
+    with pytest.raises(CrawlerError) as excinfo:
+        Config.load(home=home)
+    assert excinfo.value.error_class is ErrorClass.CONFIG
+
+
+def test_browserfetch_slots_in_describe_config(tmp_path: Path) -> None:
+    """config show 追踪四槽（非敏感——可入项目级，不触发护栏）。"""
+    rows = {r.key: r for r in describe_config(tmp_path)}
+    for key in (
+        "browserfetch.enabled",
+        "browserfetch.daily_cap",
+        "browserfetch.rate_rpm",
+        "browserfetch.jitter_s",
+    ):
+        assert rows[key].source == "default"
+        assert not rows[key].sensitive
