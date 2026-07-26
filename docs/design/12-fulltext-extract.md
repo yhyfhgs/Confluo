@@ -1,9 +1,13 @@
 ---
 title: 全文抽取（stage 5 extract）实现级详设
-status: review
+status: approved
 owner: fable5
 updated: 2026-07-27
 ---
+
+> **签署（fable，2026-07-27）**：T1（opus）起草 → 独立审查（opus）NEEDS_FIX（P0×2/P1×5/P2×7）→ r2 修复
+> → re-review 余 1 P1+2 补正 → r3 补正 → fable 亲验终签 **approved**。D-033 同步转 accepted。
+> T7 以本详设为实现单一依据。
 
 # 12 · 全文抽取（stage 5 extract）实现级详设
 

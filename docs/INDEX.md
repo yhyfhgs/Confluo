@@ -55,7 +55,7 @@
 | [design/auth-framework.md](design/auth-framework.md) | 认证框架实现级详设（07/04 的实现级扩展：四 Provider + 凭证库 + CLI + pipeline 接缝） | implemented | 2026-07-26 |
 | [design/10-config-layout.md](design/10-config-layout.md) | 配置归集与分层规范（D-025：config/ 文件夹 + 加载链 + 敏感键护栏） | implemented | 2026-07-23 |
 | [design/11-browser-fetch.md](design/11-browser-fetch.md) | Browser-Fetch 横切件详设（三消费方统一浏览器取回通道 + CF-403 冷却缺口方案；D-029 案 B 承接，D-030 定稿） | approved | 2026-07-26 |
-| [design/12-fulltext-extract.md](design/12-fulltext-extract.md) | 全文抽取（stage 5 extract）实现级详设（pypdf 基线 + GROBID 可选增强 + asset 级幂等键全序取 max；D-033 承载） | review | 2026-07-27 |
+| [design/12-fulltext-extract.md](design/12-fulltext-extract.md) | 全文抽取（stage 5 extract）实现级详设（pypdf 基线 + GROBID 可选增强 + asset 级幂等键全序取 max；D-033 承载） | approved | 2026-07-27 |
 
 ## design/adapters/ — 平台 adapter 详设
 

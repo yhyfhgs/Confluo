@@ -319,7 +319,7 @@ updated: 2026-07-27
 
 ## D-033 全文抽取（stage 5 extract）语义定稿：pypdf 基线 + GROBID 可选增强 + asset 级幂等键全序取 max
 
-- 状态：proposed（待 fable 终签转 accepted；**其中两项子裁决已由 fable 单独 approve，见下方「已裁决子项」**）· 日期：2026-07-27（r2 审查修订同日）· 依据：[design/12-fulltext-extract.md](../design/12-fulltext-extract.md)（P7-T1 详设，r2）+ [phase7-implementation-plan §2/§4 T1](phase7-implementation-plan.md) + [AC-7.1/7.2](../testing/acceptance-criteria.md)
+- 状态：**accepted**（fable 终签 2026-07-27，经「起草→审查 NEEDS_FIX→r2→re-review→r3→亲验」全链；**其中两项子裁决先行 approve，见下方「已裁决子项」**）· 日期：2026-07-27（r2 审查修订同日）· 依据：[design/12-fulltext-extract.md](../design/12-fulltext-extract.md)（P7-T1 详设，r3 approved）+ [phase7-implementation-plan §2/§4 T1](phase7-implementation-plan.md) + [AC-7.1/7.2](../testing/acceptance-criteria.md)
 - **已裁决子项（fable，2026-07-27，原 proposed → approved）**：① **`HttpClient.post_multipart` 纯附加扩展**——纯附加且有两处成文先例（`extra_headers`、`CrawlerError.status_code`），退路（自建 `httpx.Client`）的双份维护代价更大；落地须与 `post_json` 同构走 `_request`，不得另起绕过既有限速/obslog/错误映射的请求通路。② **空口令加密 PDF 姿态**——approve，并按审查建议把实现约束加严至五条（见下方「附带裁决」）。
 - **背景**：stage 5 自 Phase 1 起为 noop（`stages.py::_stage_extract` 写 `extractor="noop"/text_path=NULL/char_count=0`），幂等键实际是 paper 级（`fulltext` 表 PK=`paper_id`），与 design/05 §1 阶段表登记的「(asset, extractor_ver)」不符——该表已自注「asset 级键随 Phase 7 真实抽取启用」。Phase 7 兑现该注记，需一次性把抽取器选型、幂等语义、失败态、降级链、测试载体五面同时定死，否则 T7/T14/T19 三卡各自推断必然漂移。
 - **决策**（六项，对应 12-fulltext-extract §3–§8）：
