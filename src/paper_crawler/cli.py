@@ -878,6 +878,11 @@ def _watch_source_venues(env: CliEnv) -> dict[str, VenueSpec]:
     两个消费方：①T2 编译器读 ssrn 的 `quirks.topic_filter`（检查单 #10 的接线）；
     ②`AdapterFetcher` 拿它当 adapter 方法的 venue 入参。缺失的源由 `AdapterFetcher`
     合成最小 spec 兜底（其 `venue_for` docstring）。
+
+    **arxiv 的收割面不再由本函数决定**（`fix/arxiv-category-fanout` 起）：订阅编译产物
+    经请求参数覆盖 venue 的静态 quirks（`watch._compose_arxiv` 逐分类 fan-out，成对下推
+    `arxiv_category`+`arxiv_set`），故"id 序首个 venue"对 arxiv 只剩 `quirks.inception`
+    （其影响由 `SourceRequest.since` 收窄兜底）与日志身份两项影响。
     """
     venues: dict[str, VenueSpec] = {}
     for spec in env.ctx.registry.all():

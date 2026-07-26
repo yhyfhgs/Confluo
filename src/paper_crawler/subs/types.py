@@ -83,6 +83,28 @@ DATE_WINDOW_PARAMS: dict[str, tuple[str, ...]] = {
 }
 
 
+# --- T2/T5 接缝：arxiv 分类 fan-out 的两个下推键（单一同源）-------------------
+#
+# 键名与 arxiv venue YAML 的 quirks 键**逐字相同**（`venues/preprint/arxiv-*.yaml`）：
+# 经 `watch.AdapterFetcher.venue_for` 并进 `quirks` 后，正是
+# `adapters/arxiv/adapter.py::_oai_target` 读的两个键——`arxiv_category` 决定客户端按
+# `primary_category` 的子分类过滤，`arxiv_set` 决定 OAI-PMH 的 `set=`（archive 级）。
+# adapter 侧因此零改动：下达通道是它**既有**的配置入口。
+#
+# **两键必须成对下推**：生产路径恒注入真实 venue（`cli._watch_source_venues` 按 id 序
+# 取该源首个），其静态 `arxiv_set`（如 `arxiv_cs_ai` 的 `cs`）在 `venue_for` 的
+# `{**existing.quirks, **params}` 合并中**存活**——只推 `arxiv_category=q-fin.PR` 会变成
+# "在 `set=cs` 里按 q-fin.PR 客户端过滤"，恒空。`arxiv_set` 的派生式与 `_oai_target` 的
+# 兜底派生**同式**（`category.split(".", 1)[0]`；`'q-fin.PR' → 'q-fin'` 可靠，带连字符的
+# archive 亦然）。
+#
+# 表住在叶子模块（同 `DATE_WINDOW_PARAMS` 的守法）：T2（`compile.py` 产分类条目）与
+# T5（`watch.py` 逐分类展开 + 派生 set）两侧共同消费，住在任一方都会让另一方反向依赖，
+# 且两处各记一份键名迟早漂移。
+ARXIV_CATEGORY_PARAM = "arxiv_category"
+ARXIV_SET_PARAM = "arxiv_set"
+
+
 # ---------------------------------------------------------------------------
 # 编译计划（T2 产出 → T5 执行）
 # ---------------------------------------------------------------------------
@@ -249,6 +271,8 @@ class RunSummary:
 
 
 __all__ = [
+    "ARXIV_CATEGORY_PARAM",
+    "ARXIV_SET_PARAM",
     "DATE_WINDOW_PARAMS",
     "LOCAL_PREDICATE_EXCLUDE_REGEX",
     "LOCAL_PREDICATE_MIN_YEAR",

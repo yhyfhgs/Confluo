@@ -52,9 +52,10 @@ dry-run 走"早退"捷径，那些只在遍历时才触发的校验（解析异�
 ## 重复键逐条展开（`PlanStep.as_params()` 在本模块是禁用的）
 
 `pushdown` 是**有序 k-v 序列**而非 dict，正是因为 crossref 多 ISSN / nber 多 program
-会产生重复键——`as_params()` 的 dict 视图"重复键取最后一个"（其 docstring 明写），
-在这里用一次就是静默丢掉 n-1 个刊/n-1 个 program：订阅照跑、日报照出、少了的那部分
-无人察觉。故 `build_requests` 按源展开成**多条独立请求**（见 `_FANOUT_KEY`）。
+/ arxiv 多分类会产生重复键——`as_params()` 的 dict 视图"重复键取最后一个"（其
+docstring 明写），在这里用一次就是静默丢掉 n-1 个刊 / n-1 个 program / n-1 个分类：
+订阅照跑、日报照出、少了的那部分无人察觉。故 `build_requests` 按源展开成**多条独立
+请求**（见 `_FANOUT_KEY`）。
 
 ## 源侧拉取接缝（`SourceFetcher`）
 
@@ -80,12 +81,16 @@ WARNING（响亮降级，不静默）：
 | crossref | `issn` + 日窗 | `identifiers.issn`；`quirks.from/until-pub-date` | — |
 | nber | `program` | 专属 RSS fetcher 直接消费（feed 路由） | — |
 | ssrn | 日窗 | `quirks.from/until-created-date`（经内部 crossref） | 选择器无下推面（§3） |
-| arxiv | 日窗（**月桶**） | `SourceRequest.since` → `discover_timeline` 起始月 | `search_query` |
+| arxiv | 分类两键 + 日窗（月桶） | `venue_for`→quirks→`_oai_target`；`since` | `search_query` |
 | openalex / s2 | — | `capabilities` 空集，无 DISCOVER/ENUMERATE | 全部 |
+
+arxiv 行的"分类两键" = `arxiv_category` + 由它派生的 `arxiv_set`（**成对**，理由见
+`_compose_arxiv`）；`since` 那一路是 `SourceRequest.since` → `discover_timeline` 起始月。
 
 日窗那两条 `quirks` 通道的消费点是 `CrossrefAdapter._window_bounds`（与桶年取交集后
 拼进 `filter=`）；参数经 `AdapterFetcher.venue_for` 并进 `quirks`，键名与
-`DATE_WINDOW_PARAMS` 的槽位名逐字相同，两侧不需要第二张映射表。
+`DATE_WINDOW_PARAMS` 的槽位名逐字相同，两侧不需要第二张映射表（arxiv 的两个分类键
+同理，键名住在 `subs/types.py`）。
 
 **日期窗（F7 修复：从"客户端收窄"升级为"服务端下推"）**。原实现只在结果面按
 `SourceRequest.since` 丢弃 `pub_date < since` 的条目，请求面仍是整年/全史，两条真实
@@ -107,15 +112,21 @@ WARNING（响亮降级，不静默）：
 比登记窗是**错轴比较**，会把"本周登记、刊期挂在去年"的 SSRN 记录整批丢掉。窗已在正确
 的轴上服务端下推，这一层既冗余又有害，故摘掉。crossref 两轴同为 `published`，保留。
 
-**`search_query` 仍下达不了，且没有本地补偿**（如实列账，非本卡范围）：OAI-PMH 无
-关键词查询能力，`enumerate_issue` 的收割面 = venue 的 `quirks.arxiv_set`（archive 级）
-+ `arxiv_category`（客户端按 primary_category 过滤）。故 `sources.arxiv.query` 的字段级
-布尔式与 `categories` 的多分类**都不进请求**，本地也没有对应谓词兑现它们
+**arxiv 多分类与首 venue 路由（已修复，`fix/arxiv-category-fanout`）**：`enumerate_issue`
+的收割面 = venue 的 `quirks.arxiv_set`（archive 级）+ `arxiv_category`（客户端按
+primary_category 过滤）。现在 `_compose_arxiv` 按分类逐条 fan-out，每条请求**成对**带
+`arxiv_category` 与派生的 `arxiv_set`，经既有 `venue_for` 并进 `quirks` 后正是
+`_oai_target` 读的两个键（adapter 零改动）。成对是硬要求：注入 venue 的静态
+`arxiv_set` 在 quirks 合并中存活，只覆盖 `arxiv_category` 会让跨 archive 的分类
+（q-fin.*）恒空。故 `_watch_source_venues`"按 id 序取该源首个 venue"对 arxiv 已**不再
+决定收割面**——只剩 `quirks.inception`（其影响由 `since` 收窄兜底）与日志身份两项。
+
+**`query` 的关键词布尔式仍下达不了，且没有本地补偿**（如实列账）：OAI-PMH 无关键词
+查询能力，`sources.arxiv.query` 的字段级布尔式不进请求，本地也没有对应谓词兑现它
 （`filter.PREDICATE_REGISTRY` 只有 `ssrn.topic_filter`，且谓词签名不带参数、无法承载
-订阅级表达式）——实际生效的只有 `filters:` 三谓词。9 个预置靠"`title_regex_any` 手工
-镜像 query 词族"这条**约定**兜底（llm-agents 的 T8 修复即为此），不是机制。此外
-`_watch_source_venues` 按 id 序取该源首个 venue（arxiv → `arxiv_cs_ai`），故订阅声明的
-其余分类实际收不到。两者均已就地列账并经 WARNING 响亮告知，修复须另开卡。
+订阅级表达式）——这条上实际生效的只有 `filters:` 三谓词。9 个预置靠"`title_regex_any`
+手工镜像 query 词族"这条**约定**兜底（llm-agents 的 T8 修复即为此），不是机制；
+WARNING 如实点名 `search_query` 无补偿。参数化谓词机制留 Phase 7 检查单 #4。
 
 ## 与既有 pipeline 队列的接缝（plan §7 风险②："T5 只派生任务不改 runner"）
 
@@ -164,6 +175,8 @@ from paper_crawler.subs.guard import build_overload_report, dedupe_against_libra
 from paper_crawler.subs.model import Subscription, load_subscriptions_dir
 from paper_crawler.subs.report import render_daily
 from paper_crawler.subs.types import (
+    ARXIV_CATEGORY_PARAM,
+    ARXIV_SET_PARAM,
     DATE_WINDOW_PARAMS,
     CompiledPlan,
     FailureEvent,
@@ -236,8 +249,8 @@ class SourceRequest:
 
     - `params`：静态下推参数 ⊕ 增量窗参数，**有序 k-v**（同 `PlanStep.pushdown` 的
       约定，frozen dataclass 需 hashable）。展开后同一条请求内不再有语义上需要拆分的
-      重复键；宿主形态特殊的窗（arxiv 并进 `search_query`、openalex 并进 `filter`）
-      已由合成器就地拼好。
+      重复键；宿主形态特殊的窗（arxiv 在有 `search_query` 时并进它、openalex 并进
+      `filter`）已由合成器就地拼好。
     - `since`：增量窗**下界**（ISO `YYYY-MM-DD`），与 `params` 里的窗**同源冗余**——
       因为并入宿主参数后它就不再是一个独立的 k-v 了，而 DISCOVER 的 `since=` 接缝
       需要它。无日期轴的源（nber）恒 None。
@@ -276,9 +289,11 @@ _DELIVERABLE_PARAMS: dict[str, frozenset[str]] = {
     "nber": frozenset({"program"}),  # → NberRssFetcher 直接消费（feed 路由）
     # 选择器无下推面（design/09 §3），但日窗经 quirks 进内部 crossref 的 filter=（F7）
     "ssrn": frozenset(DATE_WINDOW_PARAMS["ssrn"]),
-    # OAI-PMH 无关键词查询能力 → search_query 下达不了（模块 docstring 末段列账）；
-    # 日窗不走 params 而走 `SourceRequest.since`（月桶粒度），故不在本表内。
-    "arxiv": frozenset(),
+    # 分类 fan-out 的两个键经 `venue_for` 并进 quirks，即 `_oai_target` 的消费面
+    # （OAI `set=` + 客户端 primary_category 过滤）——**成对**才有效，故两个都在表内。
+    # `search_query` 仍下达不了（OAI-PMH 无关键词查询能力）→ 照走 WARNING；
+    # 日窗不走 params 而走 `SourceRequest.since`（月桶粒度），故同样不在本表内。
+    "arxiv": frozenset({ARXIV_CATEGORY_PARAM, ARXIV_SET_PARAM}),
     "openalex": frozenset(),  # capabilities 空集（EnrichmentSource），无 DISCOVER
     "s2": frozenset(),  # 同上
 }
@@ -293,12 +308,13 @@ _SKIP_RESULT_SIDE_WINDOW: frozenset[str] = frozenset({"ssrn"})
 _FALLBACK_LOCAL_FILTER = "，其余条件由本地过滤兜底"
 
 _UNDELIVERABLE_FALLBACK: dict[str, str] = {
-    # arxiv 的 search_query 没有任何本地补偿谓词（模块 docstring 末段列账）——不许说
-    # "由本地过滤兜底"，那会让用户以为分类组与关键词布尔式仍在生效。
+    # arxiv 修复后 dropped 集合只可能剩 `search_query`（分类已按 arxiv_category fan-out
+    # 真实下达），而它没有任何本地补偿谓词（模块 docstring 末段列账）——不许说"由本地过滤
+    # 兜底"，那会让用户以为关键词布尔式仍在生效。
     "arxiv": (
-        "；增量窗已按月桶下推（DISCOVER since=）+ 结果面按日收窄，但 search_query 的"
-        "分类组与关键词布尔式**无本地补偿谓词**，实际只有订阅 filters: 三谓词生效"
-        "——收窄请写进 filters.title_regex_any"
+        "；增量窗已按月桶下推（DISCOVER since=）+ 结果面按日收窄，分类已按 arxiv_category "
+        "逐分类 fan-out 下推，但 search_query 的关键词布尔式**无本地补偿谓词**，实际只有"
+        "订阅 filters: 三谓词生效——收窄请写进 filters.title_regex_any"
     ),
 }
 
@@ -479,7 +495,17 @@ class RoutingFetcher:
 # `new{code}.xml`）的参数天然一次只能带一个。**openalex 的重复 `filter` 不在此列**
 # ——那是 AND 关系、要合并进同一个 `filter=`（`compile._OPENALEX_NOTE` 明写），展开
 # 反而会把"概念且类型"变成"概念或类型"两次请求。
-_FANOUT_KEY: dict[str, str] = {"crossref": "issn", "nber": "program"}
+#
+# arxiv 的值**不进 URL path**，但同样一次只能带一个：它经 `venue_for` 并进 venue
+# `quirks` 后决定 `_oai_target` 的 OAI `set=` 与客户端 `primary_category` 过滤，
+# 一次收割只有一个分类面，故照样逐条展开。arxiv **不走 `_compose_fanout`**——它还要
+# 成对派生 `arxiv_set`、并把窗合成进 `search_query`（见 `_compose_arxiv`）；键名仍以
+# 本表为单一权威，不在两处各写一遍字面量。
+_FANOUT_KEY: dict[str, str] = {
+    "crossref": "issn",
+    "nber": "program",
+    "arxiv": ARXIV_CATEGORY_PARAM,
+}
 
 
 def _params_without(params: Sequence[tuple[str, str]], key: str) -> tuple[tuple[str, str], ...]:
@@ -498,7 +524,7 @@ def _lower_bound_of(source: str, window: Sequence[tuple[str, str]]) -> str | Non
     `_arxiv_lower_bound`）。无窗的源（nber）→ None。
 
     **arxiv 曾恒返回 None**，理由是"其窗只以 `search_query` 内的范围项形态存在"——但
-    `search_query` 根本下达不到 OAI 通道（`_DELIVERABLE_PARAMS['arxiv']` 是空集），
+    `search_query` 根本下达不到 OAI 通道（它至今不在 `_DELIVERABLE_PARAMS['arxiv']` 里），
     净效果是 `discover_timeline(venue, since=None)` 从 venue 的 `quirks.inception`
     （`1998-01`）起逐月枚举，被 arXiv 官方 OAI-PMH 以 `badArgument`/"start date too
     early" 确定性拒绝——**任何含 arxiv 源的订阅在真实网络下恒失败**（T9 在线冒烟实证）。
@@ -538,17 +564,43 @@ def _arxiv_lower_bound(raw: str) -> str:
 def _compose_arxiv(
     step: PlanStep, window: Sequence[tuple[str, str]]
 ) -> tuple[tuple[tuple[str, str], ...], ...]:
-    """arxiv：窗以 `submittedDate:[A TO B]` **AND 进同一个 `search_query`**。
+    """arxiv：按分类**逐条展开**（成对带派生 `arxiv_set`），窗只在有 query 时并进 `search_query`。
 
-    宿主形态出处 = `watermark.py` 模块 docstring 的"窗口参数的宿主形态"表：arxiv 的
-    `submittedDate` 不是独立 URL 参数。`compile._wrap` 已保证复合查询式自带外层括号，
-    故这里直接 ` AND ` 追加不会改变结合律（那条括号注释写的正是本行的前提）。
+    三条语义各有理由：
+
+    1. **逐分类 fan-out**（同 crossref `issn` / nber `program` 的"重复键逐条展开"纪律）：
+       一次 OAI 收割只有一个分类面。每条请求**成对**携带 `arxiv_category` 与由它派生的
+       `arxiv_set`——必须成对：生产路径恒注入真实 venue，其静态 `arxiv_set`（`arxiv_cs_ai`
+       的 `cs`）在 `venue_for` 的 `{**existing.quirks, **params}` 合并中存活，只推
+       `arxiv_category=q-fin.PR` 就成了"在 `set=cs` 里按 q-fin.PR 客户端过滤"，跨 archive
+       的分类**恒空**。派生式与 `adapters/arxiv/adapter.py::_oai_target` 的兜底同式
+       （`category.split(".", 1)[0]`）。
+    2. **窗仍在有 `search_query` 时 AND 进同一个 `search_query`**：宿主形态出处 =
+       `watermark.py` 模块 docstring 的"窗口参数的宿主形态"表（arxiv 的 `submittedDate`
+       不是独立 URL 参数）。`compile._wrap` 已保证复合查询式自带外层括号，故直接 ` AND `
+       追加不改变结合律。**无 query 时窗不再单独合成一个 `search_query` 条目**——窗真实
+       生效的两条通道是 `SourceRequest.since`（→ `discover_timeline` 月桶）与结果面
+       `_within_since` 收窄；把窗硬造成一个必然"无法下达"的参数，只会对 8 个纯分类预置
+       每轮制造一条假警报（F7 的"响亮降级不撒谎"纪律）。
+    3. **零分类退化为单条**（恒至少一条请求，零请求 = 静默不拉该源；同 `_compose_fanout`）。
     """
-    expression = next((value for name, value in step.pushdown if name == "search_query"), "")
-    terms = [term for term in (expression, *(f"{name}:{value}" for name, value in window)) if term]
-    if not terms:
-        return ((),)
-    return ((("search_query", " AND ".join(terms)),),)
+    key = _FANOUT_KEY["arxiv"]
+    categories = _values_of(step.pushdown, key)
+    rest = _params_without(step.pushdown, key)
+    expression = next((value for name, value in rest if name == "search_query"), "")
+    others = _params_without(rest, "search_query")
+    if expression:
+        terms = [expression, *(f"{name}:{value}" for name, value in window)]
+        query_params: tuple[tuple[str, str], ...] = (("search_query", " AND ".join(terms)),)
+    else:
+        query_params = ()
+    base = (*others, *query_params)
+    if not categories:
+        return (base,)
+    return tuple(
+        ((key, category), (ARXIV_SET_PARAM, category.split(".", 1)[0]), *base)
+        for category in categories
+    )
 
 
 def _compose_openalex(

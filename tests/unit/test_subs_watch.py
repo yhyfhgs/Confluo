@@ -78,8 +78,8 @@ def _step(source: str, *pushdown: tuple[str, str]) -> PlanStep:
 
 
 def test_arxiv_window_is_anded_into_the_same_search_query() -> None:
-    """arxiv 的 submittedDate 不是独立参数——必须并进同一个 search_query。"""
-    step = _step("arxiv", ("search_query", "(cat:cs.AI OR cat:cs.LG)"))
+    """arxiv 的 submittedDate 不是独立参数——有 query 时必须并进同一个 search_query。"""
+    step = _step("arxiv", ("search_query", '(ti:"agent" OR abs:"agentic")'))
     window = (("submittedDate", "[202607190000 TO 202607262359]"),)
 
     (request,) = build_requests("s", step, window)
@@ -87,7 +87,7 @@ def test_arxiv_window_is_anded_into_the_same_search_query() -> None:
     assert request.params == (
         (
             "search_query",
-            "(cat:cs.AI OR cat:cs.LG) AND submittedDate:[202607190000 TO 202607262359]",
+            '(ti:"agent" OR abs:"agentic") AND submittedDate:[202607190000 TO 202607262359]',
         ),
     )
     # F7：窗值同时解回 ISO 下界喂 DISCOVER 的 since=（此前恒 None → adapter 从 venue 的
@@ -95,11 +95,79 @@ def test_arxiv_window_is_anded_into_the_same_search_query() -> None:
     assert request.since == "2026-07-19"
 
 
-def test_arxiv_without_static_query_emits_window_only() -> None:
+def test_arxiv_window_without_query_rides_since_only_not_a_fake_param() -> None:
+    """无 `search_query` 时窗**不再**单独合成一个 search_query 条目（语义自本卡起反转）。
+
+    窗真实生效的两条通道是 `SourceRequest.since`（→ `discover_timeline` 月桶）与结果面
+    `_within_since` 收窄。把窗硬造成一个必然"无法下达"的参数，只会对 8 个纯分类预置
+    每轮制造一条假警报——F7 立的规矩是"响亮降级不撒谎"，假警报同样是撒谎。
+    """
     window = (("submittedDate", "[202607190000 TO 202607262359]"),)
     (request,) = build_requests("s", _step("arxiv"), window)
-    assert request.params == (("search_query", "submittedDate:[202607190000 TO 202607262359]"),)
+    assert request.params == ()
     assert request.since == "2026-07-19"
+
+
+def test_arxiv_categories_fan_out_one_request_each_with_a_derived_set() -> None:
+    """逐分类展开：每条请求成对带 `arxiv_category` + 派生 `arxiv_set`，`since` 同值。
+
+    成对是硬要求（见 `_compose_arxiv` docstring）：注入 venue 的静态 `arxiv_set` 会在
+    `venue_for` 的 quirks 合并中存活，只推分类名会让跨 archive 的分类恒空。
+    """
+    step = _step(
+        "arxiv",
+        ("arxiv_category", "cs.AI"),
+        ("arxiv_category", "cs.LG"),
+        ("arxiv_category", "cs.CL"),
+    )
+    window = (("submittedDate", "[202607190000 TO 202607262359]"),)
+
+    requests = build_requests("s", step, window)
+
+    assert [request.params for request in requests] == [
+        (("arxiv_category", "cs.AI"), ("arxiv_set", "cs")),
+        (("arxiv_category", "cs.LG"), ("arxiv_set", "cs")),
+        (("arxiv_category", "cs.CL"), ("arxiv_set", "cs")),
+    ]
+    assert {request.since for request in requests} == {"2026-07-19"}
+
+
+def test_arxiv_set_is_derived_from_the_archive_segment_of_the_category() -> None:
+    """派生式与 `adapters/arxiv/adapter.py::_oai_target` 的兜底同式（含连字符 archive）。"""
+    step = _step("arxiv", ("arxiv_category", "q-fin.PR"), ("arxiv_category", "cs.AI"))
+
+    requests = build_requests("s", step, ())
+
+    assert [request.params for request in requests] == [
+        (("arxiv_category", "q-fin.PR"), ("arxiv_set", "q-fin")),
+        (("arxiv_category", "cs.AI"), ("arxiv_set", "cs")),
+    ]
+
+
+def test_arxiv_fanout_carries_the_same_windowed_query_on_every_request() -> None:
+    """分类 + query 并存：每条 fan-out 请求都带**同一份**"query AND 窗"的 search_query。"""
+    step = _step(
+        "arxiv",
+        ("arxiv_category", "cs.AI"),
+        ("arxiv_category", "cs.MA"),
+        ("search_query", '(ti:"agent")'),
+    )
+    window = (("submittedDate", "[202607190000 TO 202607262359]"),)
+
+    requests = build_requests("s", step, window)
+
+    windowed = '(ti:"agent") AND submittedDate:[202607190000 TO 202607262359]'
+    assert [request.params for request in requests] == [
+        (("arxiv_category", "cs.AI"), ("arxiv_set", "cs"), ("search_query", windowed)),
+        (("arxiv_category", "cs.MA"), ("arxiv_set", "cs"), ("search_query", windowed)),
+    ]
+
+
+def test_arxiv_query_without_categories_stays_a_single_request() -> None:
+    """零分类退化为单条（恒至少一条请求，零请求 = 静默不拉该源）。"""
+    step = _step("arxiv", ("search_query", '(ti:"agent")'))
+    (request,) = build_requests("s", step, ())
+    assert request.params == (("search_query", '(ti:"agent")'),)
 
 
 def test_arxiv_since_is_the_watermark_lower_bound_itself() -> None:
@@ -342,7 +410,7 @@ def test_undeliverable_params_warn_once_per_source(caplog: pytest.LogCaptureFixt
     request = SourceRequest(
         subscription="s",
         source="arxiv",
-        params=(("search_query", "cat:cs.AI AND submittedDate:[A TO B]"),),
+        params=(("search_query", 'ti:"agent" AND submittedDate:[A TO B]'),),
         since=None,
     )
     with caplog.at_level(logging.WARNING, logger="paper_crawler"):
@@ -412,12 +480,20 @@ def test_ssrn_result_side_window_is_skipped_because_the_axis_differs() -> None:
 def test_arxiv_undeliverable_warning_does_not_claim_a_local_fallback(
     caplog: pytest.LogCaptureFixture,
 ) -> None:
-    """arxiv 的 search_query 既没下推也**没有**本地补偿谓词——WARNING 不许说"本地兜底"。"""
+    """arxiv 的 search_query 既没下推也**没有**本地补偿谓词——WARNING 不许说"本地兜底"。
+
+    分类修复后本条同时锁住"不误报"的一侧：fan-out 的两个键**是**能下达的，故 dropped
+    列表只许有 `search_query`，文案也不许再提"分类组"（那会变成假警报）。
+    """
     fetcher = AdapterFetcher({"arxiv": _TwoIssueAdapter()})
     request = SourceRequest(
         subscription="s",
         source="arxiv",
-        params=(("search_query", "(cat:cs.AI) AND ti:agent"),),
+        params=(
+            ("arxiv_category", "cs.AI"),
+            ("arxiv_set", "cs"),
+            ("search_query", '(ti:"agent")'),
+        ),
         since="2026-07-19",
     )
     with caplog.at_level(logging.WARNING, logger="paper_crawler"):
@@ -427,6 +503,9 @@ def test_arxiv_undeliverable_warning_does_not_claim_a_local_fallback(
     message = warning.getMessage()
     assert "无本地补偿谓词" in message
     assert "其余条件由本地过滤兜底" not in message
+    assert "分类组" not in message  # 分类现在真的生效了，再提它就是假警报
+    # dropped 列表逐字：只有 search_query——两个 fan-out 键不被误报成"下达不了"。
+    assert "编译产物参数 ['search_query'] 无法下达" in message
 
 
 def test_ssrn_window_params_no_longer_warn_as_undeliverable(
@@ -505,6 +584,58 @@ def test_arxiv_since_narrows_the_oai_window_to_the_watermark_month() -> None:
     # 对照：不给 since 时同一 venue 会产出三百多个月桶（= 修复前每次首跑的请求面）。
     unbounded = list(ArxivAdapter().discover_timeline(_arxiv_cs_ai_venue(), None))
     assert len(unbounded) > 300 and unbounded[0].label == "1998-01"
+
+
+def test_arxiv_fanout_params_override_the_injected_venue_static_quirks() -> None:
+    """关键陷阱的直接回归：**成对**下推才压得过注入 venue 的静态 `arxiv_set`。
+
+    `_arxiv_cs_ai_venue()` 静态声明 `arxiv_set: cs` / `arxiv_category: cs.AI`，而
+    `venue_for` 的合并是 `{**existing.quirks, **params}`——只推 `arxiv_category=q-fin.PR`
+    的话静态 `cs` 会存活，`_oai_target` 就成了"在 set=cs 里按 q-fin.PR 客户端过滤"，
+    跨 archive 的分类恒空。故 `_compose_arxiv` 必须把派生的 set 一并推下去。
+    """
+    fetcher = AdapterFetcher({"arxiv": ArxivAdapter()}, venues={"arxiv": _arxiv_cs_ai_venue()})
+    request = SourceRequest(
+        subscription="asset-pricing",
+        source="arxiv",
+        params=(("arxiv_category", "q-fin.PR"), ("arxiv_set", "q-fin")),
+    )
+
+    spec = fetcher.venue_for(request)
+
+    assert spec.quirks["arxiv_set"] == "q-fin"  # 压过静态 cs
+    assert spec.quirks["arxiv_category"] == "q-fin.PR"  # 压过静态 cs.AI
+    assert _arxiv_cs_ai_venue().quirks["arxiv_set"] == "cs"  # 原 spec 未被改写
+
+
+def test_arxiv_fanout_reaches_the_real_oai_set_of_a_cross_archive_category() -> None:
+    """端到端接缝：fan-out 参数 → 真实 `ArxivAdapter` 发出的 OAI URL 带 `set=q-fin`。
+
+    生产路径注入的恒是 `arxiv_cs_ai`（`cli._watch_source_venues` 按 id 序取首个），本测
+    正是那条路径：venue 给 cs、订阅给 q-fin.PR，最终请求面必须是订阅说了算。
+    """
+    captured: list[httpx.URL] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        captured.append(request.url)
+        return httpx.Response(200, content=arxiv_fixture_bytes("10_oai_norecordsmatch.xml"))
+
+    today = datetime.now(UTC).date()
+    window = window_params(Watermark(), "arxiv", now=today)
+    requests = build_requests(
+        "asset-pricing", _step("arxiv", ("arxiv_category", "q-fin.PR")), window
+    )
+    fetcher = AdapterFetcher(
+        {"arxiv": ArxivAdapter(http=_mock_client(handler))},
+        venues={"arxiv": _arxiv_cs_ai_venue()},
+    )
+
+    for request in requests:
+        list(fetcher.fetch(request))
+
+    assert captured  # 确有请求发出（fixture 回 noRecordsMatch，故结果为空但 URL 已成形）
+    assert {str(url.params.get("set")) for url in captured} == {"q-fin"}
+    assert "cs" not in {str(url.params.get("set")) for url in captured}
 
 
 def test_ssrn_day_window_reaches_the_crossref_filter_and_trims_the_year_buckets() -> None:

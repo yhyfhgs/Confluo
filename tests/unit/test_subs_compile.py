@@ -73,24 +73,48 @@ def _ssrn_step(selector_fields: dict[str, object], venue: VenueSpec | None) -> P
     return step
 
 
+def _arxiv_pushdown(**selector_fields: object) -> tuple[tuple[str, str], ...]:
+    """arxiv 编译产物的**完整**条目序列——分类断言一律看它，不看 `as_params()`。
+
+    分类现在是重复键 `arxiv_category` 条目，dict 视图的 last-wins 会静默只留最后一个
+    （正是 `PlanStep.pushdown` 用元组而非 dict 的理由）。
+    """
+    return _step("arxiv", dict(selector_fields)).pushdown
+
+
 def _search_query(**selector_fields: object) -> str:
-    step = _step("arxiv", dict(selector_fields))
-    return step.as_params()["search_query"]
+    """**query-only 场景**的 `search_query` 取值（不得传 categories，见 `_arxiv_pushdown`）。"""
+    assert "categories" not in selector_fields
+    return _step("arxiv", dict(selector_fields)).as_params()["search_query"]
 
 
-# --- arxiv：categories + query → 单个 search_query（完整下推）------------------
+# --- arxiv：categories → 逐分类 fan-out 条目；query → 仅诊断用 search_query ----
 
 
-def test_arxiv_multi_categories_form_or_group() -> None:
-    """多值分类 → `cat:` OR 组，整体加括号（后续与 query 用 AND 拼时优先级才正确）。"""
-    assert _search_query(categories=("cs.AI", "cs.LG", "cs.CL")) == (
-        "(cat:cs.AI OR cat:cs.LG OR cat:cs.CL)"
+def test_arxiv_multi_categories_fan_out_as_repeated_entries() -> None:
+    """多值分类 → 逐条 `arxiv_category` 重复键条目（保序保重复），供 T5 fan-out。
+
+    不再拼成 `cat:` OR 组塞进 `search_query`：那个参数进不了 OAI-PMH 通道
+    （`watch._DELIVERABLE_PARAMS`），分类会整批失效（AC-6 §4 第 6 条）。
+    """
+    assert _arxiv_pushdown(categories=("cs.AI", "cs.LG", "cs.CL")) == (
+        ("arxiv_category", "cs.AI"),
+        ("arxiv_category", "cs.LG"),
+        ("arxiv_category", "cs.CL"),
     )
 
 
-def test_arxiv_single_category_needs_no_parentheses() -> None:
-    """单值是"原子"——不加括号（噪声括号会让 search_query 难读且快照易漂）。"""
-    assert _search_query(categories=("q-fin.PR",)) == "cat:q-fin.PR"
+def test_arxiv_single_category_is_a_single_entry() -> None:
+    assert _arxiv_pushdown(categories=("cs.AI",)) == (("arxiv_category", "cs.AI"),)
+
+
+def test_arxiv_hyphenated_category_is_carried_verbatim() -> None:
+    """带连字符的 archive（`q-fin.PR`）原样进条目值——T5 据此派生 `arxiv_set=q-fin`。
+
+    编译期不做任何拆分/归一：派生式住在 T5（与 `_oai_target` 的兜底同式），编译器再算
+    一遍就是同一张表落两处。
+    """
+    assert _arxiv_pushdown(categories=("q-fin.PR",)) == (("arxiv_category", "q-fin.PR"),)
 
 
 def test_arxiv_query_only_is_pushed_down_verbatim() -> None:
@@ -98,9 +122,17 @@ def test_arxiv_query_only_is_pushed_down_verbatim() -> None:
     assert _search_query(query='ti:"agent"') == 'ti:"agent"'
 
 
-def test_arxiv_categories_and_query_join_with_and() -> None:
-    assert _search_query(categories=("cs.AI", "cs.MA"), query='abs:"tool use" OR ti:"agent"') == (
-        '(cat:cs.AI OR cat:cs.MA) AND (abs:"tool use" OR ti:"agent")'
+def test_arxiv_categories_and_query_compile_to_separate_entries() -> None:
+    """并存时：分类条目在前、`search_query` 在后，且后者**不含** `cat:`。
+
+    "分类 AND 查询式"的合取语义改由「fan-out（每分类一次 OAI 收割）× 本地 `filters`
+    三谓词」承载。把 `cat:` 组仍拼进一个下达不了的 `search_query`，只会让 T5 那条
+    "无法下达"的 WARNING 对分类部分变成假警报——分类现在是真的生效了。
+    """
+    assert _arxiv_pushdown(categories=("cs.AI", "cs.MA"), query='abs:"tool use" OR ti:"agent"') == (
+        ("arxiv_category", "cs.AI"),
+        ("arxiv_category", "cs.MA"),
+        ("search_query", '(abs:"tool use" OR ti:"agent")'),
     )
 
 
@@ -129,25 +161,21 @@ def test_arxiv_lowercase_operators_are_uppercased_outside_quotes() -> None:
 
 
 def test_arxiv_compound_expression_is_parenthesized_for_safe_appending() -> None:
-    """复合式恒带外层括号——T4 的 `AND submittedDate:[…]` 是**追加**在末尾的。
+    """复合 **query** 恒带外层括号——T5 的 `AND submittedDate:[…]` 是**追加**在末尾的。
 
-    少了这层括号，`cat:a OR cat:b AND <日期窗>` 会被 arXiv 读成
-    `cat:a OR (cat:b AND 日期窗)`：第一个分类悄悄逃出增量窗，正是"边界丢失"那类难查的错。
+    少了这层括号，`ti:a OR ti:b AND <日期窗>` 会被 arXiv 读成
+    `ti:a OR (ti:b AND 日期窗)`：第一个析取项悄悄逃出增量窗，正是"边界丢失"那类难查的错。
     """
-    assert _search_query(categories=("cs.AI", "cs.LG")) == "(cat:cs.AI OR cat:cs.LG)"
+    assert _search_query(query='ti:"a" OR ti:"b"') == '(ti:"a" OR ti:"b")'
 
 
 def test_arxiv_already_wrapped_query_is_not_double_wrapped() -> None:
-    assert _search_query(categories=("cs.AI",), query='(ti:"a" OR ti:"b")') == (
-        'cat:cs.AI AND (ti:"a" OR ti:"b")'
-    )
+    assert _search_query(query='(ti:"a" OR ti:"b")') == '(ti:"a" OR ti:"b")'
 
 
 def test_arxiv_unbalanced_parentheses_are_left_alone() -> None:
     """括号不配对 = 用户写错：编译器不猜、不补（只按常规加自己的那层），交 arXiv 明确报错。"""
-    assert _search_query(categories=("cs.AI",), query='((ti:"a" OR ti:"b")') == (
-        'cat:cs.AI AND (((ti:"a" OR ti:"b"))'
-    )
+    assert _search_query(query='((ti:"a" OR ti:"b")') == '(((ti:"a" OR ti:"b"))'
 
 
 def test_arxiv_unpaired_quote_is_normalized_as_if_unquoted() -> None:
@@ -161,6 +189,11 @@ def test_arxiv_unpaired_quote_is_normalized_as_if_unquoted() -> None:
 def test_arxiv_empty_selector_yields_no_pushdown() -> None:
     """兜底：绕过解析器直构的空选择器不产 `search_query=`（空查询串会拉回全站）。"""
     assert _step("arxiv", {}).pushdown == ()
+
+
+def test_arxiv_blank_query_yields_no_search_query_entry() -> None:
+    """只写空白的 query 归一后是空串 → 不产条目（旧形态会留下 `(cat:…) AND ` 残尾）。"""
+    assert _arxiv_pushdown(categories=("cs.AI",), query="   ") == (("arxiv_category", "cs.AI"),)
 
 
 @pytest.mark.parametrize(
@@ -649,9 +682,12 @@ def test_llm_agents_example_compiles_to_expected_plan() -> None:
         (
             "arxiv",
             (
+                ("arxiv_category", "cs.AI"),
+                ("arxiv_category", "cs.LG"),
+                ("arxiv_category", "cs.CL"),
+                ("arxiv_category", "cs.MA"),
                 (
                     "search_query",
-                    "(cat:cs.AI OR cat:cs.LG OR cat:cs.CL OR cat:cs.MA) AND "
                     '((ti:"agent" OR abs:"agentic" OR abs:"tool use") ANDNOT ti:"survey")',
                 ),
             ),
@@ -682,7 +718,11 @@ def test_asset_pricing_wp_example_compiles_to_expected_plan() -> None:
         ),
         (
             "arxiv",
-            (("search_query", "(cat:q-fin.PR OR cat:q-fin.PM OR cat:q-fin.ST)"),),
+            (
+                ("arxiv_category", "q-fin.PR"),
+                ("arxiv_category", "q-fin.PM"),
+                ("arxiv_category", "q-fin.ST"),
+            ),
             (LOCAL_PREDICATE_TITLE_REGEX_ANY,),
         ),
         (

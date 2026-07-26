@@ -9,12 +9,16 @@
 
 | 源 | 下推 | 本地补偿 |
 |---|---|---|
-| arxiv | `search_query`（`cat:` 组 + 字段级布尔式，完整下推） | 仅 `filters` 三谓词 |
+| arxiv | `arxiv_category` 逐分类 fan-out；`query` 无下推面 | 仅 `filters` 三谓词 |
 | crossref | 每 issn 一条（`/journals/{issn}/works`） | 仅 `filters` 三谓词（无关键词场景） |
 | openalex | `filter=concepts.id:` + `filter=type:` | 仅 `filters` 三谓词（名称型 concepts 见下） |
 | s2 | `venue` / `fieldsOfStudy` / `query`（bulk search） | 仅 `filters` 三谓词 |
 | nber | 每 program 一条（feed 路由归 T7） | 仅 `filters` 三谓词 |
 | ssrn | **无**（聚合源无 network/eJournal 维度） | `filters` 三谓词 + `ssrn.topic_filter` |
+
+arxiv 行两栏都要看细则（`_compile_arxiv` docstring）：分类条目由 T5 逐条展开成独立请求
+并成对补上派生的 `arxiv_set`（经 venue quirks 进 OAI `set=`）；`query` 的关键词布尔式
+**既无下推通道、也无本地补偿谓词**，实际只有 `filters` 三谓词生效，如实列账不假装。
 
 ## 三条不变量（下游可依赖）
 
@@ -59,6 +63,7 @@ from typing import NoReturn
 from paper_crawler.errors import CrawlerError, ErrorClass, SubscriptionInvalid
 from paper_crawler.subs.model import LocalFilter, SourceSelector, Subscription
 from paper_crawler.subs.types import (
+    ARXIV_CATEGORY_PARAM,
     DATE_WINDOW_PARAMS,
     LOCAL_PREDICATE_EXCLUDE_REGEX,
     LOCAL_PREDICATE_MIN_YEAR,
@@ -104,9 +109,15 @@ SSRN_TOPIC_FILTER_VALUES: frozenset[str] = frozenset({"econ_fin"})
 # --- 编译期备注（进 `PlanStep.note`，供日报/诊断呈现，不参与判定）-------------
 
 _ARXIV_NOTE = (
-    "arxiv 完整下推：categories→cat: 组、query→字段级布尔式，合成单个 search_query"
-    "（布尔操作符 AND/OR/ANDNOT 以 site-survey/arxiv.md 实测为准）；"
-    "增量窗由 T4 以 submittedDate:[A TO B]（GMT）追加进同一 search_query"
+    "arxiv categories → **逐分类 fan-out 下推**：每条请求带一个 arxiv_category + 派生的 "
+    "arxiv_set，经 venue quirks 通道进 OAI-PMH 的 set= 与客户端 primary_category 过滤"
+    "（T5 展开；请求量 = N 分类 × M 月桶，每个分类独立收割其 archive 的 set）；"
+    "query → search_query **仅诊断呈现**：OAI 通道无关键词查询能力，既下达不了、"
+    "也没有本地补偿谓词，实际生效的只有订阅 filters: 三谓词"
+    "（镜像词族须手工写进 filters.title_regex_any；布尔操作符 AND/OR/ANDNOT 以 "
+    "site-survey/arxiv.md 实测为准）；"
+    "增量窗由 T4 产出、T5 经 SourceRequest.since 下推为月桶起点"
+    "（有 query 时窗同时以 submittedDate:[A TO B]（GMT）AND 进 search_query 保持宿主形态）"
 )
 
 _CROSSREF_NOTE = (
@@ -222,7 +233,7 @@ def _normalize_arxiv_query(raw: str) -> str:
 
 
 def _is_atom(expr: str) -> bool:
-    """表达式是否"原子"（引号外无空白）——原子无需加括号（`cat:cs.AI`、`ti:"tool use"`）。"""
+    """表达式是否"原子"（引号外无空白）——原子无需加括号（`ti:"tool use"`、`abs:agentic`）。"""
     return not any(char.isspace() for char in _QUOTED_PHRASE.sub("", expr))
 
 
@@ -253,8 +264,8 @@ def _wrap(expr: str) -> str:
     """按需加括号：原子与"已整体括起"者原样返回，其余包一层。
 
     复合式**恒**带外层括号（哪怕它是 `search_query` 的唯一成分），因为 T4 的增量窗是
-    `AND submittedDate:[A TO B]` **追加**在末尾的：少了这层括号，
-    `cat:a OR cat:b AND <日期窗>` 会被读成 `cat:a OR (cat:b AND 日期窗)`——第一个分类
+    `AND submittedDate:[A TO B]` **追加**在末尾的（`watch._compose_arxiv`）：少了这层
+    括号，`ti:a OR ti:b AND <日期窗>` 会被读成 `ti:a OR (ti:b AND 日期窗)`——第一个析取项
     悄悄逃出增量窗，是那种日报上看不出、对账才发现的漏收。
     """
     return expr if _is_atom(expr) or _is_fully_wrapped(expr) else f"({expr})"
@@ -284,30 +295,40 @@ def local_predicates_of(filters: LocalFilter) -> tuple[str, ...]:
 
 
 def _compile_arxiv(selector: SourceSelector, venue: VenueSpec | None) -> PlanStep:
-    """arxiv：`categories` + `query` 合成单个 `search_query`（完整下推，design/09 §3）。
+    """arxiv：`categories` → 逐分类 `arxiv_category` 条目；`query` → 仅诊断用 `search_query`。
 
-    - 分类组：`cat:cs.AI OR cat:cs.LG …`（多值时整体加括号）；
-    - 查询式：用户的字段级布尔式，经 `_normalize_arxiv_query` 归一；
-    - 两者都在时以 `AND` 连接（"这些分类里，且满足这个查询式"）。
+    - **分类**：每个分类一条 `(ARXIV_CATEGORY_PARAM, category)` 重复键条目（保序保重复），
+      由 T5 (`watch._compose_arxiv`) 逐条展开成独立请求并成对补上派生的 `arxiv_set`。
+      这是它**真实的**下达通道：两个键经 `AdapterFetcher.venue_for` 并进 venue `quirks`
+      后正是 `adapters/arxiv/adapter.py::_oai_target` 读的键（键名同源见 `subs/types.py`
+      的 `ARXIV_CATEGORY_PARAM`/`ARXIV_SET_PARAM` 注释）。
+    - **查询式**：用户的字段级布尔式，经 `_normalize_arxiv_query` 归一后装进 `search_query`。
+      该参数**下达不了**（OAI-PMH 无关键词查询能力），保留它只为诊断呈现与 T5 的响亮
+      WARNING；语法出处 = site-survey/arxiv.md「关键机制」段（字段前缀
+      `ti/au/abs/co/jr/cat/rn/all`、布尔 `AND/OR/ANDNOT`、短语用引号）。
 
-    语法出处 = site-survey/arxiv.md「关键机制」段（字段前缀 `ti/au/abs/co/jr/cat/rn/all`、
-    布尔 `AND/OR/ANDNOT`、短语用引号）。翻页上限与限速是 T5 的事，不在编译产物里。
+    **分类不再拼进 `search_query`**（本次修复的要点）：旧实现把 `cat:` 组与查询式合成
+    单个 `search_query`，而该参数进不了 OAI 通道——分类整批失效（AC-6 验收记录 §4 第 6
+    条）。改成结构化条目后分类真的生效了；若仍把 `cat:` 组留在 `search_query` 里，T5 那
+    条"`search_query` 无法下达"的 WARNING 对分类部分就成了**假警报**，违背 F7 确立的
+    "响亮降级不撒谎"纪律。"分类 AND 查询式"的合取语义改由「fan-out（每分类一次收割）
+    × 本地 `filters` 三谓词」承载。
+
+    归一后为空串的 `query`（如只写了空白）不产 `search_query` 条目——空查询串没有诊断
+    价值，旧形态还会留下 `(cat:…) AND ` 这样的残尾。
 
     `query` 里手写日期窗（`submittedDate:[…]` 等）→ 拒载，见 `_reject_date_window`。
     """
-    del venue  # arxiv 不消费 venue quirks（分类即 DSL 直给）
-    parts: list[str] = []
-    if selector.categories:
-        parts.append(_wrap(" OR ".join(f"cat:{category}" for category in selector.categories)))
+    del venue  # arxiv 不消费 venue quirks（分类即 DSL 直给；venue 侧的静态 quirks 由 T5 覆盖）
+    pushdown: list[tuple[str, str]] = [
+        (ARXIV_CATEGORY_PARAM, category) for category in selector.categories
+    ]
     if selector.query is not None:
         _reject_date_window(selector.query, source="arxiv", field="query")
-        parts.append(_wrap(_normalize_arxiv_query(selector.query)))
-    expression = " AND ".join(parts)
-    return PlanStep(
-        source="arxiv",
-        pushdown=(("search_query", expression),) if expression else (),
-        note=_ARXIV_NOTE,
-    )
+        expression = _normalize_arxiv_query(selector.query)
+        if expression:
+            pushdown.append(("search_query", _wrap(expression)))
+    return PlanStep(source="arxiv", pushdown=tuple(pushdown), note=_ARXIV_NOTE)
 
 
 def _compile_crossref(selector: SourceSelector, venue: VenueSpec | None) -> PlanStep:
