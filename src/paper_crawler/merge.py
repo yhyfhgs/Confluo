@@ -98,18 +98,29 @@
    `IngestResult.action` 口径不变（同第 4 条候审边的先例，纯 DB 副作用）。
 
    **独立审查三处 P1 修复（Opus 14 场景实测矩阵，回派）**：
-   ①**同调用内目标冲突**（`repo.py::_apply_preprint_clues`）：doi 与 arxiv 两条线索各自
-   独立解析目标端，若目标 paper 已把两 scheme 聚合到同一行（openreview 双键+目标聚合，
-   可达性高），先前实现会同时写出 `self→target`（doi，role=from）与
-   `target→self`（arxiv，role=to）两条方向相反的边——双向矛盾环。修复：先全量解析两条
-   线索各自目标，解析完毕后若两者非空且相等，只留 doi 方向（design/06 §3 是 preprint_of
-   的字面语义源），DEBUG 记录后丢弃 arxiv 侧，不建反向边。
+   ①**双向矛盾环**（`repo.py::_upsert_preprint_relation`）：doi 与 arxiv 两条线索各自
+   独立解析目标端，若目标 paper 已把两 scheme 聚合到同一行，会写出方向相反的两条边
+   ——双向矛盾环。**首轮修复**（同调用内预判：先全量解析两条线索各自目标，相等则只留
+   doi 方向）经 re-review 实测**REOPEN**：四步跨观测时序仍会成环——target 最初只有
+   arxiv，self 首次观测（仅 arxiv 线索）建 `target→self`；target 随后经普通强合并聚合
+   进 doi；self 再次观测、doi/arxiv 双线索都解析到同一 target，同调用内预判仍会建
+   `self→target`，与步骤②遗留、"绝不删行"永存的旧边并存——同调用内预判只堵得住"两条
+   线索出现在同一次 `_apply_preprint_clues` 调用"这个更窄的条件，堵不住跨越多次观测、
+   target 中间状态发生变化的场景。**终修**：拆除同调用内预判，改在
+   `_upsert_preprint_relation` 写入前查一次**反向行** `(to_paper, from_paper,
+   kind='preprint_of')`，存在则 DEBUG 记录后跳过（不写、不删旧行——先到先得，方向
+   争议留给未来人工 dedupe 流程仲裁）。这一处更底层的守卫同时覆盖同调用内冲突（此时
+   "doi 先落地"只是 `_PREPRINT_CLUE_ROLES` 字典声明序的自然结果，不再需要专门预判）与
+   跨观测冲突（任意时间间隔、任意中间状态变化都天然覆盖），`_apply_preprint_clues`
+   因此简化为单趟循环、不再维护 `resolved` 预解析字典。
    ②**证据溯源字段缺失**：`evidence_json` 原先只记 `reason`/`clue_key`/`clue_value`，
    没有落 `source`（`merge_ingest` 侧 `incoming.source`）/`venue_id`（`upsert_paper` 侧
    同名参数）——controller 裁决③"openreview 历史 'doi' 字段语义存疑，需要靠 evidence
    溯源核实"的前提未落地，裁决即失效。修复：两条写路径各自把自己持有的 provenance
    传入 `_apply_preprint_clues`（关键字参数，互斥——pull 路径无 source、aggregator 路径
-   venue-agnostic），写入 evidence（如实记录：不并集、不追加历史，见 P2-1）。
+   venue-agnostic），写入 evidence（如实记录：不并集、不追加历史，见 P2-1；**latent P2**
+   ——溯源字段本身也归"末次观测覆盖"简化族，若同一 paper 先后经两条写路径观测会随最近
+   一次写路径翻转，今日不可达：三个线索 adapter 全走 pull 路径，从未经 `merge_ingest`）。
    ③**arxiv 线索归一链错位**：`_apply_preprint_clues` 原对 'arxiv' 线索走通用
    `normalize_identifier`（非 doi scheme 直通、零改动），但 `identifier(scheme='arxiv')`
    写入侧的规范形是**去版本号的 base id**（design/adapters/arxiv.md §3，

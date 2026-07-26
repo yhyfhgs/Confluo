@@ -402,10 +402,11 @@ def test_upsert_paper_preprint_clue_idempotent_reingest(repo: Repo) -> None:
 def test_upsert_paper_conflicting_doi_and_arxiv_clues_same_target_keeps_doi_direction(
     repo: Repo,
 ) -> None:
-    """独立审查 P1-1：同一调用内 doi(role=from) 与 arxiv(role=to) 解析到**同一** target
-    （目标 paper 已聚合 doi+arxiv 两 identifier——openreview 双键场景可达）→ 双向矛盾环
-    风险（A→B 与 B→A 并存）。裁决：doi 线索优先（design/06 §3 字面语义源），跳过 arxiv
-    侧、不建反向边，只留 doi 方向一条。"""
+    """独立审查（原 P1-1，现由 `_upsert_preprint_relation` 的反向行守卫统一兜底）：
+    同一调用内 doi(role=from) 与 arxiv(role=to) 解析到**同一** target（目标 paper 已
+    聚合 doi+arxiv 两 identifier——openreview 双键场景可达）→ 双向矛盾环风险（A→B 与
+    B→A 并存）。doi 线索按 `_PREPRINT_CLUE_ROLES` 声明序先处理、先落地；arxiv 线索
+    随后撞见反向行、被守卫挡下——只留 doi 方向一条，不建反向边。"""
     repo.upsert_paper(
         VENUE_ID,
         None,
@@ -428,6 +429,65 @@ def test_upsert_paper_conflicting_doi_and_arxiv_clues_same_target_keeps_doi_dire
     assert edges[0]["from_title"] == "Self"
     assert edges[0]["to_title"] == "Aggregated Target"
     assert json.loads(edges[0]["evidence_json"])["clue_key"] == "doi"
+
+
+def test_upsert_paper_cross_observation_reverse_edge_guard_prevents_bidirectional_loop(
+    repo: Repo, caplog: pytest.LogCaptureFixture
+) -> None:
+    """独立审查 re-review REOPEN #6（P1）：跨观测四步时序仍会成环，同调用内预判堵不住。
+
+    ①target 最初只有 arxiv identifier；②self 首次观测（仅 arxiv 线索）建
+    `target→self`；③target 经普通强合并（与 preprint_of 无关）聚合进 doi；④self 再次
+    观测、这次 doi/arxiv 两条线索都能解析到同一 target——若无反向行守卫会再建
+    `self→target`，与步骤②遗留的旧边 `target→self`（"绝不删行"）构成矛盾对并存。
+    断言：全程只有步骤②那一条边，方向不变，第④步的写入尝试被 DEBUG 记录后跳过。
+    """
+    # ① target 最初只有 arxiv。
+    repo.upsert_paper(
+        VENUE_ID, None, PaperStub(title="Target", identifiers=(("arxiv", "2401.07000"),))
+    )
+    # ② self 首次观测：仅 arxiv 线索 → 建 target→self。
+    repo.upsert_paper(
+        VENUE_ID,
+        None,
+        PaperStub(
+            title="Self",
+            identifiers=(("cvf", "cvpr2024/xobs"),),
+            meta=(("arxiv", "2401.07000"),),
+        ),
+    )
+    edges_after_step2 = _preprint_edges(repo)
+    assert len(edges_after_step2) == 1
+    assert edges_after_step2[0]["from_title"] == "Target"
+    assert edges_after_step2[0]["to_title"] == "Self"
+
+    # ③ target 经普通强合并聚合进 doi（与 preprint_of 无关，纯 identifier 补全）。
+    repo.upsert_paper(
+        VENUE_ID,
+        None,
+        PaperStub(
+            title="Target",
+            identifiers=(("arxiv", "2401.07000"), ("doi", "10.9999/target-doi")),
+        ),
+    )
+
+    # ④ self 再次观测：doi + arxiv 双线索都解析到同一 target。
+    with caplog.at_level(logging.DEBUG, logger="paper_crawler"):
+        repo.upsert_paper(
+            VENUE_ID,
+            None,
+            PaperStub(
+                title="Self",
+                identifiers=(("cvf", "cvpr2024/xobs"),),
+                meta=(("doi", "10.9999/target-doi"), ("arxiv", "2401.07000")),
+            ),
+        )
+
+    edges_final = _preprint_edges(repo)
+    assert len(edges_final) == 1  # 仍只一条，不是两条方向相反的边
+    assert edges_final[0]["from_title"] == "Target"
+    assert edges_final[0]["to_title"] == "Self"  # 方向未被第④步的 doi 线索翻转
+    assert any("reverse edge already exists" in r.getMessage() for r in caplog.records)
 
 
 def test_upsert_paper_preprint_clue_evidence_includes_venue_id(repo: Repo) -> None:

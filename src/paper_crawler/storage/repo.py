@@ -907,14 +907,17 @@ class Repo:
     ) -> None:
         """消费本次观测 meta 里的 preprint 线索，建/刷新 preprint_of 边。
 
-        逐键查 `_PREPRINT_CLUE_ROLES`：命中键→按其目标 scheme 归一（doi 走
-        `normalize_identifier`，与 identifier 写入同一入口；arxiv 走 `_normalize_arxiv_clue`
-        ——独立审查 P1-3：通用 `normalize_identifier` 对非 doi scheme 直通，与
-        `identifier(scheme='arxiv')` 写入侧"去版本号的规范 base id"链不同，带版本/URL 形/
-        旧代线索值会静默悬空）→ 查 `identifier` 表解析目标端。**建边时机**＝本次 ingest
-        消费到线索的当下、一次性尝试（controller 已裁决③）：查不到目标端（线索悬空）或
-        线索值本身无法解析（P1-3：`_normalize_arxiv_clue` 返回 None）→ DEBUG 记录后跳过、
-        不建边、**不回溯重判**——不同于弱信号候审的观测级键集合机制，本卡接受顺序敏感的
+        逐键查 `_PREPRINT_CLUE_ROLES`（**迭代序即该 dict 字面量的声明序：doi 先于
+        arxiv**——同调用内两线索撞同一 target 时"doi 先落地"单纯是这个声明序的自然结果，
+        见下方"双向矛盾环守卫"段；打乱声明序会悄悄改变同调用内的胜出方，故不可无意间
+        重排）：命中键→按其目标 scheme 归一（doi 走 `normalize_identifier`，与
+        identifier 写入同一入口；arxiv 走 `_normalize_arxiv_clue`——独立审查 P1-3：
+        通用 `normalize_identifier` 对非 doi scheme 直通，与 `identifier(scheme='arxiv')`
+        写入侧"去版本号的规范 base id"链不同，带版本/URL 形/旧代线索值会静默悬空）→ 查
+        `identifier` 表解析目标端。**建边时机**＝本次 ingest 消费到线索的当下、一次性
+        尝试（controller 已裁决③）：查不到目标端（线索悬空）或线索值本身无法解析
+        （P1-3：`_normalize_arxiv_clue` 返回 None）→ DEBUG 记录后跳过、不建边、
+        **不回溯重判**——不同于弱信号候审的观测级键集合机制，本卡接受顺序敏感的
         best-effort 语义：目标端若晚于线索到达入库，这条线索就此错过，除非同一 paper 的
         后续观测重复携带该线索（下次 ingest 会重新尝试查找）。
 
@@ -923,13 +926,12 @@ class Repo:
         发表版；`role="to"` 反之。'journal_ref'（arxiv 专属自由文本）不可独立驱动查找，只在
         'doi' 线索命中时作为补充证据搭车进 evidence_json。
 
-        **同调用内目标冲突（独立审查 P1-1）**：doi 线索与 arxiv 线索各自独立解析目标端，
-        先前实现两者互不知情——若目标 paper 已把 doi/arxiv 两个 scheme 聚合到同一行（如
-        openreview 双键场景：目标此前经强合并同时持有这两个 identifier），doi 线索会建
-        `paper_id→target`（role=from）而 arxiv 线索会建 `target→paper_id`（role=to），
-        两条方向相反的边并存，构成双向矛盾环。本方法先**全量解析**两条线索各自的目标端，
-        解析完毕后才判定：两者非空且相等 → 只保留 doi 方向（design/06 §3 是 preprint_of
-        的字面语义源，故 doi 线索优先），DEBUG 记录后丢弃 arxiv 侧、不建反向边。
+        **双向矛盾环守卫（独立审查 re-review #6，P1；取代旧 P1-1 的同调用内预判）**：
+        本方法**不**自行判断"doi/arxiv 是否撞同一 target"——那只堵得住同一调用内的一半
+        场景，堵不住跨观测的另一半（target 的 identifier 集合在两次 SELF 观测之间可能
+        变化，见 `_upsert_preprint_relation` docstring 的四步时序）。真正的防线下沉到
+        `_upsert_preprint_relation`：写入前查一次反向行是否已存在。本方法只管按线索表
+        逐一尝试写入，冲突判定与拦截全权交给那一处更底层、覆盖面更广的守卫。
 
         `evidence_json` 溯源字段（独立审查 P1-2）：`merge_ingest`（`incoming.source`）与
         `upsert_paper`（`venue_id` 参数）分别传入各自持有的 provenance，供人工核实线索本
@@ -943,8 +945,7 @@ class Repo:
         """
         meta_map = dict(meta)
         journal_ref = meta_map.get("journal_ref")
-        resolved: dict[str, str] = {}  # clue_key -> target paper_id；先解析全量，后判冲突
-        for clue_key, (target_scheme, _role) in _PREPRINT_CLUE_ROLES.items():
+        for clue_key, (target_scheme, role) in _PREPRINT_CLUE_ROLES.items():
             raw_value = meta_map.get(clue_key)
             if not raw_value:
                 continue
@@ -976,28 +977,13 @@ class Repo:
             target_id = str(row["paper_id"])
             if target_id == paper_id:
                 continue  # 自指防御：正常数据不会出现，保守跳过（不建自环边）
-            resolved[clue_key] = target_id
-
-        # P1-1：doi 与 arxiv 线索同解析到一个 target → 双向矛盾环，doi 优先、丢弃 arxiv 侧。
-        if "doi" in resolved and "arxiv" in resolved and resolved["doi"] == resolved["arxiv"]:
-            log_event(
-                "DEBUG",
-                "preprint_of clue conflict: doi and arxiv clues both resolve to paper "
-                f"{resolved['doi']!r}; keeping doi (design/06 §3 semantic source), dropping "
-                "arxiv to avoid a bidirectional edge",
-                paper_id=paper_id,
-            )
-            del resolved["arxiv"]
-
-        for clue_key, target_id in resolved.items():
-            _, role = _PREPRINT_CLUE_ROLES[clue_key]
             from_paper, to_paper = (
                 (paper_id, target_id) if role == "from" else (target_id, paper_id)
             )
             evidence: dict[str, object] = {
                 "reason": f"meta-clue:{clue_key}",
                 "clue_key": clue_key,
-                "clue_value": meta_map[clue_key],
+                "clue_value": raw_value,
             }
             if source is not None:
                 evidence["source"] = source
@@ -1029,14 +1015,49 @@ class Repo:
         `candidate_duplicate` 的"待审阻塞"——但仍尊重已人工裁决的行：已裁决（decided 非空）
         绝不覆盖，与 `_upsert_candidate` 同一底线。
 
-        独立审查 P2-1（如实记录既定简化）：证据终态取**末次观测**、非并集、可降级——同一
-        `(from,to)` 若先后被强度不同的观测触及（如首次带 `journal_ref` 补充证据、二次
-        观测缺失该字段），后者会整体覆盖前者、`journal_ref` 随之丢失。这与 `_upsert_candidate`
+        **反向行守卫（独立审查 re-review #6，P1；本 kind 唯一的双向矛盾环防线）**：写入
+        前先查一次**反向行** `(to_paper, from_paper, kind='preprint_of')` 是否已存在——
+        存在即 DEBUG 记录后跳过，不写本方向、也**不删旧行**（先到先得；方向争议是数据
+        本身的矛盾信号，留给未来人工 dedupe 流程仲裁，本方法不越权物理改写）。本守卫
+        同时覆盖两种成因，`_apply_preprint_clues` 侧不再需要（也确已移除）单独的预判：
+        - **同一调用内**：doi 与 arxiv 两条线索若都解析到同一 target，会依次尝试写出
+          方向相反的两条边——按 `_PREPRINT_CLUE_ROLES` 的字典声明序（doi 先于 arxiv），
+          doi 方向先落地，arxiv 方向随后撞见反向行、被本守卫挡下。
+        - **跨观测**（独立审查 re-review REOPEN #6，四步时序实测证伪了旧 P1-1 的同调用内
+          预判"够用"的假设）：target 的 identifier 集合在两次 SELF 观测之间发生变化——
+          例如 ①target 最初只有 arxiv；②self 首次观测（仅 arxiv 线索）建
+          `target→self`；③target 经普通强合并（与 preprint_of 无关的另一条 stub）聚合
+          进 doi；④self 再次观测、这次 doi 与 arxiv 两条线索都能解析到同一 target——若
+          无本守卫会再建 `self→target`，与步骤②遗留、"绝不删行"永存的旧边 `target→self`
+          构成矛盾对并存。写入前的反向查询天然覆盖这一间隔任意长、中间状态任意变化的
+          跨观测场景，不依赖"两条线索是否同一调用处理"这个更窄的条件。
+
+        独立审查 P2-1（如实记录既定简化，含反向行守卫落地后的补充）：证据终态取**末次
+        观测**、非并集、可降级——同一 `(from,to)` 若先后被强度不同的观测触及（如首次带
+        `journal_ref` 补充证据、二次观测缺失该字段），后者会整体覆盖前者、`journal_ref`
+        随之丢失；**溯源字段（`venue_id`/`source`）同属此列、归同一族简化**——若同一
+        `(from,to)` 先后经两条写路径观测（pull 路径带 venue_id、aggregator 路径带
+        source），evidence 里的溯源字段会随最近一次写路径整体翻转、不保留历史来源
+        （latent：今日不可达，三个线索 adapter arxiv/cvf/openreview 全走 pull 路径，
+        从未经 `merge_ingest`；见 merge.py NEEDS_DECISION）。这与 `_upsert_candidate`
         的"新证据强度不弱于既有才刷新、反向不降级"刻意分岔：本 kind 无 weak/strong 分级
         （见 `_PREPRINT_CLUE_CONFIDENCE` 注释），"证据是否变化"是唯一刷新判据，没有强度
         序可比较、也就没有"防降级"的锚点可依附——取舍成本上界很小（evidence_json 只是审计
         辅助字段，不参与查询/去重语义，`decided` 才是真正需要保护的不变量）。
         """
+        reverse = conn.execute(
+            "SELECT 1 FROM paper_relation WHERE from_paper = ? AND to_paper = ? AND kind = ?",
+            (to_paper, from_paper, "preprint_of"),
+        ).fetchone()
+        if reverse is not None:
+            log_event(
+                "DEBUG",
+                f"preprint_of reverse edge already exists ({to_paper!r}->{from_paper!r}); "
+                f"skipping {from_paper!r}->{to_paper!r} to avoid a bidirectional edge",
+                from_paper=from_paper,
+                to_paper=to_paper,
+            )
+            return
         evidence_json = json.dumps(evidence, ensure_ascii=False, sort_keys=True)
         row = conn.execute(
             "SELECT evidence_json, decided FROM paper_relation "

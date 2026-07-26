@@ -828,9 +828,10 @@ def test_ingest_preprint_clue_idempotent_reingest(env: tuple[Repo, MergeEngine, 
 def test_ingest_conflicting_doi_and_arxiv_clues_same_target_keeps_doi_direction(
     env: tuple[Repo, MergeEngine, Path],
 ) -> None:
-    """独立审查 P1-1：`MergeEngine.ingest()` 路径同一场景（同调用内 doi/arxiv 两线索解析到
-    同一 target）——doi 优先、arxiv 侧跳过，不建反向边（见 test_repo.py 同名场景的 pull
-    路径对应用例）。"""
+    """独立审查（原 P1-1，现由 `_upsert_preprint_relation` 反向行守卫统一兜底）：
+    `MergeEngine.ingest()` 路径同一场景（同调用内 doi/arxiv 两线索解析到同一 target）——
+    doi 按声明序先落地，arxiv 撞见反向行被挡下，不建反向边（见 test_repo.py 同名场景的
+    pull 路径对应用例，以及该文件跨观测四步时序回归用例）。"""
     repo, engine, _ = env
     engine.ingest(
         _stub(title="Aggregated Target", ids=(("doi", "10.1/conflict"), ("arxiv", "2401.06013"))),
