@@ -694,3 +694,33 @@ def test_per_document_connection_failure_is_remembered_for_the_run(env: Pipeline
     assert runtime.disabled is True
     assert fulltext(env, paper_id)["extractor"] == "pypdf"
     assert '"reason": "grobid_unreachable"' in log_text(env)
+
+
+def test_grobid_connection_pool_is_released_at_run_end(env: PipelineEnv) -> None:
+    """运行收尾释放 GROBID 连接池（审查实测：此前每次 pull 泄漏一个池至进程退出）。
+
+    `close()` 是资源动作、**不改 `disabled`**——读超时等不记忆的形态不得因收尾关闭被误记
+    成整轮不可用；`ctx.grobid` 置回 None 使下一次运行重新构造并重新探活（§7.2 已声明语义）。
+    """
+    runtime = grobid_ok()
+    asset_id, paper_id = seed_fetched_pdf(env, make_text_pdf(BODY))
+    runner = env.make_runner()
+    runner.ctx.grobid = runtime
+    env.queue.enqueue("extract", VENUE, {"asset": asset_id}, force=True)
+    runner.drain()
+
+    assert fulltext(env, paper_id)["extractor"] == "grobid"  # 本轮确实用过 GROBID
+    assert runtime.client.is_closed is True
+    assert runner.ctx.grobid is None
+    assert runtime.disabled is False  # 关闭 ≠ 降级判决
+
+
+def test_grobid_pool_is_released_immediately_when_disabled(env: PipelineEnv) -> None:
+    """整轮降级（探活失败/连接重置）当即释放连接池——此后不会再有请求，池无用。"""
+    down = make_runtime(lambda _r: httpx.Response(500, text="down"))
+    asset_id, _ = seed_fetched_pdf(env, make_text_pdf(BODY))
+    runner = env.make_runner()
+    runner.ctx.grobid = down
+    env.queue.enqueue("extract", VENUE, {"asset": asset_id}, force=True)
+    assert runner.drain().failed == 0
+    assert down.disabled is True and down.client.is_closed is True

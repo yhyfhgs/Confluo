@@ -346,6 +346,13 @@ class PipelineRunner:
         return RunReport(command=command, venue_id=venue_id, started_at=utcnow_iso())
 
     def _finalize(self, report: RunReport) -> RunReport:
+        # 运行收尾释放 GROBID 连接池（D-033 §7.2「记忆只活在进程内、不跨运行」的资源侧对偶）：
+        # `_grobid_runtime` 惰性构造的 HttpClient 挂在 ctx 上，若不在此关闭会活到进程退出——
+        # 长驻进程里每次运行泄漏一个连接池。置回 None 使下一次运行重新构造并重新探活（正是
+        # §7.2 已声明的语义：用户起好服务后无需清任何状态）。
+        if self.ctx.grobid is not None:
+            self.ctx.grobid.close()
+            self.ctx.grobid = None
         report.finished_at = utcnow_iso()
         report.save(self.ctx.config.reports_dir)
         log_event(

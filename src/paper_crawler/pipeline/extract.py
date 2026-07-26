@@ -395,6 +395,21 @@ class GrobidRuntime:
     version: str = "unknown"
     disabled: bool = False  # 「记忆本轮」：此后不再调用 GROBID（含探活）
 
+    def close(self) -> None:
+        """释放底层 HTTP 连接池（幂等；`HttpClient.close()` 本身可重复调用）。
+
+        调用点两处（都在 pipeline 侧）：①`disable()` —— 本轮此后不再调用 GROBID，连接池
+        当即无用；②运行收尾（`runner._finalize`）—— 本轮结束，连接池随之释放。二者合起来
+        使「每次运行泄漏一个连接池至进程退出」不可能发生。**不改 `disabled`**：关闭是资源
+        动作，不是降级判决（读超时等不记忆的形态不得因收尾关闭而被误记成整轮不可用）。
+        """
+        self.client.close()
+
+    def disable(self) -> None:
+        """「记忆本轮」：此后不再调用 GROBID（含探活），并**当即**释放连接池。"""
+        self.disabled = True
+        self.close()
+
     def extractor(self) -> GrobidExtractor:
         """探活（每轮一次）并返回可用的抽取器；不可用 → `GrobidUnavailable`（**只抛一次**）。
 
@@ -406,7 +421,7 @@ class GrobidRuntime:
             try:
                 self.client.get_text(f"{self._base()}/api/isalive", accept="text/plain")
             except CrawlerError as exc:
-                self.disabled = True
+                self.disable()
                 raise GrobidUnavailable(
                     REASON_UNREACHABLE, remember=True, hint=str(exc.detail or "")
                 ) from exc

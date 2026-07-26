@@ -169,6 +169,11 @@ CREATE TABLE subscription_run (
 索引要点：`identifier(scheme,value)` 主键即索引；`asset(state)`、`task(state, kind)` 部分索引服务调度查询；
 **全文检索索引见下**。
 
+> **迁移号顺延注记（P7-T7 合并期）**：本小节下文的 `schema v4 / 0004_fts_paper.sql` 应读作
+> **`schema v5 / 0005_fts_paper.sql`** —— T7（D-033 fulltext asset 级幂等键）先行占用 0004，按
+> [D-033 R3](../plan/decision-log.md)「先合者取小号」；**正文引用由 T12 落地时全面更新**，此注记
+> 只为消除 T12 合并前的双 0004 误导窗。
+
 **FTS5 检索索引（schema v4 / `0004_fts_paper.sql`；权威决策 [D-034](../plan/decision-log.md)）**——本节原文
 曾写「`paper(title)` 建 FTS5 虚表（标题+摘要检索）」，那是**未落地的设计声明**：D-017 决策 4 把它推迟到
 Phase 6，Phase 6 关账时未兑现（该 Phase 的搜索面全部落在订阅 DSL 的本地过滤谓词上），D-034 如实记债后把

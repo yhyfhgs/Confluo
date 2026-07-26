@@ -1146,7 +1146,7 @@ def _extract_with_fallback(
     except GrobidUnavailable as exc:
         _warn_grobid(exc, task_id=task_id, venue_id=venue_id, asset_id=asset_id)
         if exc.remember and ctx.grobid is not None:
-            ctx.grobid.disabled = True
+            ctx.grobid.disable()  # 记忆本轮 + **当即释放连接池**（此后不会再有请求）
         return _PYPDF.extract(source)
 
 

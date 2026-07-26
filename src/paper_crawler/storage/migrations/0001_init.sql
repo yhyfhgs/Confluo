@@ -110,7 +110,7 @@ CREATE TABLE fulltext (
   paper_id TEXT PRIMARY KEY REFERENCES paper,
   extractor TEXT,
   extractor_ver TEXT,
-  text_path TEXT,                    -- data/fulltext/{...}.txt|.tei.xml
+  text_path TEXT,                    -- fulltext/{...}.txt|.tei.xml（**相对 data_dir，无 data/ 前缀**）
   char_count INTEGER,
   lang TEXT,
   extracted_at TEXT
