@@ -11,6 +11,10 @@ dependencies = [
     "pyyaml>=6",
     "python-ulid>=2",
     "httpx>=0.28.1",
+    # D-033 决策 1（design/12 §3.3）：纯文本基线抽取器进**核心** dependencies（非 extra）——
+    # extra 会凭空造出「stage 5 不可用」这一无验收载体的降级态（AC-7.1 无条件要求抽取产出）。
+    # 纯 Python、零运行时传递依赖、BSD-3，三项皆不沾 D-023 的 extra 分界线（重/二进制/浏览器件）。
+    "pypdf>=5",
 ]
 
 [project.scripts]

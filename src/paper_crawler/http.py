@@ -39,10 +39,17 @@ NO_ENTITLEMENT，导致「不冷却、不 BLOCKED、还派生 OA-fallback 继续
 GET-only 三方法 `get_text`/`get_bytes`/`stream` 签名与行为完全未改动，仅在 `_request`
 内部新增可选 `method`/`json_body` 参数，缺省值保证既有调用点零回归）。错误映射表/
 限速闸/obslog 记录机制对 POST 路径同样适用（同一套 `_request`）。
+
+**T7 纯附加扩展**（D-033 已裁决子项①，12-fulltext-extract §7.1）：新增 `post_multipart`
+（GROBID `POST /api/processFulltextDocument` 走 `multipart/form-data`，`post_json` 不覆盖）。
+同样只在 `_request` 内部新增可选 `files`/`form_data` 参数——既有方法签名/行为逐字不变，
+且新方法**与 `post_json` 同构地走 `_request`**，不另起绕过限速/obslog/错误映射的通路。
+GROBID 客户端构造时 `rate_limiter=None`（本机服务不是站点）且**不写 FetchLog**——FetchLog
+是在线预算的唯一事实源（D-030 §7.2），把本地调用记进去会污染预算派生口径。
 """
 
 import time
-from collections.abc import Iterator
+from collections.abc import Iterator, Mapping
 from datetime import UTC, datetime
 from email.utils import parsedate_to_datetime
 from types import TracebackType
@@ -219,6 +226,27 @@ class HttpClient:
         """
         return self._request(url, accept=accept, method="POST", json_body=json_body).content
 
+    def post_multipart(
+        self,
+        url: str,
+        *,
+        files: Mapping[str, tuple[str, bytes, str]],
+        data: Mapping[str, str] | None = None,
+        accept: str | None = None,
+    ) -> bytes:
+        """POST 一个 `multipart/form-data` 请求体，返回原始字节正文；错误映射同 GET 路径。
+
+        **纯附加扩展**（T7 / D-033 已裁决子项①，12-fulltext-extract §7.1；先例＝
+        `extra_headers` 与 `CrawlerError.status_code`）——冻结的既有方法签名/行为**零改动**。
+        用途：GROBID 的 `POST /api/processFulltextDocument` 走 multipart（现有 `post_json`
+        不覆盖）。与 `post_json` **同构地走 `_request`**（同一限速闸 / obslog 记录 /
+        状态码→`CrawlerError` 映射路径），不另起一条绕过既有记账的请求通路。
+
+        `files` 的值形如 `(filename, content, content_type)`，`data` 是并列的普通表单字段
+        （httpx 负责 boundary 组装与 `Content-Type` 头）。
+        """
+        return self._request(url, accept=accept, method="POST", files=files, form_data=data).content
+
     def stream(self, url: str) -> Iterator[bytes]:
         """GET 流式取字节（供 `fetch_asset` 交给 `io.write_stream`）。
 
@@ -271,11 +299,15 @@ class HttpClient:
         accept: str | None,
         method: str = "GET",
         json_body: object = None,
+        files: Mapping[str, tuple[str, bytes, str]] | None = None,
+        form_data: Mapping[str, str] | None = None,
     ) -> httpx.Response:
         """限速闸 → 发请求、记 obslog、按状态映射错误，返回已读响应。
 
         `method`/`json_body` 缺省值（`"GET"`/`None`）保证既有 `get_text`/`get_bytes`
-        调用点行为逐字不变；`post_json` 是唯一传非默认值的调用方（T6 纯附加扩展）。
+        调用点行为逐字不变；`post_json`（T6）与 `post_multipart`（T7）是仅有的两个传非默认
+        值的调用方——二者共用本方法的限速闸/错误映射/obslog，不存在旁路请求通路。
+        `files`/`form_data` 恒为 None 时 httpx 视作未提供，POST JSON 路径行为亦逐字不变。
         """
         self._throttle(url)
         start = time.monotonic()
@@ -284,7 +316,12 @@ class HttpClient:
                 response = self._client.get(url, headers=_accept_headers(accept))
             else:
                 response = self._client.request(
-                    method, url, headers=_accept_headers(accept), json=json_body
+                    method,
+                    url,
+                    headers=_accept_headers(accept),
+                    json=json_body,
+                    files=files,
+                    data=form_data,
                 )
         except httpx.TimeoutException as exc:
             raise CrawlerError(

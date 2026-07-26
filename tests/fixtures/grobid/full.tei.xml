@@ -1,0 +1,47 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- L3 语料（12-fulltext-extract §8.2）：**自造**的 GROBID TEI，纯文本可 diff、可入库、
+     无版权面。形态照 GROBID processFulltextDocument 的产物骨架（teiHeader + text/body），
+     只保留被消费的三处：titleStmt/title（AC-7.1 判据）、根 @xml:lang、text 可见文本。 -->
+<TEI xmlns="http://www.tei-c.org/ns/1.0" xml:lang="en">
+  <teiHeader>
+    <fileDesc>
+      <titleStmt>
+        <title level="a" type="main">Deterministic Extraction of Scholarly Full Text</title>
+      </titleStmt>
+      <sourceDesc>
+        <biblStruct>
+          <analytic>
+            <author>
+              <persName><forename type="first">Ada</forename><surname>Lovelace</surname></persName>
+            </author>
+          </analytic>
+        </biblStruct>
+      </sourceDesc>
+    </fileDesc>
+  </teiHeader>
+  <text xml:lang="en">
+    <front>
+      <div type="abstract">
+        <p>We describe an idempotent pipeline stage that turns fetched PDF assets into
+        durable text artifacts without depending on any remote service.</p>
+      </div>
+    </front>
+    <body>
+      <div xmlns="http://www.tei-c.org/ns/1.0">
+        <head n="1">Introduction</head>
+        <p>The baseline path uses a pure-Python text layer reader. The optional path posts the
+        same bytes to a local GROBID instance and stores the returned TEI verbatim.</p>
+      </div>
+      <div>
+        <head n="2">Method</head>
+        <p>Products compete under a total order so that the terminal database state is a
+        function of the input set rather than of arrival order.</p>
+      </div>
+    </body>
+    <back>
+      <div type="references">
+        <listBibl/>
+      </div>
+    </back>
+  </text>
+</TEI>

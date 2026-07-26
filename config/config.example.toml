@@ -85,3 +85,12 @@ token = ""        # Wiley-TDM-Client-Token（UUID 形态）；env PAPER_CRAWLER_
 # daily_cap = 50           # 每 venue×域 每日 fetch 尝试篇次上限（成败均计）；env _BROWSER_DAILY_CAP
 # rate_rpm = 10            # 域级限速（req/min，=1 req/6s；并发恒 1）；env _BROWSER_RATE_RPM
 # jitter_s = [2, 5]        # 每次请求前的额外抖动区间（秒）；env _BROWSER_JITTER_S（"2,5"）
+
+# == 全文抽取 stage 5（D-033 / design/12；非凭证，可入项目级）=================================
+# 纯文本基线（pypdf）恒可用、无需配置。GROBID 是**可选增强**：配置 grobid_url 即启用，
+# 服务不可用时自动降级为纯文本且不报错（AC-7.2）。GROBID 须是**本机/内网** REST 服务
+# （零外网请求）——consolidateHeader/Citations/Funders 三参数已硬编码 0 且不设配置槽，
+# 因为 GROBID 的 consolidation 会代为访问 Crossref 等外部服务，越过本项目的限速/预算记账面。
+[extract]
+# grobid_url = "http://localhost:8070"   # 空/缺省 = 关闭（默认）；env PAPER_CRAWLER_GROBID_URL
+# grobid_timeout_s = 60                  # 单篇处理超时（秒）；env PAPER_CRAWLER_GROBID_TIMEOUT_S

@@ -348,6 +348,27 @@ _FIELD_SPECS: tuple[_FieldSpec, ...] = (
         env="PAPER_CRAWLER_OA_FALLBACK_RATE_RPM",
         default=30,
     ),
+    # Phase 7 T7 / D-033（12-fulltext-extract §7.1）：stage 5 的 GROBID 可选增强，**只两槽**
+    # ——开/关由 `grobid_url` 是否为空表达（无需第三个 mode 槽）；`consolidateHeader` /
+    # `consolidateCitations` / `consolidateFunders` 三者一律硬编码 0 **不设槽**（§2.1：
+    # consolidation 会让 GROBID 代为外访，开启即绕过本项目全部限速/预算/FetchLog 记账面）。
+    # 两槽皆非敏感（不进 `config show` 脱敏面）。默认形态 = 关闭（url 为 None）。
+    _FieldSpec(
+        "extract.grobid_url",
+        ("extract",),
+        "grobid_url",
+        "str",
+        env="PAPER_CRAWLER_GROBID_URL",
+        default=None,
+    ),
+    _FieldSpec(
+        "extract.grobid_timeout_s",
+        ("extract",),
+        "grobid_timeout_s",
+        "int",
+        env="PAPER_CRAWLER_GROBID_TIMEOUT_S",
+        default=60,
+    ),
     # active_profile：platform→profile 映射（§3.4；无 env，config-home/项目级 TOML 表）。
     _FieldSpec("auth.active_profile", ("auth",), "active_profile", "mapping", default=None),
     # browser-fetch 横切件四槽（11-browser-fetch §7.5，全部保守默认；非敏感，可入项目级）。
@@ -577,6 +598,10 @@ class Config:
     browser_daily_cap: int = 50  # §7.1 L3 每 venue×域 每日 fetch 尝试篇次上限
     browser_rate_rpm: int = 10  # §7.1 L2 域级限速（并发恒 1）
     browser_jitter_s: tuple[float, float] = (2.0, 5.0)  # §7.1 L2 抖动区间（秒）
+    # Phase 7 T7 / D-033：stage 5 的 GROBID 可选增强（本机 REST 服务；非凭证，可入日志/报告）。
+    # `grobid_url` 为 None/空 = **关闭**（默认形态，非降级）——stage 5 走纯文本基线路径。
+    grobid_url: str | None = None
+    grobid_timeout_s: int = 60
 
     @classmethod
     def load(cls, home: Path | None = None) -> "Config":
@@ -648,6 +673,8 @@ class Config:
             browser_daily_cap=_int("browserfetch.daily_cap"),
             browser_rate_rpm=_int("browserfetch.rate_rpm"),
             browser_jitter_s=_range("browserfetch.jitter_s"),
+            grobid_url=_str("extract.grobid_url"),
+            grobid_timeout_s=_int("extract.grobid_timeout_s"),
         )
 
     def ensure_dirs(self) -> None:
