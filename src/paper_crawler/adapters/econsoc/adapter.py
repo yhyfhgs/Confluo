@@ -379,6 +379,10 @@ class EconsocAdapter(AdapterBase):
         命中判据二合一：缓存已发布、`(venue_id, oai_base)` 同源。年份不在上趟收割的
         `cacheable` 集合内（如收割后才登记的新年份）在 `self._backfill` 里查无此键，
         `dict.get` 天然返回 None，退回真收割而非静默产空序列。
+
+        **裁决记录（fable，T15 NEEDS_DECISION 回应）**：缓存实例内存态；同 run 内
+        cache-hit 不补发窗口查询，分钟级新发布窗口由下次运行的全量重扫补齐；若未来
+        出现长驻进程消费场景须重估此取舍。
         """
         if self._backfill is None or self._backfill_key != (venue.id, oai_base):
             return None
