@@ -25,10 +25,14 @@ fetch/extract/ingest 六类；`pull` 的级联编排在 `runner.py`）。任务�
 - 幂等跳过（§5.3）：asset 已 fetched 且文件存在且 sha256 相符 → handler 返回
   `"skipped"`（runner 计入 RunReport.skipped）并 `log_event(msg="skipped")`，
   **不产生新的成功 fetch_log 行**（AC-1.3 判据）。
-- extract（Phase 1 语义，计划 Task 7 前置讨论）：对 fetched pdf 资产写 fulltext 行
-  （extractor="noop", extractor_ver="1", text_path=None, char_count=0）并把
-  paper.ingest_state 推进到 extracted；幂等键 (asset, extractor_ver)——fulltext 表
-  paper 1-1，重跑不重插。本地零网络。
+- extract（Phase 7 真实抽取，D-033 / design/12）：对 fetched pdf 资产做本地抽取——
+  纯文本基线（pypdf）恒可用，GROBID 为可选增强且不可用即降级不报错（AC-7.2）。
+  幂等键落到 **asset 级** `(asset_id, source_sha256, extractor, extractor_ver)`（表
+  仍 paper 1-1，asset 级的是**键**不是基数）；取代规则 = **全序取 max**
+  `(rank, ver_key, char_count, asset_id)`，故终态与注入顺序无关（沿 D-031 纪律）。
+  失败三分：库↔文件不一致 → INTEGRITY；源文件在但抽不出 → `extract_failed` 行
+  （不失败任务）；asset 缺失/状态非法 → CONFIG。抽取器层见 `pipeline/extract.py`。
+  本地零网络（GROBID 是本机服务，不注册限速桶、不写 FetchLog）。
 - ingest（Phase 1 语义）：把"有 fetched 资产"的 paper 的 ingest_state 推进到
   fetched（只前进不回退；identifier 锚点强合并已由 `Repo.upsert_paper` 在
   enumerate 时天然处理），并向 RunReport.notes 追加人读摘要。本地零网络。
@@ -62,6 +66,23 @@ from paper_crawler.browserfetch import (
 from paper_crawler.config import Config
 from paper_crawler.errors import CrawlerError, ErrorClass
 from paper_crawler.obslog import log_event
+from paper_crawler.pipeline.extract import (
+    EXTRACTOR_NOOP,
+    RANK_EXTRACT_FAILED,
+    RANK_INVALID,
+    RANK_NOOP,
+    STATE_EXTRACT_FAILED,
+    STATE_EXTRACTED,
+    STATE_NOOP,
+    ExtractedText,
+    GrobidRuntime,
+    GrobidUnavailable,
+    PypdfExtractor,
+    TextExtractor,
+    extractor_rank,
+    order_key,
+    version_key,
+)
 from paper_crawler.pipeline.fetchio import PartFileIO, validate_pdf_magic
 from paper_crawler.pipeline.report import RunReport
 from paper_crawler.ratelimit import RateLimiter
@@ -150,6 +171,13 @@ class StageContext:
     # 二者皆关时 `RENDER_PAGE` 计划在 `_stage_fetch` 返回 `skipped`（不派生失败、不计 failures，
     # 语义等价 §4.6 裁决的 "deferred"，且零冻结件改动）。
     browser_fetch: bool = False
+    # ---- Phase 7 extract 接缝（D-033 / 12-fulltext-extract §7.2；纯附加、默认关闭）----
+    # GROBID 的**每轮一次**前置探活结果（可用性 + 服务版本）+ 本轮记忆缓存。None = 未装配：
+    # 由 `_grobid_runtime` 在 `[extract] grobid_url` 非空时惰性构造并写回本字段（先例＝
+    # `unpaywall_adapter`）；测试直接注入一个持 `MockTransport` 客户端的实例即可覆盖 §7.2
+    # 处置矩阵逐行，零新基建。记忆只活在进程内——**不落库、不跨运行**（用户起好服务后无需
+    # 清任何状态）。显式注入优先于 config：注入即视为启用。
+    grobid: GrobidRuntime | None = None
 
 
 StageOutcome = Literal["done", "skipped"]
@@ -272,6 +300,44 @@ def fetched_file_ok(asset: sqlite3.Row) -> bool:
     return hashlib.sha256(path.read_bytes()).hexdigest() == str(sha_raw)
 
 
+def _year_part(paper: sqlite3.Row) -> str:
+    """落位布局的 `{year}` 段（design/06 §4）：`paper.year` 为 NULL 时落 `"unknown"`。
+
+    `_asset_final_path` 与 `_fulltext_final_path` 共用本小件——`pdf/{v}/{y}/{ulid}.pdf` 与
+    `fulltext/{v}/{y}/{ulid}.txt` 必须**同 v/y 对位**，verify 对账与人肉查阅都依赖它
+    （12-fulltext-extract §5.4）。
+    """
+    year_raw = paper["year"]
+    return str(int(year_raw)) if year_raw is not None else "unknown"
+
+
+def _fulltext_rel_path(venue_id: str, paper: sqlite3.Row, suffix: str) -> str:
+    """`fulltext.text_path` 的**落库形态**：相对 `data_dir`、**不含 `data/` 前缀**（§5.4）。
+
+    ```
+    fulltext/{venue_id}/{year}/{paper_ulid}{suffix}        ← 正确
+    data/fulltext/{venue_id}/{year}/{paper_ulid}{suffix}   ← 错误（全库 missing_file）
+    ```
+
+    `verify.py::_resolve` 把相对路径挂在 `Config.data_dir` 下、而 `data_dir` **本身就指向
+    `…/data`**，带前缀会解析成 `…/data/data/fulltext/…`。选相对形态的三条理由：①config-home
+    可整体迁移（D-032 刚发生过一次，绝对路径迁移后全库失效）；②`verify._resolve` 已支持
+    （T14 零改造消费）；③与落位纯函数同源，可反解。
+    """
+    return f"fulltext/{venue_id}/{_year_part(paper)}/{paper['id']}{suffix}"
+
+
+def _fulltext_final_path(config: Config, venue_id: str, paper: sqlite3.Row, suffix: str) -> Path:
+    """抽取产物的绝对落位路径（design/06 §4 布局），与 `_asset_final_path` **并列**。
+
+    **裁决：不往 `AssetKind` 加 `fulltext` 枚举值**（§5.4）——`AssetKind` 是 resolve 契约的
+    **上游资产类型**（adapter 声明什么可取回），fulltext 是**本地派生产物**；混入会污染
+    `asset` 表的 `UNIQUE(paper,kind,version)` 语义、adapter 能力声明面与 fetch 落位分支，
+    换来的只是一个函数的复用。`venue_id` 取 `_task_venue(task)`（与产生该 pdf 的 fetch 落位同源）。
+    """
+    return config.data_dir / _fulltext_rel_path(venue_id, paper, suffix)
+
+
 def _asset_final_path(config: Config, venue_id: str, paper: sqlite3.Row, plan: AssetPlan) -> Path:
     """fetch 落位路径（design/06 §4 文件存储布局）。
 
@@ -284,8 +350,7 @@ def _asset_final_path(config: Config, venue_id: str, paper: sqlite3.Row, plan: A
 
     paper.year 为 NULL 时落 "unknown" 子目录（布局键要求 year 段存在）。
     """
-    year_raw = paper["year"]
-    year_part = str(int(year_raw)) if year_raw is not None else "unknown"
+    year_part = _year_part(paper)
     paper_id = str(paper["id"])
     if plan.kind is AssetKind.PDF:
         return config.data_dir / "pdf" / venue_id / year_part / f"{paper_id}.pdf"
@@ -993,12 +1058,337 @@ def _stage_oa_fallback(ctx: StageContext, task: sqlite3.Row, report: RunReport) 
     return "done"
 
 
-def _stage_extract(ctx: StageContext, task: sqlite3.Row, report: RunReport) -> StageOutcome:
-    """阶段 5 extract（Phase 1 noop 语义）：fetched pdf → fulltext 行 + ingest_state。
+# 纯文本基线抽取器的进程内单例（构造期即知版本——§5.2 幂等键前置可判的硬前提）。
+# 模块级单例同时是测试的注入点（monkeypatch 计数即可断言「抽取器零调用」）。
+_PYPDF: TextExtractor = PypdfExtractor()
 
-    幂等键 (asset, extractor_ver)：fulltext 表 paper 1-1，同 paper 已有行则不重插
-    （Phase 1 extractor_ver 恒 "1"）。本地零网络，不走限速。
+
+def _grobid_runtime(ctx: StageContext) -> GrobidRuntime | None:
+    """取本轮 GROBID 运行时；未配置 → None（**默认形态，不是降级**，不刷 WARN）。
+
+    显式注入（`ctx.grobid`）优先于 config——测试注入 `MockTransport` 客户端即覆盖 §7.2
+    矩阵，零新基建。生产路径按 `[extract] grobid_url` 惰性构造并写回 `ctx.grobid`：
+    `rate_limiter=None`（本机服务不是站点，限速无意义）+ 诚实 UA（D-014）+ 不写 FetchLog
+    （§7.1：FetchLog 是在线预算的唯一事实源，本地调用记入即污染派生口径）。
     """
+    if ctx.grobid is not None:
+        return ctx.grobid
+    url = str(getattr(ctx.config, "grobid_url", None) or "").strip()
+    if not url:
+        return None
+    # 局部 import：保持 pipeline→http 的运行时依赖只在真正启用 GROBID 时才建立。
+    from paper_crawler.http import HttpClient
+    from paper_crawler.useragent import build_user_agent
+
+    ctx.grobid = GrobidRuntime(
+        client=HttpClient(
+            user_agent=build_user_agent(getattr(ctx.config, "identity_email", None)),
+            timeout_s=float(getattr(ctx.config, "grobid_timeout_s", 60)),
+            rate_limiter=None,
+        ),
+        base_url=url,
+        sleeper=ctx.sleeper,
+    )
+    return ctx.grobid
+
+
+def _warn_grobid(exc: GrobidUnavailable, *, task_id: str, venue_id: str, asset_id: str) -> None:
+    """降级留痕：**只在 obslog**（WARN + reason token），DB 无痕——`extractor='pypdf'` 即事实。"""
+    log_event(
+        "WARN",
+        f"extract: grobid degraded to plain text ({exc.reason})"
+        + (f" — {exc.hint}" if exc.hint else ""),
+        task_id=task_id,
+        venue=venue_id,
+        stage="extract",
+        asset_id=asset_id,
+        reason=exc.reason,
+    )
+
+
+def _select_extractor(
+    ctx: StageContext, *, task_id: str, venue_id: str, asset_id: str
+) -> TextExtractor:
+    """本轮候选抽取器：GROBID 可用则用之（含每轮一次前置探活），否则纯文本基线。
+
+    探活失败只抛一次（`GrobidRuntime` 内置 `disabled` 记忆），故 WARN 恰好一条、此后逐篇
+    静默走纯文本——服务未起是持久态，逐篇重试是纯空转（§7.2）。
+    """
+    runtime = _grobid_runtime(ctx)
+    if runtime is None or runtime.disabled:
+        return _PYPDF
+    try:
+        return runtime.extractor()
+    except GrobidUnavailable as exc:
+        _warn_grobid(exc, task_id=task_id, venue_id=venue_id, asset_id=asset_id)
+        return _PYPDF
+
+
+def _extract_with_fallback(
+    ctx: StageContext,
+    extractor: TextExtractor,
+    source: Path,
+    *,
+    task_id: str,
+    venue_id: str,
+    asset_id: str,
+) -> ExtractedText:
+    """抽取一次；GROBID **任何**无有效产出形态 → 立即以纯文本兜底重抽同一份 PDF（§6.1）。
+
+    语义收敛为一句话：**「GROBID 无有效产出 → 纯文本」**——不区分成因是服务不可用、超时、
+    非法 TEI、还是 header-only 空产物。这条统一是 §6.1 P0-2 的核心：GROBID 对 image-only
+    PDF 会返回**语法合法但只有 header 的 TEI**（200 + 合法 XML + 可见文本近乎为零），若按
+    「200 且 XML 合法」判成功，它会以 rank 2 压制同 paper 已有的 pypdf 正文——一次「增强」
+    反而抹掉基线成果。**GROBID 相关异常一律不逃逸本函数、不使任务 FAILED**（AC-7.2 形式化）。
+    """
+    try:
+        return extractor.extract(source)
+    except GrobidUnavailable as exc:
+        _warn_grobid(exc, task_id=task_id, venue_id=venue_id, asset_id=asset_id)
+        if exc.remember and ctx.grobid is not None:
+            ctx.grobid.disabled = True
+        return _PYPDF.extract(source)
+
+
+def _fulltext_row(ctx: StageContext, paper_id: str) -> sqlite3.Row | None:
+    """取该 paper 的存量 fulltext 行（表 PK=paper_id，1-1 不变）。"""
+    rows = ctx.db.query("SELECT * FROM fulltext WHERE paper_id = ?", (paper_id,))
+    return rows[0] if rows else None
+
+
+def _under_data_dir(data_dir: Path, raw: str) -> Path:
+    """`text_path` → 可 stat 的路径（与 `verify.py::_resolve` 同构：相对则挂 data_dir）。"""
+    candidate = Path(raw)
+    return candidate if candidate.is_absolute() else data_dir / candidate
+
+
+def _artifact_ok(ctx: StageContext, row: sqlite3.Row) -> bool:
+    """§5.2 判据 2：`text_path` 指向的文件存在且 sha256 == `text_sha256`。
+
+    失败行（`state='extract_failed'`，`text_path IS NULL`）与 noop 行**无文件可校** → True
+    （仅需判据 1）。本校验同时是**支配预判的护栏**（§5.2 r3 ④b）：胜者产物一旦不在盘上或
+    被改坏，其行即不再有资格支配任何候选——否则「存量 TEI 被误删 + 本轮 GROBID 关闭」会让
+    预判判定 pypdf 必败而跳过，使 `verify` 恒报 `missing_file` 且**重跑 extract 永不自愈**，
+    把一个本可自动修复的缺口变成永久缺口。
+    """
+    raw = row["text_path"]
+    if not raw:
+        return True
+    path = _under_data_dir(ctx.config.data_dir, str(raw))
+    if not path.is_file():
+        return False
+    recorded = row["text_sha256"]
+    if not recorded:
+        return True  # 无记录哈希（不应出现）→ 只校存在性，不凭空判失效
+    return hashlib.sha256(path.read_bytes()).hexdigest() == str(recorded)
+
+
+def _is_stale(ctx: StageContext, row: sqlite3.Row) -> bool:
+    """陈旧判据（§5.3 rank −2）：`source_sha256` ≠ 其 `asset_id` 所指 asset 行的**当前** sha256。
+
+    该产物出自一份已被替换的源文件（asset 被 re-fetch），作废。**这不破坏顺序无关性**：
+    陈旧与否是 DB 当前状态的函数，不是到达顺序的函数。**legacy 归一**：`asset_id IS NULL`
+    的存量行（P1 noop 行必然如此）**一律不判陈旧**——避免 SQL 三值逻辑把「未知」误判成
+    「陈旧」（该分支实际不可达，noop 行 rank 已最低，仍写死以免实现期自由发挥）。
+    """
+    asset_id = row["asset_id"]
+    if not asset_id:
+        return False
+    rows = ctx.db.query("SELECT sha256 FROM asset WHERE id = ?", (str(asset_id),))
+    if not rows:
+        return True  # 源 asset 行已不存在（FK 下不可达）：产物无源可对，作废
+    current = rows[0]["sha256"]
+    if not current:
+        return False
+    return str(current) != str(row["source_sha256"] or "")
+
+
+def _existing_rank(ctx: StageContext, row: sqlite3.Row, *, artifact_ok: bool) -> int:
+    """存量行在 §5.3 全序里的 rank。
+
+    序：`grobid 2 > pypdf 1 > extract_failed 0 > noop −1 > 陈旧/产物失效 −2`。
+    **`extract_failed` 必须高于 `noop`**：noop 是 Phase 1 的占位空行（无任何抽取事实），
+    `extract_failed` 是**已判定的抽取结论**（真的抽过、真的抽不出）；反序会让存量 noop 永久
+    压制失败行 ⇒ 失败结论写不进库 ⇒ 幂等键永远命不中 ⇒ **每轮 pull 对同一批长尾扫描件重抽**。
+    """
+    if not artifact_ok:
+        return RANK_INVALID
+    state = str(row["state"] or "")
+    extractor = str(row["extractor"] or "")
+    if state == STATE_NOOP or extractor == EXTRACTOR_NOOP:
+        return RANK_NOOP
+    if _is_stale(ctx, row):
+        return RANK_INVALID
+    if state == STATE_EXTRACT_FAILED:
+        return RANK_EXTRACT_FAILED
+    rank = extractor_rank(extractor)
+    if rank is None:
+        # 未登记的 extractor 名 → 与 noop 同档并 WARN：不得压制已登记的真实抽取器。
+        log_event(
+            "WARN",
+            f"extract: unregistered extractor {extractor!r} in fulltext row — ranked as noop",
+            stage="extract",
+            reason="unknown_extractor",
+        )
+        return RANK_NOOP
+    return rank
+
+
+def _forced_run(ctx: StageContext, task: sqlite3.Row) -> bool:
+    """本次 extract 是否处于 `--force` 运行下（读父 `pull` 任务参数，零新字段/零新 params）。
+
+    `--force` 绕过任务级 fresh_skip，**并同时绕过 §5.2 的幂等跳过与支配预判**（§5.5 r3 ④a）：
+    三者都是「本次不必算」的优化，而 `--force` 的语义正是「不管你觉得必不必要，重做这次
+    运算」。这也是**产物内容损坏的人工修复通道**——§5.2 的护栏只覆盖「产物不在/哈希不符」
+    的自动自愈，`--force` 覆盖「产物在、哈希也对，但内容就是不对」这类只有人能判断的情形。
+    **但写入判据仍走 §5.3 全序**，故 force **不降偏序**（不可能用 pypdf 覆盖已有的 GROBID TEI）。
+
+    force 不进 extract 子任务的 params（那会分裂任务幂等键空间），而是从 `parent_id` 指向的
+    `pull` 任务参数里读——`_pull_params` 恒写 `"force"` 键，是既有事实源。
+    """
+    parent_id = task["parent_id"]
+    if parent_id is None:
+        return False
+    rows = ctx.db.query("SELECT params_json FROM task WHERE id = ?", (str(parent_id),))
+    if not rows:
+        return False
+    try:
+        parsed = json.loads(str(rows[0]["params_json"]))
+    except (json.JSONDecodeError, ValueError):
+        return False
+    return bool(parsed.get("force")) if isinstance(parsed, dict) else False
+
+
+def _skip_reason(
+    row: sqlite3.Row,
+    *,
+    asset_id: str,
+    source_sha: str,
+    extractor: TextExtractor,
+    artifact_ok: bool,
+    existing_rank: int,
+) -> str | None:
+    """§5.2 跳过判据 + 支配预判；返回跳过理由 token，None = 必须实抽。
+
+    两者都在**调用抽取器之前**求值 —— 命中即零 CPU、零写入、零 `updated_at` 抖动，且
+    **不打开源文件、不向 GROBID 发一个请求**。四元组抽取前全部可知：`asset_id`/
+    `source_sha256` 取自 asset 行（不重算文件哈希），`extractor`/`extractor_ver` 取自抽取器
+    的构造期属性（GROBID 版本由每轮一次的前置探活取得）。
+
+    - `"idempotent"`：四元组 `(asset_id, source_sha256, extractor, extractor_ver)` 全等，
+      且成功行的产物存在且哈希相符（失败行无文件可校，仅需前者）。
+    - `"dominated"`：四元组不全等，但存量行的 `(rank, ver_key)` 在全序下**严格大于**本次
+      候选 ⇒ 本次注定是败者（`char_count`/`asset_id` 两个低位维度不可能翻盘）。典型命中：
+      库里已有 GROBID TEI，而本轮 GROBID 关闭/不可用 —— 若无此预判，每轮 pull 都会把全库
+      PDF 重抽一遍纯文本再全部丢弃。预判只用两个抽取前可知的维度，与取 max 同向（跳过的
+      恰是必败者），不改变终态，顺序无关性不受影响。
+      **护栏**：不过产物校验即**不得**预判跳过（见 `_artifact_ok`）。
+    """
+    same_key = bool(
+        source_sha
+        and str(row["asset_id"] or "") == asset_id
+        and str(row["source_sha256"] or "") == source_sha
+        and str(row["extractor"] or "") == extractor.name
+        and str(row["extractor_ver"] or "") == extractor.version
+    )
+    if same_key and artifact_ok:
+        return "idempotent"
+    if not artifact_ok:
+        return None
+    candidate_rank = extractor_rank(extractor.name)
+    if candidate_rank is None:
+        return None
+    existing_pair = (existing_rank, version_key(row["extractor_ver"]))
+    if existing_pair > (candidate_rank, version_key(extractor.version)):
+        return "dominated"
+    return None
+
+
+def _prune_superseded(config: Config, old_raw: object, new_rel: str | None) -> None:
+    """删被取代的旧产物文件（§5.5 步 4，**DB upsert 之后**）。
+
+    路径护栏：仅当旧路径解析后位于 `data_dir/fulltext/` 下且 ≠ 新路径才删——`text_path` 是
+    库里的数据，绝不据其删任意路径。典型场景：`.txt` → `.tei.xml` 升级时旧文件必须删，
+    否则成 `orphan_file`。
+    """
+    if not old_raw:
+        return
+    old_path = _under_data_dir(config.data_dir, str(old_raw))
+    new_path = config.data_dir / new_rel if new_rel else None
+    root = config.data_dir / "fulltext"
+    try:
+        resolved = old_path.resolve()
+        if not resolved.is_relative_to(root.resolve()):
+            return
+        if new_path is not None and resolved == new_path.resolve():
+            return
+        resolved.unlink(missing_ok=True)
+    except OSError:
+        return
+
+
+def _upsert_fulltext(
+    ctx: StageContext,
+    *,
+    paper_id: str,
+    asset_id: str,
+    source_sha: str,
+    produced: ExtractedText,
+    text_path: str | None,
+    text_sha256: str | None,
+    state: str,
+) -> None:
+    """写 fulltext 行（PK=paper_id 的 upsert；1-1 基数不变）。"""
+    ctx.db.execute(
+        "INSERT INTO fulltext "
+        "(paper_id, extractor, extractor_ver, text_path, char_count, lang, extracted_at, "
+        " asset_id, source_sha256, text_sha256, state, note) "
+        "VALUES (?,?,?,?,?,?,?,?,?,?,?,?) "
+        "ON CONFLICT(paper_id) DO UPDATE SET "
+        " extractor=excluded.extractor, extractor_ver=excluded.extractor_ver, "
+        " text_path=excluded.text_path, char_count=excluded.char_count, lang=excluded.lang, "
+        " extracted_at=excluded.extracted_at, asset_id=excluded.asset_id, "
+        " source_sha256=excluded.source_sha256, text_sha256=excluded.text_sha256, "
+        " state=excluded.state, note=excluded.note",
+        (
+            paper_id,
+            produced.extractor,
+            produced.extractor_ver,
+            text_path,
+            produced.char_count,
+            produced.lang,
+            utcnow_iso(),
+            asset_id,
+            source_sha,
+            text_sha256,
+            state,
+            produced.note,
+        ),
+    )
+
+
+def _stage_extract(ctx: StageContext, task: sqlite3.Row, report: RunReport) -> StageOutcome:
+    """阶段 5 extract（Phase 7 真实抽取；D-033 / 12-fulltext-extract）。
+
+    **本地纯计算，零网络、零限速**——GROBID 亦为本机 REST 服务（AC-0.1/0.2 不触及）。
+
+    顺序（§5.5 写入序）：
+
+    1. 圈选与合法性（§6.1 第 3 类：asset 缺失/状态非法 → 响亮 `CONFIG`）；
+    2. 选定候选抽取器（GROBID 每轮一次前置探活；关闭/不可用 → 纯文本基线）；
+    3. **抽取之前**求值幂等键 + 支配预判（`--force` 绕过二者）→ 命中即 `"skipped"`；
+    4. §6.1 第 1 类：asset 称 fetched 但文件缺失/哈希不符 → 响亮 `INTEGRITY`（这是可修复的
+       **库缺陷**，静默记 `extract_failed` 会把它伪装成「这篇抽不出来」，永久掩盖）；
+    5. 抽取（GROBID 无有效产出 → 纯文本兜底）；
+    6. 与存量行按 §5.3 **全序取 max** 比较——败者 `"done"` 且**零写入**；
+    7. 胜者：`.part` → 原子 rename → DB upsert → **最后**删被取代的旧产物文件。
+
+    `ingest_state` 机（§6.2）：成功 → `extracted`；失败 → **不动**（停在 `fetched`）。
+    `extract_failed` **不进** 四值阶梯——那是单调前进的进度轴，塞入失败态会引入回边并污染
+    一切按 `ingest_state IN (...)` 取范围的既有查询；事实由 `fulltext.state` 列承载。
+    """
+    task_id = str(task["id"])
+    venue_id = _task_venue(task)
     asset_id = str(_params(task)["asset"])
     asset = ctx.repo.get_asset(asset_id)
     if asset is None:
@@ -1008,21 +1398,146 @@ def _stage_extract(ctx: StageContext, task: sqlite3.Row, report: RunReport) -> S
             ErrorClass.CONFIG, f"extract requires a fetched asset, got {asset['state']!r}"
         )
     paper_id = str(asset["paper_id"])
-    existing = ctx.db.query("SELECT paper_id FROM fulltext WHERE paper_id = ?", (paper_id,))
-    if not existing:
-        ctx.db.execute(
-            "INSERT INTO fulltext "
-            "(paper_id, extractor, extractor_ver, text_path, char_count, lang, extracted_at) "
-            "VALUES (?,?,?,?,?,?,?)",
-            (paper_id, "noop", "1", None, 0, None, utcnow_iso()),
+    paper = _paper_row(ctx, paper_id)
+    source_sha = str(asset["sha256"] or "")
+
+    extractor = _select_extractor(ctx, task_id=task_id, venue_id=venue_id, asset_id=asset_id)
+    existing = _fulltext_row(ctx, paper_id)
+    artifact_ok = _artifact_ok(ctx, existing) if existing is not None else False
+    existing_rank = RANK_NOOP
+    if existing is not None:
+        existing_rank = _existing_rank(ctx, existing, artifact_ok=artifact_ok)
+
+    if existing is not None and not _forced_run(ctx, task):
+        reason = _skip_reason(
+            existing,
+            asset_id=asset_id,
+            source_sha=source_sha,
+            extractor=extractor,
+            artifact_ok=artifact_ok,
+            existing_rank=existing_rank,
         )
+        if reason is not None:
+            log_event(
+                "INFO",
+                "skipped",
+                task_id=task_id,
+                venue=venue_id,
+                stage="extract",
+                asset_id=asset_id,
+                reason=reason,
+            )
+            return "skipped"
+
+    # §6.1 第 1 类：库↔文件不一致 —— re-fetch / verify 的正管辖区，不静默记 extract_failed。
+    if not fetched_file_ok(asset):
+        raise CrawlerError(
+            ErrorClass.INTEGRITY,
+            f"asset {asset_id!r} is 'fetched' but its file is missing or its sha256 differs",
+            detail="source_mismatch",
+        )
+
+    produced = _extract_with_fallback(
+        ctx,
+        extractor,
+        Path(str(asset["file_path"])),
+        task_id=task_id,
+        venue_id=venue_id,
+        asset_id=asset_id,
+    )
+    candidate_rank = (
+        RANK_EXTRACT_FAILED
+        if produced.char_count == 0
+        else (extractor_rank(produced.extractor) or RANK_NOOP)
+    )
+    candidate_key = order_key(
+        rank=candidate_rank,
+        extractor_ver=produced.extractor_ver,
+        char_count=produced.char_count,
+        asset_id=asset_id,
+    )
+    if existing is not None:
+        existing_key = order_key(
+            rank=existing_rank,
+            extractor_ver=existing["extractor_ver"],
+            char_count=existing["char_count"],
+            asset_id=existing["asset_id"],
+        )
+        # 严格大于才算败——相等意味着「同 asset 同抽取器同版本同字数」，此时重写是幂等的
+        # 同一胜者（终态的全序键不变，顺序无关性不受影响），正是 `--force` 修复通道所需。
+        if existing_key > candidate_key:
+            log_event(
+                "WARN",
+                f"extract: product suppressed by a better existing fulltext row "
+                f"(candidate={produced.extractor}/{produced.char_count} chars)",
+                task_id=task_id,
+                venue=venue_id,
+                stage="extract",
+                asset_id=asset_id,
+                reason="suppressed",
+            )
+            return "done"
+
+    old_text_path = existing["text_path"] if existing is not None else None
+    if produced.char_count == 0:
+        # §6.1 第 2 类：源文件在、但抽不出（加密/纯图像/结构损坏/有文本层但抽出空）——
+        # **不抛、不失败任务**：既非瞬态（重试零收益）也非 adapter 腐化，判 FAILED(parse) 会让
+        # 长尾数据批量飘红、淹没真信号，且任务会永久占据 retry 队列却永不可能成功。
+        _upsert_fulltext(
+            ctx,
+            paper_id=paper_id,
+            asset_id=asset_id,
+            source_sha=source_sha,
+            produced=produced,
+            text_path=None,
+            text_sha256=None,
+            state=STATE_EXTRACT_FAILED,
+        )
+        _prune_superseded(ctx.config, old_text_path, None)
+        log_event(
+            "WARN",
+            f"extract: no extractable text ({produced.note})",
+            task_id=task_id,
+            venue=venue_id,
+            stage="extract",
+            asset_id=asset_id,
+            reason=produced.note,
+            extractor=produced.extractor,
+        )
+        return "done"
+
+    rel_path = _fulltext_rel_path(venue_id, paper, produced.suffix)
+    final_path = _fulltext_final_path(ctx.config, venue_id, paper, produced.suffix)
+    io = PartFileIO(ctx.config.data_dir / "tmp", f"{asset_id}.fulltext")
+    try:
+        bytes_written, text_sha256 = io.write_stream([produced.text.encode("utf-8")])
+        if bytes_written <= 0:  # char_count > 0 时不可达；防御性——绝不落零字节产物
+            raise CrawlerError(ErrorClass.INTEGRITY, "extract produced an empty artifact")
+    except Exception:
+        io.abort()
+        raise
+    io.commit(final_path)
+    _upsert_fulltext(
+        ctx,
+        paper_id=paper_id,
+        asset_id=asset_id,
+        source_sha=source_sha,
+        produced=produced,
+        text_path=rel_path,
+        text_sha256=text_sha256,
+        state=STATE_EXTRACTED,
+    )
+    _prune_superseded(ctx.config, old_text_path, rel_path)
     ctx.repo.set_paper_state(paper_id, "extracted")
     log_event(
         "INFO",
-        "extract: fulltext row ensured (noop v1)",
-        task_id=str(task["id"]),
-        venue=_task_venue(task),
+        f"extract: {produced.char_count} chars via {produced.extractor} "
+        f"{produced.extractor_ver} -> {rel_path}",
+        task_id=task_id,
+        venue=venue_id,
         stage="extract",
+        asset_id=asset_id,
+        extractor=produced.extractor,
     )
     return "done"
 

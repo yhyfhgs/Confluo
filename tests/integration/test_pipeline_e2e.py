@@ -321,18 +321,29 @@ def test_selector_no_match_is_clean_noop(env: PipelineEnv) -> None:
 
 
 def test_pull_with_extract(env: PipelineEnv) -> None:
+    """`pull --extract` 全链（Phase 7 真实抽取，D-033）。
+
+    mock adapter 的载荷是**确定性占位字节**（`%PDF-1.4` 头 + 填充 + `%%EOF`），不是结构合法
+    的 PDF——真实抽取下它恰好命中 §6.1 **第 2 类**（源文件在、但抽不出）：任务**不 FAILED**、
+    落 `state='extract_failed'` + `note='corrupt'` 行、`ingest_state` 停在 `fetched`（失败不进
+    单调阶梯，§6.2）。本用例因此同时是「长尾抽不出不飘红」的端到端锁；快乐路径（真实可抽
+    PDF → .txt 落盘 + 行字段对账）见 `test_extract_stage.py`。
+    """
     report = env.make_runner().pull(VENUE, Selector(year=2024), with_extract=True)
     assert report.succeeded == 10  # succeeded 口径 = fetch 下载数（extract 不计入）
+    assert report.failed == 0 and report.blocked == 0  # 第 2 类失败不使任务 FAILED
 
     rows = env.db.query("SELECT * FROM fulltext ORDER BY paper_id")
     assert len(rows) == 10
     assert all(
-        r["extractor"] == "noop" and r["extractor_ver"] == "1" and r["char_count"] == 0
+        r["extractor"] == "pypdf" and r["state"] == "extract_failed" and r["note"] == "corrupt"
         for r in rows
     )
-    assert all(r["text_path"] is None for r in rows)
+    assert all(r["text_path"] is None and r["char_count"] == 0 for r in rows)
+    assert all(r["asset_id"] and r["source_sha256"] for r in rows)  # asset 级幂等键已落库
     states = {r["ingest_state"] for r in env.repo.list_papers(VENUE)}
-    assert states == {"extracted"}
+    assert states == {"fetched"}
+    assert list((env.config.data_dir / "fulltext").rglob("*")) == []  # 失败不落产物文件
 
     # 幂等：重跑不重插 fulltext（extract 任务 fresh_skip）
     rerun = env.make_runner().pull(VENUE, Selector(year=2024), with_extract=True)
