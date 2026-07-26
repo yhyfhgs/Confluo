@@ -178,3 +178,22 @@ def test_search_invalid_match_syntax_exits_2(tmp_path: Path) -> None:
     result = runner.invoke(app, ["search", "title:", "--home", str(home)])
 
     assert result.exit_code == 2
+
+
+# --- paper_fts 表整体缺失（T12 独立审查 P2-3）-----------------------------------------------------
+
+
+def test_search_missing_fts_table_exits_2_with_actionable_message(tmp_path: Path) -> None:
+    """`paper_fts` 表整体不存在时（手动 DB 操作等场景，正常路径不应发生）不得让裸
+    `OperationalError` 冒出——须呈现可操作 `CrawlerError` 消息并退出 2。
+    """
+    home = _make_home(tmp_path)
+    _seed_papers(home, {"mock_journal": [("10.0/a", "Some Paper", None)]})
+    db = Database(home / "catalog.sqlite")
+    db.execute("DROP TABLE paper_fts")
+    db.close()
+
+    result = runner.invoke(app, ["search", "some", "--home", str(home)])
+
+    assert result.exit_code == 2
+    assert "paper_fts" in result.output

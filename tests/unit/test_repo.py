@@ -829,6 +829,34 @@ def test_set_paper_state(repo: Repo) -> None:
     assert row["ingest_state"] == "resolved"
 
 
+def test_set_paper_state_and_bind_paper_venue_do_not_touch_paper_fts(repo: Repo) -> None:
+    """T12 独立审查 P2-4 现状核验：`set_paper_state`/`bind_paper_venue` 是 `repo.py`
+    内仅有的两处经 `Database.execute()`（非 `tx()`，无 `IntegrityError` 翻译）直写
+    `paper` 表的路径——但二者均只碰 `ingest_state`/`venue_id`/`updated_at`，不碰
+    `title`/`abstract`，故不会触发 `paper_fts_au`（`AFTER UPDATE OF title,
+    abstract`）。本测试锁定这一现状：调用前后 `paper_fts` 该行的 rowid 原样不变
+    （未被 DELETE+INSERT 重建），证明当前确无实际风险（`Database.execute()`
+    docstring 记录的是"已知边界"而非"已修复缺口"）。
+    """
+    paper_id = repo.upsert_paper(VENUE_ID, None, _stub(doi="10.9999/s", title="Title"))
+    before_rowid = repo.db.query(
+        "SELECT rowid AS rid FROM paper_fts WHERE paper_id = ?", (paper_id,)
+    )[0]["rid"]
+
+    repo.set_paper_state(paper_id, "resolved")
+    # bind_paper_venue 此处是 no-op（venue_id 已非 NULL），仍验证零 rowid 副作用。
+    repo.bind_paper_venue(paper_id, VENUE_ID)
+
+    ingest_state = repo.db.query("SELECT ingest_state FROM paper WHERE id = ?", (paper_id,))[0][
+        "ingest_state"
+    ]
+    assert ingest_state == "resolved"  # 确认写入真的发生，非零操作误判为"安全"
+    after_rowid = repo.db.query(
+        "SELECT rowid AS rid FROM paper_fts WHERE paper_id = ?", (paper_id,)
+    )[0]["rid"]
+    assert before_rowid == after_rowid
+
+
 # -- asset -------------------------------------------------------------------
 
 
@@ -1325,6 +1353,37 @@ def test_check_fts_consistency_detects_duplicate_paper_id(repo: Repo) -> None:
     assert report.duplicate_ids == (pid,)
 
 
+def test_check_fts_consistency_detects_rowid_misalignment(repo: Repo) -> None:
+    """T12 独立审查 P1-1（Opus 对抗矩阵+实测，NEEDS_FIX）：`paper_fts` 全体 rowid
+    相对 `paper.rowid` 产生固定偏移——真实 `VACUUM` 坏态的核心特征。每个 `paper_id`
+    仍恰好各一行、内容也未变（无缺失、无孤儿、无重复），原三项校验（双向差集/
+    行数+重复/integrity-check）在该坏态下**全部误报一致**（审查实测复现的假绿），
+    必须靠专门的 rowid 对齐校验才能捕获——这正是 D-034 决策 5 rebuild 场景②
+    （"对本库执行过 VACUUM"）唯一该报警却未报警之处。
+    """
+    p1 = repo.upsert_paper(VENUE_ID, None, _stub(doi="10.9999/s1", title="Paper One"))
+    p2 = repo.upsert_paper(VENUE_ID, None, _stub(doi="10.9999/s2", title="Paper Two"))
+    # 模拟 VACUUM 造成的全体 rowid 偏移：两行 paper_fts 的 rowid 都 +100，paper_id/
+    # title/abstract 内容不变（偏移量刻意选得远大于当前行数，避免偏移过程本身在
+    # 中间态与既有 rowid 撞车——真实 VACUUM 不会有这个人为制品，纯测试构造手法）。
+    repo.db.execute("UPDATE paper_fts SET rowid = rowid + 100")
+
+    report = repo.check_fts_consistency()
+
+    assert report.ok is False
+    assert set(report.rowid_misaligned_ids) == {p1, p2}
+    # 如实验证"假绿"确曾发生：原三项在该坏态下确实全部 PASS，而非臆测。
+    assert report.missing_ids == ()
+    assert report.orphan_ids == ()
+    assert report.duplicate_ids == ()
+    assert report.integrity_check_ok is True
+
+    # reindex 之后错位被修复，--check 恢复一致。
+    count = repo.reindex_fts()
+    assert count == 2
+    assert repo.check_fts_consistency().ok is True
+
+
 def test_check_fts_consistency_sample_limit_truncates(repo: Repo) -> None:
     for i in range(3):
         pid = repo.upsert_paper(VENUE_ID, None, _stub(doi=f"10.9999/s{i}", title=f"Paper {i}"))
@@ -1359,6 +1418,56 @@ def test_check_fts_consistency_detects_failed_integrity_check(
     assert report.integrity_check_ok is False
     assert "malformed" in (report.integrity_check_error or "")
     assert report.ok is False
+
+
+# -- paper_fts 表整体缺失的翻译（T12 独立审查 P2-3）---------------------------------
+#
+# 正常路径下不应发生（`_build_env` 的 `db.migrate()` 每命令必跑），但手动 DB 操作
+# 等场景仍可能撞见；三处入口（search_papers/check_fts_consistency/reindex_fts）都须
+# 把裸 `sqlite3.OperationalError("no such table: paper_fts")` 翻译为可操作
+# `CrawlerError`，否则连"恢复用的 reindex 命令"自己都会先崩溃。用 `DROP TABLE`
+# 直接在已建好的库上制造该缺失状态，比重新拼一套"只迁移到 v4"的库更直接。
+
+
+def test_search_papers_translates_missing_fts_table(repo: Repo) -> None:
+    repo.db.execute("DROP TABLE paper_fts")
+
+    with pytest.raises(CrawlerError) as exc_info:
+        repo.search_papers("pricing")
+
+    assert exc_info.value.error_class == ErrorClass.CONFIG
+    assert "paper_fts" in str(exc_info.value)
+
+
+def test_check_fts_consistency_translates_missing_fts_table(repo: Repo) -> None:
+    repo.db.execute("DROP TABLE paper_fts")
+
+    with pytest.raises(CrawlerError) as exc_info:
+        repo.check_fts_consistency()
+
+    assert exc_info.value.error_class == ErrorClass.CONFIG
+    assert "paper_fts" in str(exc_info.value)
+
+
+def test_reindex_fts_translates_missing_fts_table(repo: Repo) -> None:
+    repo.db.execute("DROP TABLE paper_fts")
+
+    with pytest.raises(CrawlerError) as exc_info:
+        repo.reindex_fts()
+
+    assert exc_info.value.error_class == ErrorClass.CONFIG
+    assert "paper_fts" in str(exc_info.value)
+
+
+def test_search_papers_still_raises_raw_operational_error_for_bad_syntax(repo: Repo) -> None:
+    """回归护栏：表缺失翻译不得误吞 MATCH 语法错误——二者都是 `OperationalError`，
+    但消息前缀不同，必须精确区分（`_reraise_if_fts_table_missing` 只认
+    `no such table: paper_fts`，其余原样 `raise`）。
+    """
+    with pytest.raises(sqlite3.OperationalError) as exc_info:
+        repo.search_papers("title:")  # 悬空列限定符，FTS5 语法错误
+
+    assert not isinstance(exc_info.value, CrawlerError)
 
 
 def test_reindex_fts_rebuilds_from_paper_table(repo: Repo) -> None:

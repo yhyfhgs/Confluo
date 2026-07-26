@@ -513,6 +513,51 @@ def test_iter_statements_does_not_match_when_preceded_by_identifier_char() -> No
     assert stmts == ["SELECT xBEGIN, xEND FROM t"]
 
 
+# -- 已知未覆盖边界的特征测试（T12 独立审查 P2-1，如实记录当前行为，非"须修复的
+# 缺陷"——见 `_iter_statements` docstring"已知未覆盖边界"一节的完整论证；三点在
+# 本项目现有全部迁移文件中均未出现，测试目的是让文档断言可验证、不是纸面假设）---
+
+
+def test_iter_statements_case_end_inside_trigger_body_mis_splits_loudly() -> None:
+    """已知边界 1：触发器体内出现 `CASE … END`（而非本卡三触发器的简单 DML）会被
+    误判为触发器自身的收尾，切成两段——响亮失败（两段单独喂给 `execute()` 均非
+    合法独立语句），而非静默错误。
+    """
+    script = (
+        "CREATE TRIGGER t AFTER INSERT ON paper BEGIN\n"
+        "  UPDATE paper SET x = CASE WHEN new.y > 0 THEN 1 ELSE 0 END WHERE id = new.id;\n"
+        "END;"
+    )
+    stmts = list(_iter_statements(script))
+    # 被切成两段（而非 1 段完整触发器）——`END` 被 CASE 表达式的 END 提前吃掉。
+    assert len(stmts) == 2
+    assert stmts[1] == "END"
+    assert not stmts[0].rstrip().endswith("END")  # 第一段缺失真正的触发器收尾
+
+
+def test_iter_statements_begin_inside_block_comment_swallows_rest_of_script() -> None:
+    """已知边界 2：`/* … */` 块注释未被识别，注释内的 `BEGIN` 被误判为真实关键字；
+    脚本此后再无真实 `END` 与之配平时，`trigger_depth` 卡在 >0 直到脚本结尾——
+    整个脚本被粘成一条"语句"（而非局部影响），响亮失败发生在喂给
+    `sqlite3.Cursor.execute()` 时（多语句拼一条会被拒绝），非本测试断言范围。
+    """
+    script = "/* explanation of BEGIN keyword */\nCREATE TABLE t (x TEXT);\nSELECT 1;"
+    stmts = list(_iter_statements(script))
+    assert len(stmts) == 1  # 未按 `;` 断句——整个脚本粘成一条
+    assert "SELECT 1" in stmts[0]
+
+
+def test_iter_statements_bracket_quoted_begin_identifier_swallows_rest_of_script() -> None:
+    """已知边界 3：`[begin]` 方括号标识符未被识别，`begin` 前后恰为 `[`/`]`
+    （非标识符字符）而被判定为真实关键字；后果同边界 2——无配平 `END` 时波及
+    脚本剩余全部内容。
+    """
+    script = "CREATE TABLE t ([begin] TEXT); SELECT 1;"
+    stmts = list(_iter_statements(script))
+    assert len(stmts) == 1
+    assert "SELECT 1" in stmts[0]
+
+
 # -- 回归锁定：既有 0001-0003 迁移文件的切分结果逐字不变 -----------------------------
 
 

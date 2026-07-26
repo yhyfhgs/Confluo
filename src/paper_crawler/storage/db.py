@@ -221,6 +221,34 @@ def _iter_statements(script: str) -> Iterator[str]:
     语句，但 `CREATE TRIGGER … END` 整体在 SQLite 语法上正是单一顶层语句，内部 `;`
     是触发器体的语法组成部分而非顶层语句边界。**不得改用 `executescript`**——其
     隐式 COMMIT 会破坏 `_apply` 的手动事务边界（该切分器存在的初衷）。
+
+    **已知未覆盖边界（T12 独立审查 P2-1，如实记录，非本次扩展目标——留给下一位
+    author 的显式提醒，而非留白让其踩坑）**：
+    1. **触发器体内的 `CASE … END` 表达式会切错**——若某触发器体内出现
+       `CASE WHEN … END`（而非本卡三触发器所用的简单 DML），其 `END` 会被当成
+       该触发器自身 `BEGIN…END` 的收尾（`trigger_depth` 提前减到 0），导致其后的
+       `;` 被误判为顶层语句边界，把触发器体切成两段。**这是响亮失败而非静默错误
+       ——切碎的半截 SQL 交给 `execute()` 几乎必然抛 `sqlite3.OperationalError`
+       （语法不完整）**，migrate() 整步回滚（`_apply` 的既有事务边界），不会有
+       数据静默损坏；但报错信息不会直接指向"CASE 表达式"这个根因，容易让下一位
+       author 费解。
+    2. **`/* … */` 块注释未被识别**——本切分器只认 `--` 行注释，若脚本含
+       `/* 说明 BEGIN 之类 */` 这种块注释，注释内的 `BEGIN`/`END` 整词会被误判为
+       真实关键字（字符层面无从区分"注释里的文字"与"代码"），错误改变
+       `trigger_depth`；**若该脚本此后再无真实 `END` 与之配平，`trigger_depth`
+       将一直 >0 直到脚本结尾**（实测复现：`trigger_depth` 卡在 1，其后全部 `;`
+       不再断句，整个脚本被粘成一条"语句"），同样在 `execute()` 处响亮报错
+       （多语句拼一条喂给 `sqlite3.Cursor.execute()` 会被拒绝），而非局部影响。
+    3. **`[bracket]` 括号括起的标识符未被识别**——SQLite 兼容 T-SQL/Access 风格的
+       `[begin]` 方括号标识符（列名/表名含 SQL 关键字时的转义写法），本切分器只认
+       单引号字符串，`[begin]` 中的 `begin` 前后恰为 `[`/`]`（非标识符字符），会被
+       `_keyword_at` 判定为真实关键字，同样错误改变 `trigger_depth`——后果同第 2
+       点（无配平 `END` 则波及脚本剩余全部内容）。
+
+    以上三点在本项目现有全部迁移文件（含 `0004_fulltext_asset.sql`、
+    `0005_fts_paper.sql`）中均未出现（无 `CASE…END`、无块注释、无方括号标识符），
+    故不影响当前正确性；本卡范围内不实现完整 SQL 词法分析器来堵上这些边界
+    （成本与当前收益不成比例），只如实记录以便未来真的用到这些写法时不致误踩。
     """
     stmt: list[str] = []
     in_string = False
@@ -407,6 +435,19 @@ class Database:
         只翻译裸 `constraint failed` 这一特定信号为可操作 `CrawlerError(CONFIG)`
         （提示跑 `crawler reindex`）；其余 `IntegrityError`（FK/唯一约束等既有语义，
         如 `test_foreign_key_orphan_issue_rejected`）原样透传，不改变既有调用方行为。
+
+        **rowid 错位的第二种结局（T12 独立审查 P1-1/P2-5，与上述"响亮撞车"并存、
+        非互斥）**：`paper_fts_au`/`paper_fts_ad` 的 `DELETE … WHERE rowid=old.rowid
+        AND paper_id=old.id` 因 rowid 错位而找不到匹配行时（删 0 行，不报错——
+        `DELETE` 影响 0 行本身不是异常），若紧随其后的 `INSERT … VALUES(new.rowid,
+        …)` 目标 rowid **恰好当前空闲**（而非被占用），插入会**静默成功**——旧的
+        错位陈旧行原地不动、新行携正确内容与正确 rowid 落地，两行共享同一
+        `paper_id`：既未撞车（本方法翻译的这一支不会被触发），也未被任何写路径
+        察觉，直到检索命中重复结果或 `crawler reindex --check` 主动扫出（`--check`
+        的 `duplicate_ids` 项/`rowid_misaligned_ids` 项——前者事后可查"已产出的重复
+        行"，后者能在**潜伏阶段**、即"重复行尚未被产出、旧行仍孤立错位"时提前查出
+        ——两项互补而非冗余，完整说明见 `storage/migrations/0005_fts_paper.sql`
+        文件头与 `Repo.FtsCheckReport` docstring）。
         """
         conn = self._conn
         conn.execute("BEGIN IMMEDIATE")
@@ -431,7 +472,20 @@ class Database:
         return self._conn.execute(sql, params).fetchall()
 
     def execute(self, sql: str, params: Sequence[object] = ()) -> None:
-        """执行单条写语句（autocommit 立即生效）。"""
+        """执行单条写语句（autocommit 立即生效）。
+
+        **已知边界（T12 独立审查 P2-4）**：本方法**不**做 `tx()` 那样的
+        `IntegrityError` 翻译——若经本方法直写 `paper` 且撞上 `paper_fts` 触发器
+        的 rowid 冲突，裸 `sqlite3.IntegrityError`（`constraint failed`）会原样
+        透传，不会被译成可操作 `CrawlerError`。**现状核验**：`storage/repo.py`
+        内经本方法直写 `paper` 表的仅 `set_paper_state`/`bind_paper_venue` 两处
+        （均为 `UPDATE paper SET ingest_state=…`/`UPDATE paper SET venue_id=…`），
+        二者均**不触及** `title`/`abstract` 列——而 `paper_fts_au` 触发器限定
+        `AFTER UPDATE OF title, abstract`，故这两处写入根本不会触发该触发器，
+        现状下不存在实际风险。此为**已知、当前安全的边界**而非已修复的缺口：
+        若未来新增经本方法（而非 `tx()`）直写 `paper.title`/`paper.abstract` 的
+        路径，须一并考虑是否也需要本方法级别的翻译，或改走 `tx()`。
+        """
         self._conn.execute(sql, params)
 
     def close(self) -> None:

@@ -17,7 +17,7 @@ import re
 import sqlite3
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
-from typing import TYPE_CHECKING, Literal
+from typing import TYPE_CHECKING, Literal, NoReturn
 
 from paper_crawler.errors import CrawlerError, ErrorClass, SubscriptionInvalid
 from paper_crawler.ids import normalize_identifier, normalize_title
@@ -167,19 +167,37 @@ class FetchLogRow:
 
 
 # `crawler search` 未显式给 --limit 时的默认返回条数（D-034 未指定具体值，本卡按常见
-# CLI 检索工具惯例选取——分词器/rebuild 策略之外的纯实现细节，可调）。
-_SEARCH_DEFAULT_LIMIT = 20
-# `crawler reindex --check` 双向差集/重复项每类各自的样本条数上限（D-034 决策 5
-# "各列前 N 条样本"）——只读展示用，不影响一致/不一致的判定本身。
+# CLI 检索工具惯例选取——分词器/rebuild 策略之外的纯实现细节，可调）。公开（无前导
+# 下划线）：cli.py 的 `--limit` 默认值须引用本常量而非另写字面量 20（T12 独立审查
+# P2-6：两处硬编码 20 会随本常量改动而漂移，单一事实源收敛于此）。
+SEARCH_DEFAULT_LIMIT = 20
+# `crawler reindex --check` 双向差集/重复项/rowid 错位每类各自的样本条数上限
+# （D-034 决策 5"各列前 N 条样本"）——只读展示用，不影响一致/不一致的判定本身。
 _FTS_CHECK_SAMPLE_LIMIT = 20
 
 
 @dataclass(frozen=True)
 class FtsCheckReport:
-    """`crawler reindex --check` 三项校验结果（D-034 决策 5）：`Repo.check_fts_consistency`
-    的返回值。`missing_ids`/`orphan_ids`/`duplicate_ids` 均为**样本**（至多
-    `_FTS_CHECK_SAMPLE_LIMIT` 条），非全量枚举——`paper_count`/`fts_count` 供行数级
-    核对，`ok` 是唯一的一致性判定入口（CLI 据此决定退出码）。
+    """`crawler reindex --check` 校验结果（D-034 决策 5 三项 + T12 独立审查 P1-1 追加
+    第四项）：`Repo.check_fts_consistency` 的返回值。`missing_ids`/`orphan_ids`/
+    `duplicate_ids`/`rowid_misaligned_ids` 均为**样本**（至多 `_FTS_CHECK_SAMPLE_LIMIT`
+    条），非全量枚举——`paper_count`/`fts_count` 供行数级核对，`ok` 是唯一的一致性
+    判定入口（CLI 据此决定退出码）。
+
+    **`rowid_misaligned_ids`（P1-1 追加）**：独立审查（Opus，对抗矩阵+实测）发现
+    D-034 决策 5 原定三项检出对"paper_fts 全体 rowid 相对 paper.rowid 产生固定偏移"
+    这一真实 VACUUM 坏态**完全失明**——该坏态下每个 `paper_id` 仍**恰好各一行**、
+    内容也未变（无缺失、无孤儿、无重复），双向差集/计数/`integrity-check` 三项因而
+    全部误报"一致"（假绿），实测复现。该坏态的危害是**潜伏性**的：直到某次对该
+    paper 的 `title`/`abstract` UPDATE 触发 `paper_fts_au`——`DELETE ... WHERE
+    rowid=old.rowid AND paper_id=old.id` 因 rowid 已错位而找不到匹配行（删 0 行），
+    随后 `INSERT ... VALUES(new.rowid, ...)` 才可能触发响亮的 rowid 冲突（原三项/
+    本类测试已覆盖），**或**——若 `new.rowid` 恰好是当前空闲的 rowid 槽位——插入
+    静默成功，旧的错位陈旧行原地不动，两者共享同一 `paper_id`：静默产出重复行、
+    污染检索结果（第二种结局，`duplicate_ids` 事后可查，但本项在**潜伏阶段**——
+    尚未有任何后续写发生时——就能提前查出，见 0005 文件头/`Database.tx()` docstring
+    的完整记述）。故 `--check` 须直接对账 rowid 本身：对每个仍持有正确 `paper_id`
+    配对的行，其 `paper_fts.rowid` 是否等于该 paper **当前**的 `paper.rowid`。
     """
 
     paper_count: int
@@ -187,21 +205,48 @@ class FtsCheckReport:
     missing_ids: tuple[str, ...]  # paper 有、paper_fts 无（漏索引）
     orphan_ids: tuple[str, ...]  # paper_fts 有、paper 无（孤儿行）
     duplicate_ids: tuple[str, ...]  # 同一 paper_id 在 paper_fts 内 >1 行
+    rowid_misaligned_ids: tuple[str, ...]  # paper_id 配对正确，但 rowid 与 paper 现值不符
     integrity_check_ok: bool
     integrity_check_error: str | None = None
 
     @property
     def ok(self) -> bool:
-        """三项全过——`missing`/`orphan`/`duplicate` 三个样本集合均为空
-        （非"零"，因样本上限截断；但只要有一条样本即代表该类不一致确实存在，
-        故用"非空即不一致"判定不受截断影响）且 `integrity-check` 通过。
+        """四项全过——`missing`/`orphan`/`duplicate`/`rowid_misaligned` 四个样本
+        集合均为空（非"零"，因样本上限截断；但只要有一条样本即代表该类不一致确实
+        存在，故用"非空即不一致"判定不受截断影响）且 `integrity-check` 通过。
         """
         return (
             not self.missing_ids
             and not self.orphan_ids
             and not self.duplicate_ids
+            and not self.rowid_misaligned_ids
             and self.integrity_check_ok
         )
+
+
+def _reraise_if_fts_table_missing(exc: sqlite3.OperationalError) -> NoReturn:
+    """`paper_fts` 表整体不存在（`no such table: paper_fts`）时翻译为可操作
+    `CrawlerError(CONFIG)`；否则原样 `raise`（T12 独立审查 P2-3）。
+
+    正常路径下不应发生——`_build_env` 的 `db.migrate()` 在每条 CLI 命令执行前都会跑，
+    迁移完成后 `paper_fts` 必然存在。但手动 DB 操作（如直接 `DROP TABLE`/回滚到
+    pre-schema-v5 的备份文件后跳过重新迁移）等场景仍可能撞见——此时 `search`/
+    `reindex`/`reindex --check` 三处入口若放任裸 `OperationalError` 冒出，恢复命令
+    （`reindex`）自己先崩，用户反而无从下手。命中本条件时统一给出"重新执行任意
+    命令以触发迁移；仍缺失则可能是更深层的 DB 手术导致 schema 不完整"的指引。
+    调用方须在自己的 `except sqlite3.OperationalError` 块内调用本函数并让其
+    `raise`（本函数本身除翻译命中的情形外总是 `raise` 而不返回）。
+    """
+    if "no such table: paper_fts" in str(exc).lower():
+        raise CrawlerError(
+            ErrorClass.CONFIG,
+            "paper_fts 表不存在（FTS5 索引缺失或数据库未完整迁移到 schema v5）",
+            detail=(
+                f"{exc}；请重新执行任意 crawler 命令以触发自动迁移；若迁移后仍报此错，"
+                "可能是手动 DB 操作破坏了 schema，请跑 `crawler reindex` 或联系维护者"
+            ),
+        ) from exc
+    raise exc
 
 
 def _meta_to_json(meta: tuple[tuple[str, str], ...]) -> str | None:
@@ -2070,7 +2115,7 @@ class Repo:
     # -- FTS5 全文检索（Phase 7 T12，D-034）----------------------------------
 
     def search_papers(
-        self, expr: str, *, limit: int = _SEARCH_DEFAULT_LIMIT, venue_id: str | None = None
+        self, expr: str, *, limit: int = SEARCH_DEFAULT_LIMIT, venue_id: str | None = None
     ) -> list[sqlite3.Row]:
         """FTS5 检索单一入口（D-034 决策 6）：方言 SQL 封在本方法内，调用方（CLI）
         只见结果行，不得让 `MATCH` 语法散出本方法——PG 迁移时方言 SQL 只需改这一处。
@@ -2082,71 +2127,116 @@ class Repo:
         `paper.venue_id` 过滤。返回列：`paper_id`（=`paper.id`）/`title`/`abstract`/
         `year`/`venue_id`——不返回 FTS 内部片段/rowid，检索索引范围仅 title+abstract
         二字段（D-034 决策 1，正文/向量索引 defer）。
+
+        `paper_fts` 表整体缺失（`no such table`，T12 独立审查 P2-3）时翻译为可操作
+        `CrawlerError`；`MATCH` 语法本身的错误（如列限定符悬空）不属于本翻译范围，
+        原样透传交由 CLI 呈现为用法错误——二者消息前缀不同，互斥不重叠。
         """
         columns = (
             "paper_fts.paper_id AS paper_id, p.title AS title, p.abstract AS abstract, "
             "p.year AS year, p.venue_id AS venue_id, bm25(paper_fts) AS rank"
         )
-        if venue_id is not None:
+        try:
+            if venue_id is not None:
+                return self.db.query(
+                    f"SELECT {columns} FROM paper_fts JOIN paper p ON p.id = paper_fts.paper_id "
+                    "WHERE paper_fts MATCH ? AND p.venue_id = ? ORDER BY rank LIMIT ?",
+                    (expr, venue_id, limit),
+                )
             return self.db.query(
                 f"SELECT {columns} FROM paper_fts JOIN paper p ON p.id = paper_fts.paper_id "
-                "WHERE paper_fts MATCH ? AND p.venue_id = ? ORDER BY rank LIMIT ?",
-                (expr, venue_id, limit),
+                "WHERE paper_fts MATCH ? ORDER BY rank LIMIT ?",
+                (expr, limit),
             )
-        return self.db.query(
-            f"SELECT {columns} FROM paper_fts JOIN paper p ON p.id = paper_fts.paper_id "
-            "WHERE paper_fts MATCH ? ORDER BY rank LIMIT ?",
-            (expr, limit),
-        )
+        except sqlite3.OperationalError as exc:
+            _reraise_if_fts_table_missing(exc)
 
     def check_fts_consistency(
         self, *, sample_limit: int = _FTS_CHECK_SAMPLE_LIMIT
     ) -> FtsCheckReport:
-        """`crawler reindex --check` 三项并跑（D-034 决策 5）：只读，不修复（修复走
-        `reindex_fts`）。
+        """`crawler reindex --check` 四项并跑（D-034 决策 5 三项 + T12 独立审查 P1-1
+        追加 rowid 对齐项）：只读，不修复（修复走 `reindex_fts`）。
 
         1. **双向差集**：`paper` 有而 `paper_fts` 无（漏索引）＋ `paper_fts` 有而
-           `paper` 无（孤儿行）——各取前 `sample_limit` 条样本（"是谁"）。
+           `paper` 无（孤儿行）——各取前 `sample_limit` 条样本（"是谁"）。**性能
+           注记（P1-2，独立审查 Opus 实测）**：`paper_fts.paper_id` 是 `UNINDEXED`
+           列（无 B-tree），`LEFT JOIN … WHERE x IS NULL` 形态的"漏索引"查询在
+           SQLite 查询规划器下会退化为对 `paper_fts` 的逐行全表扫描（虚表无法像
+           普通表那样被自动建临时索引），是**每篇 paper 各扫一遍**的 O(n·m)：
+           实测 n=8000 耗时 5.088s、且随规模**严格 4 倍/倍增**（即 O(n²) 量级），
+           外推到 D-034 自定价的 10⁴–10⁵ 篇量级达 8–20 分钟，`--check` 沦为不可用。
+           改写为 `col NOT IN (SELECT … FROM …)` 等价式后，SQLite 对子查询结果
+           一次性建临时 B-tree/布隆过滤器（`EXPLAIN QUERY PLAN` 可见 `CREATE BLOOM
+           FILTER`），复杂度降至 O(n log m + m)：本地 n=4000 复测由 1.34s 降到
+           0.001s 量级（>1000×，独立审查在 n=8000 处实测 ~2500×）。"孤儿行"查询
+           原本方向已是 `paper_fts` 驱动、`paper.id`（PK，天然有索引）作探测目标，
+           故原实现已高效——为形态一致性同样改写为 `NOT IN`，无性能收益、亦无损失。
         2. **行数 + 同 `paper_id` 多行**：`paper_count`/`fts_count` 供展示核对
            （"有多少"），并单独检出同一 `paper_id` 在 `paper_fts` 内出现 >1 行
-           （既非漏索引也非孤儿的第三类漂移——正常写路径下不应出现）。
-        3. **FTS5 `integrity-check`**：只校验倒排索引与其自持 content 的自洽，
+           （既非漏索引也非孤儿的第三类漂移——正常写路径下不应出现，但 rowid
+           错位坏态经后续写触发时可能产出，见 `rowid_misaligned_ids`）。
+        3. **rowid 对齐（P1-1 追加）**：对每个仍持有正确 `paper_id` 配对的
+           `paper_fts` 行，其 `rowid` 是否等于该 paper **当前** `rowid`——独立审查
+           实测："`paper_fts` 全体 rowid 相对 `paper` 整体产生固定偏移"这一真实
+           `VACUUM` 坏态下，每个 `paper_id` 仍恰好各一行、内容未变，原①②④三项
+           全部误报一致（假绿）。经 `paper_fts.rowid != (SELECT rowid FROM paper
+           WHERE id = paper_fts.paper_id)` 相关子查询直接对账 rowid 本身（探测目标
+           `paper.id` 有索引，O(m log n)，见 `EXPLAIN QUERY PLAN` 的
+           `CORRELATED SCALAR SUBQUERY` + `SEARCH … USING COVERING INDEX`），
+           在潜伏阶段（尚未有后续写触发响亮失败或静默重复行前）即可提前查出。
+        4. **FTS5 `integrity-check`**：只校验倒排索引与其自持 content 的自洽，
            **检不出"paper_fts 与 paper 之间"的漂移**（决策 5 实测：`paper_id`↔
            `title` 错配、`paper` 有行而 `paper_fts` 无行两种漂移下该项独立 PASS）
-           ——故前两项才是与 `paper` 对账的部分，本项只作第三项互补，不重叠。
+           ——故①②③才是与 `paper` 对账的部分，本项只作互补，不重叠。
+
+        `paper_fts` 表整体缺失时同 `search_papers`/`reindex_fts` 翻译为可操作
+        `CrawlerError`（P2-3）——本方法内 `fts_count` 是首个触达 `paper_fts` 的查询，
+        故该情形总在到达 `integrity-check` 之前就已被外层 `except` 截获，不会被
+        `integrity-check` 自身较宽的 `except sqlite3.DatabaseError` 误吞（后者只处理
+        "已连接到真实 paper_fts 但内容自洽性有问题"这一更窄的情形）。
         """
         db = self.db
-        paper_count = int(db.query("SELECT COUNT(*) AS n FROM paper")[0]["n"])
-        fts_count = int(db.query("SELECT COUNT(*) AS n FROM paper_fts")[0]["n"])
-        missing = db.query(
-            "SELECT p.id AS id FROM paper p LEFT JOIN paper_fts f ON f.paper_id = p.id "
-            "WHERE f.paper_id IS NULL ORDER BY p.id LIMIT ?",
-            (sample_limit,),
-        )
-        orphan = db.query(
-            "SELECT DISTINCT f.paper_id AS id FROM paper_fts f "
-            "LEFT JOIN paper p ON p.id = f.paper_id "
-            "WHERE p.id IS NULL ORDER BY f.paper_id LIMIT ?",
-            (sample_limit,),
-        )
-        duplicate = db.query(
-            "SELECT paper_id AS id FROM paper_fts GROUP BY paper_id "
-            "HAVING COUNT(*) > 1 ORDER BY paper_id LIMIT ?",
-            (sample_limit,),
-        )
-        integrity_ok = True
-        integrity_error: str | None = None
         try:
-            db.execute("INSERT INTO paper_fts(paper_fts) VALUES ('integrity-check')")
-        except sqlite3.DatabaseError as exc:
-            integrity_ok = False
-            integrity_error = str(exc)
+            paper_count = int(db.query("SELECT COUNT(*) AS n FROM paper")[0]["n"])
+            fts_count = int(db.query("SELECT COUNT(*) AS n FROM paper_fts")[0]["n"])
+            missing = db.query(
+                "SELECT id FROM paper WHERE id NOT IN (SELECT paper_id FROM paper_fts) "
+                "ORDER BY id LIMIT ?",
+                (sample_limit,),
+            )
+            orphan = db.query(
+                "SELECT DISTINCT paper_id AS id FROM paper_fts "
+                "WHERE paper_id NOT IN (SELECT id FROM paper) "
+                "ORDER BY paper_id LIMIT ?",
+                (sample_limit,),
+            )
+            duplicate = db.query(
+                "SELECT paper_id AS id FROM paper_fts GROUP BY paper_id "
+                "HAVING COUNT(*) > 1 ORDER BY paper_id LIMIT ?",
+                (sample_limit,),
+            )
+            rowid_misaligned = db.query(
+                "SELECT paper_id AS id FROM paper_fts "
+                "WHERE rowid != (SELECT rowid FROM paper WHERE id = paper_fts.paper_id) "
+                "ORDER BY paper_id LIMIT ?",
+                (sample_limit,),
+            )
+            integrity_ok = True
+            integrity_error: str | None = None
+            try:
+                db.execute("INSERT INTO paper_fts(paper_fts) VALUES ('integrity-check')")
+            except sqlite3.DatabaseError as exc:
+                integrity_ok = False
+                integrity_error = str(exc)
+        except sqlite3.OperationalError as exc:
+            _reraise_if_fts_table_missing(exc)
         return FtsCheckReport(
             paper_count=paper_count,
             fts_count=fts_count,
             missing_ids=tuple(str(r["id"]) for r in missing),
             orphan_ids=tuple(str(r["id"]) for r in orphan),
             duplicate_ids=tuple(str(r["id"]) for r in duplicate),
+            rowid_misaligned_ids=tuple(str(r["id"]) for r in rowid_misaligned),
             integrity_check_ok=integrity_ok,
             integrity_check_error=integrity_error,
         )
@@ -2160,14 +2250,21 @@ class Repo:
         异常**——理论上重灌是"清空 + 按当前 `paper` 内容重建"，不应再撞 rowid 冲突
         （旧漂移已被 `DELETE FROM paper_fts` 清除）；若仍失败说明存在更深层问题，
         原样上抛（含经 `Database.tx()` 翻译过的 `CrawlerError`，若真的发生）。
+
+        `paper_fts` 表整体缺失时同 `search_papers`/`check_fts_consistency` 翻译为
+        可操作 `CrawlerError`（P2-3）——否则"恢复命令"本身会先于其试图修复的目标
+        而崩溃，用户反而无从下手。
         """
-        with self.db.tx() as conn:
-            conn.execute("DELETE FROM paper_fts")
-            conn.execute(
-                "INSERT INTO paper_fts(rowid, paper_id, title, abstract) "
-                "SELECT rowid, id, title, COALESCE(abstract, '') FROM paper"
-            )
-            count = conn.execute("SELECT COUNT(*) AS n FROM paper_fts").fetchone()["n"]
+        try:
+            with self.db.tx() as conn:
+                conn.execute("DELETE FROM paper_fts")
+                conn.execute(
+                    "INSERT INTO paper_fts(rowid, paper_id, title, abstract) "
+                    "SELECT rowid, id, title, COALESCE(abstract, '') FROM paper"
+                )
+                count = conn.execute("SELECT COUNT(*) AS n FROM paper_fts").fetchone()["n"]
+        except sqlite3.OperationalError as exc:
+            _reraise_if_fts_table_missing(exc)
         return int(count)
 
 

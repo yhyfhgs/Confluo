@@ -38,6 +38,15 @@
 --      冗余（D-034 决策 3 前一稿的错误断言已改口）；须跑 `crawler reindex` 恢复写路径
 --      ——`storage/db.py::Database.tx()` 把该特定 `IntegrityError` 翻译为可操作
 --      `CrawlerError(CONFIG)`，提示跑 `crawler reindex`，不让裸异常冒到用户面前。
+--      **第二种结局（T12 独立审查 P1-1/P2-5，与上述"响亮撞车"并存、非互斥）**：
+--      `DELETE` 因 rowid 错位落空后，若紧随其后的 `INSERT … VALUES(new.rowid, …)`
+--      目标 rowid 恰好当前**空闲**（而非被占用），插入会**静默成功**——旧的错位
+--      陈旧行原地不动、新行携正确内容落地，两行共享同一 paper_id：既未撞车、也
+--      未被任何写路径察觉，直到检索命中重复结果或 `crawler reindex --check` 主动
+--      扫出。`--check` 的 `duplicate_ids` 项事后可查"已产出的重复行"；`--check` 新增
+--      的 `rowid_misaligned_ids` 项（对每个仍持有正确 paper_id 配对的行核对其
+--      rowid 是否等于该 paper 当前 rowid）能在**潜伏阶段**——重复行尚未产出、
+--      旧行仍孤立错位时——提前查出，两项互补而非冗余。
 --   `rowid = old.rowid` 条件先行，故仍是 O(log n) 定位 + 一次列比较，不退化为全表扫描
 --   （若单靠 UNINDEXED 列 `paper_id` 定位则是全表扫描，rowid 绑定是必需而非优化）。
 --   `UPDATE OF title, abstract` 限定列：避免 `ingest_state`/`updated_at` 等高频列更新

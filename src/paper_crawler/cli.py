@@ -111,7 +111,12 @@ from paper_crawler.preprint_report import build_preprint_report, render_preprint
 from paper_crawler.ratelimit import RateLimiter
 from paper_crawler.registry import VenueRegistry
 from paper_crawler.storage.db import Database
-from paper_crawler.storage.repo import FtsCheckReport, Repo, SubscriptionRepo
+from paper_crawler.storage.repo import (
+    SEARCH_DEFAULT_LIMIT,
+    FtsCheckReport,
+    Repo,
+    SubscriptionRepo,
+)
 from paper_crawler.subs.report import render_daily
 from paper_crawler.subs.types import RunSummary
 from paper_crawler.subs.watch import (
@@ -1445,7 +1450,7 @@ def _print_search_results(rows: list[sqlite3.Row]) -> None:
 @app.command()
 def search(
     query: Annotated[str, typer.Argument(help="FTS5 MATCH 查询表达式（检索 title+abstract）")],
-    limit: Annotated[int, typer.Option("--limit", help="返回条数上限")] = 20,
+    limit: Annotated[int, typer.Option("--limit", help="返回条数上限")] = SEARCH_DEFAULT_LIMIT,
     venue: Annotated[str | None, typer.Option("--venue", help="仅在该 venue 内检索")] = None,
     home: HomeOpt = None,
     verbose: VerboseOpt = False,
@@ -1454,13 +1459,18 @@ def search(
     经 `repo.search_papers()` 单一查询入口。`query` 是完整 FTS5 `MATCH` 语法（含
     `NEAR/`、列限定 `title:`、前缀 `*`），原样传递、不做额外校验。
 
-    退出码：0=成功（含零命中）；2=未知 `--venue` 或 `query` 语法错误（FTS5 拒绝解析）。
+    退出码：0=成功（含零命中）；2=未知 `--venue`、`query` 语法错误（FTS5 拒绝解析）、
+    或 `paper_fts` 表整体缺失（`CrawlerError(CONFIG)`，T12 独立审查 P2-3——正常路径
+    下不应发生，见 `repo._reraise_if_fts_table_missing` docstring）。
     """
     with _env(home, verbose) as env:
         if venue is not None:
             _require_known_venue(env, venue)
         try:
             rows = env.ctx.repo.search_papers(query, limit=limit, venue_id=venue)
+        except CrawlerError as exc:
+            _echo_error(exc)
+            raise typer.Exit(code=2) from exc
         except sqlite3.OperationalError as exc:
             _usage_error(f"检索表达式无效：{exc}")
         if not rows:
@@ -1487,6 +1497,11 @@ def _print_fts_check_report(report: FtsCheckReport) -> None:
             f"重复索引样本（同 paper_id 多行）: {len(report.duplicate_ids)} 条 -> "
             + ", ".join(report.duplicate_ids)
         )
+    if report.rowid_misaligned_ids:
+        typer.echo(
+            f"rowid 错位样本（paper_id 配对正确，但 rowid 与 paper 现值不符）: "
+            f"{len(report.rowid_misaligned_ids)} 条 -> " + ", ".join(report.rowid_misaligned_ids)
+        )
     if report.integrity_check_ok:
         typer.echo("integrity-check: PASS")
     else:
@@ -1500,25 +1515,37 @@ def _print_fts_check_report(report: FtsCheckReport) -> None:
 @app.command()
 def reindex(
     check: Annotated[
-        bool, typer.Option("--check", help="只读一致性校验（不重建），三项并跑（D-034 决策 5）")
+        bool,
+        typer.Option("--check", help="只读一致性校验（不重建），四项并跑（D-034 决策 5 + P1-1）"),
     ] = False,
     home: HomeOpt = None,
     verbose: VerboseOpt = False,
 ) -> None:
     """`paper_fts` 全表重灌（D-034 决策 5）：默认执行重建（单事务、幂等）；`--check`
-    仅只读一致性校验、不写。日常写路径由触发器维护，仅分词器变更/对本库执行过
-    `VACUUM`/手工 DB 手术/`--check` 报不一致时才需要调用。
+    仅只读一致性校验、不写（D-034 决策 5 三项 + T12 独立审查 P1-1 追加的 rowid 对齐
+    项，共四项）。日常写路径由触发器维护，仅分词器变更/对本库执行过 `VACUUM`/手工
+    DB 手术/`--check` 报不一致时才需要调用。
 
     退出码：`--check` 时 0=一致 / 1=发现不一致（同 `verify` 的既有惯例）；非 `--check`
-    时恒 0（重建动作本身不是"发现问题"判据）。
+    时恒 0（重建动作本身不是"发现问题"判据）；任一分支若撞见 `paper_fts` 表整体
+    缺失（`CrawlerError(CONFIG)`，T12 独立审查 P2-3）则退出 2——"恢复命令"本身
+    不应先于其试图修复的目标而崩溃。
     """
     with _env(home, verbose) as env:
         repo = env.ctx.repo
         if check:
-            report = repo.check_fts_consistency()
+            try:
+                report = repo.check_fts_consistency()
+            except CrawlerError as exc:
+                _echo_error(exc)
+                raise typer.Exit(code=2) from exc
             _print_fts_check_report(report)
             raise typer.Exit(code=0 if report.ok else 1)
-        count = repo.reindex_fts()
+        try:
+            count = repo.reindex_fts()
+        except CrawlerError as exc:
+            _echo_error(exc)
+            raise typer.Exit(code=2) from exc
         typer.echo(f"reindex 完成：重建 {count} 行。")
     raise typer.Exit(code=0)
 

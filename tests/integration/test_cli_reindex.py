@@ -185,3 +185,55 @@ def test_reindex_check_detects_duplicate_paper_id_and_exits_1(tmp_path: Path) ->
 
     assert result.exit_code == 1
     assert "重复索引样本" in result.output
+
+
+def test_reindex_check_detects_rowid_misalignment_and_exits_1(tmp_path: Path) -> None:
+    """T12 独立审查 P1-1：`paper_fts` 全体 rowid 相对 `paper` 整体产生固定偏移
+    （真实 VACUUM 坏态特征）——原 D-034 决策 5 三项对此坏态全部误报"一致"，须靠
+    新增的 rowid 对齐项在 CLI 层面同样正确检出。
+    """
+    home = _make_home(tmp_path)
+    _seed_papers(home, [("10.0/a", "Paper A"), ("10.0/b", "Paper B")])
+    db = Database(home / "catalog.sqlite")
+    db.execute("UPDATE paper_fts SET rowid = rowid + 100")
+    db.close()
+
+    result = runner.invoke(app, ["reindex", "--check", "--home", str(home)])
+
+    assert result.exit_code == 1
+    assert "rowid 错位样本" in result.output
+
+    # reindex 修复后 --check 恢复一致。
+    fix_result = runner.invoke(app, ["reindex", "--home", str(home)])
+    assert fix_result.exit_code == 0, fix_result.output
+    check_result = runner.invoke(app, ["reindex", "--check", "--home", str(home)])
+    assert check_result.exit_code == 0, check_result.output
+
+
+# --- paper_fts 表整体缺失（T12 独立审查 P2-3）-----------------------------------------------------
+
+
+def test_reindex_missing_fts_table_exits_2_with_actionable_message(tmp_path: Path) -> None:
+    home = _make_home(tmp_path)
+    _seed_papers(home, [("10.0/a", "Paper A")])
+    db = Database(home / "catalog.sqlite")
+    db.execute("DROP TABLE paper_fts")
+    db.close()
+
+    result = runner.invoke(app, ["reindex", "--home", str(home)])
+
+    assert result.exit_code == 2
+    assert "paper_fts" in result.output
+
+
+def test_reindex_check_missing_fts_table_exits_2_with_actionable_message(tmp_path: Path) -> None:
+    home = _make_home(tmp_path)
+    _seed_papers(home, [("10.0/a", "Paper A")])
+    db = Database(home / "catalog.sqlite")
+    db.execute("DROP TABLE paper_fts")
+    db.close()
+
+    result = runner.invoke(app, ["reindex", "--check", "--home", str(home)])
+
+    assert result.exit_code == 2
+    assert "paper_fts" in result.output
