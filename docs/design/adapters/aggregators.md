@@ -22,7 +22,9 @@ updated: 2026-07-27
 | `s2` | aggregator | （不声明；无 ENUMERATE/SEARCH/FETCH） | 次级补充（**enrich 通道**，§5.4）：引用图、TLDR、fieldsOfStudy（**需 key**） | ✅ committed（T6） |
 | `unpaywall` | aggregator | RESOLVE | OA 副本发现（按 DOI，`no_entitlement` 兜底） | ✅ committed（T5） |
 | `core` | aggregator | （不声明） | 次级 OA 兜底 | ⛔ **Phase 3 范围外，不实现**（§5.6） |
-| `repec` | aggregator-enrich | （不声明） | enrich 通道（§5.7）：**JEL 分类** + wp↔published 版本关联；bulk 快照本地 join、**零网络** | 🕓 **Phase 7 T8**（D-027→D-035） |
+| `repec` | aggregator | （不声明；无 ENUMERATE/SEARCH/FETCH） | enrich 通道（§5.7）：**JEL 分类** + wp↔published 版本关联；bulk 快照本地 join、**零网络** | 🕓 **Phase 7 T8**（D-027→D-035） |
+
+- **`aggregator-enrich` 是档位描述、不是字段**：`family` 字段值域只有 `open_access` / `auth_gated` / `aggregator` 三枚（`tests/unit/test_adapter_loading.py::VALID_FAMILIES`），repec 与 openalex/s2 一样 `family = "aggregator"`；D-027 与本文档所称 `role: aggregator-enrich` 是**对其分工档位的文字描述**（"aggregator 里只做 enrich、不做枚举那一档"），registry/types 中**并无 `role` 字段**——registry role 声明式改造挂 P8（D-035 决策 1），勿据此措辞误以为已有该字段。
 
 - **能力面修订（2026-07-22，D1）**：`crossref`/`dblp`/`openalex`/`s2` **均不声明 SEARCH**。此前草案给 crossref/openalex/s2 标 SEARCH、给 dblp 隐含 search API——现全部收回：
   - **dblp 去 SEARCH 是合规修订**：DBLP `/search/**` 属 robots 禁区（§3），venue 枚举只走 `/db/**` 卷 XML + dump，**无 search 路径**。
@@ -352,8 +354,8 @@ openalex/s2 **不承担枚举**（capabilities 已收回 ENUMERATE，§1；两�
 > [repec.md](../../research/site-survey/repec.md)（[LIVE] 2026-07-24）。实现级细节（ReDIF 字段全表、
 > 上游文件命名）以 T8 实测为准，本节只冻结接口面与落盘契约。
 
-**定位**：`role: aggregator-enrich`（同 openalex/s2 一档，D-027）。capabilities **恒为空集**，不进 pull
-六阶段；驱动路径＝`crawler enrich --source repec`。**独家增值＝JEL 分类 + wp↔published 版本关联**
+**定位**：`family = "aggregator"`，分工档位＝"aggregator-enrich"（同 openalex/s2 一档，D-027；**该措辞是档位
+描述、非字段**，见 §1 表下注）。capabilities **恒为空集**，不进 pull 六阶段；驱动路径＝`crawler enrich --source repec`。**独家增值＝JEL 分类 + wp↔published 版本关联**
 （crossref/openalex/nber.org 三路皆缺，[LIVE 2026-07-24]）。
 
 **与 §5.3/§5.4 两源的本质差异（这是本节存在的理由）**
@@ -396,7 +398,10 @@ openalex/s2 **不承担枚举**（capabilities 已收回 ENUMERATE，§1；两�
 - **失效语义**：快照**缺失** → `CrawlerError(CONFIG, …)` → 经既有 `_run_enrich_source` per-source 捕获记
   "提前终止"，不崩其它 source、不改退出码（与 s2 缺 key / openalex 熔断同构）；快照**过期**（>30 天，模块
   常量、不开 config 槽）→ **响亮 WARNING + 摘要行注记，继续运行**（对 enrich-eval §2.7 DoD② 字面的有意
-  收窄，理由与记账见 D-035 决策 3）。
+  收窄，理由与记账见 D-035 决策 3；fable approved，附条件＝下条）。
+- **警告须可操作（与缺失分支指引对称）**：过期 WARNING 必带 ①`fetched_at` 与**实际过期天数**、②**刷新命令
+  一行提示**（`scripts/repec_snapshot.py` 的实际调用式），与缺失分支 `CrawlerError` 的指引同源同格式——只喊
+  "过期了"而不给天数与修法，等于把响亮做成噪声。
 - **不建派生索引**：3.6 万条量级，首次调用惰性全量解析入进程内 dict 即可（不建 `index.sqlite`、不入主库表）。
 
 **`enrich_batch(dois)` 映射与观测**
@@ -421,9 +426,13 @@ openalex/s2 **不承担枚举**（capabilities 已收回 ENUMERATE，§1；两�
 
 **接入面改动清单（T8）**：`_ENRICH_SOURCES` → `("openalex","s2","repec")`；`_prepare_enrich_source` 补空
 `domains` 守卫（与 `_register_rate_domains` 既有"空 domains 跳过"同构化）；`--source` help 文案；
-`SOURCE_PRIORITY` 七位重编号（§6）；`pyproject.toml` entry-points +1 与 `tests/integration/
-test_cli_canary.py` 的 `_EXPECTED_CANARY_ADAPTER_IDS` 20→21。**零 schema migration**（`identifier.scheme`
-无 CHECK 约束）。
+`SOURCE_PRIORITY` 七位重编号（§6）+ **"六枚举"字样 5 处改口**（`merge.py:26/86/135`、`storage/repo.py:140`、
+`subs/watch.py:200`；**`subs/model.py:19,172` 的"六源"是 DSL `SOURCE_FIELDS`、与优先级表无关，不得连坐**）；
+`pyproject.toml` entry-points +1；两处测试断言——`tests/integration/test_cli_canary.py` 的
+`_EXPECTED_CANARY_ADAPTER_IDS` 20→21，`tests/unit/test_adapter_loading.py:70` 的 `assert adapter.domains`
+按网络面分类改判（`_ZERO_NETWORK_ADAPTERS = {"repec"}` 双向断言，**正向锁定零网络**而非豁免）；
+`registry.py:330`「空 domains（畸形 adapter）」注释语义调和（enrich 源不进 registry 路由 ⇒ 该分支对 repec
+不可达，代码与文案零改动，仅注释收窄）。**零 schema migration**（`identifier.scheme` 无 CHECK 约束）。
 
 **fixture 清单**：①正常 ReDIF 记录（含 `Classification-JEL` + `Publication-Status`）②缺 JEL 的历史记录
 ③畸形/截断记录 → `parse` ④多记录切分 ⑤快照缺失 ⑥快照过期。另需 DOI↔handle 映射矩阵 ≥8 例、
@@ -541,8 +550,8 @@ test_cli_canary.py` 的 `_EXPECTED_CANARY_ADAPTER_IDS` 20→21。**零 schema mi
 | 12 | 2026-07-23 | **§5.3/§5.4 healthcheck 措辞对齐 T6 实现**：openalex healthcheck 门控收紧为与 s2 统一"无 key → `NotImplementedError`→canary SKIP"，废止原"匿名即可探测"表述（★裁决 2026-07-23；理由=防 `crawler canary` 周期性高频调用时静默消耗 openalex 每日 credit 配额） | T6 实现（`adapters/openalex/adapter.py` 模块 docstring 自述"收紧于设计稿 §5.3"） |
 | 13 | 2026-07-23 | **文档转正**：front matter `status: approved`→`implemented`（T1~T7 五源 adapter + 合并引擎全部合并落地；AC-3.5 在线实跑 PASS 建议，待 controller 终签） | Phase 3 收尾（[records/2026-07-23-ac35-acceptance.md](../../testing/records/2026-07-23-ac35-acceptance.md)） |
 | 14 | 2026-07-26 | **§5.2 回填 dblp 真实枚举卷响应 schema**：在线卷页根元素 `<bht>`（记录嵌 `<dblpcites>/<r>` 两层包装）vs 历史 dump `<dblp>`（`proceedings`/`inproceedings` 为直接子元素）两形态并存，此前仅 `dblp/parse.py` 模块 docstring 与测试 fixture 记录该真实结构，本文档未同步回填（文档滞后修正，非实质设计变更） | Phase 6 F2（[2026-07-24-post-phase5-audit.md §5](../../reports/2026-07-24-post-phase5-audit.md)） |
-| 16 | 2026-07-27 | **新增 §5.7 `repec`（aggregator-enrich）契约级设计**：定位/与 §5.3-§5.4 的本质差异表（零网络 vs 在线批查）/bulk-only 与零 HTML 红线/`state/repec/` 快照落盘契约（布局+manifest+失效语义+网络面移出 src）/`enrich_batch` 映射与未命中三分观测/DOI↔handle 仅 NBER 语法映射边界/可寻址集合如实入档（≈3.6 万 NBER WP，SSRN 结构性为 0）/接入面改动清单/fixture 清单。同批：§1 分工表 +1 行、§6 identifier scheme 表 +1 行、§6 优先级表按 D-035 扩为七位重编号、H1 与 front matter 标题同步。**本节是契约级设计、实现未落地**（`status: implemented` 覆盖的仍是 §5.1–§5.5 五源），显式标注于节首。 | [D-035](../../plan/decision-log.md)（P7-T2 卡产出，待 fable 签署）；[enrich-eval-p6.md §2/§6.2 探针 GO](../../research/enrich-eval-p6.md)；[phase7-implementation-plan §4 T2/T8](../../plan/phase7-implementation-plan.md) |
 | 15 | 2026-07-26 | **§5.5 幻影字段清账（非设计变更）**：删"或 VenueSpec 声明 OA-fallback 优先"——`VenueSpec` schema 从无该字段；实况是 `cli.py::_assemble_auth_seam` 对 OA-fallback 总开关无条件置位。同批订正 [auth-framework.md §8.1](../auth-framework.md)、[ssrn.md §4.4](ssrn.md) 两处同源表述 | P6-T10 收尾盘点发现 |
+| 16 | 2026-07-27 | **新增 §5.7 `repec`（aggregator-enrich）契约级设计**：定位/与 §5.3-§5.4 的本质差异表（零网络 vs 在线批查）/bulk-only 与零 HTML 红线/`state/repec/` 快照落盘契约（布局+manifest+失效语义+网络面移出 src）/`enrich_batch` 映射与未命中三分观测/DOI↔handle 仅 NBER 语法映射边界/可寻址集合如实入档（≈3.6 万 NBER WP，SSRN 结构性为 0）/接入面改动清单/fixture 清单。同批：§1 分工表 +1 行、§6 identifier scheme 表 +1 行、§6 优先级表按 D-035 扩为七位重编号、H1 与 front matter 标题同步。**本节是契约级设计、实现未落地**（`status: implemented` 覆盖的仍是 §5.1–§5.5 五源），显式标注于节首。 | [D-035](../../plan/decision-log.md)（P7-T2 卡产出，独立审查 NEEDS_FIX→修复→fable 落章生效）；[enrich-eval-p6.md §2/§6.2 探针 GO](../../research/enrich-eval-p6.md)；[phase7-implementation-plan §4 T2/T8](../../plan/phase7-implementation-plan.md) |
 
 ## 10. 风险与维护
 

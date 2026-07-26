@@ -352,23 +352,44 @@ updated: 2026-07-27
        tokenize = 'porter unicode61 remove_diacritics 2'
      );
      ```
-     - **决定性否决理由：`paper` 无 INTEGER PRIMARY KEY**。`paper.id` 是 ULID 文本主键（D-007），故其 rowid 是**隐式**的；SQLite 文档明载「无显式 INTEGER PRIMARY KEY 的表，`VACUUM` 可重编号其 rowid」。external-content（`content='paper'`）与 contentless 两案都以 rowid 为唯一连接键、**且查询只能返回 rowid**（列值须回表 join）——rowid 一旦被重编号，检索结果**静默指向错误的 paper**。content-owning 形态把 `paper_id` 作 UNINDEXED 列**物化进索引行**，查询直接读出 ULID、结果正确性不依赖 rowid 稳定性；rowid 只用作写路径的 O(log n) 定位键，最坏后果是残留/重复行（`crawler reindex` 可修复）。**故障模式从"静默错误"降为"可检出的冗余"**——这是本项目对"静默失败"一贯姿态（审计 S1 原则）的直接应用。
+     - **决定性否决理由：`paper` 无 INTEGER PRIMARY KEY**。`paper.id` 是 ULID 文本主键（D-007），故其 rowid 是**隐式**的；SQLite 文档明载「无显式 INTEGER PRIMARY KEY 的表，`VACUUM` 可重编号其 rowid」。external-content（`content='paper'`）与 contentless 两案里，**行身份完全由 rowid 承载**——external-content 的列值**可以**回读（FTS5 按 rowid 去 content 表取），但取到的是**该 rowid 当下指向的那一行**；rowid 一旦被重编号，回读到的就是**别人的 title/abstract**，检索结果**静默指向错误的 paper**（contentless 更甚：连回读都没有，只能拿 rowid 自行 join，错法相同）。content-owning 形态把 `paper_id` 作 UNINDEXED 列**物化进索引行**，查询直接读出 ULID、结果正确性不依赖 rowid 稳定性；rowid 只用作写路径的 O(log n) 定位键，最坏后果是残留/重复行（`crawler reindex` 可修复，且被决策 5 的 `--check` 双向差集捕获）。**故障模式从"静默错误"降为"可检出的冗余"**——这是本项目对"静默失败"一贯姿态（审计 S1 原则）的直接应用。
      - **第二理由：external-content 的删除契约易静默损坏**。其 DELETE/UPDATE 必须以特殊命令 `INSERT INTO fts(fts,rowid,…) VALUES('delete',…)` **携旧值**发出，旧值与索引内容不符即索引损坏且不报错；content-owning 表用普通 `DELETE`/`INSERT` 即可。T12 是 Sonnet 档实现卡，契约越窄越好。
      - **体积代价如实定价（估算，[未实测]）**：content-owning 多存一份 title+abstract 副本。按 title ≈ 0.1 KB、abstract ≈ 1.2 KB 计，源文本 ≈ **13 MB/万篇**；FTS5 倒排索引约为文本的 50–70%，故 content-owning ≈ **20–23 MB/万篇**、external/contentless ≈ **7–9 MB/万篇**，差额 ≈ **13 MB/万篇**。本库可寻址量级 10⁴–10⁵ 篇 ⇒ 差额 10 MB–130 MB。单机个人工具（D-001）下可接受，且**因范围锁死二字段而有界**（正文入索引才是数量级跳变，已 defer）。**本估算无实测支撑**（不读 `.paper-crawler/`，D-032 红线）——T12 落地后须在验收记录回填实测值。
      - 分词器 `porter unicode61 remove_diacritics 2`：语料以英文学术文本为主，porter 词干化提升召回；`remove_diacritics 2` 与 `ids.normalize_title` 的 Unicode 折叠取向一致。**分词器可改**——改动等价于一次 `crawler reindex`，故属**可逆选择**，不值得设计期过度论证。本机 SQLite 3.50.2 已实测该 tokenize 串与显式 rowid 写入均可用。
-  3. **同步策略＝SQL 触发器（写路径全覆盖）+ `reindex` 兜底**：
-     - 三触发器随虚表同建于 `0004`：`AFTER INSERT ON paper`、`AFTER UPDATE OF title, abstract ON paper`、`AFTER DELETE ON paper`；FTS 行 rowid 显式绑 `paper.rowid`，UPDATE/DELETE 以 `WHERE rowid = old.rowid` 定位（O(log n)；若改以 UNINDEXED 列 `paper_id` 定位则退化为全表扫描，故 rowid 绑定是必需而非优化）。
+  3. **同步策略＝SQL 触发器（写路径全覆盖）+ `reindex` 兜底**。三触发器随虚表同建于 `0004`，**SQL 写死如下**（形态本身是决策的一部分，见其后两条不变式）：
+     ```sql
+     CREATE TRIGGER paper_fts_ai AFTER INSERT ON paper BEGIN
+       INSERT INTO paper_fts(rowid, paper_id, title, abstract)
+       VALUES (new.rowid, new.id, new.title, COALESCE(new.abstract, ''));
+     END;
+     CREATE TRIGGER paper_fts_au AFTER UPDATE OF title, abstract ON paper BEGIN
+       DELETE FROM paper_fts WHERE rowid = old.rowid AND paper_id = old.id;
+       INSERT INTO paper_fts(rowid, paper_id, title, abstract)
+       VALUES (new.rowid, new.id, new.title, COALESCE(new.abstract, ''));
+     END;
+     CREATE TRIGGER paper_fts_ad AFTER DELETE ON paper BEGIN
+       DELETE FROM paper_fts WHERE rowid = old.rowid AND paper_id = old.id;
+     END;
+     ```
+     - **不变式 A：`paper_id` 必须在每次写入时同写 `new.id`；UPDATE 取 DELETE+INSERT 形态，严禁写成 `UPDATE paper_fts SET title=…, abstract=… WHERE rowid=old.rowid`**。后者在 VACUUM 重编号后会把 A 的正文覆盖到 B 的索引行上、而该行仍带着 B 的 `paper_id` ⇒ **恰好复活本 ADR 声称已消除的静默错映射**（决策 2 的全部论证依赖"paper_id 与正文同批写入、恒配对"）。
+     - **不变式 B：两处 DELETE 必须带 `AND paper_id = old.id` 双条件**。只按 `rowid` 删，在重编号后会误删**无辜他行**（那篇 paper 从此静默漏检 = 假阴性）；加上 `paper_id` 判别后，重编号情形下 DELETE 落空 → 退化为"同一 paper_id 多留一行陈旧文本" ⇒ 正是决策 2 承诺的**可检出冗余**，由决策 5 `--check` 的行数校验捕获。`rowid` 条件先行，故仍是 O(log n) 定位 + 一次列比较，不退化为扫描（若单以 UNINDEXED 列 `paper_id` 定位则是全表扫描，故 rowid 绑定是必需而非优化）。
      - **否决应用层同步**（在 `repo.upsert_paper`/`merge_ingest` 内手写）：写 `paper` 的路径不止一处且仍在增长（Phase 7 的 T7 extract 回写、T10 建边、T13 dedupe 决策），漏一处即索引静默漂移；触发器由 DB 保证"任何写路径都覆盖"，是**结构性**而非纪律性保障。
      - `UPDATE OF title, abstract` 限定列：避免 `ingest_state`/`updated_at` 等高频列更新空转重建索引行。
   4. **迁移形态＝`0004_fts_paper.sql`（schema v3→v4，纯 SQL，无 Python 步）**：
-     - 单文件内容＝虚表 DDL + 三触发器 + 存量回填 `INSERT INTO paper_fts(rowid, paper_id, title, abstract) SELECT rowid, id, title, COALESCE(abstract,'') FROM paper;`。
-     - **复用既有迁移机制零改动**（`storage/db.py:254-324`）：顺序执行、单事务、失败整步 ROLLBACK、迁移前自动备份 `{db}.v3.bak`、`schema_version` 单行表。**不注册 `_PY_MIGRATIONS` 条目**（无需 Python 回填）。
+     - 单文件内容＝虚表 DDL + 三触发器（决策 3 的 SQL）+ 存量回填 `INSERT INTO paper_fts(rowid, paper_id, title, abstract) SELECT rowid, id, title, COALESCE(abstract,'') FROM paper;`。
+     - **迁移器须先扩展语句切分器——本 ADR 初稿"复用既有迁移机制零改动"的断言与实测相反，已如实改口**（T2 独立审查实测捕获）：`storage/db.py:184-190` 的 `_iter_statements` 在字符串/注释之外**逐 `;` 断句**（其 docstring 自述"本项目迁移 DDL **不含触发器/复合语句**"），会把 `CREATE TRIGGER … BEGIN … END;` 劈成三条——本卡在项目 venv 内复现：第 2 条为 `CREATE TRIGGER … BEGIN INSERT …`（`OperationalError: incomplete input`），第 3 条为裸 `END`（`cannot commit - no transaction is active`）。故 **T12 实施范围内含**：把 `_iter_statements` 扩展为识别 `BEGIN … END` 复合语句块（块内 `;` 不断句，`END;` 才收尾），并补 3–5 条针对性单测（触发器脚本切分、块内字符串含 `;`、嵌套/多触发器连排、既有 `0001`–`0003` 切分结果逐字不变的回归锁定）。**不得改用 `executescript`**——其隐式 COMMIT 会破坏 `_apply` 的手动事务边界（该切分器存在的初衷，见其 docstring）。
+     - 其余机制**确可复用**（`storage/db.py:254-324`）：顺序执行、单事务、失败整步 ROLLBACK、迁移前自动备份 `{db}.v3.bak`、`schema_version` 单行表。**不注册 `_PY_MIGRATIONS` 条目**（无需 Python 回填）。
      - **文件名对 plan 的偏离**：plan §4 T2 写示意名 `0004_fts_title.sql`，实际范围是 title+abstract 二字段，故定名 `0004_fts_paper.sql`；plan §2 冻结件表本就写通配 `0004_*.sql`，无违约。
      - **方言隔离不变式**：`0001`–`0003` 保持方言中性（D-001/D-017）；**`0004` 是唯一允许含 SQLite 专有特性的迁移文件**（虚表 + 触发器），PG 迁移时整文件被等价 PG 脚本替换（决策 6）。该不变式写入 `0004` 文件头注释。
      - **FTS5 模块缺失须响亮**：无 FTS5 编译支持的 SQLite 在 `CREATE VIRTUAL TABLE` 抛 `sqlite3.OperationalError: no such module: fts5`——既有机制已整步回滚，但错误面向用户不可读。T12 须在 `Database._apply` 加一层异常翻译 → `CrawlerError(CONFIG, …)` 并附可操作指引，且有专测（monkeypatch 触发）。
   5. **rebuild 命令形态＝独立顶层命令 `crawler reindex [--check]`**（读/写不混载）：
      - `crawler search QUERY [--limit N] [--venue ID]`：只读检索（T12），经 `repo.search_papers()` 单一查询入口。
-     - `crawler reindex`：`DELETE FROM paper_fts` + 全表重灌，**单事务**、幂等、结束打印重建行数；`--check` 只跑 `INSERT INTO paper_fts(paper_fts) VALUES('integrity-check')` 只读校验、不改数据。
+     - `crawler reindex`：`DELETE FROM paper_fts` + 全表重灌，**单事务**、幂等、结束打印重建行数。
+     - **`--check`＝只读一致性校验，三项并跑（本 ADR 初稿只写 `integrity-check` 一项，检不出目标漂移，已按 T2 独立审查实测修正）**：FTS5 的 `integrity-check` **只校验倒排索引与 FTS 自持 content 的自洽**，对"`paper_fts` 与 `paper` 之间"的漂移完全无感——审查实测两种漂移（`paper_id`↔`title` 错配、`paper` 有行而 `paper_fts` 无行）在纯 `integrity-check` 下**全部 PASS**。故 `--check` 须做：
+       1. **双向差集**：`paper` 有而 `paper_fts` 无的 `paper_id`（漏索引）＋ `paper_fts` 有而 `paper` 无的 `paper_id`（孤儿行）——两侧各列前 N 条样本；
+       2. **行数与配对校验**：`COUNT(*)` 两侧比对，并检出同一 `paper_id` 在 `paper_fts` 内多行（不变式 B 承诺的"可检出冗余"由此落地）；
+       3. `INSERT INTO paper_fts(paper_fts) VALUES('integrity-check')`——保留，它校的是索引自身不损坏（与上两项互补、不重叠）。
+       任一项不一致 → 非零退出码 + 指明"跑 `crawler reindex` 修复"；全绿 → 打印三项各自的核对计数（不静默通过）。**决策 2 的"可检出的冗余"与本决策"④ `--check` 报不一致时重建"两处承诺，由此落到实处**；文本内容比对（title/abstract 逐字节）不纳入 `--check`（代价与收益不匹配——`reindex` 是全量重灌，任何内容漂移都被覆盖），如实记为已知边界。
      - **否决 `crawler search --rebuild`**（读写混一命令、与位置参数互斥、语义拧巴）与 `crawler index <verb>` 命令组（为单个动词开命令组，与 `crawler verify` 的顶层维护动词先例不一致）。
      - **何时需要 rebuild**：①分词器变更；②对本库执行过 `VACUUM`（rowid 可能重编号）；③手工 DB 手术/备份回滚后；④`--check` 报不一致时。**日常写路径由触发器维护，不需要定期 rebuild。**
      - **操作注记（登记，非红线）**：对本库执行裸 `VACUUM` 后应跟一次 `crawler reindex`；本项目代码目前不执行 `VACUUM`。
@@ -381,8 +402,8 @@ updated: 2026-07-27
      - **两处代码注释修订指令（T12 执行；本卡纯设计、零 src 改动）**：
        - `src/paper_crawler/storage/db.py:6`「Global Constraints §7/§9：ULID 文本主键、UTC 时间戳、方言中性、**不用 FTS5**」→「…方言中性（`0001`–`0003`）；FTS5 限于 `0004_fts_paper.sql` 单文件（D-034 修订 D-017 决策 4）」。
        - `src/paper_crawler/storage/migrations/0001_init.sql:3`「不建 FTS5（D-017，推迟 Phase 6）」→「**本文件**不建 FTS5（方言中性不变式）；FTS5 虚表由 `0004_fts_paper.sql` 追加（D-034 修订 D-017 决策 4 的兑现 Phase）」。
-- **影响**：schema v3→v4；**T12 承接实现**（`0004_fts_paper.sql` + `repo.search_papers` + `crawler search`/`crawler reindex` + `_apply` 异常翻译 + 上述两处注释修订）；[design/06 §2 索引要点](../design/06-data-model.md) 行随本条更新（原文"`paper(title)` 建 FTS5 虚表（标题+摘要检索）"是**未落地的设计声明**，现指向本条并写明表名/范围/迁移号/同步机制）；`0001`–`0003` 与迁移器机制零改动；本条不新增 AC（T12 的 DoD 在其卡内）。
-- **落款**：T2（opus）起草，纯设计卡零 src 改动；**待 T2 独立审查 + fable 签署后生效**（plan §1-7：D-033/034/035 经 fable 签署后方可作为实现依据）。
+- **影响**：schema v3→v4；**T12 承接实现**（`0004_fts_paper.sql` + **`storage/db.py::_iter_statements` 扩展支持 `BEGIN…END` 复合语句 + 其 docstring "不含触发器/复合语句" 一句同步修订 + 切分器新增单测与 `0001`–`0003` 回归锁定** + `repo.search_papers` + `crawler search` + `crawler reindex [--check]`（`--check` 按决策 5 三项）+ `_apply` 的 FTS5 缺失异常翻译 + 上述两处注释修订）；**T12 工作量较初稿上修**（迁移器机制改动 + 校验命令实质化，非纯 SQL 卡）——若 controller 判其超出 Sonnet 档，本条不反对改派 Opus；[design/06 §2 索引要点](../design/06-data-model.md) 行随本条更新（原文"`paper(title)` 建 FTS5 虚表（标题+摘要检索）"是**未落地的设计声明**，现指向本条并写明表名/范围/迁移号/同步机制）；`0001`–`0003` 与迁移器机制零改动；本条不新增 AC（T12 的 DoD 在其卡内）。
+- **落款**：T2（opus）起草，纯设计卡零 src 改动 → **T2 独立审查（opus，含两次实测探针）判 NEEDS_FIX**：六项裁决方向全部正确，问题集中在可执行细节——P0-1（`_iter_statements` 切不了触发器，实测复现）、P1-1（`--check` 检不出目标漂移，实测两种漂移全 PASS）、P1-2（UPDATE/DELETE 触发器写法会复活静默错映射）三项已在本条逐项改口修正（初稿错误断言原文保留痕迹、不抹） → **fable 落章**：`crawler reindex [--check]` 命令形态 **approved**（`--check` 按决策 5 三项补实为前提）。**本条自此生效**，T12 以本条为实现依据（plan §1-7）。
 
 ## D-035 repec 接入形态：`_ENRICH_SOURCES` 元组扩位 + `SOURCE_PRIORITY` 七位重编号（修订 D-021 决策 3）+ `state/repec/` bulk 快照契约 + 零网络 `enrich_batch`
 
@@ -394,7 +415,10 @@ updated: 2026-07-27
      - 装配主干**零改动**成立（enrich-eval C2/C3 已验证）：`_prepare_enrich_source` 是通用装配，`_apply_enrich_key` 是无 else 的 if/elif 链（repec 无 key，天然落空跑通）。
      - **唯一必须改的一行**：`_prepare_enrich_source`（`cli.py:1395`）无条件 `limiter.register(candidate.domains[0], …)`，对零网络源的空 `domains` 会 IndexError。裁决：**repec 声明 `domains = ()`**（结构性宣告"本源无网络面"）+ 该处补空守卫，与同文件 `_register_rate_domains` 的「空 domains 跳过」既有语义**同构化**（两条装配路径本就该一致）。**否决**"给 repec 挂一个从不请求的域名"——那是为绕过一行校验而写进代码的假事实。
      - `--source` help 文案（`cli.py:1466`）同步为 `（openalex|s2|repec）`。
-     - **冲突面登记**：`pyproject.toml` entry-points +1 与 Phase 6 F5 落地的 canary 集合等值自断言撞车——T8 须同批把 `tests/integration/test_cli_canary.py:105` 的 `_EXPECTED_CANARY_ADAPTER_IDS` 由 20 项扩为 21 项（该断言正是为此设计的响亮门，不是障碍）。
+     - **`domains = ()` 的连带面（T2 独立审查补全，二者同批入 T8 工作量清单）**：
+       - `tests/integration/test_cli_canary.py:105` `_EXPECTED_CANARY_ADAPTER_IDS` **20→21**（`pyproject.toml` entry-points +1 触发的集合等值自断言；该断言正是为此设计的响亮门，不是障碍）。
+       - `tests/unit/test_adapter_loading.py:70` `assert adapter.domains  # 非空` **对全部注册 adapter 生效，repec 会直接打红**。裁决：**改判定、不给占位域名**（重申否决理由：从不请求的域名是写进代码的假事实）。改法＝把"全体非空"收窄为"**按网络面分类的双向断言**"：模块级 `_ZERO_NETWORK_ADAPTERS = {"repec"}`，`domains == ()` 当且仅当 adapter 属该集合，否则 `assert adapter.domains`。**这比放行更强**——repec 日后若偷偷长出域名同样打红，"零网络"由测试**正向锁定**而非豁免。
+       - `registry.py:330` 注释「domains 为空元组（**畸形 adapter**）」的语义须调和：该 CONFIG 早失败**只在** venue 声明 `rate_limit` 且以该 adapter 为 `fulltext_source` 时到达，而 enrich 源不是任何 venue 的 `metadata_source`/`fulltext_source`、**不进 registry 路由** ⇒ 对 repec **不可达**。故**代码与错误文案零改动**，只把该注释收窄为「domains 为空＝无网络面（enrich 零网络源，D-035）**或**畸形 adapter；本路径只对参与 venue 路由的 adapter 到达，故此处空 domains 仍判畸形」——防未来读者把 repec 误读为畸形 adapter。
   2. **`SOURCE_PRIORITY` 扩位＝全表重编号取七位，repec 取最低非-heuristic 位**（修订 D-021 决策 3）：
      `official 6 / crossref 5 / dblp 4 / openalex 3 / s2 2 / repec 1 / heuristic 0`
      - 取 R2 §4 Q3 起草人倾向原案。**为何必须重编号**：`s2 1` 与 `heuristic 0` 相邻、无整数空位，插位无法不动既有值；重编号保持"heuristic=0 为底 + 严格全序"的表面语义（`_prefers_on_tie` 的同级 tie-break 依赖"优先级两两互异"，重编号后仍成立）。
@@ -415,7 +439,8 @@ updated: 2026-07-27
        - **代价如实记**：scripts/ 不占门禁覆盖 ⇒ 镜像回退与校验逻辑无自动化测试，靠 T19 在线批人工核验。
      - **失效语义（对 R2 §2.7 DoD② 字面的有意收窄，显式记账）**：
        - **快照缺失** → `enrich_batch` 抛 `CrawlerError(CONFIG, "repec 快照缺失，先跑 scripts/repec_snapshot.py …")`；经既有 `_run_enrich_source` 的 per-source `CrawlerError` 捕获 → 该 source 摘要行记"提前终止"，**不崩其它 source、不改整体退出码**——与 s2 缺 key / openalex 预算熔断**完全同构**（`cli.py:1406-1409` 既有口径）。
-       - **快照过期**（`fetched_at` 早于 30 天）→ **响亮 WARNING + 摘要行注记，继续运行**。R2 §2.7 DoD② 原文写"快照缺失/过期时响亮失败"；此处把"过期"从**失败**收窄为**响亮警告**。理由：`Classification-JEL` 与 `Publication-Status` 是准静态字段（历史条目基本不变），让一个 31 天未刷新的快照使整条通道不可用，代价与收益不匹配；"响亮、不静默"这一实质要求全额保留。**此为对 approved 评估文档字面 DoD 的收窄，如实入档供审查复核。**
+       - **快照过期**（`fetched_at` 早于 30 天）→ **响亮 WARNING + 摘要行注记，继续运行**。R2 §2.7 DoD② 原文写"快照缺失/过期时响亮失败"；此处把"过期"从**失败**收窄为**响亮警告**。理由：`Classification-JEL` 与 `Publication-Status` 是准静态字段（历史条目基本不变），让一个 31 天未刷新的快照使整条通道不可用，代价与收益不匹配；"响亮、不静默"这一实质要求全额保留。**此为对 approved 评估文档字面 DoD 的收窄，如实入档供审查复核**（fable 已 approve，附条件＝下条可操作面落地）。
+       - **警告必须可操作（与缺失分支的指引对称）**：WARNING 文案须同时携带 ①快照 `fetched_at` 与**实际过期天数**（"快照已 47 天未刷新（fetched_at=2026-06-10，阈值 30 天）"）、②**刷新命令一行提示**（`uv run python scripts/repec_snapshot.py --home <config-home>` 的实际调用式，与缺失分支 `CrawlerError` 的指引同源同格式）。只喊"过期了"而不给天数与修法，等同于把响亮做成噪声——缺失分支给了指引，过期分支不给即不对称。
        - 阈值 30 天取**模块常量**、**不开 config 槽**：过期只影响一条警告文案、非行为开关（YAGNI，D-017 依赖/配置最小化姿态）；且 `config.py` 在本 Phase 已是 T6/T7 双方争用的冲突面（plan §5），不增第三个声索方。
      - **不建派生索引**：可寻址量级 3.6 万条（crossref `10.3386` total-results 35,976），`enrich_batch` 首次调用惰性全量解析入进程内 dict、进程内缓存即可；**不建 `index.sqlite`、不入主库表**（YAGNI，且避免与 schema 迁移链纠缠）。
      - **`healthcheck` 语义**：快照缺失 → `raise NotImplementedError("repec 快照未落盘")` → `crawler canary` 既有 SKIP 分支（**零 canary 改动**，复用 openalex/s2 未配置 key 的先例）；快照在 → 健康并带 `record_count` + `fetched_at`。**与 openalex/s2 相反的性质**：repec healthcheck 零网络零预算，canary 高频调用无成本（openalex 当初收紧 healthcheck 正是怕悄悄消耗 credit）。
@@ -438,5 +463,5 @@ updated: 2026-07-27
      - **零 HTML 硬红线**：只走 ReDIF/OAI bulk 面，**绝不解析 `ideas.repec.org`/`econpapers.repec.org` 的 HTML 条目页**（哪怕其 robots 允许）——RePEc 官方明文强烈不建议爬 HTML 并设隐私红线（"Email addresses are released under no circumstances"）。写进 T8 的 DoD 与 adapter 模块 docstring。
      - **外层分页** `_ENRICH_PAGE_SIZE=200` 对零网络源无实际意义但**不特化**（保持装配同构；一次全量解析后逐页 join 的开销可忽略）。
 - **不在本决策内（显式出列）**：JEL 进 design/09 DSL 过滤键（`filters.jel_any`）——R2 Q5 裁「本 Phase 不动」，检索面另卡；`preprint_of` 建边归 plan §4 T10（本条只保证 `Publication-Status` 落 `meta` 供其消费）；非 DOI WP 长尾枚举与期刊条目 join（D-027 明文出列）；OpenAlex 补枚举 ladder(a)（plan §8 defer P8 候选）。
-- **影响**：**T8 承接实现**（`adapters/repec/{__init__,adapter,parse}.py` + `scripts/repec_snapshot.py` + `_ENRICH_SOURCES` 扩位 + `_prepare_enrich_source` 空 domains 守卫 + `--source` help 文案 + `SOURCE_PRIORITY` 重编号 + `pyproject.toml` entry-points +1 + canary 集合断言 20→21）；`merge.py` 六枚举闭表→七枚举（D-021 决策 3 位次表被本条取代）；**零 schema migration**；实现级契约详见 [design/adapters/aggregators.md §5.7](../design/adapters/aggregators.md)；`venues/econ/nber.yaml` 的 N-5 注记（"唯一已知源 RePEc nbr:nberwo ReDIF"）在 T8 落地后可回改，属文档面。
-- **落款**：T2（opus）起草，纯设计卡零 src 改动；**待 T2 独立审查 + fable 签署后生效**（plan §1-7）。
+- **影响**：**T8 承接实现**（`adapters/repec/{__init__,adapter,parse}.py` + `scripts/repec_snapshot.py` + `_ENRICH_SOURCES` 扩位 + `_prepare_enrich_source` 空 domains 守卫 + `--source` help 文案 + `SOURCE_PRIORITY` 重编号 + `pyproject.toml` entry-points +1 + `test_cli_canary.py` 集合断言 20→21 + `test_adapter_loading.py` 的 `domains` 断言按网络面分类改判 + `registry.py:330` 注释语义调和）；`merge.py` 六枚举闭表→**七枚举**（D-021 决策 3 位次表被本条取代）——**"六枚举"字样全库 5 处须同批改口**：`merge.py:26`、`merge.py:86`、`merge.py:135`、`storage/repo.py:140`、`subs/watch.py:200`。**显式排除连坐**：`subs/model.py:19` 与 `:172` 的"**六源**"指的是订阅 DSL 的 `SOURCE_FIELDS` 支持源集合（arxiv/ssrn/… 的字段并集），与 `SOURCE_PRIORITY` 是**两个无关的六**——**不得改**，T8 若一并改动即为错改，审查须逐处核对。**零 schema migration**；实现级契约详见 [design/adapters/aggregators.md §5.7](../design/adapters/aggregators.md)；`venues/econ/nber.yaml` 的 N-5 注记（"唯一已知源 RePEc nbr:nberwo ReDIF"）在 T8 落地后可回改，属文档面。
+- **落款**：T2（opus）起草，纯设计卡零 src 改动 → **T2 独立审查（opus）判 NEEDS_FIX**：P1-3（`domains = ()` 会打红 `test_adapter_loading.py:70`，且须调和 `registry.py:330` 的"畸形 adapter"语义）、P1-4（过期 WARNING 缺可操作面）两项已修 → **fable 落章两项**：①`scripts/repec_snapshot.py` 落点（网络面移出 src）**approved**；②快照过期由"响亮失败"收窄为"响亮警告+继续"**approved，附条件＝P1-4 可操作面落地**（天数 + 刷新命令一行提示，已写入决策 3）。**本条自此生效**，T8 以本条为实现依据（plan §1-7）。
