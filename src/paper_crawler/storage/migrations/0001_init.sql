@@ -1,6 +1,7 @@
 -- schema v1 (design/06 §2 十二张表 + phase1-plan §2.4 补的 paper_issue_link/task/fetch_log
 -- + schema_version)。方言中性（保留 PostgreSQL 迁移路径，D-001）：全部主键 ULID 文本，
--- 时间戳 UTC ISO8601 文本，弹性字段 JSON 文本列；不建 FTS5（D-017，推迟 Phase 6）。
+-- 时间戳 UTC ISO8601 文本，弹性字段 JSON 文本列；本文件不建 FTS5（方言中性不变式）；
+-- FTS5 虚表由 0005_fts_paper.sql 追加（D-034 修订 D-017 决策 4 的兑现 Phase）。
 -- 表顺序按外键依赖排列（被引用表在前——PostgreSQL 建表期即校验引用存在性）。
 
 -- ---------------------------------------------------------------------------

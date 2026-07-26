@@ -166,6 +166,44 @@ class FetchLogRow:
     error_class: str | None = None
 
 
+# `crawler search` 未显式给 --limit 时的默认返回条数（D-034 未指定具体值，本卡按常见
+# CLI 检索工具惯例选取——分词器/rebuild 策略之外的纯实现细节，可调）。
+_SEARCH_DEFAULT_LIMIT = 20
+# `crawler reindex --check` 双向差集/重复项每类各自的样本条数上限（D-034 决策 5
+# "各列前 N 条样本"）——只读展示用，不影响一致/不一致的判定本身。
+_FTS_CHECK_SAMPLE_LIMIT = 20
+
+
+@dataclass(frozen=True)
+class FtsCheckReport:
+    """`crawler reindex --check` 三项校验结果（D-034 决策 5）：`Repo.check_fts_consistency`
+    的返回值。`missing_ids`/`orphan_ids`/`duplicate_ids` 均为**样本**（至多
+    `_FTS_CHECK_SAMPLE_LIMIT` 条），非全量枚举——`paper_count`/`fts_count` 供行数级
+    核对，`ok` 是唯一的一致性判定入口（CLI 据此决定退出码）。
+    """
+
+    paper_count: int
+    fts_count: int
+    missing_ids: tuple[str, ...]  # paper 有、paper_fts 无（漏索引）
+    orphan_ids: tuple[str, ...]  # paper_fts 有、paper 无（孤儿行）
+    duplicate_ids: tuple[str, ...]  # 同一 paper_id 在 paper_fts 内 >1 行
+    integrity_check_ok: bool
+    integrity_check_error: str | None = None
+
+    @property
+    def ok(self) -> bool:
+        """三项全过——`missing`/`orphan`/`duplicate` 三个样本集合均为空
+        （非"零"，因样本上限截断；但只要有一条样本即代表该类不一致确实存在，
+        故用"非空即不一致"判定不受截断影响）且 `integrity-check` 通过。
+        """
+        return (
+            not self.missing_ids
+            and not self.orphan_ids
+            and not self.duplicate_ids
+            and self.integrity_check_ok
+        )
+
+
 def _meta_to_json(meta: tuple[tuple[str, str], ...]) -> str | None:
     """把弹性 meta（tuple-of-tuples）序列化为 JSON 文本；空则 None。"""
     if not meta:
@@ -2028,6 +2066,109 @@ class Repo:
                 "WHERE p.venue_id = ? AND a.state = 'fetched'"
             ),
         }
+
+    # -- FTS5 全文检索（Phase 7 T12，D-034）----------------------------------
+
+    def search_papers(
+        self, expr: str, *, limit: int = _SEARCH_DEFAULT_LIMIT, venue_id: str | None = None
+    ) -> list[sqlite3.Row]:
+        """FTS5 检索单一入口（D-034 决策 6）：方言 SQL 封在本方法内，调用方（CLI）
+        只见结果行，不得让 `MATCH` 语法散出本方法——PG 迁移时方言 SQL 只需改这一处。
+
+        `expr` 是 FTS5 `MATCH` 查询表达式原样传递（`NEAR/`、列限定 `title:`、前缀
+        `*` 等完整语法均可用；不做额外转义/校验，语法错误由 SQLite 抛
+        `sqlite3.OperationalError` 上抛给调用方，CLI 层负责呈现为用法错误）。按
+        `bm25()` 升序排列（SQLite 定义：值越小越相关）。`venue_id` 可选，按
+        `paper.venue_id` 过滤。返回列：`paper_id`（=`paper.id`）/`title`/`abstract`/
+        `year`/`venue_id`——不返回 FTS 内部片段/rowid，检索索引范围仅 title+abstract
+        二字段（D-034 决策 1，正文/向量索引 defer）。
+        """
+        columns = (
+            "paper_fts.paper_id AS paper_id, p.title AS title, p.abstract AS abstract, "
+            "p.year AS year, p.venue_id AS venue_id, bm25(paper_fts) AS rank"
+        )
+        if venue_id is not None:
+            return self.db.query(
+                f"SELECT {columns} FROM paper_fts JOIN paper p ON p.id = paper_fts.paper_id "
+                "WHERE paper_fts MATCH ? AND p.venue_id = ? ORDER BY rank LIMIT ?",
+                (expr, venue_id, limit),
+            )
+        return self.db.query(
+            f"SELECT {columns} FROM paper_fts JOIN paper p ON p.id = paper_fts.paper_id "
+            "WHERE paper_fts MATCH ? ORDER BY rank LIMIT ?",
+            (expr, limit),
+        )
+
+    def check_fts_consistency(
+        self, *, sample_limit: int = _FTS_CHECK_SAMPLE_LIMIT
+    ) -> FtsCheckReport:
+        """`crawler reindex --check` 三项并跑（D-034 决策 5）：只读，不修复（修复走
+        `reindex_fts`）。
+
+        1. **双向差集**：`paper` 有而 `paper_fts` 无（漏索引）＋ `paper_fts` 有而
+           `paper` 无（孤儿行）——各取前 `sample_limit` 条样本（"是谁"）。
+        2. **行数 + 同 `paper_id` 多行**：`paper_count`/`fts_count` 供展示核对
+           （"有多少"），并单独检出同一 `paper_id` 在 `paper_fts` 内出现 >1 行
+           （既非漏索引也非孤儿的第三类漂移——正常写路径下不应出现）。
+        3. **FTS5 `integrity-check`**：只校验倒排索引与其自持 content 的自洽，
+           **检不出"paper_fts 与 paper 之间"的漂移**（决策 5 实测：`paper_id`↔
+           `title` 错配、`paper` 有行而 `paper_fts` 无行两种漂移下该项独立 PASS）
+           ——故前两项才是与 `paper` 对账的部分，本项只作第三项互补，不重叠。
+        """
+        db = self.db
+        paper_count = int(db.query("SELECT COUNT(*) AS n FROM paper")[0]["n"])
+        fts_count = int(db.query("SELECT COUNT(*) AS n FROM paper_fts")[0]["n"])
+        missing = db.query(
+            "SELECT p.id AS id FROM paper p LEFT JOIN paper_fts f ON f.paper_id = p.id "
+            "WHERE f.paper_id IS NULL ORDER BY p.id LIMIT ?",
+            (sample_limit,),
+        )
+        orphan = db.query(
+            "SELECT DISTINCT f.paper_id AS id FROM paper_fts f "
+            "LEFT JOIN paper p ON p.id = f.paper_id "
+            "WHERE p.id IS NULL ORDER BY f.paper_id LIMIT ?",
+            (sample_limit,),
+        )
+        duplicate = db.query(
+            "SELECT paper_id AS id FROM paper_fts GROUP BY paper_id "
+            "HAVING COUNT(*) > 1 ORDER BY paper_id LIMIT ?",
+            (sample_limit,),
+        )
+        integrity_ok = True
+        integrity_error: str | None = None
+        try:
+            db.execute("INSERT INTO paper_fts(paper_fts) VALUES ('integrity-check')")
+        except sqlite3.DatabaseError as exc:
+            integrity_ok = False
+            integrity_error = str(exc)
+        return FtsCheckReport(
+            paper_count=paper_count,
+            fts_count=fts_count,
+            missing_ids=tuple(str(r["id"]) for r in missing),
+            orphan_ids=tuple(str(r["id"]) for r in orphan),
+            duplicate_ids=tuple(str(r["id"]) for r in duplicate),
+            integrity_check_ok=integrity_ok,
+            integrity_check_error=integrity_error,
+        )
+
+    def reindex_fts(self) -> int:
+        """`crawler reindex`（D-034 决策 5）：`paper_fts` 全表重灌，单事务、幂等，
+        返回重建行数。
+
+        日常写路径由触发器维护，仅在分词器变更、对本库执行过 `VACUUM`（rowid 可能
+        重编号）、手工 DB 手术/备份回滚后，或 `--check` 报不一致时需要调用。**不吞
+        异常**——理论上重灌是"清空 + 按当前 `paper` 内容重建"，不应再撞 rowid 冲突
+        （旧漂移已被 `DELETE FROM paper_fts` 清除）；若仍失败说明存在更深层问题，
+        原样上抛（含经 `Database.tx()` 翻译过的 `CrawlerError`，若真的发生）。
+        """
+        with self.db.tx() as conn:
+            conn.execute("DELETE FROM paper_fts")
+            conn.execute(
+                "INSERT INTO paper_fts(rowid, paper_id, title, abstract) "
+                "SELECT rowid, id, title, COALESCE(abstract, '') FROM paper"
+            )
+            count = conn.execute("SELECT COUNT(*) AS n FROM paper_fts").fetchone()["n"]
+        return int(count)
 
 
 class SubscriptionRepo:

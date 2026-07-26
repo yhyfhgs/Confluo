@@ -3,7 +3,9 @@
 设计依据：
 - design/06 §6：`schema_version` 单行表；顺序执行 `migrations/000N_*.sql`，每步事务 +
   执行前 db 文件 copy 备份；SQLite→PostgreSQL 迁移路径（方言中性 DDL）。
-- Global Constraints §7/§9：ULID 文本主键、UTC 时间戳、方言中性、不用 FTS5。
+- Global Constraints §7/§9：ULID 文本主键、UTC 时间戳、方言中性（0001-0004）；FTS5 限于
+  `0005_fts_paper.sql` 单文件（D-034 修订 D-017 决策 4——原推迟 Phase 6 的承诺未兑现，
+  如实记债后改判 Phase 7 T12；migrations 号位见该 SQL 文件头注释）。
 
 连接采用 autocommit（`isolation_level=None`）+ 显式 BEGIN/COMMIT，配合 WAL：
 迁移每步与 `tx()` 均为手动事务，崩溃时 ROLLBACK 保证原子性。
@@ -17,6 +19,8 @@ import sqlite3
 from collections.abc import Callable, Iterator, Sequence
 from contextlib import contextmanager
 from pathlib import Path
+
+from paper_crawler.errors import CrawlerError, ErrorClass
 
 # 迁移脚本目录（包内）。测试可 monkeypatch 本常量指向临时目录以覆盖多步迁移/备份路径。
 MIGRATIONS_DIR = Path(__file__).parent / "migrations"
@@ -181,16 +185,47 @@ _PY_MIGRATIONS: dict[str, Callable[[sqlite3.Connection], None]] = {
 }
 
 
+def _keyword_at(script: str, i: int, word: str) -> bool:
+    """大小写不敏感的整词匹配：`script[i:]` 以 `word`（全大写常量）开头，且紧邻的前后
+    字符（若存在）都不是标识符字符（字母/数字/下划线）。
+
+    用于 `_iter_statements` 识别 `BEGIN`/`END` 关键字——纯子串匹配会把 `PENDING`/
+    `RUNNING`（0001_init.sql 的 task.state 默认值/部分索引 WHERE 子句）之类标识符的
+    子串误判为关键字，整词匹配杜绝此类假阳性。
+    """
+    end = i + len(word)
+    if script[i:end].upper() != word:
+        return False
+    if i > 0 and (script[i - 1].isalnum() or script[i - 1] == "_"):
+        return False
+    if end < len(script) and (script[end].isalnum() or script[end] == "_"):
+        return False
+    return True
+
+
 def _iter_statements(script: str) -> Iterator[str]:
     """把一个 SQL 脚本切分为独立语句（在事务内逐条执行以保证每步原子性）。
 
     识别单引号字符串（含 `''` 转义）与 `--` 行注释，仅在字符串/注释之外的 `;`
-    处断句；注释被丢弃，空语句被跳过。本项目迁移 DDL 不含触发器/复合语句，
-    该切分器足够健壮（避免 `executescript` 的隐式 COMMIT 破坏手动事务边界）。
+    处断句；注释被丢弃，空语句被跳过。
+
+    **D-034 扩展（T12）**：本切分器原仅逐 `;` 断句、docstring 曾自述"迁移 DDL 不含
+    触发器/复合语句"——`0005_fts_paper.sql`（paper_fts 三触发器）证伪该假设，此处
+    如实改口并扩展。额外识别 `CREATE TRIGGER … BEGIN … END;` 复合语句块：整词
+    `BEGIN`（大小写不敏感、前后非标识符字符，见 `_keyword_at`）使 `trigger_depth`
+    +1，整词 `END` 在 `trigger_depth > 0` 时 -1（钳制在 0——孤立 `END`，如 `CASE …
+    END` 表达式落在 `trigger_depth == 0` 处，不使计数变负、不影响断句；本项目现有
+    迁移脚本的触发器体内均无 `CASE…END` 用法，该钳制是防御性质，非本次扩展的功能
+    目标）。`trigger_depth > 0` 期间 `;` 不断句，使 `BEGIN…END` 内的多条子语句随
+    触发器整体作为**单一语句**喂给 `sqlite3.Cursor.execute()`——该 API 只接受单条
+    语句，但 `CREATE TRIGGER … END` 整体在 SQLite 语法上正是单一顶层语句，内部 `;`
+    是触发器体的语法组成部分而非顶层语句边界。**不得改用 `executescript`**——其
+    隐式 COMMIT 会破坏 `_apply` 的手动事务边界（该切分器存在的初衷）。
     """
     stmt: list[str] = []
     in_string = False
     in_comment = False
+    trigger_depth = 0
     i, n = 0, len(script)
     while i < n:
         ch = script[i]
@@ -220,7 +255,17 @@ def _iter_statements(script: str) -> Iterator[str]:
             stmt.append(ch)
             i += 1
             continue
-        if ch == ";":
+        if _keyword_at(script, i, "BEGIN"):
+            trigger_depth += 1
+            stmt.append(script[i : i + 5])
+            i += 5
+            continue
+        if trigger_depth > 0 and _keyword_at(script, i, "END"):
+            trigger_depth -= 1
+            stmt.append(script[i : i + 3])
+            i += 3
+            continue
+        if ch == ";" and trigger_depth == 0:
             candidate = "".join(stmt).strip()
             if candidate:
                 yield candidate
@@ -303,7 +348,14 @@ class Database:
         return backup_path
 
     def _apply(self, version: int, path: Path) -> None:
-        """在单个事务内执行一个迁移脚本并写入版本号；失败则整步回滚。"""
+        """在单个事务内执行一个迁移脚本并写入版本号；失败则整步回滚。
+
+        **D-034 决策 4**：无 FTS5 编译支持的 SQLite 在 `CREATE VIRTUAL TABLE … USING
+        fts5` 抛 `sqlite3.OperationalError: no such module: fts5`——既有机制已整步
+        回滚，但裸异常面向用户不可读。本方法把该特定错误翻译为可操作
+        `CrawlerError(CONFIG)`；其余 `OperationalError`（如既有测试覆盖的"重复建表"）
+        原样透传，不改变既有失败行为。
+        """
         script = path.read_text(encoding="utf-8")
         conn = self._conn
         conn.execute("BEGIN")
@@ -319,6 +371,18 @@ class Database:
             conn.execute("DELETE FROM schema_version")
             conn.execute("INSERT INTO schema_version(version) VALUES (?)", (version,))
             conn.execute("COMMIT")
+        except sqlite3.OperationalError as exc:
+            conn.execute("ROLLBACK")
+            if "no such module: fts5" in str(exc).lower():
+                raise CrawlerError(
+                    ErrorClass.CONFIG,
+                    "当前 SQLite 未编译 FTS5 模块，无法建立/迁移全文检索索引",
+                    detail=(
+                        f"{path.name}: {exc}；请改用编译了 FTS5 支持的 SQLite"
+                        "（CPython 官方发行版通常已内置），或联系维护者更换运行环境"
+                    ),
+                ) from exc
+            raise
         except Exception:
             conn.execute("ROLLBACK")
             raise
@@ -330,12 +394,34 @@ class Database:
         """写事务上下文（BEGIN IMMEDIATE → COMMIT / 异常 ROLLBACK）。
 
         BEGIN IMMEDIATE 立即取写锁，冲突时早失败（风险表：WAL 单写者）。
+
+        **D-034 决策 3（`0005_fts_paper.sql` 触发器）**：若 `paper_fts` 的 rowid 因
+        外部 `VACUUM`（`paper` 无 INTEGER PRIMARY KEY，rowid 隐式，SQLite 文档载明
+        `VACUUM` 可重编号此类 rowid）等原因与 `paper` 错位，`paper` 写路径触发的
+        `paper_fts_ai`/`paper_fts_au` 触发器会撞已被占用的 rowid，抛
+        `sqlite3.IntegrityError`——本卡实测该异常消息恒为裸 `constraint failed`
+        （虚表 xUpdate 返回 SQLITE_CONSTRAINT 不带扩展错误码，sqlite3 退化为无表名/
+        列名的通用消息），经验区别于 FK/`UNIQUE`/`NOT NULL`/`CHECK` 违例的带前缀消息
+        （分别形如 `FOREIGN KEY constraint failed`/`UNIQUE constraint failed: t.c`/
+        `NOT NULL constraint failed: t.c`/`CHECK constraint failed: expr`）。本方法
+        只翻译裸 `constraint failed` 这一特定信号为可操作 `CrawlerError(CONFIG)`
+        （提示跑 `crawler reindex`）；其余 `IntegrityError`（FK/唯一约束等既有语义，
+        如 `test_foreign_key_orphan_issue_rejected`）原样透传，不改变既有调用方行为。
         """
         conn = self._conn
         conn.execute("BEGIN IMMEDIATE")
         try:
             yield conn
             conn.execute("COMMIT")
+        except sqlite3.IntegrityError as exc:
+            conn.execute("ROLLBACK")
+            if str(exc).strip().lower() == "constraint failed":
+                raise CrawlerError(
+                    ErrorClass.CONFIG,
+                    "FTS 索引与 paper 的 rowid 已错位，请跑 `crawler reindex` 修复",
+                    detail=str(exc),
+                ) from exc
+            raise
         except Exception:
             conn.execute("ROLLBACK")
             raise

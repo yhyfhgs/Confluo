@@ -338,7 +338,7 @@ updated: 2026-07-27
   - **AC-7.1 判据两路径分叉**（不弱于原文，正式编号与验收记录模板归 T18，本卡不改 `acceptance-criteria.md`）：GROBID 路径比 TEI `titleStmt/title`；纯文本路径比正文前 2000 字符内的最优子串；两者同用归一化 Levenshtein ≤ 0.15，DP 实现约 15 行落 `tests/helpers/`，**零新依赖**、T7 与 T19 共用同一判据。**阈值 0.15 与 2000 字符窗未经真实标定**（r2 P2-⑤，如实声明）：离线载体的标题是自己注进去的、结构上标定不了阈值，第一次真实接触在 T19；处置口径写死＝T19 不达标**先判「阈值未标定」而非「抽取器不合格」**，人工过目失配样本区分三成因（抽取器真错 / 标题归一化不足 / 阈值过紧），**允许一次**基于实测分布的阈值修订并入 T19 验收记录 + 回填详设与 T18 的 AC 表述，此后再改须走 ADR（防「调阈值直到通过」的验收自证）。**AC-7.2 覆盖三态**（url 未配 / mock 在线 / 服务不可用逐行），第三态即「关闭时降级不报错」的严格形式。
 - **影响**：`design/12-fulltext-extract.md` 新建（`review` → fable 签署后 `approved`）；**design/05 §1 stage 5 行的幂等键注记与 design/06 §2 `fulltext` 表 DDL / §4 布局，由 T7 实现卡随迁移回填**（沿 D-031/F1 的「设计文档随实现卡更新」先例，避免与 T2 在 design/06 上撞面）；T7 施工面＝`pipeline/extract.py`（新）+ `_stage_extract` 改写 + `_fulltext_final_path` + config 两槽 + `HttpClient.post_multipart` + `StageContext` 一可选字段 + `000N` 迁移 + `pyproject` 加 pypdf；**T7 不碰 `cli.py`/`repo.py`/`types.py`**（主动退出 phase7 §5 已列的 cli.py 四卡冲突面）；T14 按上方**四类**口径扩 `verify`（三类缺陷 + `stale_fulltext` 信息级）；T19 按 §12 判据做真实批（GROBID 真实冒烟为条件项，本地服务零在线预算）；**T12 与本条零接缝**（见附带裁决）。T7 另须落三项回归锁：GROBID 空产物不压制既有正文、rank 序 `extract_failed > noop`、L1 生成器自校验（防生成器 bug 伪装成抽取失败）。
 - **落款**：P7-T1（opus）起草 2026-07-27 → 独立审查（opus）NEEDS_FIX（7 必修 + 7 P2，六项主裁决方向全部认同）→ **r2 全部吸收** → re-review（①②③⑤ CLOSED）→ **r3 文档级补正 4 处**（`--force` 绕过预判 + 预判护栏 + 判别子订正 + 重复算力形态 B；无新裁决）。逐条落点见 [12-fulltext-extract §14 修订记录第 2/3 行](../design/12-fulltext-extract.md)；两项子裁决 **fable 已 approve（2026-07-27）**；**ADR 本体 fable 已终签 accepted（2026-07-27，见状态行）**。
-## D-034 FTS5 检索索引形态：content-owning `paper_fts`（title+abstract）+ 触发器同步 + `0004` 方言隔离迁移（修订 D-017 决策 4 的兑现 Phase）
+## D-034 FTS5 检索索引形态：content-owning `paper_fts`（title+abstract）+ 触发器同步 + `0005` 方言隔离迁移（修订 D-017 决策 4 的兑现 Phase）
 
 - 状态：accepted · 日期：2026-07-27 · 依据：[phase7-implementation-plan §2/§4 T2/§8](phase7-implementation-plan.md)；D-017 决策 4；[design/06 §2 索引要点](../design/06-data-model.md)
 - **revises**：**D-017 决策 4**（兑现 Phase「Phase 6」→「Phase 7 T12」，原则部分全部保留）。D-017 其余三项（包管理/质量工具/依赖最小化）不受影响，故**不 supersede 整条**。
@@ -356,7 +356,7 @@ updated: 2026-07-27
      - **第二理由：external-content 的删除契约易静默损坏**。其 DELETE/UPDATE 必须以特殊命令 `INSERT INTO fts(fts,rowid,…) VALUES('delete',…)` **携旧值**发出，旧值与索引内容不符即索引损坏且不报错；content-owning 表用普通 `DELETE`/`INSERT` 即可。T12 是 Sonnet 档实现卡，契约越窄越好。
      - **体积代价如实定价（估算，[未实测]）**：content-owning 多存一份 title+abstract 副本。按 title ≈ 0.1 KB、abstract ≈ 1.2 KB 计，源文本 ≈ **13 MB/万篇**；FTS5 倒排索引约为文本的 50–70%，故 content-owning ≈ **20–23 MB/万篇**、external/contentless ≈ **7–9 MB/万篇**，差额 ≈ **13 MB/万篇**。本库可寻址量级 10⁴–10⁵ 篇 ⇒ 差额 10 MB–130 MB。单机个人工具（D-001）下可接受，且**因范围锁死二字段而有界**（正文入索引才是数量级跳变，已 defer）。**本估算无实测支撑**（不读 `.paper-crawler/`，D-032 红线）——T12 落地后须在验收记录回填实测值。
      - 分词器 `porter unicode61 remove_diacritics 2`：语料以英文学术文本为主，porter 词干化提升召回；`remove_diacritics 2` 与 `ids.normalize_title` 的 Unicode 折叠取向一致。**分词器可改**——改动等价于一次 `crawler reindex`，故属**可逆选择**，不值得设计期过度论证。本机 SQLite 3.50.2 已实测该 tokenize 串与显式 rowid 写入均可用。
-  3. **同步策略＝SQL 触发器（写路径全覆盖）+ `reindex` 兜底**。三触发器随虚表同建于 `0004`，**SQL 写死如下**（形态本身是决策的一部分，见其后两条不变式）：
+  3. **同步策略＝SQL 触发器（写路径全覆盖）+ `reindex` 兜底**。三触发器随虚表同建于 `0005`，**SQL 写死如下**（形态本身是决策的一部分，见其后两条不变式）：
      ```sql
      CREATE TRIGGER paper_fts_ai AFTER INSERT ON paper BEGIN
        INSERT INTO paper_fts(rowid, paper_id, title, abstract)
@@ -375,13 +375,12 @@ updated: 2026-07-27
      - **不变式 B：两处 DELETE 必须带 `AND paper_id = old.id` 双条件**。只按 `rowid` 删，在重编号后会误删**无辜他行**（那篇 paper 从此静默漏检 = 假阴性）；加上 `paper_id` 判别后，重编号情形下 DELETE 落空，**紧随其后的 `INSERT … VALUES(new.rowid, …)` 会撞上已被他行占用的 rowid 而抛 `sqlite3.IntegrityError: constraint failed`**（`paper_fts_ai` 的纯 INSERT 路径同理）——本卡实测：既有行原封不动保留，插入被拒。故其真实语义是**写入响亮失败 + 该事务整步回滚 + 须 `crawler reindex` 恢复写路径**，而**不是**本 ADR 前一稿所写的"退化为同一 paper_id 多留一行陈旧文本的可检出冗余"（该描述与实测不符，已改口；T2 re-review 捕获）。这比冗余**更安全**：错误在写入时刻当场暴露、不进库，与本项目"响亮失败优于静默"的姿态一致；代价是重编号后写路径会持续失败直到 `reindex`，故 T12 须把该 `IntegrityError` 与 FTS5 缺失**同款翻译**为可操作 `CrawlerError`（文案明示"FTS 索引与 paper rowid 已错位，请跑 `crawler reindex`"），不得让裸 `IntegrityError` 冒到用户面前。`rowid` 条件先行，故仍是 O(log n) 定位 + 一次列比较，不退化为扫描（若单以 UNINDEXED 列 `paper_id` 定位则是全表扫描，故 rowid 绑定是必需而非优化）。
      - **否决应用层同步**（在 `repo.upsert_paper`/`merge_ingest` 内手写）：写 `paper` 的路径不止一处且仍在增长（Phase 7 的 T7 extract 回写、T10 建边、T13 dedupe 决策），漏一处即索引静默漂移；触发器由 DB 保证"任何写路径都覆盖"，是**结构性**而非纪律性保障。
      - `UPDATE OF title, abstract` 限定列：避免 `ingest_state`/`updated_at` 等高频列更新空转重建索引行。
-  4. **迁移形态＝`0004_fts_paper.sql`（schema v3→v4，纯 SQL，无 Python 步）**：
-     > **迁移号顺延注记（P7-T7 合并期）**：本条及下文的 `0004_fts_paper.sql` / `schema v3→v4` 实际顺延为 **`0005_fts_paper.sql` / `schema v4→v5`** —— T7（D-033）先行合并并占用 `0004_fulltext_asset.sql`，按 D-033（design/12 §5.1 + R3）的「本文一律 `000N` 占位，T7 按目录当时最大号 +1 取号（先合者取小号）」。**两卡 schema 内容零重叠**（D-033 §9.4：D-034 范围＝`paper` 表的 title+abstract，与 `fulltext` 行/落盘产物无交集），仅编号竞争。**正文引用由 T12 落地时全面更新**；此注记只为消除 T12 合并前的双 0004 误导窗。
+  4. **迁移形态＝`0005_fts_paper.sql`（schema v4→v5，纯 SQL，无 Python 步）**：
      - 单文件内容＝虚表 DDL + 三触发器（决策 3 的 SQL）+ 存量回填 `INSERT INTO paper_fts(rowid, paper_id, title, abstract) SELECT rowid, id, title, COALESCE(abstract,'') FROM paper;`。
      - **迁移器须先扩展语句切分器——本 ADR 初稿"复用既有迁移机制零改动"的断言与实测相反，已如实改口**（T2 独立审查实测捕获）：`storage/db.py:184-190` 的 `_iter_statements` 在字符串/注释之外**逐 `;` 断句**（其 docstring 自述"本项目迁移 DDL **不含触发器/复合语句**"），会把 `CREATE TRIGGER … BEGIN … END;` 劈成三条——本卡在项目 venv 内复现：第 2 条为 `CREATE TRIGGER … BEGIN INSERT …`（`OperationalError: incomplete input`），第 3 条为裸 `END`（`cannot commit - no transaction is active`）。故 **T12 实施范围内含**：把 `_iter_statements` 扩展为识别 `BEGIN … END` 复合语句块（块内 `;` 不断句，`END;` 才收尾），并补 3–5 条针对性单测（触发器脚本切分、块内字符串含 `;`、嵌套/多触发器连排、既有 `0001`–`0003` 切分结果逐字不变的回归锁定）。**不得改用 `executescript`**——其隐式 COMMIT 会破坏 `_apply` 的手动事务边界（该切分器存在的初衷，见其 docstring）。
      - 其余机制**确可复用**（`storage/db.py:254-324`）：顺序执行、单事务、失败整步 ROLLBACK、迁移前自动备份 `{db}.v3.bak`、`schema_version` 单行表。**不注册 `_PY_MIGRATIONS` 条目**（无需 Python 回填）。
-     - **文件名对 plan 的偏离**：plan §4 T2 写示意名 `0004_fts_title.sql`，实际范围是 title+abstract 二字段，故定名 `0004_fts_paper.sql`；plan §2 冻结件表本就写通配 `0004_*.sql`，无违约。
-     - **方言隔离不变式**：`0001`–`0003` 保持方言中性（D-001/D-017）；**`0004` 是唯一允许含 SQLite 专有特性的迁移文件**（虚表 + 触发器），PG 迁移时整文件被等价 PG 脚本替换（决策 6）。该不变式写入 `0004` 文件头注释。
+     - **文件名对 plan 的偏离**：plan §4 T2 写示意名 `0004_fts_title.sql`，实际范围是 title+abstract 二字段，故初定名 `0004_fts_paper.sql`；plan §2 冻结件表本就写通配 `0004_*.sql`，彼时无违约。**T12 执行期二次偏离（controller 裁决，见本条末「T12 执行期号位裁决」）**：T7（`0004_fulltext_asset.sql`，schema v4，独立分支先行开发）占用 `0004` 号位，T12 改取 `0005_fts_paper.sql`（schema v4→v5）。
+     - **方言隔离不变式**：`0001`–`0004`（含 T7 的 `0004_fulltext_asset.sql`）保持方言中性（D-001/D-017）；**`0005` 是唯一允许含 SQLite 专有特性的迁移文件**（虚表 + 触发器），PG 迁移时整文件被等价 PG 脚本替换（决策 6）。该不变式写入 `0005` 文件头注释。
      - **FTS5 模块缺失须响亮**：无 FTS5 编译支持的 SQLite 在 `CREATE VIRTUAL TABLE` 抛 `sqlite3.OperationalError: no such module: fts5`——既有机制已整步回滚，但错误面向用户不可读。T12 须在 `Database._apply` 加一层异常翻译 → `CrawlerError(CONFIG, …)` 并附可操作指引，且有专测（monkeypatch 触发）。
   5. **rebuild 命令形态＝独立顶层命令 `crawler reindex [--check]`**（读/写不混载）：
      - `crawler search QUERY [--limit N] [--venue ID]`：只读检索（T12），经 `repo.search_papers()` 单一查询入口。
@@ -395,16 +394,28 @@ updated: 2026-07-27
      - **何时需要 rebuild**：①分词器变更；②对本库执行过 `VACUUM`（rowid 可能重编号）；③手工 DB 手术/备份回滚后；④`--check` 报不一致时。**日常写路径由触发器维护，不需要定期 rebuild。**
      - **操作注记（登记，非红线）**：对本库执行裸 `VACUUM` 后应跟一次 `crawler reindex`；本项目代码目前不执行 `VACUUM`。
   6. **PG 迁移路径下的 FTS 面替代方案**（把 D-017 决策 4 的一句"可在 PG 侧以 tsvector 等价替换"落成可执行方案，并如实标出不可移植面）：
-     - **结构等价**：`0004` 整文件替换为 `ALTER TABLE paper ADD COLUMN search_tsv tsvector GENERATED ALWAYS AS (to_tsvector('english', coalesce(title,'') || ' ' || coalesce(abstract,''))) STORED;` + `CREATE INDEX … USING GIN(search_tsv);`。两侧"派生索引随源列自动维护"语义同构（SQLite 靠触发器、PG 靠生成列），**应用层零分支**。
+     - **结构等价**：`0005` 整文件替换为 `ALTER TABLE paper ADD COLUMN search_tsv tsvector GENERATED ALWAYS AS (to_tsvector('english', coalesce(title,'') || ' ' || coalesce(abstract,''))) STORED;` + `CREATE INDEX … USING GIN(search_tsv);`。两侧"派生索引随源列自动维护"语义同构（SQLite 靠触发器、PG 靠生成列），**应用层零分支**。
      - **可移植性的真正保障是查询面单点封装**（而非 schema 中性）：全部检索经 `repo.search_papers(expr, *, limit, venue_id)` 唯一入口，方言 SQL 封在该方法内，CLI 只见 `paper_id` + 片段。T12 必须建立该单点，**不得让 `MATCH` 语法散入 CLI 层**。
      - **不可移植面如实入档（不假装等价）**：①**查询语法不等价**——FTS5 `MATCH` 表达式（`NEAR/`、列限定 `title:`、前缀 `*`）与 PG `websearch_to_tsquery`/`plainto_tsquery` 无逐项对应，迁移时**用户可见的查询语法会变**；②**排序不等价**——`bm25()` 与 `ts_rank_cd()` 同族不同实现，同一查询的结果排序不逐位一致（命中集合大体一致）；③词干化实现不同（porter 分词器 vs PG `english` 词典）。三项均为迁移期已知代价，不构成本次否决理由（PG 迁移本身仍是纸面路径，D-001）。
   7. **D-017 决策 4 修订文本**（D-017 原文按 ADR append-only 不改，本条为修订载体）：
-     > D-017 决策 4「推迟到 **Phase 6** 以独立 migration 追加」中的**兑现 Phase 改判为 Phase 7**（T12 落地 `0004_fts_paper.sql`）；Phase 6 未兑现属**承诺落空**、非计划内 defer（见背景）。**D-017 决策 4 的原则部分全部保留并被本决策严格遵守**：①FTS5 不进主 schema——`0001`–`0003` 至今零 FTS 结构，本次以**独立** migration 追加；②主 schema 保持方言中性——SQLite 专有特性全部隔离在 `0004` 单文件内；③PG 侧以 tsvector 等价替换——落地方案见决策 6。
+     > D-017 决策 4「推迟到 **Phase 6** 以独立 migration 追加」中的**兑现 Phase 改判为 Phase 7**（T12 落地 `0005_fts_paper.sql`）；Phase 6 未兑现属**承诺落空**、非计划内 defer（见背景）。**D-017 决策 4 的原则部分全部保留并被本决策严格遵守**：①FTS5 不进主 schema——`0001`–`0003` 至今零 FTS 结构，本次以**独立** migration 追加；②主 schema 保持方言中性——SQLite 专有特性全部隔离在 `0005` 单文件内；③PG 侧以 tsvector 等价替换——落地方案见决策 6。
      - **两处代码注释修订指令（T12 执行；本卡纯设计、零 src 改动）**：
-       - `src/paper_crawler/storage/db.py:6`「Global Constraints §7/§9：ULID 文本主键、UTC 时间戳、方言中性、**不用 FTS5**」→「…方言中性（`0001`–`0003`）；FTS5 限于 `0004_fts_paper.sql` 单文件（D-034 修订 D-017 决策 4）」。
-       - `src/paper_crawler/storage/migrations/0001_init.sql:3`「不建 FTS5（D-017，推迟 Phase 6）」→「**本文件**不建 FTS5（方言中性不变式）；FTS5 虚表由 `0004_fts_paper.sql` 追加（D-034 修订 D-017 决策 4 的兑现 Phase）」。
-- **影响**：schema v3→v4；**T12 承接实现**（`0004_fts_paper.sql` + **`storage/db.py::_iter_statements` 扩展支持 `BEGIN…END` 复合语句 + 其 docstring "不含触发器/复合语句" 一句同步修订 + 切分器新增单测与 `0001`–`0003` 回归锁定** + `repo.search_papers` + `crawler search` + `crawler reindex [--check]`（`--check` 按决策 5 三项）+ `_apply` 的 FTS5 缺失异常翻译 + **触发器 rowid 冲突 `IntegrityError` 的同款翻译**（提示跑 `reindex`）+ 上述两处注释修订）；**T12 工作量较初稿上修**（迁移器机制改动 + 校验命令实质化，非纯 SQL 卡）——若 controller 判其超出 Sonnet 档，本条不反对改派 Opus；[design/06 §2 索引要点](../design/06-data-model.md) 行随本条更新（原文"`paper(title)` 建 FTS5 虚表（标题+摘要检索）"是**未落地的设计声明**，现指向本条并写明表名/范围/迁移号/同步机制）；`0001`–`0003` **迁移文件内容**零改动（切分结果由回归锁定保证逐字不变）；**迁移器机制按上述扩展**（`_iter_statements` 支持 `BEGIN…END`）；本条不新增 AC（T12 的 DoD 在其卡内）。
+       - `src/paper_crawler/storage/db.py:6`「Global Constraints §7/§9：ULID 文本主键、UTC 时间戳、方言中性、**不用 FTS5**」→「…方言中性（`0001`–`0004`）；FTS5 限于 `0005_fts_paper.sql` 单文件（D-034 修订 D-017 决策 4）」。
+       - `src/paper_crawler/storage/migrations/0001_init.sql:3`「不建 FTS5（D-017，推迟 Phase 6）」→「**本文件**不建 FTS5（方言中性不变式）；FTS5 虚表由 `0005_fts_paper.sql` 追加（D-034 修订 D-017 决策 4 的兑现 Phase）」。
+- **影响**：schema v4→v5；**T12 承接实现**（`0005_fts_paper.sql` + **`storage/db.py::_iter_statements` 扩展支持 `BEGIN…END` 复合语句 + 其 docstring "不含触发器/复合语句" 一句同步修订 + 切分器新增单测与 `0001`–`0003` 回归锁定** + `repo.search_papers` + `crawler search` + `crawler reindex [--check]`（`--check` 按决策 5 三项）+ `_apply` 的 FTS5 缺失异常翻译 + **触发器 rowid 冲突 `IntegrityError` 的同款翻译**（提示跑 `reindex`）+ 上述两处注释修订）；**T12 工作量较初稿上修**（迁移器机制改动 + 校验命令实质化，非纯 SQL 卡）——若 controller 判其超出 Sonnet 档，本条不反对改派 Opus；[design/06 §2 索引要点](../design/06-data-model.md) 行随本条更新（原文"`paper(title)` 建 FTS5 虚表（标题+摘要检索）"是**未落地的设计声明**，现指向本条并写明表名/范围/迁移号/同步机制）；`0001`–`0003` **迁移文件内容**零改动（切分结果由回归锁定保证逐字不变）；**迁移器机制按上述扩展**（`_iter_statements` 支持 `BEGIN…END`）；本条不新增 AC（T12 的 DoD 在其卡内）。
 - **落款**：T2（opus）起草，纯设计卡零 src 改动 → **T2 独立审查（opus，含两次实测探针）判 NEEDS_FIX**：六项裁决方向全部正确，问题集中在可执行细节——P0-1（`_iter_statements` 切不了触发器，实测复现）、P1-1（`--check` 检不出目标漂移，实测两种漂移全 PASS）、P1-2（UPDATE/DELETE 触发器写法会复活静默错映射）三项已在本条逐项改口修正（初稿错误断言原文保留痕迹、不抹） → **fable 落章**：`crawler reindex [--check]` 命令形态 **approved**（`--check` 按决策 5 三项补实为前提）。**本条自此生效**，T12 以本条为实现依据（plan §1-7）。
+- **T12 执行期号位裁决（2026-07-27，如实记录，非原初稿内容）**：T12 执行时目录最大号仍为 `0003`（T7 的 `0004_fulltext_asset.sql` 在其独立 worktree 分支开发、尚未合并进 T12 所在工作树），但 T7 号位由 controller 裁决**先行保留**——T12 改取 `0005_fts_paper.sql`（schema v4→v5），不与 T7 抢号。本条正文原写的 `0004`/"schema v3→v4"各处（含两条代码注释修订指令的目标文件名）随本次同笔更新为 `0005`/"schema v4→v5"；`design/06-data-model.md` §2 对应文本同笔更新，理由与范围一致，不再单独立条。`docs/plan/phase7-implementation-plan.md` §2（冻结件表，行 40）/§4（T2 任务卡，行 78；T12 任务卡，行 153）的 `0004_*.sql`/`0004_fts_title.sql` 字面引用**未随本次改动**——该文档§2 自身标注"落盘即冻结，改动须 fable 仲裁"，非本条单方可改，留待 controller 裁定是否一并勘误（T12 报告 NEEDS_DECISION 复述）。`tests/unit/test_migrations.py::LATEST_SCHEMA_VERSION` 在 T12 独立分支内为使本地 `make check` 全绿已先行改为 `5`（本应等 T7 合并后才由 4→5，但 T7 未合并、无法依赖其改动）——与 T7 分支各自独立把该常量从 `3` 改动（T7→4、T12→5）会在合并时于同一行产生常规 git 冲突，手工解为 `5`（终态版本号不变，只是两支各自路径下 `migrate()` 途经的迁移脚本数不同：T12 独立分支内路径为 1→2→3→5，无 0004 文件可应用；合并 T7 后补齐为 1→2→3→4→5）。
+- **rebase 补记（T12 独立审查 NEEDS_FIX 回修批次一并处理）**：T12 分支 rebase 到已合并
+  T7 的 main 后，上述号位裁决尘埃落定——`0004_fulltext_asset.sql`（T7）与 `0005_fts_paper.sql`
+  （T12）依此顺序真实并存，二者 schema 内容零重叠（[design/12 §9.4](../design/12-fulltext-extract.md)
+  「T12（FTS5 落地）——零消费」：D-033 范围＝`fulltext` 行/落盘产物，D-034 范围＝`paper`
+  表 title+abstract，无交集），仅号位曾经竞争；权威 numbering 规则见 design/12 §13
+  风险表 R3/§5.1「本文一律 `000N` 占位，T7 按目录当时最大号 +1 取号（先合者取小号）」
+  （design/12 原文逐字）。`tests/unit/test_migrations.py::LATEST_SCHEMA_VERSION` 的
+  合并冲突按上述预告手工解为 `5`；另有一处"静默转红"（非 git 冲突，两支各自把
+  `test_first_build_skips_backup_of_empty_v0` 的 `.bak` 清单从两项加到三项、文本恰好
+  逐字相同故 git 自动合并，但真实五步迁移链需要四项 `.bak`）已一并手工修正，详见该
+  测试 docstring。design/06 §2/§8 与本文档的正文引用均已核对一致，无遗留"0004"误指。
 
 ## D-035 repec 接入形态：`_ENRICH_SOURCES` 元组扩位 + `SOURCE_PRIORITY` 七位重编号（修订 D-021 决策 3）+ `state/repec/` bulk 快照契约 + 零网络 `enrich_batch`
 

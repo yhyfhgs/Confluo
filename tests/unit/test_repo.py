@@ -17,6 +17,7 @@ from pathlib import Path
 
 import pytest
 
+from paper_crawler.errors import CrawlerError, ErrorClass
 from paper_crawler.storage.db import Database
 from paper_crawler.storage.repo import FetchLogRow, MergeInput, Repo
 from paper_crawler.types import AssetKind, AssetPlan, AuthLevel, IssueRef, PaperStub, VenueSpec
@@ -1176,3 +1177,232 @@ def test_counts_empty_venue(repo: Repo) -> None:
         "assets_planned": 0,
         "assets_fetched": 0,
     }
+
+
+# -- search_papers（FTS5，Phase 7 T12，D-034 决策 6）--------------------------
+
+
+def test_search_papers_matches_title(repo: Repo) -> None:
+    repo.upsert_paper(
+        VENUE_ID, None, _stub(doi="10.9999/s1", title="Deep Learning for Asset Pricing")
+    )
+    repo.upsert_paper(VENUE_ID, None, _stub(doi="10.9999/s2", title="Unrelated Topic"))
+
+    rows = repo.search_papers("pricing")
+
+    assert [r["title"] for r in rows] == ["Deep Learning for Asset Pricing"]
+
+
+def test_search_papers_matches_abstract(repo: Repo) -> None:
+    repo.upsert_paper(
+        VENUE_ID,
+        None,
+        _stub(doi="10.9999/s1", title="Paper One", abstract="We study neural networks."),
+    )
+    repo.upsert_paper(
+        VENUE_ID, None, _stub(doi="10.9999/s2", title="Paper Two", abstract="Unrelated content.")
+    )
+
+    rows = repo.search_papers("neural")
+
+    assert [r["title"] for r in rows] == ["Paper One"]
+
+
+def test_search_papers_no_match_returns_empty(repo: Repo) -> None:
+    repo.upsert_paper(VENUE_ID, None, _stub(doi="10.9999/s1", title="Some Paper"))
+
+    assert repo.search_papers("nonexistentterm") == []
+
+
+def test_search_papers_returns_paper_id_and_fields(repo: Repo) -> None:
+    pid = repo.upsert_paper(
+        VENUE_ID,
+        None,
+        _stub(doi="10.9999/s1", title="Asset Pricing Survey", year=2021, abstract="survey text"),
+    )
+
+    rows = repo.search_papers("survey")
+
+    assert len(rows) == 1
+    assert rows[0]["paper_id"] == pid
+    assert rows[0]["title"] == "Asset Pricing Survey"
+    assert rows[0]["abstract"] == "survey text"
+    assert rows[0]["year"] == 2021
+    assert rows[0]["venue_id"] == VENUE_ID
+
+
+def test_search_papers_respects_limit(repo: Repo) -> None:
+    for i in range(5):
+        repo.upsert_paper(VENUE_ID, None, _stub(doi=f"10.9999/s{i}", title=f"Pricing Paper {i}"))
+
+    rows = repo.search_papers("pricing", limit=2)
+
+    assert len(rows) == 2
+
+
+def test_search_papers_filters_by_venue_id(repo: Repo, venue_dict: dict[str, object]) -> None:
+    other_id = "mock_journal_b"
+    other = VenueSpec(**{**venue_dict, "id": other_id})
+    repo.upsert_venue(other)
+    repo.upsert_paper(VENUE_ID, None, _stub(doi="10.9999/a1", title="Pricing in Venue A"))
+    repo.upsert_paper(other_id, None, _stub(doi="10.9999/b1", title="Pricing in Venue B"))
+
+    rows = repo.search_papers("pricing", venue_id=VENUE_ID)
+
+    assert [r["title"] for r in rows] == ["Pricing in Venue A"]
+
+
+def test_search_papers_reflects_title_update_via_trigger(repo: Repo) -> None:
+    """检索经触发器同步的索引读，非静态回填快照——改标题后立刻能用新词查到。"""
+    pid = repo.upsert_paper(VENUE_ID, None, _stub(doi="10.9999/s1", title="Original Title"))
+    repo.db.execute("UPDATE paper SET title = ? WHERE id = ?", ("Renamed Title", pid))
+
+    assert [r["paper_id"] for r in repo.search_papers("renamed")] == [pid]
+    assert repo.search_papers("original") == []
+
+
+# -- check_fts_consistency / reindex_fts（`crawler reindex [--check]`，D-034 决策 5）--
+
+
+def test_check_fts_consistency_ok_when_in_sync(repo: Repo) -> None:
+    repo.upsert_paper(VENUE_ID, None, _stub(doi="10.9999/s1", title="Paper One"))
+    repo.upsert_paper(VENUE_ID, None, _stub(doi="10.9999/s2", title="Paper Two"))
+
+    report = repo.check_fts_consistency()
+
+    assert report.ok is True
+    assert report.paper_count == 2
+    assert report.fts_count == 2
+    assert report.missing_ids == ()
+    assert report.orphan_ids == ()
+    assert report.duplicate_ids == ()
+    assert report.integrity_check_ok is True
+
+
+def test_check_fts_consistency_empty_library_is_ok(repo: Repo) -> None:
+    report = repo.check_fts_consistency()
+    assert report.ok is True
+    assert report.paper_count == 0
+    assert report.fts_count == 0
+
+
+def test_check_fts_consistency_detects_missing_index(repo: Repo) -> None:
+    """`paper` 有行、`paper_fts` 无对应行（漏索引）——直接删 paper_fts 侧模拟漂移。"""
+    pid = repo.upsert_paper(VENUE_ID, None, _stub(doi="10.9999/s1", title="Paper One"))
+    repo.db.execute("DELETE FROM paper_fts WHERE paper_id = ?", (pid,))
+
+    report = repo.check_fts_consistency()
+
+    assert report.ok is False
+    assert report.missing_ids == (pid,)
+    assert report.orphan_ids == ()
+
+
+def test_check_fts_consistency_detects_orphan_row(repo: Repo) -> None:
+    """`paper_fts` 有行、`paper` 无对应行（孤儿行）——直接插入不对应真实 paper 的行。"""
+    repo.db.execute(
+        "INSERT INTO paper_fts(rowid, paper_id, title, abstract) VALUES (999, 'ghost', 'x', '')"
+    )
+
+    report = repo.check_fts_consistency()
+
+    assert report.ok is False
+    assert report.orphan_ids == ("ghost",)
+    assert report.missing_ids == ()
+
+
+def test_check_fts_consistency_detects_duplicate_paper_id(repo: Repo) -> None:
+    """同一 `paper_id` 在 `paper_fts` 内出现两行——正常写路径不产生，人工制造以验证检出。"""
+    pid = repo.upsert_paper(VENUE_ID, None, _stub(doi="10.9999/s1", title="Paper One"))
+    repo.db.execute(
+        "INSERT INTO paper_fts(rowid, paper_id, title, abstract) VALUES (12345, ?, 'dup', '')",
+        (pid,),
+    )
+
+    report = repo.check_fts_consistency()
+
+    assert report.ok is False
+    assert report.duplicate_ids == (pid,)
+
+
+def test_check_fts_consistency_sample_limit_truncates(repo: Repo) -> None:
+    for i in range(3):
+        pid = repo.upsert_paper(VENUE_ID, None, _stub(doi=f"10.9999/s{i}", title=f"Paper {i}"))
+        repo.db.execute("DELETE FROM paper_fts WHERE paper_id = ?", (pid,))
+
+    report = repo.check_fts_consistency(sample_limit=2)
+
+    assert len(report.missing_ids) == 2  # 样本截断，非全量
+
+
+def test_check_fts_consistency_detects_failed_integrity_check(
+    repo: Repo, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """FTS5 `integrity-check` 本身失败（倒排索引与其自持 content 不自洽，如磁盘级
+    损坏）——真实损坏难以在测试环境人为构造，经 monkeypatch 拦截该特定命令模拟失败，
+    验证 `check_fts_consistency` 正确捕获并回报 `integrity_check_ok=False`（同
+    D-034 决策 4 对"FTS5 缺失模块"的验证手法：目标环境无法直接复现，改为定点模拟）。
+    """
+    repo.upsert_paper(VENUE_ID, None, _stub(doi="10.9999/s1", title="Paper One"))
+
+    real_execute = Database.execute
+
+    def _fake_execute(self: Database, sql: str, params: tuple[object, ...] = ()) -> None:
+        if "integrity-check" in sql:
+            raise sqlite3.DatabaseError("database disk image is malformed")
+        real_execute(self, sql, params)
+
+    monkeypatch.setattr(Database, "execute", _fake_execute)
+
+    report = repo.check_fts_consistency()
+
+    assert report.integrity_check_ok is False
+    assert "malformed" in (report.integrity_check_error or "")
+    assert report.ok is False
+
+
+def test_reindex_fts_rebuilds_from_paper_table(repo: Repo) -> None:
+    repo.upsert_paper(VENUE_ID, None, _stub(doi="10.9999/s1", title="Paper One"))
+    repo.upsert_paper(VENUE_ID, None, _stub(doi="10.9999/s2", title="Paper Two"))
+    # 人为破坏索引（孤儿行 + 漏索引），验证 reindex 能从 paper 表如实重建。
+    repo.db.execute(
+        "INSERT INTO paper_fts(rowid, paper_id, title, abstract) VALUES (999, 'ghost', 'x', '')"
+    )
+
+    count = repo.reindex_fts()
+
+    assert count == 2
+    assert repo.check_fts_consistency().ok is True
+
+
+def test_reindex_fts_is_idempotent(repo: Repo) -> None:
+    repo.upsert_paper(VENUE_ID, None, _stub(doi="10.9999/s1", title="Paper One"))
+
+    assert repo.reindex_fts() == 1
+    assert repo.reindex_fts() == 1  # 二次调用同样结果，无报错
+
+
+def test_reindex_fts_recovers_after_rowid_collision(repo: Repo) -> None:
+    """完整叙事：模拟 rowid 漂移（ghost 行占位）→ 正常写路径撞车、响亮失败（须先跑
+    `reindex`）→ `reindex_fts()` 清空重建 → 原先失败的写路径重试后成功。
+    """
+    # paper 表当前为空，故新 paper 的首行会被 SQLite 自动分配 rowid=1——预先在
+    # paper_fts 里放一个占用 rowid=1 的 ghost 行，模拟"VACUUM 重编号后遗留漂移"。
+    repo.db.execute(
+        "INSERT INTO paper_fts(rowid, paper_id, title, abstract) VALUES (1, 'ghost', 'x', '')"
+    )
+
+    with pytest.raises(CrawlerError) as exc_info:
+        repo.upsert_paper(VENUE_ID, None, _stub(doi="10.9999/s1", title="Real Paper"))
+    assert exc_info.value.error_class == ErrorClass.CONFIG
+    assert "reindex" in str(exc_info.value)
+    # 写入连同触发器整体回滚——paper 侧也没有半成品行。
+    assert repo.db.query("SELECT 1 AS x FROM paper") == []
+
+    count = repo.reindex_fts()
+    assert count == 0  # paper 为空，重建后 paper_fts 也应清空（ghost 行被清除）
+
+    # 恢复后，原先失败的写路径重试即成功。
+    pid = repo.upsert_paper(VENUE_ID, None, _stub(doi="10.9999/s1", title="Real Paper"))
+    assert repo.check_fts_consistency().ok is True
+    assert [r["paper_id"] for r in repo.search_papers("real")] == [pid]

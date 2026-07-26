@@ -111,7 +111,7 @@ from paper_crawler.preprint_report import build_preprint_report, render_preprint
 from paper_crawler.ratelimit import RateLimiter
 from paper_crawler.registry import VenueRegistry
 from paper_crawler.storage.db import Database
-from paper_crawler.storage.repo import Repo, SubscriptionRepo
+from paper_crawler.storage.repo import FtsCheckReport, Repo, SubscriptionRepo
 from paper_crawler.subs.report import render_daily
 from paper_crawler.subs.types import RunSummary
 from paper_crawler.subs.watch import (
@@ -1419,6 +1419,108 @@ def verify(home: HomeOpt = None, verbose: VerboseOpt = False) -> None:
             typer.echo("verify: 一致，未发现问题。")
             exit_code = 0
     raise typer.Exit(code=exit_code)
+
+
+# -- search / reindex（FTS5，Phase 7 T12；权威决策 D-034）-----------------------------
+#
+# `search` 是纯只读检索、`reindex` 是维护性重建（含 `--check` 只读校验子模式）——两个
+# 独立顶层命令（D-034 决策 5，否决 `search --rebuild` 读写混一形态）；均经
+# `repo.search_papers()`/`repo.check_fts_consistency()`/`repo.reindex_fts()` 单点封装，
+# 本节只做 CLI 接线（渲染 + 退出码），不得让 `MATCH` 语法散入本层。
+
+
+def _print_search_results(rows: list[sqlite3.Row]) -> None:
+    table_rows = [
+        [
+            str(r["paper_id"]),
+            str(r["title"]),
+            str(r["year"]) if r["year"] is not None else "-",
+            str(r["venue_id"]) if r["venue_id"] is not None else "-",
+        ]
+        for r in rows
+    ]
+    typer.echo(_render_table(["paper_id", "title", "year", "venue_id"], table_rows))
+
+
+@app.command()
+def search(
+    query: Annotated[str, typer.Argument(help="FTS5 MATCH 查询表达式（检索 title+abstract）")],
+    limit: Annotated[int, typer.Option("--limit", help="返回条数上限")] = 20,
+    venue: Annotated[str | None, typer.Option("--venue", help="仅在该 venue 内检索")] = None,
+    home: HomeOpt = None,
+    verbose: VerboseOpt = False,
+) -> None:
+    """FTS5 全文检索（D-034）：仅覆盖 `title`+`abstract` 二字段（正文/向量索引 defer），
+    经 `repo.search_papers()` 单一查询入口。`query` 是完整 FTS5 `MATCH` 语法（含
+    `NEAR/`、列限定 `title:`、前缀 `*`），原样传递、不做额外校验。
+
+    退出码：0=成功（含零命中）；2=未知 `--venue` 或 `query` 语法错误（FTS5 拒绝解析）。
+    """
+    with _env(home, verbose) as env:
+        if venue is not None:
+            _require_known_venue(env, venue)
+        try:
+            rows = env.ctx.repo.search_papers(query, limit=limit, venue_id=venue)
+        except sqlite3.OperationalError as exc:
+            _usage_error(f"检索表达式无效：{exc}")
+        if not rows:
+            typer.echo("无匹配结果。")
+            raise typer.Exit(code=0)
+        _print_search_results(rows)
+    raise typer.Exit(code=0)
+
+
+def _print_fts_check_report(report: FtsCheckReport) -> None:
+    typer.echo(f"paper 行数: {report.paper_count}  paper_fts 行数: {report.fts_count}")
+    if report.missing_ids:
+        typer.echo(
+            f"漏索引样本（paper 有、paper_fts 无）: {len(report.missing_ids)} 条 -> "
+            + ", ".join(report.missing_ids)
+        )
+    if report.orphan_ids:
+        typer.echo(
+            f"孤儿行样本（paper_fts 有、paper 无）: {len(report.orphan_ids)} 条 -> "
+            + ", ".join(report.orphan_ids)
+        )
+    if report.duplicate_ids:
+        typer.echo(
+            f"重复索引样本（同 paper_id 多行）: {len(report.duplicate_ids)} 条 -> "
+            + ", ".join(report.duplicate_ids)
+        )
+    if report.integrity_check_ok:
+        typer.echo("integrity-check: PASS")
+    else:
+        typer.echo(f"integrity-check: FAIL -> {report.integrity_check_error}")
+    if report.ok:
+        typer.echo("reindex --check: 一致，未发现问题。")
+    else:
+        typer.echo("reindex --check: 发现不一致，请跑 `crawler reindex` 修复。")
+
+
+@app.command()
+def reindex(
+    check: Annotated[
+        bool, typer.Option("--check", help="只读一致性校验（不重建），三项并跑（D-034 决策 5）")
+    ] = False,
+    home: HomeOpt = None,
+    verbose: VerboseOpt = False,
+) -> None:
+    """`paper_fts` 全表重灌（D-034 决策 5）：默认执行重建（单事务、幂等）；`--check`
+    仅只读一致性校验、不写。日常写路径由触发器维护，仅分词器变更/对本库执行过
+    `VACUUM`/手工 DB 手术/`--check` 报不一致时才需要调用。
+
+    退出码：`--check` 时 0=一致 / 1=发现不一致（同 `verify` 的既有惯例）；非 `--check`
+    时恒 0（重建动作本身不是"发现问题"判据）。
+    """
+    with _env(home, verbose) as env:
+        repo = env.ctx.repo
+        if check:
+            report = repo.check_fts_consistency()
+            _print_fts_check_report(report)
+            raise typer.Exit(code=0 if report.ok else 1)
+        count = repo.reindex_fts()
+        typer.echo(f"reindex 完成：重建 {count} 行。")
+    raise typer.Exit(code=0)
 
 
 # -- oa-report ------------------------------------------------------------------

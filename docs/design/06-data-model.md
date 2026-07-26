@@ -169,12 +169,7 @@ CREATE TABLE subscription_run (
 索引要点：`identifier(scheme,value)` 主键即索引；`asset(state)`、`task(state, kind)` 部分索引服务调度查询；
 **全文检索索引见下**。
 
-> **迁移号顺延注记（P7-T7 合并期）**：本小节下文的 `schema v4 / 0004_fts_paper.sql` 应读作
-> **`schema v5 / 0005_fts_paper.sql`** —— T7（D-033 fulltext asset 级幂等键）先行占用 0004，按
-> [D-033 R3](../plan/decision-log.md)「先合者取小号」；**正文引用由 T12 落地时全面更新**，此注记
-> 只为消除 T12 合并前的双 0004 误导窗。
-
-**FTS5 检索索引（schema v4 / `0004_fts_paper.sql`；权威决策 [D-034](../plan/decision-log.md)）**——本节原文
+**FTS5 检索索引（schema v5 / `0005_fts_paper.sql`；权威决策 [D-034](../plan/decision-log.md)）**——本节原文
 曾写「`paper(title)` 建 FTS5 虚表（标题+摘要检索）」，那是**未落地的设计声明**：D-017 决策 4 把它推迟到
 Phase 6，Phase 6 关账时未兑现（该 Phase 的搜索面全部落在订阅 DSL 的本地过滤谓词上），D-034 如实记债后把
 兑现 Phase 改判 Phase 7 T12。落地形态：
@@ -187,7 +182,7 @@ Phase 6，Phase 6 关账时未兑现（该 Phase 的搜索面全部落在订阅 
 - **范围**：`title` + `abstract` **二字段**。**全文正文索引与向量索引 defer**（phase7-plan §8：正文索引等
   抽取产物规模实测后于 P8 评估经济性；向量索引无消费场景 + 引重依赖）——故 `fulltext.text_path` 指向的
   正文**不入库、不入索引**，`fulltext` 表语义不变。
-- **同步**：`0004` 内三触发器（`AFTER INSERT` / `AFTER UPDATE OF title, abstract` / `AFTER DELETE` ON
+- **同步**：`0005` 内三触发器（`AFTER INSERT` / `AFTER UPDATE OF title, abstract` / `AFTER DELETE` ON
   `paper`），FTS 行 rowid 显式绑 `paper.rowid`。触发器而非应用层同步——写 `paper` 的路径不止一处且仍在
   增长，漏一处即索引静默漂移。**两条不变式（D-034 决策 3 写死 SQL）**：①`paper_id` 每次写入同写 `new.id`、
   UPDATE 取 DELETE+INSERT 形态（写成 `UPDATE … SET title=…WHERE rowid=` 会在 rowid 重编号后复活静默错
@@ -195,8 +190,9 @@ Phase 6，Phase 6 关账时未兑现（该 Phase 的搜索面全部落在订阅 
   DELETE 落空 → 后续 INSERT 撞占用 rowid 抛 `IntegrityError`＝**写入响亮失败+回滚**，须 `crawler reindex`
   恢复写路径，T12 须把该异常同款翻译为可操作 `CrawlerError`）。**迁移器须先扩展**：`db.py::_iter_statements` 现逐 `;` 断句、切不了
   `BEGIN…END` 触发器（实测复现），T12 范围内含该扩展。
-- **方言隔离**：`0001`–`0003` 保持方言中性（§6/D-001 不变）；`0004` 是**唯一**允许含 SQLite 专有特性的
-  迁移文件，PG 迁移时整文件替换为 `tsvector` 生成列 + GIN 索引（等价性与**不可移植面**——查询语法、
+- **方言隔离**：`0001`–`0004`（含 T7 的 `0004_fulltext_asset.sql`）保持方言中性（§6/D-001 不变）；
+  `0005` 是**唯一**允许含 SQLite 专有特性的迁移文件，PG 迁移时整文件替换为 `tsvector` 生成列 +
+  GIN 索引（等价性与**不可移植面**——查询语法、
   排序函数、词干化实现三项不等价——见 D-034 决策 6）。检索一律经 `repo.search_papers()` 单点封装。
 - **维护**：`crawler reindex`（全表重灌，单事务幂等）；`--check` ＝**只读一致性校验三项并跑**——`paper` ⟂
   `paper_fts` **双向差集**（漏索引 / 孤儿行）+ **行数与同 `paper_id` 多行**校验 + FTS5 `integrity-check`。
@@ -260,6 +256,7 @@ data/
 
 | # | 日期 | 修订 | 依据 |
 |---|---|---|---|
+| 5 | 2026-07-27 | **纯号位勘误（非设计变更）**：T12 落地时 T7（`0004_fulltext_asset.sql`，schema v4，独立分支开发）已先占用 `0004` 号位（尚未合并入 T12 工作树，但该号位经 controller 裁决先行保留）——本节 FTS5 小节（第 3 条修订引入）全部"`0004`"/"schema v4"文本引用改为"`0005`"/"schema v5"（`0005_fts_paper.sql`）。表定义/实体语义/触发器 SQL 均无变化，纯迁移文件编号调整，故 status 保持 `implemented`。 | [D-034](../plan/decision-log.md)「T12 执行期号位裁决」附记；Phase 7 T12（FTS5 落地任务卡） |
 | 4 | 2026-07-27 | **纯注记（非设计变更）**：§3 preprint_of 建边段补充"Crossref/OpenAlex 的 preprint 关系字段"与"SSRN→DOI 提示"两类线索的实况核验结果——产出侧（对应 adapter 解析能力）当前未实现，消费通道（`storage/repo.py::_apply_preprint_clues`）已预留、可插拔；产出侧补齐挂 P8 评估。不改动 §3 既有设计文字，只补实况差距如实记录。 | Phase 7 T10（preprint_of 建边引擎实现）独立审查 P2-2；[phase7-implementation-plan.md §4 T10](../plan/phase7-implementation-plan.md) |
 | 3 | 2026-07-27 | **FTS5 索引要点落地化（设计声明→冻结形态）**：§2 索引要点行由一句「`paper(title)` 建 FTS5 虚表（标题+摘要检索）」展开为 FTS5 索引小节——表形态（content-owning `paper_fts`，附 external-content/contentless 的否决理由）、范围（title+abstract，正文与向量索引 defer）、触发器同步、`0004` 方言隔离不变式与 PG 替代方案指针、`crawler reindex` 维护面。**同批如实记债**：原句是 D-017 决策 4 推迟到 Phase 6 而 Phase 6 未兑现的悬空声明。§2 表定义与实体语义零变更（FTS 虚表是 `paper` 的派生索引、不引入新实体），故 status 保持 `implemented`。 | [D-034](../plan/decision-log.md)（T2 卡产出，独立审查 NEEDS_FIX→修复→fable 落章生效）；[phase7-implementation-plan §2/§4 T2/§8](../plan/phase7-implementation-plan.md)；D-017 决策 4 |
 | 2 | 2026-07-26 | **实现级演进（AC-3.4 顺序无关修复）**：§2 新增 `paper_weak_key` 表（schema v3 / `0003_paper_weak_key.sql`，纯附加、方言中性、Python 步回填存量键）+ `paper_relation` 的 candidate_duplicate 无序对语义注记；§3 补齐字段级收敛的第③条（同源二次观测确定性 tie-break + `meta_json._field_tie` 取证）与弱信号匹配键改为观测级键集合（含漏标代价如实记）。实体模型语义不变（新表是弱信号匹配面的倒排索引，不引入新实体），故 status 保持 `implemented`。 | Phase 6 F1（[phase6-implementation-plan §4 F1](../plan/phase6-implementation-plan.md)）；缺陷台账 [post-phase5-audit §3 P1-1 + P3「同源二次观测异值先到胜」](../reports/2026-07-24-post-phase5-audit.md)；**[D-031](../plan/decision-log.md) 已落（2026-07-26）**（decision-log 补记后本行补链接） |
