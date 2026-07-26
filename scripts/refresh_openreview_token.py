@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """OpenReview accessToken 自动刷新（openreview.md §3 token 通道的运维工具）。
 
-读取 `~/.paper-crawler/config.toml`（或 $PAPER_CRAWLER_HOME/config.toml）的
+读取 `$PAPER_CRAWLER_HOME/config.toml`（未设 env 时 `~/.paper-crawler/config.toml`）的
 `[auth.openreview]` 节里的 `username` / `password`，调用官方登录端点换取新
 accessToken，**行级**写回同文件的 `token` 字段（保留文件其余内容与注释原样）。
 
@@ -10,7 +10,8 @@ accessToken，**行级**写回同文件的 `token` 字段（保留文件其余�
 - 请求经 `urllib`（进程内存直发）——凭证不进命令行参数（`ps` 不可见）、
   不进环境变量、不进 shell history（对比 `curl -d '{"password":...}'` 的泄漏面）；
 - 写回采用临时文件 + `os.replace` 原子替换，完成后强制 `chmod 600`；
-- 配置文件在家目录、仓库之外，永不入 git；本脚本自身不含任何凭证，可入 git。
+- 配置文件在 config-home（D-032 起默认位于仓库根 `.paper-crawler/`，.gitignore
+  整目录强制忽略），永不入 git；本脚本自身不含任何凭证，可入 git。
 - 登录端点是 OpenReview OpenAPI 定义的官方鉴权路径（非绕过）；默认每小时
   刷新一次（launchd），登录频率远低于站点限流（60 req/60s），礼貌无扰。
 
@@ -204,6 +205,8 @@ def _install_launchd(script_path: Path, home: Path) -> None:
   <array>
     <string>{sys.executable}</string>
     <string>{script_path}</string>
+    <string>--home</string>
+    <string>{home}</string>
   </array>
   <key>StartInterval</key><integer>3600</integer>
   <key>RunAtLoad</key><true/>

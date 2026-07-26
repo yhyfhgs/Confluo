@@ -382,13 +382,13 @@ def test_project_layer_missing_silently_skipped(isolated_cwd: Path, tmp_path: Pa
 def test_project_sensitive_key_rejects_startup(
     isolated_cwd: Path, tmp_path: Path, toml_body: str
 ) -> None:
-    """项目级 ./paper-crawler.toml 敏感键形态 → CrawlerError(CONFIG) 拒启动（指引挪家目录/env）。"""
+    """项目级 ./paper-crawler.toml 敏感键形态 → CrawlerError(CONFIG) 拒启动（挪 config-home）。"""
     _write(isolated_cwd / "paper-crawler.toml", toml_body)
     with pytest.raises(CrawlerError) as exc:
         Config.load(home=tmp_path / "home")
     assert exc.value.error_class is ErrorClass.CONFIG
     assert "敏感键" in str(exc.value)
-    assert "家目录" in str(exc.value)  # 指引文案
+    assert "config-home" in str(exc.value)  # 指引文案（D-032 措辞）
 
 
 def test_project_nonsensitive_keys_pass_including_email(isolated_cwd: Path, tmp_path: Path) -> None:

@@ -465,10 +465,24 @@ def test_default_user_agent_placeholder_when_env_unset(monkeypatch: pytest.Monke
     assert ".invalid" in _default_user_agent()
 
 
-def test_resolve_state_path_defaults_under_home_when_not_configured() -> None:
+def test_resolve_state_path_defaults_under_home_when_not_configured(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.delenv("PAPER_CRAWLER_HOME", raising=False)  # 宿主 env 隔离（D-032 后常驻）
     adapter = OpenAlexAdapter()
     path = adapter._resolve_state_path()
     assert path == Path.home() / ".paper-crawler" / "state" / "openalex-budget.json"
+
+
+def test_resolve_state_path_honors_env_home(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    # D-032：config-home 迁入仓库后 env 是主指向机制——兜底路径必须尊重之，否则
+    # 脱离 CLI 装配的调用方会静默回落、重建空的 ~/.paper-crawler。
+    monkeypatch.setenv("PAPER_CRAWLER_HOME", str(tmp_path / "repo-home"))
+    adapter = OpenAlexAdapter()
+    path = adapter._resolve_state_path()
+    assert path == tmp_path / "repo-home" / "state" / "openalex-budget.json"
 
 
 def test_configure_budget_overrides_state_path_and_budget() -> None:

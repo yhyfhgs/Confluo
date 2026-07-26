@@ -45,6 +45,7 @@ from urllib.parse import quote_plus, urlencode
 
 from paper_crawler.adapter import AdapterBase, AdapterFamily
 from paper_crawler.adapters.openalex import budget, parse
+from paper_crawler.config import resolve_home
 from paper_crawler.errors import CrawlerError, ErrorClass
 from paper_crawler.http import HttpClient
 from paper_crawler.obslog import log_event
@@ -167,8 +168,9 @@ class OpenAlexAdapter(AdapterBase):
         """注入每日预算上限与状态文件路径（CLI 装配期传入 `Config` 值）。
 
         未调用本方法时使用保守默认（`_DEFAULT_DAILY_BUDGET_USD` + 惰性默认状态路径
-        `~/.paper-crawler/state/openalex-budget.json`，同 `Config.load` 的默认 home
-        兜底口径），使本 adapter 脱离 CLI 装配也可独立构造使用（单测/未来其它调用方）。
+        `<config-home>/state/openalex-budget.json`，经 `config.resolve_home()` 解析——
+        与 `Config.load` 的 home 链单一同源、尊重 `$PAPER_CRAWLER_HOME`，D-032），使本
+        adapter 脱离 CLI 装配也可独立构造使用（单测/未来其它调用方）。
         """
         self._daily_budget_usd = daily_budget_usd
         self._state_path = state_path
@@ -181,7 +183,7 @@ class OpenAlexAdapter(AdapterBase):
     def _resolve_state_path(self) -> Path:
         if self._state_path is not None:
             return self._state_path
-        return Path.home().joinpath(".paper-crawler", *_STATE_SUBPATH)
+        return resolve_home().joinpath(*_STATE_SUBPATH)
 
     # -- enrich_batch（duck-typed EnrichmentSource；真实网络）------------------------------------
 

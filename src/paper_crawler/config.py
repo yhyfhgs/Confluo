@@ -8,15 +8,15 @@ kill-9 子进程测试依赖 `PAPER_CRAWLER_HOME` 隔离。
 
 1. `env`（`PAPER_CRAWLER_*` / 各 `[auth.*]` env 覆盖）      ← 最高（CI/临时会话不落盘凭证）
 2. 项目级 `./paper-crawler.toml`（**仅非敏感键**）           ← 本机工作区层（路径/限速/venue 目录）
-3. config-home `config.toml`（`$PAPER_CRAWLER_HOME` 或 `~/.paper-crawler`）  ← 家目录，可含敏感槽
+3. config-home `config.toml`（`$PAPER_CRAWLER_HOME` 或 `~/.paper-crawler`）  ← git 外，可含敏感槽
 4. 内置默认（`Config` dataclass 字段默认值）                ← 兜底
 
 - **既有优先级保持**：home 解析（显式 home > `$PAPER_CRAWLER_HOME` > `~/.paper-crawler`）与
-  既有家目录 `config.toml` 读取语义**逐字段不变**；项目级 `./paper-crawler.toml` 为**新增
+  既有 config-home `config.toml` 读取语义**逐字段不变**；项目级 `./paper-crawler.toml` 为**新增
   非敏感层**，插在 env 与 home 之间，纯附加——无项目级文件 + 无新 env 时结果与旧版逐字段一致。
 - **项目级定位**：自 `cwd` 起向上查 `paper-crawler.toml`（仓库根惯例），首个命中即读；缺失静默跳过。
 - **敏感键防误提交护栏**（§3.1）：项目级文件（易随 `git add .` 误提交）出现敏感键形态 →
-  `CrawlerError(CONFIG)` **拒启动**，指引挪至家目录/env。敏感键正则与 obslog 脱敏键**单一同源**
+  `CrawlerError(CONFIG)` **拒启动**，指引挪至 config-home。敏感键正则与 obslog 脱敏键**单一同源**
   （`sensitive.CONFIG_GUARD_KEY_PATTERN`，防两套清单漂移）。
 
 `describe_config()` 暴露分层解析中间态（每键生效值 + winning 来源层 + 敏感标记）供
@@ -75,6 +75,17 @@ def _resolve_home(home: Path | None) -> tuple[Path, str]:
     if env_home := os.environ.get("PAPER_CRAWLER_HOME"):
         return Path(env_home).expanduser(), "env"
     return (Path.home() / ".paper-crawler").expanduser(), "default"
+
+
+def resolve_home(home: Path | None = None) -> Path:
+    """解析 config-home（显式 home > `$PAPER_CRAWLER_HOME` > `~/.paper-crawler`）。
+
+    供 CLI 装配之外的兜底路径复用（如 openalex 预算 state 的惰性默认），与
+    `Config.load` 的 home 解析**单一同源**。D-032（config-home 迁入仓库、env 为主
+    指向机制）后，任何绕过 env 的 `Path.home()` 硬编码兜底都会静默回落到空的
+    `~/.paper-crawler`——新兜底路径一律经本函数解析。
+    """
+    return _resolve_home(home)[0]
 
 
 def _find_project_config(start: Path) -> Path | None:
@@ -142,7 +153,7 @@ def _guard_project_config(project_doc: dict[str, object]) -> None:
         raise CrawlerError(
             ErrorClass.CONFIG,
             f"项目级 ./paper-crawler.toml 含敏感键 {hit}；凭证禁入项目文件（易误提交）——"
-            "挪至家目录 config.toml（$PAPER_CRAWLER_HOME，仓库外）或环境变量 PAPER_CRAWLER_*",
+            "挪至 config-home config.toml（$PAPER_CRAWLER_HOME）或环境变量 PAPER_CRAWLER_*",
             detail=hit,
         )
 
@@ -405,11 +416,11 @@ class Config:
     # 通道）：CLI 装配期据此为 openreview adapter 构造携 `Cookie: openreview.accessToken=`
     # 附加头的**专属** client（绝不复用共享 client——cookie 外泄他站属凭证红线）。缺省
     # None → 匿名（groups/healthcheck 可用，notes/pdf 会 403→auth_expired→BLOCKED）。
-    # 家目录 config（仓库外，不入 git）；空白串归一为 None。**不入日志/报告**（obslog redact
+    # config-home（不入 git，D-032）；空白串归一为 None。**不入日志/报告**（obslog redact
     # 覆盖 cookie/token 形态）——故本字段绝不经 log_event 落盘。
     openreview_token: str | None = None
     # T6（design/adapters/aggregators.md §5.3/§5.4）：openalex/s2 的可选 API key，沿
-    # openreview_token 先例——家目录 config（仓库外）+ 环境变量覆盖，空白串归一为 None，
+    # openreview_token 先例——config-home config.toml + 环境变量覆盖，空白串归一为 None，
     # 不入日志/报告（obslog redact 覆盖 api_key/token 形态）。openalex key **可选**
     # （匿名请求现状 [LIVE] 200，有 key 只是提升每日 credit 额度）；s2 key **生产必需**
     # （无 key `enrich_batch` 直接 CONFIG，不发请求，D2）。
@@ -417,7 +428,7 @@ class Config:
     s2_api_key: str | None = None
     # Phase 4（auth-framework §3.4 / D-023 两级凭证模型①类简单串；D-025 config 归集）：
     # elsevier `X-ELS-APIKey`(+`X-ELS-Insttoken`) 与 wiley TDM `Wiley-TDM-Client-Token`
-    # 走 `[auth.elsevier]`/`[auth.wiley]` Config-slot（家目录 config 仓库外 + env 覆盖，空白
+    # 走 `[auth.elsevier]`/`[auth.wiley]` Config-slot（config-home config.toml + env 覆盖，空白
     # 归一 None，obslog redact 覆盖）——**不触 AES-GCM/keyring**（纯 API 路径无 storage_state）。
     # 不入日志/报告。env：PAPER_CRAWLER_ELSEVIER_API_KEY / _ELSEVIER_INSTTOKEN / _WILEY_TDM_TOKEN。
     elsevier_api_key: str | None = None
