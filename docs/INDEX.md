@@ -119,6 +119,7 @@
 | [process/git-workflow.md](process/git-workflow.md) | Git 工作流程 | approved | 2026-07-20 |
 | [process/status-workflow.md](process/status-workflow.md) | 双状态机流程 | approved | 2026-07-20 |
 | [process/doc-conventions.md](process/doc-conventions.md) | 文档写作与目录规范 | approved | 2026-07-20 |
+| [process/online-budget.md](process/online-budget.md) | 在线预算共享行记账规范（`scripts/budget_ledger.py` 用法 + phase6-report 事件⑤处置，Phase 7 T4） | approved | 2026-07-27 |
 
 ## research/ — 调研归档
 
