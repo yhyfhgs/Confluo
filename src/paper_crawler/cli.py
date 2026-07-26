@@ -104,6 +104,7 @@ from paper_crawler.ids import normalize_doi
 from paper_crawler.merge import MergeEngine
 from paper_crawler.obslog import log_event, redact, setup_logging
 from paper_crawler.pipeline import PipelineRunner, RunReport, Selector, StageContext
+from paper_crawler.pipeline.cooldown_cli import cooldown_app
 from paper_crawler.ratelimit import RateLimiter
 from paper_crawler.registry import VenueRegistry
 from paper_crawler.storage.db import Database
@@ -488,6 +489,9 @@ app.add_typer(config_app, name="config")
 # T1b（auth-framework §1/§4）：auth 子命令组（login/status/logout）——实现与纯逻辑
 # 在 `auth/cli.py` + `auth/manager.py`，此处只挂载（既有分工：cli.py 仅接线）。
 app.add_typer(auth_app, name="auth")
+# E-2（检查单 #7 / D-030 裁决点④）：cooldown 子命令组（status/clear）——实现与纯逻辑
+# 在 `pipeline/cooldown_cli.py` + `pipeline/cooldown.py`，此处只挂载（同 auth 分工）。
+app.add_typer(cooldown_app, name="cooldown")
 
 
 # -- venues -------------------------------------------------------------------

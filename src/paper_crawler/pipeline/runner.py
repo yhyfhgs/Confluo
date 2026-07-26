@@ -50,18 +50,16 @@ runner 启动（`__init__`）：`config.ensure_dirs()` + `cleanup_tmp(data/tmp)`
 
 from __future__ import annotations
 
-import contextlib
 import json
 import sqlite3
 from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import UTC, date, datetime, timedelta
-from pathlib import Path
 from typing import Any
-from urllib.parse import urlsplit
 
 from paper_crawler.errors import RETRY_TABLE, CrawlerError, ErrorClass, RetrySpec
 from paper_crawler.obslog import log_event
+from paper_crawler.pipeline import cooldown
 from paper_crawler.pipeline.fetchio import cleanup_tmp
 from paper_crawler.pipeline.report import RunReport
 from paper_crawler.pipeline.stages import (
@@ -84,7 +82,7 @@ _DEFAULT_AUTH_WORK_HOURS = "8-23"  # §8.6 本地工作时段窗
 _DEFAULT_AUTH_DAILY_CAP = 200  # §8.3 日配额（fetch 尝试篇次）
 _DEFAULT_AUTH_HEALTH_INTERVAL = 20  # §8.2 每 N 篇强制 healthcheck
 _DEFAULT_AUTH_HEALTH_MAX_AGE_S = 900.0  # §8.2 健康门老化（15 min）
-_CHALLENGE_COOLDOWN = timedelta(hours=24)  # §8.4 平台冷却
+# §8.4 平台冷却窗口 = `cooldown.CHALLENGE_COOLDOWN`（E-2 抽为 pipeline/cooldown.py 公用模块）。
 
 
 @dataclass
@@ -572,9 +570,11 @@ class PipelineRunner:
         )
 
     # -- challenge 冷却（§8.4；跨运行持久化在 config-home；键粒度见 `_cooldown_keys`）----
-
-    def _cooldown_path(self, key: str) -> Path:
-        return self.ctx.config.home / "state" / "cooldown" / f"{key}.json"
+    #
+    # E-2（检查单 #7 / D-030 裁决点④）：落盘读写与键解析已抽为 `pipeline/cooldown.py`
+    # 公用模块（CLI `crawler cooldown status|clear` 同款消费，见其模块 docstring）；
+    # 本节以下方法均为**薄委托**，行为逐字不变——`_cooldown_keys`/`_enter_challenge_cooldown`
+    # 是既有测试直接调用的签名（`tests/integration/test_cf403_cooldown.py`），保持不变。
 
     def _cooldown_keys(self, venue: str, asset: sqlite3.Row | None) -> tuple[str, ...]:
         """挑战冷却的候选键（E-1/D-030 裁决③）：**域级新键在前，旧 `<adapter_id>` 键在后**。
@@ -595,20 +595,17 @@ class PipelineRunner:
         后果——① 键名撒谎（文件名声称某域被判罚，实则未知）；② 误标：若判罚发生在
         `pubs.` 而 `domains[0]` 是 `www.`，被停的恰是无辜域而真凶照发。退回平台级键则
         粒度**如实**变粗（该 adapter 全域连坐），语义与文件名一致、无误标。
+
+        候选键的**解析**（域+adapter_id 的去重合并）委托 `cooldown.resolve_keys`；本方法
+        只负责本类专属的两项输入——asset URL 取 host、venue 路由解出 adapter_id
+        （`VenueRegistry` 依赖留在 runner 侧，`cooldown.py` 保持零 registry 依赖）。
         """
-        keys: list[str] = []
-        if asset is not None:
-            raw_url = asset["url"]
-            host = urlsplit(str(raw_url)).hostname if raw_url else None
-            if host:
-                keys.append(host)
+        host = cooldown.host_of(asset["url"]) if asset is not None else None
         try:
             adapter_id = self.ctx.registry.route(venue).fulltext_adapter.adapter_id
         except CrawlerError:
-            return tuple(keys)  # 未知/畸形 venue：只剩 URL 键（可能为空）
-        if adapter_id not in keys:
-            keys.append(adapter_id)
-        return tuple(keys)
+            adapter_id = None  # 未知/畸形 venue：只剩 URL 键（可能为空）
+        return cooldown.resolve_keys(host, adapter_id)
 
     def _enter_challenge_cooldown(self, venue: str, asset: sqlite3.Row | None = None) -> None:
         """CHALLENGE → 写冷却（now+24h）到运行态字典 + config-home JSON（§8.4）。
@@ -619,12 +616,10 @@ class PipelineRunner:
         if not keys:
             return
         key = keys[0]
-        until = self._clock() + _CHALLENGE_COOLDOWN
+        until = self._clock() + cooldown.CHALLENGE_COOLDOWN
         self._challenge_cooldown[key] = until
-        path = self._cooldown_path(key)
         try:
-            path.parent.mkdir(parents=True, exist_ok=True)
-            path.write_text(json.dumps({"until": until.isoformat()}), encoding="utf-8")
+            cooldown.write(self.ctx.config.home, key, until)
         except OSError as exc:
             log_event("WARNING", f"challenge 冷却状态落盘失败（运行态仍生效）: {exc}", venue=venue)
 
@@ -674,16 +669,10 @@ class PipelineRunner:
         """
         until = self._challenge_cooldown.get(key)
         if until is None:
-            path = self._cooldown_path(key)
-            if path.is_file():
-                try:
-                    data = json.loads(path.read_text(encoding="utf-8"))
-                    until = datetime.fromisoformat(str(data["until"]))
-                    self._challenge_cooldown[key] = until
-                except (OSError, ValueError, KeyError):
-                    return False
-        if until is None:
-            return False
+            until = cooldown.read_until(self.ctx.config.home, key)  # 文件不存在/损坏 → None
+            if until is None:
+                return False
+            self._challenge_cooldown[key] = until
         if self._clock() < until:
             return True
         self._drop_expired_cooldown(key)
@@ -693,8 +682,7 @@ class PipelineRunner:
         """冷却效力已过 → 丢运行态条目 + 删落盘文件（幂等；纯清理，不参与判定）。"""
         self._challenge_cooldown.pop(key, None)
         # 删不掉（只读目录/竞态）无任何后果：判定只认 `until`，过期文件再读一次仍判过期。
-        with contextlib.suppress(OSError):
-            self._cooldown_path(key).unlink(missing_ok=True)
+        cooldown.drop(self.ctx.config.home, key)
 
     def _enqueue_oa_fallback(self, row: sqlite3.Row, paper_id: str, report: RunReport) -> None:
         """no_entitlement（fetch 或 resolve 阶段）→ 派生 oa_fallback 任务（§8.1 接线点 A）。
