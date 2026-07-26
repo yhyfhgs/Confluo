@@ -86,10 +86,10 @@
 | 路径 | 标题 | status | updated |
 |---|---|---|---|
 | [catalog/README.md](catalog/README.md) | 总览与登记流程 | approved | 2026-07-20 |
-| [catalog/publishers-platforms.md](catalog/publishers-platforms.md) | 平台→Adapter 映射总表 | approved | 2026-07-23 |
+| [catalog/publishers-platforms.md](catalog/publishers-platforms.md) | 平台→Adapter 映射总表 | approved | 2026-07-27 |
 | [catalog/cs-ai-conferences.md](catalog/cs-ai-conferences.md) | CS/AI 顶会 | approved | 2026-07-23 |
 | [catalog/ai-ml-journals.md](catalog/ai-ml-journals.md) | AI/ML/CS 期刊 | review | 2026-07-20 |
-| [catalog/economics-journals.md](catalog/economics-journals.md) | 经济学期刊 | approved | 2026-07-26 |
+| [catalog/economics-journals.md](catalog/economics-journals.md) | 经济学期刊 | approved | 2026-07-27 |
 | [catalog/finance-journals.md](catalog/finance-journals.md) | 金融学期刊 | approved | 2026-07-20 |
 | [catalog/or-ms-journals.md](catalog/or-ms-journals.md) | OR/MS 期刊 | approved | 2026-07-20 |
 | [catalog/preprint-platforms.md](catalog/preprint-platforms.md) | 预印本/WP 平台与订阅范围 | review | 2026-07-26 |

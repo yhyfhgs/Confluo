@@ -2,7 +2,7 @@
 title: 经济学期刊清单
 status: approved
 owner: fable5
-updated: 2026-07-26
+updated: 2026-07-27
 ---
 
 # 经济学期刊
@@ -24,10 +24,10 @@ updated: 2026-07-26
 | id | 名称 | tier | ISSN ⚠ | 备注 |
 |---|---|---|---|---|
 | aeri | AER: Insights | T2 | 2640-205X | ISSN [LIVE 2026-07-26] crossref 核实 |
-| aej_macro | AEJ: Macroeconomics | T1 | 1945-7707 | |
-| aej_micro | AEJ: Microeconomics | T1 | 1945-7669 | |
-| aej_applied | AEJ: Applied Economics | T1 | 1945-7782 | |
-| aej_policy | AEJ: Economic Policy | T1 | 1945-7731 | |
+| aej_macro | AEJ: Macroeconomics | T1 | 1945-7707 | ISSN [LIVE 2026-07-26] crossref 核实 |
+| aej_micro | AEJ: Microeconomics | T1 | 1945-7669 | ISSN [LIVE 2026-07-26] crossref 核实 |
+| aej_applied | AEJ: Applied Economics | T1 | 1945-7782 | ISSN [LIVE 2026-07-26] crossref 核实 |
+| aej_policy | AEJ: Economic Policy | T1 | 1945-7731 | ISSN [LIVE 2026-07-26] crossref 核实 |
 | jel | Journal of Economic Literature | T2 | 0022-0515 | 综述；ISSN [LIVE 2026-07-26] crossref 核实 |
 | jep | Journal of Economic Perspectives | T2 | 0895-3309 | **全刊免费**（[LIVE] 2026-07-20 官方口径），auth=none |
 

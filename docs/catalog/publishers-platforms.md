@@ -2,7 +2,7 @@
 title: 平台 → Adapter 映射总表
 status: approved
 owner: fable5
-updated: 2026-07-23
+updated: 2026-07-27
 ---
 
 # 平台 → Adapter 映射总表
@@ -29,7 +29,7 @@ updated: 2026-07-23
 | `isca` | isca-archive.org | INTERSPEECH | 归档页 | 无 | 含前身刊 |
 | `rss_proceedings` | roboticsproceedings.org | RSS | `/rss{NN}/` | 无 | 极规整 |
 | `nber` | nber.org / back.nber.org | NBER WP | program RSS | 无 AI 封禁 | >18月开放 |
-| `econsoc` | econometricsociety.org | TE、QE、ECMA(部分) | 站点 | 无 | TE/QE 全开放 |
+| `econsoc` | econometricsociety.org | TE、QE、ECMA(当前段；过刊段归 wiley，D-028) | 站点 | 无 | TE/QE 全开放 |
 | `repec` | ftp.repec.org / oai.repec.org | Econ WP 元数据主干 | **FTP/OAI-PMH bulk** | 宽松 | 覆盖 NBER/CEPR 书目 |
 
 ## Aggregator（元数据/发现层）
