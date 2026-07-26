@@ -60,3 +60,6 @@ htmlcov/
 .pytest_cache/
 # subagent 工作目录
 .superpowers/
+
+# ---- config-home（D-032：迁入仓库根——凭证/DB/数据/日志全在内，整目录绝不追踪）----
+/.paper-crawler/

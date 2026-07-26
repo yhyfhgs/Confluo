@@ -135,6 +135,11 @@ GITIGNORED_CANDIDATES = [
     # profiles.toml（任意层级）
     "profiles.toml",
     "some/dir/profiles.toml",
+    # D-032：config-home 迁入仓库根 `.paper-crawler/`（整目录锚定条目——凭证/DB/
+    # 日志全部强制忽略；`PAPER_CRAWLER_HOME` env 指向此处）。任意文件名均须命中。
+    ".paper-crawler/config.toml",
+    ".paper-crawler/catalog.sqlite",
+    ".paper-crawler/anything-at-all.txt",
 ]
 
 
