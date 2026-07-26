@@ -28,6 +28,14 @@ r"""RePEc 零网络纯逻辑（design/adapters/aggregators.md §5.7；D-035 决�
 本模块按 `w`/`t` 同落 `nberwo` 构造，但**不把该推断固化为事实**——快照内查无该 handle 时
 计入"覆盖缺口"(b) 而非静默丢弃（见 `MissKind`）。T19 实测若证伪，**按实测收窄**（改为只映射
 `w`），不按推断扩张。
+
+**id 段前导零的非对称性 [未实测]**：`10.3386/w42` → `…:42`，而 `10.3386/t0042` → `…:0042`
+——DOI 侧写几位零，handle 侧就是几位零。上游 handle 是否统一去零**未核实**，故本模块
+**原样保留、不做去零归一**：去零是一个未经证实的改写，一旦上游确实带零就会让全部带零条目
+join 失败。真实后果被 `MissKind.MISSING_HANDLE`（覆盖缺口）如实记录，T19 实测后按实测处置。
+
+**BOM**：字节按 `utf-8-sig` 解码——带 BOM 的上游文件若按 `utf-8` 解，`\\ufeff` 会粘在首个
+字段名上使 `Template-Type` 匹配失败、整份文件静默解析为空。
 """
 
 from __future__ import annotations
@@ -56,6 +64,16 @@ _JEL_CODE_RE = re.compile(r"^[A-Z]{1,2}[0-9]{0,2}$")
 # `Creation-Date` 年份抽取：`2022-05` / `2022-05-01` / `2022` 均取前四位年（ReDIF 日期精度不齐）。
 _YEAR_RE = re.compile(r"(\d{4})")
 
+# **不接受续行折叠的身份字段**（P1-1 修复）：`Handle` 是记录的**身份**，一旦被后随的散文
+# （archive 页脚、记录间说明文字）折进来，handle 即被污染 ⇒ 本地 join 查无 ⇒ 该 DOI 被静默
+# 记成"覆盖缺口"，让**解析伪影伪装成快照陈旧**，直接毒化 D-035 决策 4 的三分观测语义。
+# 身份字段宁可截断也不能被拼接：值只取 `Handle:` 那一行。
+_NO_FOLD_FIELDS = frozenset({"handle", "template-type"})
+# handle 语法：`RePEc:{archive}:{series}:{id}`（[LIVE] `RePEc:nbr:nberwo:3210`）。不合语法者
+# **不静默丢弃**——计入 `RedifParseResult.malformed`，由 adapter 作 PARSE 类观测响亮上报。
+# 整体大小写不敏感（含 `RePEc:` 前缀本身）：归一后统一写回规范形，见 `canonical_handle`。
+_HANDLE_RE = re.compile(r"^RePEc:([A-Za-z0-9]+):([A-Za-z0-9]+):(\S+)$", re.IGNORECASE)
+
 # NBER archive/series 段。`t` 系列同落 `nberwo` 属 [未实测] 推断——见模块 docstring。
 _ARCHIVE = "nbr"
 _SERIES = "nberwo"
@@ -76,7 +94,12 @@ class MissKind(StrEnum):
 
 @dataclass(frozen=True)
 class RedifRecord:
-    """一条 ReDIF-Paper 记录的解析结果（字段子集——只取本通道消费得到的面）。"""
+    """一条 ReDIF-Paper 记录的解析结果（字段子集——只取本通道消费得到的面）。
+
+    `handle` 已经 `canonical_handle` 归一（archive/series 段小写化）——RePEc handle 的
+    archive/series 段惯例大小写不敏感，不归一则上游一次大小写漂移就会让本地 join 全线查无、
+    并被误记成"覆盖缺口"。
+    """
 
     handle: str
     title: str
@@ -85,6 +108,21 @@ class RedifRecord:
     abstract: str | None = None
     jel: tuple[str, ...] = ()
     publication_status: str | None = None
+
+
+@dataclass(frozen=True)
+class RedifParseResult:
+    """一份 ReDIF 文本的解析结果 + **解析伪影观测**（P1-1 修复）。
+
+    `malformed` / `stray_lines` 是 **PARSE 类观测**，与 `MissKind` 三分**计数分离**：三分说的是
+    "快照与查询的关系"（不可寻址／覆盖缺口／增值为空），解析伪影说的是"快照文件本身没读懂"。
+    把后者混进前者会让一个页脚散文伪装成"快照该刷新了"——正是本项修复要根除的误导。
+    """
+
+    records: tuple[RedifRecord, ...] = ()
+    malformed: tuple[str, ...] = ()  # 语法不合的 handle 原值（截断保留，供人工核对）
+    stray_lines: int = 0  # 悬空续行：紧跟身份字段、无处可归的行（记录间散文/页脚的典型症状）
+    skipped_blocks: int = 0  # 无 handle 或无 title 的块（如 ReDIF-Series 模板块，正常现象）
 
 
 @dataclass(frozen=True)
@@ -117,15 +155,20 @@ class SnapshotManifest:
 # --- ReDIF 解析 -------------------------------------------------------------------------------
 
 
-def _iter_raw_records(text: str) -> list[list[tuple[str, str]]]:
-    """按 `Template-Type:` 边界切分，产出每条记录的 `(小写字段名, 值)` 有序列表。
+def _iter_raw_records(text: str) -> tuple[list[list[tuple[str, str]]], int]:
+    """按 `Template-Type:` 边界切分，产出每条记录的 `(小写字段名, 值)` 有序列表 + 悬空续行数。
 
     续行（不匹配 `Name: value` 的非空行）拼接进上一字段，**跨空行继续**——空行是值内部的
     段落分隔而非字段终止符，`Template-Type:` 才是唯一的记录边界（见模块 docstring）。
     `Template-Type:` 之前的前言（archive 说明等）整体丢弃。
+
+    **例外：`_NO_FOLD_FIELDS`（`Handle`/`Template-Type`）不接受续行**（P1-1 修复）。紧跟身份
+    字段的非字段行是**悬空续行**：丢弃而非折叠，并计数返回——记录间散文与 archive 页脚正是
+    以这种形态出现，折进来会污染 handle、把解析伪影伪装成"覆盖缺口"。
     """
     records: list[list[tuple[str, str]]] = []
     current: list[tuple[str, str]] | None = None
+    stray = 0
 
     for raw_line in text.splitlines():
         line = raw_line.strip()
@@ -143,11 +186,15 @@ def _iter_raw_records(text: str) -> list[list[tuple[str, str]]]:
                 continue  # Template-Type 之前的前言，丢弃
             current.append((key, value))
             continue
-        # 非字段形态 → 上一字段的续行（空格折叠）
-        if current:
-            last_key, last_value = current[-1]
-            current[-1] = (last_key, f"{last_value} {line}".strip())
-    return records
+        # 非字段形态 → 上一字段的续行（空格折叠），身份字段除外
+        if not current:
+            continue
+        last_key, last_value = current[-1]
+        if last_key in _NO_FOLD_FIELDS:
+            stray += 1  # 悬空：身份字段不吃续行，该行无处可归
+            continue
+        current[-1] = (last_key, f"{last_value} {line}".strip())
+    return records, stray
 
 
 def _first(fields: list[tuple[str, str]], key: str) -> str | None:
@@ -184,21 +231,53 @@ def parse_year(raw: str) -> int | None:
     return int(match.group(1)) if match else None
 
 
-def parse_redif(data: bytes | str) -> tuple[RedifRecord, ...]:
-    """ReDIF 字节/文本 → `RedifRecord` 元组。**无 handle 或无 title 的记录跳过**。
+def canonical_handle(raw: str) -> str | None:
+    """handle 语法校验 + 归一：`RePEc:{archive}:{series}:{id}`，archive/series 段小写化。
 
-    跳过口径与 crossref「无 DOI 跳过」、nber RSS「无 guid 跳过」同源：没有稳定身份
-    （handle）或没有标题（`PaperStub.title` 必填）的记录不产 stub，**不是异常**——上游
-    bulk 文件里混入 `ReDIF-Archive`/`ReDIF-Series` 模板块是正常现象，它们本就无 handle
-    形态的论文身份。字节按 UTF-8 解码，非法字节 `replace`（上游历史条目编码不齐，
-    响亮失败换不来更多信息，且会让一个坏字节炸掉整份快照）。
+    RePEc handle 的 archive/series 段惯例大小写不敏感（`RePEc:NBR:NBERWO:5` 与
+    `RePEc:nbr:nberwo:5` 指同一条）；不归一则上游一次大小写漂移会让本地 join 全线查无，
+    并被误记成"覆盖缺口"。**id 段原样保留**——其大小写/前导零是否可归一 [未实测]
+    （见模块 docstring 的前导零注记），归一未经证实的面等于用推断改写数据。
+
+    语法不合（含被散文污染的 handle）→ None，调用方计 `RedifParseResult.malformed`。
     """
-    text = data.decode("utf-8", errors="replace") if isinstance(data, bytes) else data
+    match = _HANDLE_RE.match(raw.strip())
+    if match is None:
+        return None
+    archive, series, ident = match.groups()
+    return f"RePEc:{archive.lower()}:{series.lower()}:{ident}"
+
+
+def parse_redif_result(data: bytes | str) -> RedifParseResult:
+    """ReDIF 字节/文本 → 记录元组 + **解析伪影观测**（P1-1；`parse_redif` 是其便捷包装）。
+
+    **两类"没产出"严格分离**：
+    - **正常跳过**（`skipped_blocks`）：无 handle 或无 title 的块——上游 bulk 文件里混入
+      `ReDIF-Archive`/`ReDIF-Series` 模板块是正常现象，它们本就无论文身份。口径与 crossref
+      「无 DOI 跳过」、nber RSS「无 guid 跳过」同源，**不是异常**。
+    - **解析伪影**（`malformed` / `stray_lines`）：handle 语法不合（典型成因＝记录间散文被
+      折进 handle，本函数已从源头堵死，此处是纵深防御）或悬空续行。这类**必须响亮**——静默
+      吞掉会让它们伪装成"覆盖缺口"，毒化三分观测。
+
+    字节按 **UTF-8-SIG** 解码（自动剥 BOM——上游历史文件带 BOM 时，`\\ufeff` 会粘在首个字段名
+    上使 `Template-Type` 匹配失败、整份文件解析为空），非法字节 `replace`（上游历史条目编码
+    不齐，响亮失败换不来更多信息，且会让一个坏字节炸掉整份快照）。
+    """
+    text = data.decode("utf-8-sig", errors="replace") if isinstance(data, bytes) else data
+    blocks, stray = _iter_raw_records(text)
     records: list[RedifRecord] = []
-    for fields in _iter_raw_records(text):
-        handle = _first(fields, "handle")
+    malformed: list[str] = []
+    skipped = 0
+
+    for fields in blocks:
+        raw_handle = _first(fields, "handle")
         title = _first(fields, "title")
-        if not handle or not title:
+        if not raw_handle or not title:
+            skipped += 1
+            continue
+        handle = canonical_handle(raw_handle)
+        if handle is None:
+            malformed.append(raw_handle[:120])
             continue
         jel_raw = _first(fields, "classification-jel")
         creation = _first(fields, "creation-date")
@@ -213,7 +292,17 @@ def parse_redif(data: bytes | str) -> tuple[RedifRecord, ...]:
                 publication_status=_first(fields, "publication-status"),
             )
         )
-    return tuple(records)
+    return RedifParseResult(
+        records=tuple(records),
+        malformed=tuple(malformed),
+        stray_lines=stray,
+        skipped_blocks=skipped,
+    )
+
+
+def parse_redif(data: bytes | str) -> tuple[RedifRecord, ...]:
+    """`parse_redif_result(data).records` 的便捷包装（只要记录、不要伪影观测时用）。"""
+    return parse_redif_result(data).records
 
 
 # --- DOI↔handle 纯语法映射 --------------------------------------------------------------------
@@ -225,6 +314,10 @@ def handle_from_doi(doi: str) -> str | None:
     series 号归一**复用** `nber.parse.series_id_from_doi`（单一权威源，不复制正则）：大小写
     不敏感、非 NBER 前缀/book chapter/畸形 DOI 一律 None ⇒ 调用方计 `MissKind.UNADDRESSABLE`
     （结构性不可寻址，非缺陷）。`t` 系列同落 `nberwo` 属 [未实测] 推断，见模块 docstring。
+
+    产出经 `canonical_handle` 同款归一（archive/series 段小写），与快照侧的键口径**同源**
+    ——两侧各自归一就会漂移。**前导零原样保留**（`10.3386/t0042` → `…:0042`）：上游是否
+    去零 [未实测]，去零是未经证实的改写（见模块 docstring 的前导零注记）。
     """
     series_id = nber_parse.series_id_from_doi(doi)
     if series_id is None:
@@ -323,14 +416,17 @@ def staleness_days(fetched_at: str, *, now: datetime) -> int | None:
 
 __all__ = [
     "MissKind",
+    "RedifParseResult",
     "RedifRecord",
     "SnapshotFile",
     "SnapshotManifest",
+    "canonical_handle",
     "handle_from_doi",
     "parse_fetched_at",
     "parse_jel",
     "parse_manifest",
     "parse_redif",
+    "parse_redif_result",
     "parse_year",
     "staleness_days",
     "stub_from_record",

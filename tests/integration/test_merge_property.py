@@ -30,8 +30,8 @@ canonical dump（paper/identifier/meta_json 含 `_field_src` provenance）+ pape
   翻转——那是又一处结构性遮蔽）：现也抽 `arxiv`（< `doi` 字典序），故后补的 identifier 会改变
   最小锚、同一条边在不同注入序下可能方向相反。这是**既定语义**（定向是建边时刻快照、非不变量，
   merge.py 裁决 5），故 `dump_paper_relations` 按无序对归一后比较。
-- 一个 work 内**跨源**冲突由优先级表定序（六枚举两两互异），**同源**二次观测异值由值序
-  tie-break 定序——两者都与到达顺序无关。
+- 一个 work 内**跨源**冲突由优先级表定序（**七枚举**两两互异——D-035 扩位重编号后仍成立），
+  **同源**二次观测异值由值序 tie-break 定序——两者都与到达顺序无关。
 - 同 (title_norm, 首作者姓氏) 观测但 anchor 相异的 work → 弱信号候审；引擎按观测级键集合
   对**每个**曾持同键的 paper 建边，故终态 = 键集合有交者两两 candidate，与创建顺序无关。
 

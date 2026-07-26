@@ -8,6 +8,7 @@ repec 的"零网络"定为**结构事实**（唯一网络面在 `scripts/repec_s
 
 from __future__ import annotations
 
+import hashlib
 import json
 import socket
 from datetime import UTC, datetime, timedelta
@@ -15,6 +16,7 @@ from pathlib import Path
 
 import pytest
 
+from paper_crawler.adapters.repec import parse
 from paper_crawler.adapters.repec.adapter import RepecAdapter
 from paper_crawler.errors import CrawlerError, ErrorClass
 from paper_crawler.types import Capability, RatePolicy
@@ -29,11 +31,17 @@ def _write_snapshot(
     fetched_at: str | None = None,
     fixture: str = "01_nberwo_multi.rdf",
     files: list[dict[str, object]] | None = None,
+    payload: bytes | None = None,
+    record_count: int | None = None,
 ) -> Path:
-    """在 `root` 下写一份最小可用快照（manifest + 一份 ReDIF 文件）。"""
+    """在 `root` 下写一份最小可用快照（manifest + 一份 ReDIF 文件）。
+
+    `sha256`/`bytes`/`record_count` **按实际内容算**——加载器会校验三者（P2-⑦），写假值等于
+    在测试里模拟一份损坏快照。要专门测损坏，用 `files=`/`record_count=` 显式给出错值。
+    """
+    data = payload if payload is not None else (_FIXTURES / fixture).read_bytes()
     payload_path = root / _REDIF_NAME
     payload_path.parent.mkdir(parents=True, exist_ok=True)
-    data = (_FIXTURES / fixture).read_bytes()
     payload_path.write_bytes(data)
     manifest = {
         "schema": 1,
@@ -44,8 +52,14 @@ def _write_snapshot(
         "fetched_at": fetched_at or datetime.now(UTC).isoformat(),
         "files": files
         if files is not None
-        else [{"name": _REDIF_NAME, "bytes": len(data), "sha256": "ab" * 32}],
-        "record_count": 3,
+        else [
+            {
+                "name": _REDIF_NAME,
+                "bytes": len(data),
+                "sha256": hashlib.sha256(data).hexdigest(),
+            }
+        ],
+        "record_count": record_count if record_count is not None else len(parse.parse_redif(data)),
     }
     (root / "manifest.json").write_text(json.dumps(manifest), encoding="utf-8")
     return root
@@ -208,6 +222,106 @@ def test_manifest_referencing_missing_file_raises_config(tmp_path: Path) -> None
         adapter.enrich_batch(["10.3386/w35506"])
     assert excinfo.value.error_class is ErrorClass.CONFIG
     assert "快照损坏" in str(excinfo.value)
+
+
+# --- P2-⑦ 完整性校验：sha256 / bytes / record_count 只写不校等于没校 --------------------------
+
+
+def test_sha256_mismatch_raises_integrity(tmp_path: Path) -> None:
+    """**等长**改动（字节数校验抓不到）由 sha256 抓——两道校验各有各的盲区，故都要有。"""
+    root = _write_snapshot(tmp_path)
+    original = (root / _REDIF_NAME).read_bytes()
+    tampered = original.replace(b"Endogenous", b"ENDOGENOUS", 1)
+    assert len(tampered) == len(original) and tampered != original
+    (root / _REDIF_NAME).write_bytes(tampered)
+    adapter = RepecAdapter(root)
+    with pytest.raises(CrawlerError) as excinfo:
+        adapter.enrich_batch(["10.3386/w35506"])
+    assert excinfo.value.error_class is ErrorClass.INTEGRITY
+    assert "sha256 不符" in str(excinfo.value)
+    assert "scripts/repec_snapshot.py" in str(excinfo.value)
+
+
+def test_byte_length_mismatch_raises_integrity(tmp_path: Path) -> None:
+    """截断的快照必须响亮——半份数据静默入库比缺失更危险。"""
+    data = (_FIXTURES / "01_nberwo_multi.rdf").read_bytes()
+    root = _write_snapshot(tmp_path)
+    (root / _REDIF_NAME).write_bytes(data[: len(data) // 2])
+    with pytest.raises(CrawlerError) as excinfo:
+        RepecAdapter(root).enrich_batch(["10.3386/w35506"])
+    assert excinfo.value.error_class is ErrorClass.INTEGRITY
+    assert "字节" in str(excinfo.value)
+
+
+def test_record_count_mismatch_raises_integrity(tmp_path: Path) -> None:
+    """字节没变而记录数变 ⇒ 本地解析口径已漂移；静默通过会让 join 覆盖率悄悄塌掉。"""
+    root = _write_snapshot(tmp_path, record_count=999)
+    with pytest.raises(CrawlerError) as excinfo:
+        RepecAdapter(root).enrich_batch(["10.3386/w35506"])
+    assert excinfo.value.error_class is ErrorClass.INTEGRITY
+    assert "999" in str(excinfo.value)
+
+
+def test_integrity_failure_surfaces_as_unhealthy_in_canary(tmp_path: Path) -> None:
+    root = _write_snapshot(tmp_path, record_count=999)
+    report = RepecAdapter(root).healthcheck()
+    assert report.healthy is False
+
+
+# --- P1-1：解析伪影作 PARSE 类观测，与三分计数分离 --------------------------------------------
+
+
+def test_parse_artifacts_counted_separately_from_three_way_misses(tmp_path: Path) -> None:
+    """页脚散文既不该污染 handle，也不该被记成"覆盖缺口"——两套计数各归各位。"""
+    payload = (
+        b"Template-Type: ReDIF-Paper 1.0\n"
+        b"Title: Real Paper\n"
+        b"Handle: RePEc:nbr:nberwo:35506\n"
+        b"\n"
+        b"-- end of archive listing --\n"
+        b"Template-Type: ReDIF-Paper 1.0\n"
+        b"Title: Bad Handle\n"
+        b"Handle: garbage\n"
+    )
+    adapter = RepecAdapter(_write_snapshot(tmp_path, payload=payload))
+    stubs = adapter.enrich_batch(["10.3386/w35506"])
+    assert len(stubs) == 1  # handle 未被污染 ⇒ 正常命中
+    stats = adapter.stats
+    assert stats.matched == 1
+    assert stats.missing_handle == 0  # 关键：伪影没有伪装成覆盖缺口
+    assert stats.malformed_records == 1
+    assert stats.stray_lines == 1
+
+
+def test_parse_artifacts_emit_parse_class_warning(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    events: list[tuple[str, dict[str, object]]] = []
+    monkeypatch.setattr(
+        "paper_crawler.adapters.repec.adapter.log_event",
+        lambda level, msg, **kw: events.append((level, kw)),
+    )
+    payload = b"Template-Type: ReDIF-Paper 1.0\nTitle: Bad\nHandle: garbage\n"
+    RepecAdapter(_write_snapshot(tmp_path, payload=payload, record_count=0)).enrich_batch([])
+    warnings = [kw for level, kw in events if level == "WARNING"]
+    assert warnings and warnings[0]["error_class"] == "parse"
+    assert warnings[0]["malformed_records"] == 1
+
+
+def test_summary_note_lists_parse_artifacts_outside_the_three_counts(tmp_path: Path) -> None:
+    payload = b"Template-Type: ReDIF-Paper 1.0\nTitle: Bad\nHandle: garbage\n"
+    adapter = RepecAdapter(_write_snapshot(tmp_path, payload=payload, record_count=0))
+    adapter.enrich_batch([])
+    note = adapter.summary_note()
+    assert "解析伪影 handle 不合 1" in note
+    assert "不计入上列三分" in note
+
+
+def test_clean_snapshot_reports_no_parse_artifacts(tmp_path: Path) -> None:
+    adapter = RepecAdapter(_write_snapshot(tmp_path))
+    adapter.enrich_batch(["10.3386/w35506"])
+    assert "解析伪影" not in adapter.summary_note()
+    assert adapter.stats.malformed_records == 0
 
 
 def test_stale_snapshot_warns_loudly_but_keeps_running(tmp_path: Path) -> None:

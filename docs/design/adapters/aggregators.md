@@ -5,9 +5,9 @@ owner: fable5
 updated: 2026-07-27
 ---
 
-# Adapter · `aggregators`（五源 committed + core/repec 保留的合册实现级详设）
+# Adapter · `aggregators`（六源 implemented + core 存档的合册实现级详设）
 
-> 本文档覆盖 `crossref` / `dblp` / `openalex` / `s2` / `unpaywall` 五个 **Phase 3 committed** adapter 与 `core`（**Phase 3 范围外，本期不实现**）、`repec`（**enrich 通道，Phase 7 T8 落地**，§5.7；契约冻结见 [D-035](../../plan/decision-log.md)）。它们是 D-005「元数据主干」的执行者，接口小而同构、合册设计、分别实现。
+> 本文档覆盖 `crossref` / `dblp` / `openalex` / `s2` / `unpaywall` 五个 **Phase 3 committed** adapter 与 `core`（**Phase 3 范围外，本期不实现**）、`repec`（**enrich 通道，Phase 7 T8 已落地**，§5.7；决策见 [D-035](../../plan/decision-log.md)）——合计**六源 implemented**。它们是 D-005「元数据主干」的执行者，接口小而同构、合册设计、分别实现。
 > 勘察依据：[research/site-survey/metadata-apis.md](../../research/site-survey/metadata-apis.md)（[LIVE] 2026-07-20，含 [2026-07-22 增量复核](../../research/site-survey/metadata-apis.md)）、[aggregators-unpaywall-dblp-core.md](../../research/site-survey/aggregators-unpaywall-dblp-core.md)（[LIVE] 2026-07-20，2026-07-22 小修）。
 > 接口冻结件依据：[plan/phase3-implementation-plan.md §2](../../plan/phase3-implementation-plan.md)（MergeEngine / VenueSpec 分离语义 / 无 FETCH 契约 / 在线预算）；数据模型：[design/06 §2/§3/§5](../06-data-model.md)。
 > **本稿是 Phase 3 五源 adapter 开工的详设硬门禁**（双评审 approved 前 T3~T6 不开工，plan §2 门禁）。
@@ -347,12 +347,14 @@ openalex/s2 **不承担枚举**（capabilities 已收回 ENUMERATE，§1；两�
 
 ### 5.7 repec（aggregator-enrich，**零网络本地 join**；Phase 7 T8 落地，契约冻结见 D-035）
 
-> **本节是契约级设计，实现尚未落地**——`status: implemented` 覆盖的是 §5.1–§5.5 五源；repec 由
-> [phase7-implementation-plan §4 T8](../../plan/phase7-implementation-plan.md) 承接，权威决策
-> [D-035](../../plan/decision-log.md)，评估与探针实据见
-> [research/enrich-eval-p6.md §2/§6.2](../../research/enrich-eval-p6.md)（approved）与
-> [repec.md](../../research/site-survey/repec.md)（[LIVE] 2026-07-24）。实现级细节（ReDIF 字段全表、
-> 上游文件命名）以 T8 实测为准，本节只冻结接口面与落盘契约。
+> **实现已落地（P7-T8，2026-07-27）**——`src/paper_crawler/adapters/repec/{__init__,adapter,parse}.py`
+> + `scripts/repec_snapshot.py`，接入面清单全项完成，`status: implemented` 自此覆盖 §5.1–§5.5 **与本节**。
+> 权威决策 [D-035](../../plan/decision-log.md)（本节起源为其契约级设计稿，历史见 §9 修订 #16）；评估与
+> 探针实据见 [research/enrich-eval-p6.md §2/§6.2](../../research/enrich-eval-p6.md)（approved）与
+> [repec.md](../../research/site-survey/repec.md)（[LIVE] 2026-07-24）。
+> **仍未落地的只有"取真实快照"这一步**（`T8-bulk` ≤4 请求归 T19 在线批）：故 ReDIF 上游文件命名与
+> `t` 系列 series 段仍标 **[未实测]**，实现按判读构造并在查无时如实记"覆盖缺口"，T19 实测后
+> **按实测收窄**（见下方各 [未实测] 注记与 §9 修订 #19）。
 
 **定位**：`family = "aggregator"`，分工档位＝"aggregator-enrich"（同 openalex/s2 一档，D-027；**该措辞是档位
 描述、非字段**，见 §1 表下注）。capabilities **恒为空集**，不进 pull 六阶段；驱动路径＝`crawler enrich --source repec`。**独家增值＝JEL 分类 + wp↔published 版本关联**
@@ -407,8 +409,13 @@ openalex/s2 **不承担枚举**（capabilities 已收回 ENUMERATE，§1；两�
     （区别于"爬网站"）。③已坐实的路径特异事实（bulk 路径 [LIVE] 4/4 成功）支持"robots 不可得 ≠ 数据
     不可取"。
   - **附加条件（T19 执行时为硬约束）**：
-    a) T19 真实拉取前**先重试 `repec.nber.org` robots 一次**（TLS 中断可能瞬时），可判读则按其规则为准
-       （Disallow 即停）；
+    a) T19 真实拉取前**先对「实际使用的目标镜像」重试 robots 一次**（TLS 中断可能瞬时），**可判读则从其
+       规则**（Disallow 即停）；**若切换镜像亦须先核新镜像**。
+       > **条款修订（fable 2026-07-27，第二次裁定）**：原文只点名 `repec.nber.org`。修订理由＝**REP 按
+       > origin 生效**——核 A 域的 robots 对 B 域没有约束力，按原文字面执行会出现"核了备镜像、却从主
+       > 镜像 `www2.nber.org` 取数"这种**形式合规、实质无效**的核验。修订后条款与
+       > `scripts/repec_snapshot.py` 的实际行为（探 `--mirror` 给出的那一个域）一致，且该脚本以
+       > `--url` host 必须等于 `--mirror` 的**校验**把"核 A 取 B"从结构上堵死。
     b) 仍不可判读则按本裁决执行，但限**最小请求量（≤4，§3 `T8-bulk` 预算行）、逐请求间隔 ≥10s、诚实 UA**；
     c) **数据路径本身若遇 403/429 等任何拒绝信号，立即停止并把 repec 通道出列回报**——本裁决只覆盖
        "robots 不可判读"情形，**不覆盖"数据端点明确拒绝"**。
@@ -453,6 +460,13 @@ openalex/s2 **不承担枚举**（capabilities 已收回 ENUMERATE，§1；两�
 - **DOI↔handle 映射边界**：`10.3386/w{n}`／`t{n}` → `RePEc:nbr:nberwo:{n}` 的**纯语法映射**，复用
   `adapters/nber/parse.py` 既有 series 号归一（零模糊匹配、零启发式）。`t` 系列落哪个 series 段、期刊条目
   怎么 join **均未核实**（[推断] 不作依据）——T8 若实测 `t` 不落 `nberwo`，按实测**收窄**而非按推断扩张。
+  - **handle 大小写归一（T8 落地）**：archive/series 段小写化后作 join 键（`canonical_handle`），DOI 侧与
+    快照侧**同源归一**——RePEc handle 的这两段惯例大小写不敏感，两侧各自归一或不归一都会漂移，一次上游
+    大小写变动就能让全库 join 静默塌成"覆盖缺口"。
+  - **id 段前导零的非对称性 [未实测]（T8 落地期发现，如实入档）**：`10.3386/w42` → `…:42`，而
+    `10.3386/t0042` → `…:0042`——**DOI 侧写几位零，handle 侧就是几位零**。上游 handle 是否统一去零
+    **未核实**，故实现**原样保留、不做去零归一**：去零是未经证实的改写，若上游确实带零则全部带零条目
+    join 失败。真实后果由"覆盖缺口"计数如实暴露，T19 实测后按实测处置（与 `t` 系列同一处置原则）。
 - **未命中三分观测（不静默丢弃）**：(a) DOI 非 `10.3386` 前缀＝结构性不可寻址；(b) 前缀符但快照无该
   handle＝覆盖缺口；(c) handle 命中但无 JEL＝增值为空。**三类各有计数并进摘要行**——openalex/s2 的"未命中"
   只有一种含义，此三分是 repec 专有的契约要求（审计 S1 原则）。

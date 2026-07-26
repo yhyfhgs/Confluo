@@ -39,8 +39,9 @@ openalex 当初收紧 healthcheck 是**怕 canary 高频调用悄悄消耗 credi
 
 from __future__ import annotations
 
+import hashlib
 from collections.abc import Sequence
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from datetime import UTC, datetime
 from pathlib import Path
 
@@ -57,6 +58,48 @@ _REFRESH_HINT = "uv run python scripts/repec_snapshot.py --home <config-home>"
 _MANIFEST_NAME = "manifest.json"
 
 
+def _verify_integrity(entry: parse.SnapshotFile, raw: bytes, root: Path) -> None:
+    """校验单个快照文件的 `bytes`/`sha256` 与 manifest 记账一致；不符 → `INTEGRITY`（响亮）。
+
+    **只写不校等于没校**：manifest 落 sha256 的全部意义就是"这份字节还是取回时那份"。截断、
+    半程写入、事后手改都只在此处能被发现——而本通道的产出会直接进主库，一份坏快照静默通过
+    就是把损坏数据写进 paper 行。故此处是**响亮失败**（区别于解析伪影的"观测+继续"：那是
+    上游数据本身的瑕疵，这是本地文件与自己的记账对不上）。
+    """
+    if len(raw) != entry.bytes:
+        raise CrawlerError(
+            ErrorClass.INTEGRITY,
+            f"repec 快照完整性校验失败：{entry.name!r} 实际 {len(raw)} 字节、manifest 记 "
+            f"{entry.bytes} 字节（截断或被改动）；重跑 `{_REFRESH_HINT}` 重取快照",
+            detail=f"root={root}",
+        )
+    digest = hashlib.sha256(raw).hexdigest()
+    if digest != entry.sha256:
+        raise CrawlerError(
+            ErrorClass.INTEGRITY,
+            f"repec 快照完整性校验失败：{entry.name!r} sha256 不符"
+            f"（实际 {digest[:16]}…、manifest 记 {entry.sha256[:16]}…）；"
+            f"重跑 `{_REFRESH_HINT}` 重取快照",
+            detail=f"root={root}",
+        )
+
+
+def _verify_record_count(manifest: parse.SnapshotManifest, loaded: int) -> None:
+    """校验解析出的记录数与 manifest `record_count` 一致；不符 → `INTEGRITY`（响亮）。
+
+    与 sha256 校验互补、不冗余：sha256 保证**字节**没变，本校验保证**本地解析口径**仍与取
+    快照时一致。二者会在不同场景分别报警——解析器改口径后字节不变而记录数变，正是这一条能
+    抓到的（且那正是"快照该重取/解析器该复核"的信号，静默通过会让 join 覆盖率悄悄塌掉）。
+    """
+    if manifest.record_count and loaded != manifest.record_count:
+        raise CrawlerError(
+            ErrorClass.INTEGRITY,
+            f"repec 快照完整性校验失败：解析出 {loaded} 条记录、manifest 记 "
+            f"{manifest.record_count} 条（快照损坏，或本地解析口径已与取快照时不一致）；"
+            f"重跑 `{_REFRESH_HINT}` 重取快照",
+        )
+
+
 @dataclass(frozen=True)
 class SnapshotStats:
     """一次 `crawler enrich --source repec` 运行的未命中三分计数（D-035 决策 4）。
@@ -71,6 +114,11 @@ class SnapshotStats:
     unaddressable: int = 0
     missing_handle: int = 0
     no_jel: int = 0
+    # **解析伪影，与上面三分严格分离**（P1-1）：handle 语法不合的记录数 + 悬空续行数。
+    # 前三者说的是"快照与查询的关系"，这两者说的是"快照文件本身没读懂"——混作一谈会让一段
+    # archive 页脚散文伪装成"该刷快照了"，把运维引向错误的动作。
+    malformed_records: int = 0
+    stray_lines: int = 0
 
 
 class RepecAdapter(AdapterBase):
@@ -136,6 +184,7 @@ class RepecAdapter(AdapterBase):
         manifest = parse.parse_manifest((root / _MANIFEST_NAME).read_bytes())
 
         records: dict[str, parse.RedifRecord] = {}
+        malformed = stray = 0
         for entry in manifest.files:
             path = root / entry.name
             if not path.is_file():
@@ -144,13 +193,46 @@ class RepecAdapter(AdapterBase):
                     f"repec 快照损坏：manifest 记载的 {entry.name!r} 不存在于 {root}；"
                     f"重跑 `{_REFRESH_HINT}` 重建",
                 )
-            for record in parse.parse_redif(path.read_bytes()):
+            raw = path.read_bytes()
+            _verify_integrity(entry, raw, root)
+            result = parse.parse_redif_result(raw)
+            malformed += len(result.malformed)
+            stray += result.stray_lines
+            for record in result.records:
+                # handle 已经 `canonical_handle` 归一（大小写惯例）⇒ 键与 `handle_from_doi`
+                # 的产出同源；`setdefault` 使同 handle 重复块取首条（保守，不让后块挤掉）。
                 records.setdefault(record.handle, record)
 
+        _verify_record_count(manifest, len(records))
         self._manifest = manifest
         self._records = records
+        self._stats = replace(
+            self._stats,
+            malformed_records=self._stats.malformed_records + malformed,
+            stray_lines=self._stats.stray_lines + stray,
+        )
+        self._warn_if_parse_artifacts(malformed, stray)
         self._warn_if_stale(manifest)
         return records
+
+    def _warn_if_parse_artifacts(self, malformed: int, stray: int) -> None:
+        """解析伪影 → **PARSE 类响亮观测**（P1-1）；与三分计数分离，不静默。
+
+        不抛异常：一份 3.6 万条的快照里几条畸形记录不该让整条通道停摆（同"非法字节 replace"
+        的既有取舍）。但**必须响亮**——静默吞掉会让解析伪影伪装成"覆盖缺口"，把运维引向
+        "去刷快照"这个治不了本的动作。
+        """
+        if not (malformed or stray):
+            return
+        log_event(
+            "WARNING",
+            f"repec 快照解析伪影：handle 语法不合 {malformed} 条、悬空续行 {stray} 行"
+            "（**不计入未命中三分**；典型成因＝记录间散文/archive 页脚）",
+            stage="enrich",
+            error_class=ErrorClass.PARSE.value,
+            malformed_records=malformed,
+            stray_lines=stray,
+        )
 
     def _warn_if_stale(self, manifest: parse.SnapshotManifest) -> None:
         """过期 → 响亮 WARNING（带天数 + 刷新命令）并记 `_stale_note` 供摘要行注记；否则清空。
@@ -200,7 +282,8 @@ class RepecAdapter(AdapterBase):
                 no_jel += 1
             stubs.append(parse.stub_from_record(record, doi))
 
-        self._stats = SnapshotStats(
+        self._stats = replace(
+            self._stats,
             matched=self._stats.matched + matched,
             unaddressable=self._stats.unaddressable + unaddressable,
             missing_handle=self._stats.missing_handle + missing_handle,
@@ -243,6 +326,13 @@ class RepecAdapter(AdapterBase):
                 f" | 不可寻址 {stats.unaddressable} | 覆盖缺口 {stats.missing_handle}"
             ),
         ]
+        # 解析伪影**单列**，不混进三分（P1-1）：它指向的动作是"复核快照/解析器"，
+        # 而非三分里"覆盖缺口"暗示的"去刷快照"。
+        if stats.malformed_records or stats.stray_lines:
+            parts.append(
+                f"⚠ 解析伪影 handle 不合 {stats.malformed_records} / "
+                f"悬空续行 {stats.stray_lines}（不计入上列三分）"
+            )
         if self._stale_note:
             parts.append(f"⚠ {self._stale_note}")
         return " | ".join(parts)

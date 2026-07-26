@@ -12,12 +12,14 @@ DoD 恰恰在"真实解析 + 真实优先级收敛"这条链上：
 
 from __future__ import annotations
 
+import hashlib
 import json
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
 from typer.testing import CliRunner
 
+from paper_crawler.adapters.repec import parse
 from paper_crawler.cli import app
 from paper_crawler.merge import MergeEngine
 from paper_crawler.storage.db import Database
@@ -46,7 +48,10 @@ def _venue_spec() -> VenueSpec:
 
 
 def _write_snapshot(home: Path, *, fetched_at: str | None = None) -> None:
-    """在 `<home>/state/repec/` 写一份真快照（CLI 侧路径由 `_apply_enrich_key` 装配）。"""
+    """在 `<home>/state/repec/` 写一份真快照（CLI 侧路径由 `_apply_enrich_key` 装配）。
+
+    `sha256`/`bytes`/`record_count` 按实际内容算——加载器会校验（P2-⑦）。
+    """
     root = home / "state" / "repec"
     payload = root / _REDIF_NAME
     payload.parent.mkdir(parents=True, exist_ok=True)
@@ -59,8 +64,14 @@ def _write_snapshot(home: Path, *, fetched_at: str | None = None) -> None:
         "mirror": "www2.nber.org",
         "source_urls": ["https://www2.nber.org/RePEc/nbr/nberwo/"],
         "fetched_at": fetched_at or datetime.now(UTC).isoformat(),
-        "files": [{"name": _REDIF_NAME, "bytes": len(data), "sha256": "ab" * 32}],
-        "record_count": 3,
+        "files": [
+            {
+                "name": _REDIF_NAME,
+                "bytes": len(data),
+                "sha256": hashlib.sha256(data).hexdigest(),
+            }
+        ],
+        "record_count": len(parse.parse_redif(data)),
     }
     (root / "manifest.json").write_text(json.dumps(manifest), encoding="utf-8")
 

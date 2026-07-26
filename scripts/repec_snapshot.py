@@ -20,15 +20,20 @@ T8 首步两域 robots 核验 [LIVE 2026-07-27] 结果为"无从判读"——`ww
 归 "Unavailable"、明文 crawler MAY access；ReDIF/RePEc 是为机器批量交换设计的公开分发网络，
 NBER 主动发布 bulk 文件＝分发意图明示）。三项条件由本脚本承载：
 
-- **(a) 先重试 robots 一次**：真实拉取前对目标镜像 `GET /robots.txt`（TLS 中断可能瞬时）。
-  **可判读则以其为准**——目标路径被 `Disallow` 即**停手退出**，绝不"因为上次读不到所以永远
-  当作放行"。
-- **(b) 仍不可判读则按裁决执行，但限最小面**：`--max-requests` 默认 4（plan §3 `T8-bulk` 行
-  上限）、逐请求间隔 `--delay` 默认 **≥10s**（不接受更小值）、诚实 UA（`build_user_agent`，
-  D-014 格式，不伪装浏览器）。
-- **(c) 数据路径遇任何拒绝信号（403/429/401/5xx）→ 立即停止并把 repec 通道"出列"回报**。
-  本裁决只覆盖"robots 不可判读"，**不覆盖"数据端点明确拒绝"**——后者是站点在数据面明确
-  说不，与 robots 取不到是两回事。
+- **(a) 先对“实际使用的目标镜像”重试 robots 一次**（**条款经 fable 2026-07-27 修订**，理由＝
+  REP 按 **origin** 生效：核 A 域的 robots 对 B 域没有约束力，原条款只点名 `repec.nber.org`
+  会导致"核了备镜像、却从主镜像取数"这种形式合规、实质无效的核验）。故本脚本探的是
+  `--mirror` 给出的**那一个**域；**切换镜像亦须先核新镜像**——每次运行都对当次目标域重核，
+  不缓存、不跨域外推。**可判读则从其规则**：目标路径被 `Disallow` 即**停手退出**，绝不
+  "因为上次读不到所以永远当作放行"。
+- **(b) 仍不可判读则按裁决执行，但限最小面**：**≤4 请求**（`MAX_REQUESTS` 模块常量，
+  plan §3 `T8-bulk` 行上限；不设命令行开关——合规上限不该由调用方随手放宽）、逐请求间隔
+  `--delay` **≥10s**（不接受更小值）、诚实 UA（`build_user_agent`，D-014 格式，不伪装浏览器）。
+- **(c) 数据路径遇任何拒绝信号 → 立即停止并把 repec 通道"出列"回报**：显式拒绝
+  （401/402/403/405/406/410/429/451）**与 5xx 服务端错误一并**走 `ChannelRetired`
+  （前者是"不给你"、后者是"给不了"，二者都不该被当成可重试的抖动而继续压站）。本裁决只
+  覆盖"robots 不可判读"，**不覆盖"数据端点明确拒绝"**——后者是站点在数据面明确说不，与
+  robots 取不到是两回事。
 
 ## 零 HTML 硬红线
 
@@ -162,11 +167,20 @@ def fetch_files(
                 raise ChannelRetired(f"{url} 连接层失败：{type(exc).__name__}: {exc}") from exc
             if response.status_code in REFUSAL_STATUSES:
                 raise ChannelRetired(
-                    f"{url} → HTTP {response.status_code}：数据端点明确拒绝。"
+                    f"{url} → HTTP {response.status_code}：数据端点**明确拒绝**。"
                     "fable 2026-07-27 裁决只覆盖「robots 不可判读」，**不覆盖本情形** ⇒ "
                     "立即停止取回，repec 通道出列回报，待人工复裁。"
                 )
-            response.raise_for_status()
+            if response.status_code >= 500:
+                raise ChannelRetired(
+                    f"{url} → HTTP {response.status_code}：服务端错误。**不重试**——本脚本是"
+                    "低频运维动作，遇 5xx 继续压站与善意取用的立场不符；停手出列回报，改日重跑。"
+                )
+            if response.status_code >= 400:
+                raise ChannelRetired(
+                    f"{url} → HTTP {response.status_code}：取回失败（非成功状态）。"
+                    "停手出列回报，不静默产出半份快照。"
+                )
 
             name = f"{_ARCHIVE}/{_SERIES}/{Path(urlparse(url).path).name or 'nberwo.rdf'}"
             path = root / name
@@ -205,11 +219,15 @@ def write_manifest(
     return path
 
 
-def _validate_politeness(delay: float, urls: list[str]) -> str | None:
-    """条件 (b) 的硬下/上限校验；越界返回错误文案（调用方拒绝执行，不静默钳值）。
+def _validate_request_plan(delay: float, urls: list[str], mirror: str) -> str | None:
+    """条件 (a)/(b) 的硬校验；越界返回错误文案（调用方拒绝执行，**不静默钳值**）。
 
     刻意**不**把过小的 delay 悄悄提到 10s：那会让调用者以为自己的参数生效了。合规约束被
     违反时应当响亮拒绝，而不是替对方改主意。
+
+    **host 一致性（条件 a 修订后的结构保证）**：全部 `--url` 的 host 必须等于 `--mirror`
+    ——否则会出现"核了 A 域的 robots、却从 B 域取数"这种形式合规、实质无效的核验（REP 按
+    origin 生效）。用校验堵死，而不是靠执行者记得手动对齐。
     """
     if delay < MIN_DELAY_SECONDS:
         return (
@@ -218,7 +236,33 @@ def _validate_politeness(delay: float, urls: list[str]) -> str | None:
         )
     if len(urls) > MAX_REQUESTS:
         return f"{len(urls)} 个 --url 超过裁决条件 (b) 的上限 {MAX_REQUESTS} （plan §3 T8-bulk ≤4）"
+    for url in urls:
+        host = urlparse(url).hostname or ""
+        if host.lower() != mirror.lower():
+            return (
+                f"--url 的 host {host!r} 与 --mirror {mirror!r} 不一致：robots 核验按 origin "
+                "生效，核一个域却从另一个域取数不成立（裁决条件 a）；"
+                "请让二者对齐，或改 --mirror 后重跑（切换镜像须先核新镜像）"
+            )
     return None
+
+
+def _print_ledger_reminder(data_requests: int) -> None:
+    """**按预算行分开**提示记账（P2-⑥）——robots 记 `T8-robots`、数据请求记 `T8-bulk`。
+
+    此前把 `len(urls) + 1` 整个报给 `T8-bulk`，会把 1 次 robots 请求错记进数据行：`T8-bulk`
+    虚高、`T8-robots` 漏记，两行同时失真。这与 aggregators.md §9 修订 #20 记下的教训
+    （"干跑仍消耗 robots 预算"）是同一个根因的两面——**robots 请求属 robots 行，永远单列**。
+    """
+    print("记账提醒（**两行分开记**，勿合并）：")
+    print(
+        "  1) robots 核验 1 次 → `uv run python scripts/budget_ledger.py record "
+        "--row T8-robots --session <会话> --batch 'repec 快照前 robots 重核' --count 1`"
+    )
+    print(
+        f"  2) 数据请求 {data_requests} 次 → `uv run python scripts/budget_ledger.py record "
+        f"--row T8-bulk --session <会话> --batch 'repec 快照拉取' --count {data_requests}`"
+    )
 
 
 def _build_parser() -> argparse.ArgumentParser:
@@ -256,12 +300,13 @@ def main(argv: list[str]) -> int:
     user_agent = build_user_agent(None)
     urls = args.url or [f"https://{args.mirror}{DEFAULT_PATH}"]
 
-    problem = _validate_politeness(args.delay, urls)
+    problem = _validate_request_plan(args.delay, urls, args.mirror)
     if problem is not None:
         print(f"error: {problem}", file=sys.stderr)
         return 2
 
-    # 条件 (a)：真实拉取前重试 robots 一次；可判读则以其为准。
+    # 条件 (a)：真实拉取前对**本次实际使用的目标镜像**重核 robots；可判读则从其规则。
+    # host 一致性已由 `_validate_request_plan` 保证 ⇒ 探的域即取数的域。
     verdict = check_robots(args.mirror, urlparse(urls[0]).path or DEFAULT_PATH, user_agent)
     print(f"robots: {verdict.detail}")
     if verdict.readable and not verdict.allowed:
@@ -282,7 +327,10 @@ def main(argv: list[str]) -> int:
     for url in urls:
         print(f"  - {url}")
     if args.dry_run:
-        print("dry-run：未发出任何**数据**请求（上方 robots 核验已消耗 1 次，记得记账）。")
+        print(
+            "dry-run：未发出任何**数据**请求。上方 robots 核验已消耗 1 次 → 记 `T8-robots` 行"
+            "（不是 `T8-bulk`）：`budget_ledger.py record --row T8-robots … --count 1`"
+        )
         return 0
 
     root.mkdir(parents=True, exist_ok=True)
@@ -294,11 +342,7 @@ def main(argv: list[str]) -> int:
 
     manifest_path = write_manifest(root, mirror=args.mirror, urls=urls, files=files)
     print(f"manifest: {manifest_path}")
-    print(
-        "记账提醒：本次实际请求数 = "
-        f"{len(urls) + 1}（含 1 次 robots）；请跑 "
-        "`uv run python scripts/budget_ledger.py record --row T8-bulk ...` 入账。"
-    )
+    _print_ledger_reminder(len(files))
     return 0
 
 
