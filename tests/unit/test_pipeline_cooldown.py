@@ -5,8 +5,9 @@
 模块 docstring。所有用例走 `tmp_path`（不触真实 config-home，Global Constraints
 §8/D-032 红线）。
 
-覆盖：路径布局、键解析（E-1/D-030 裁决③域级优先+旧键兼容的纯函数化）、
-写读回环、损坏/缺失文件的容错、过期清理、目录级列举（`status` 消费）与
+覆盖：路径布局、**路径穿越防护（独立审查 P0 修复）**、键解析（E-1/D-030 裁决③
+域级优先+旧键兼容的纯函数化）、写读回环、损坏/缺失文件的容错与诊断
+（`scan_problems`，独立审查 P1 修复）、过期清理、目录级列举（`status` 消费）与
 清空（`clear` 消费）。
 """
 
@@ -16,6 +17,9 @@ import json
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
+import pytest
+
+from paper_crawler.errors import CrawlerError, ErrorClass
 from paper_crawler.pipeline import cooldown
 
 # ---------------------------------------------------------------------------
@@ -36,6 +40,72 @@ def test_cooldown_path_layout(tmp_path: Path) -> None:
     assert cooldown.cooldown_path(tmp_path, "mock.local") == (
         tmp_path / "state" / "cooldown" / "mock.local.json"
     )
+
+
+# ---------------------------------------------------------------------------
+# 路径穿越防护（独立审查 P0 修复）：`cooldown_path` 白名单校验 + is_relative_to 兜底。
+# 三条对抗向量——`../` 注入、绝对路径、含 `/` 键——外加穿透 write/read_until/drop
+# 的覆盖，以及一条端到端"确实不会删到 home 外"的证据测试。
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.parametrize(
+    "key",
+    [
+        "../../../victim/important",  # `../` 注入
+        "/etc/passwd",  # 绝对路径
+        "sub/dir",  # 含 `/`（无 `..` 也拒绝——单键单文件承诺）
+        "..\\..\\victim",  # 反斜杠（Windows 形态，防御纵深）
+        "..",  # 字面 `..`
+        ".",  # 字面 `.`
+        "",  # 空串
+    ],
+)
+def test_cooldown_path_rejects_traversal_keys(tmp_path: Path, key: str) -> None:
+    with pytest.raises(CrawlerError) as exc_info:
+        cooldown.cooldown_path(tmp_path, key)
+    assert exc_info.value.error_class is ErrorClass.CONFIG
+
+
+@pytest.mark.parametrize(
+    "key",
+    ["pubs.aeaweb.org", "mock_platform", "mock.local", "a", "elsevier_sd", "oup-silverchair"],
+)
+def test_cooldown_path_accepts_realistic_keys(tmp_path: Path, key: str) -> None:
+    """白名单不能误伤真实域名/adapter_id 形态（否则合法冷却写入会被拒）。"""
+    path = cooldown.cooldown_path(tmp_path, key)
+    assert path == tmp_path / "state" / "cooldown" / f"{key}.json"
+
+
+def test_write_rejects_traversal_key(tmp_path: Path) -> None:
+    with pytest.raises(CrawlerError):
+        cooldown.write(tmp_path, "../../../victim/important", datetime.now(UTC))
+
+
+def test_read_until_rejects_traversal_key(tmp_path: Path) -> None:
+    with pytest.raises(CrawlerError):
+        cooldown.read_until(tmp_path, "../../../victim/important")
+
+
+def test_drop_rejects_traversal_key(tmp_path: Path) -> None:
+    with pytest.raises(CrawlerError):
+        cooldown.drop(tmp_path, "../../../victim/important")
+
+
+def test_clear_rejects_traversal_key_and_does_not_touch_victim_file(tmp_path: Path) -> None:
+    """端到端证据：曾实测的漏洞（`clear "../../../victim/important"` 真删 home 外文件）已堵死。"""
+    home = tmp_path / "home"
+    home.mkdir()
+    victim = tmp_path / "victim" / "important.json"
+    victim.parent.mkdir(parents=True)
+    victim.write_text('{"sentinel": "do-not-delete"}', encoding="utf-8")
+
+    with pytest.raises(CrawlerError) as exc_info:
+        cooldown.clear(home, "../../../victim/important")
+    assert exc_info.value.error_class is ErrorClass.CONFIG
+
+    assert victim.is_file()  # home 外文件毫发无损
+    assert victim.read_text(encoding="utf-8") == '{"sentinel": "do-not-delete"}'
 
 
 # ---------------------------------------------------------------------------
@@ -155,11 +225,20 @@ def test_drop_removes_existing_file(tmp_path: Path) -> None:
 def test_drop_missing_file_is_noop(tmp_path: Path) -> None:
     cooldown.drop(tmp_path, "no_such_key")  # 不抛
 
+    assert not cooldown.cooldown_path(tmp_path, "no_such_key").exists()
+    assert not cooldown.cooldown_dir(tmp_path).exists()  # 未曾创建过目录，本调用不应凭空建它
+
 
 def test_drop_is_idempotent(tmp_path: Path) -> None:
     cooldown.write(tmp_path, "mock.local", datetime.now(UTC))
+    path = cooldown.cooldown_path(tmp_path, "mock.local")
+    assert path.is_file()
+
     cooldown.drop(tmp_path, "mock.local")
+    assert not path.exists()  # 首次调用：文件确实被删
+
     cooldown.drop(tmp_path, "mock.local")  # 第二次仍不抛
+    assert not path.exists()  # 状态保持不变（幂等——不是"第二次又删了什么"）
 
 
 # ---------------------------------------------------------------------------
@@ -221,6 +300,59 @@ def test_list_entries_skips_corrupt_files_without_raising(tmp_path: Path) -> Non
     entries = cooldown.list_entries(tmp_path, now=now)
 
     assert [e.key for e in entries] == ["good_key"]
+
+
+# ---------------------------------------------------------------------------
+# `scan_problems`：损坏文件诊断（`crawler cooldown status` 消费；独立审查 P1 修复
+# ——`list_entries` 对损坏文件的静默跳过不能是全部诊断信息的唯一来源）。
+# ---------------------------------------------------------------------------
+
+
+def test_scan_problems_empty_when_dir_missing(tmp_path: Path) -> None:
+    assert cooldown.scan_problems(tmp_path) == []
+
+
+def test_scan_problems_empty_when_all_files_valid(tmp_path: Path) -> None:
+    cooldown.write(tmp_path, "good_key", datetime.now(UTC))
+    assert cooldown.scan_problems(tmp_path) == []
+
+
+def test_scan_problems_reports_corrupt_json_with_filename_and_reason(tmp_path: Path) -> None:
+    corrupt = cooldown.cooldown_path(tmp_path, "corrupt_key")
+    corrupt.parent.mkdir(parents=True, exist_ok=True)
+    corrupt.write_text("{{{not json", encoding="utf-8")
+
+    problems = cooldown.scan_problems(tmp_path)
+
+    assert len(problems) == 1
+    filename, reason = problems[0]
+    assert filename == "corrupt_key.json"
+    assert reason  # 非空、可读的原因字符串
+
+
+def test_scan_problems_reports_missing_until_field(tmp_path: Path) -> None:
+    path = cooldown.cooldown_path(tmp_path, "no_until")
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(json.dumps({"unexpected": "field"}), encoding="utf-8")
+
+    problems = cooldown.scan_problems(tmp_path)
+
+    assert problems == [("no_until.json", problems[0][1])]  # 恰一条
+    assert "until" in problems[0][1] or "Key" in problems[0][1]  # KeyError('until') 的呈现
+
+
+def test_scan_problems_reports_multiple_corrupt_files_and_ignores_valid_ones(
+    tmp_path: Path,
+) -> None:
+    """独立审查 P1 复现场景：目录只含 2 个损坏文件——两条都要被点名，一条都不许漏。"""
+    cooldown.write(tmp_path, "good_key", datetime.now(UTC))
+    cooldown.cooldown_path(tmp_path, "broken_one").write_text("not json", encoding="utf-8")
+    cooldown.cooldown_path(tmp_path, "broken_two").write_text("{}", encoding="utf-8")
+
+    problems = cooldown.scan_problems(tmp_path)
+
+    assert {name for name, _ in problems} == {"broken_one.json", "broken_two.json"}
+    assert all(reason for _, reason in problems)  # 每条原因都非空
 
 
 # ---------------------------------------------------------------------------

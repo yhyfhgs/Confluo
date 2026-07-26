@@ -12,13 +12,19 @@
 - `status`：扫 `state/cooldown/` 目录列出全部键——域级新键（asset URL host）与
   旧 `<adapter_id>` 平台级键**如实并列**（E-1/D-030 裁决③"保留不破坏"，本卡不做
   旧键迁移，见 `pipeline/cooldown.list_entries` 模块 docstring）+ 剩余冷却窗
-  （已过期标注"已过期"，供人工判断是否需要 `crawler resume --all`）。
+  （已过期标注"已过期"，供人工判断是否需要 `crawler resume --all`）。损坏文件
+  经 `cooldown.scan_problems` 另行侦测，逐个响亮 WARNING（文件名+原因）——不得
+  静默归零成"看起来跟真空一样"（独立审查 P1 修复）。
 - `clear`：按键删除单个冷却文件，或 `--all` 清空全部；均幂等（键不存在/目录
-  为空不报错，返回 0 计数）。
+  为空不报错，返回 0 计数）。`KEY` 非法（路径穿越等，`cooldown.cooldown_path`
+  P0 修复）→ 响亮报错退出 2，不静默吞、更不会真的删到 `state/cooldown/` 之外。
 
 退出码：两命令正常路径恒 0（只读呈现/幂等清理，无"业务失败"语义，同
-`auth status`/`resume`/`retry` 口径）；`clear` 未指定 KEY 也未给 `--all`，或
-两者同时指定 → 2（用法错，同 `resume` 先例"必须指定 TASK_ID 或 --all 之一"）。
+`auth status`/`resume`/`retry` 口径；`status` 遇损坏文件仍恒 0——WARNING 是
+诊断信息非失败）；`clear` 未指定 KEY 也未给 `--all`，或两者同时指定，或 KEY
+未通过白名单校验 → 2（用法/配置错，"必须指定/不可同给"二段校验同 `watch`/
+`subs watch` 先例——`resume` 只查"两者都不给"，不查"两者都给"，并非本命令
+的先例来源）。
 """
 
 from __future__ import annotations
@@ -30,7 +36,8 @@ from typing import Annotated
 import typer
 
 from paper_crawler.config import Config
-from paper_crawler.obslog import setup_logging
+from paper_crawler.errors import CrawlerError
+from paper_crawler.obslog import log_event, setup_logging
 from paper_crawler.pipeline import cooldown
 
 # 与 cli.py 的 HomeOpt/VerboseOpt 同语义（本地声明——同 auth/cli.py 先例：
@@ -71,10 +78,18 @@ def cooldown_status(home: _HomeOpt = None, verbose: _VerboseOpt = False) -> None
     """列出 `state/cooldown/` 下全部冷却键：key / until / remaining（或"已过期"）。
 
     只读扫描，不构造 `PipelineRunner`（同 `crawler status` 先例：运维查询类命令
-    不触发其 `recover_running`/`cleanup_tmp` 副作用）。
+    不触发其 `recover_running`/`cleanup_tmp` 副作用）。损坏文件不静默跳过——先
+    逐个 WARNING 列出文件名与原因（独立审查 P1 修复：目录只含损坏文件时若无此
+    提示，会跟真空目录呈现得一模一样，误导用户"无冷却记录"）。
     """
     config = _load_config(home, verbose)
     now = datetime.now(UTC)
+
+    for filename, reason in cooldown.scan_problems(config.home):
+        message = f"冷却文件损坏已跳过: {filename}（{reason}）"
+        typer.echo(f"警告: {message}", err=True)
+        log_event("WARNING", message)
+
     entries = cooldown.list_entries(config.home, now=now)
     if not entries:
         typer.echo(f"（无冷却记录：{cooldown.cooldown_dir(config.home)}）")
@@ -100,7 +115,13 @@ def cooldown_clear(
     home: _HomeOpt = None,
     verbose: _VerboseOpt = False,
 ) -> None:
-    """删除冷却文件；必须指定 KEY 或 `--all` 之一（同 `resume` 先例，二者不可同给）。"""
+    """删除冷却文件；必须指定 KEY 或 `--all` 之一，二者不可同给（同 `watch`/
+    `subs watch` 的"必须指定 NAME 或 --all"+"NAME 与 --all 不能同时指定"
+    二段校验先例——`resume` 只查"两者都不给"一段，不是本命令的先例来源）。
+
+    `KEY` 未通过白名单校验（路径穿越等，`cooldown.cooldown_path` P0 修复）→
+    退出码 2，清楚报错，不裸抛 traceback。
+    """
     if key is None and not all_:
         typer.echo("错误: 必须指定 KEY 或 --all", err=True)
         raise typer.Exit(code=2)
@@ -109,7 +130,11 @@ def cooldown_clear(
         raise typer.Exit(code=2)
 
     config = _load_config(home, verbose)
-    removed = cooldown.clear(config.home, key)
+    try:
+        removed = cooldown.clear(config.home, key)
+    except CrawlerError as exc:
+        typer.echo(f"错误: {exc}", err=True)
+        raise typer.Exit(code=2) from exc
     typer.echo(f"已清除 {removed} 条冷却记录")
     raise typer.Exit(code=0)
 
