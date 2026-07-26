@@ -164,10 +164,12 @@ def test_arxiv_categories_and_query_compile_to_separate_channels() -> None:
 def test_arxiv_query_bool_predicate_is_not_mixed_into_local_predicates() -> None:
     """`arxiv.query_bool` 标记只挂 `predicate_params`，**不**混入 `local_predicates`
 
-    （Phase 7 T9 任务卡边界：不改 `subs/watch.py`）——`watch._scoped_predicates`
-    唯一读取的字段是 `local_predicates`，若这里混入需要参数的谓词名，现有
-    `filter_papers(..., extra_predicates=...)` 调用点会在缺参数下让构造器报错，
-    破坏现有生产路径。此断言即该边界的守门测试。
+    ——两者是刻意分离的两条通道（免参 vs 带参谓词），`subs/watch.py::_scoped_
+    predicates` 各自读取后合并，`predicate_params=` 再把参数原样转交给
+    `filter_papers`。若把带参谓词名直接塞进 `local_predicates`（跳过
+    `predicate_params`），构造器会在缺参数时报错——这正是两个字段不能合并成一个
+    的理由，此断言即该设计的守门测试（编译产物层面；watch 层面的接线见
+    `tests/integration/test_subs_watch_e2e.py`）。
     """
     step = _step("arxiv", {"query": 'ti:"agent"'})
     assert PREDICATE_ARXIV_QUERY_BOOL not in step.local_predicates

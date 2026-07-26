@@ -315,8 +315,9 @@ def test_apply_predicate_arxiv_query_bool_with_param_kwarg() -> None:
 
 def test_filter_papers_wires_predicate_params_to_arxiv_query_bool() -> None:
     """端到端：`filter_papers(extra_predicates=..., predicate_params=...)` 正确
-    构造并应用 `arxiv.query_bool`——模拟未来 watch.py 集成会怎样驱动这条新接缝
-    （本卡不改 watch.py，但机制本身在此完整验证）。
+    构造并应用 `arxiv.query_bool`——这正是 `subs/watch.py::_run_source` 驱动这条
+    接缝的方式（`_scoped_predicates` 合并点分名 + `predicate_params=dict(...)`
+    转交参数）；watch 层面的端到端场景见 `tests/integration/test_subs_watch_e2e.py`。
     """
     hit = _stub("Agentic Tool Use")
     miss = _stub("Quantum Computing Basics")

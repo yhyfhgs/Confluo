@@ -43,11 +43,19 @@ dry-run 走"早退"捷径，那些只在遍历时才触发的校验（解析异�
 ## 谓词分流（`types.is_source_scoped_predicate` 是单一判别式）
 
 `PlanStep.local_predicates` 混着两类标记：全源通用的 `LocalFilter` 三谓词（T2 给每个
-源都附上）与源专属的点分名（当前只有 `ssrn.topic_filter`）。前者由
+源都附上）与源专属的免参点分名（`ssrn.topic_filter`）。前者由
 `filter_papers(stubs, subscription.filters)` 天然执行——它读的是 `LocalFilter` 本身，
 不看标记；后者必须经 `extra_predicates=` 显式传入，**且只喂给对应源**（否则 arxiv 的
 结果会被 ssrn 的主题谓词误伤）。分流判据不在本模块自己写 `"." in name`，走冻结件的
 `is_source_scoped_predicate`。
+
+**参数化谓词（Phase 7 T9）**：`PlanStep.predicate_params` 是第三类标记——源专属、且
+带订阅级参数的补偿谓词（当前唯一实例：arxiv 的 `arxiv.query_bool`，`compile.py`
+把归一后的查询布尔式挂在这里）。`_scoped_predicates` 把它与 `local_predicates` 里的
+点分名合并去重，喂进同一个 `extra_predicates=`；`filter_papers` 新增的
+`predicate_params=` 形参把 `dict(step.predicate_params)` 原样转交，供
+`filter.PREDICATE_REGISTRY` 的构造器按名取参构造闭包。此前（T9 初版）这条字段只是
+挂在 `PlanStep` 上但未被本模块消费——`arxiv.query_bool` 建好即用同一次改动接通。
 
 ## 重复键逐条展开（`PlanStep.as_params()` 在本模块是禁用的）
 
@@ -121,12 +129,15 @@ primary_category 过滤）。现在 `_compose_arxiv` 按分类逐条 fan-out，�
 （q-fin.*）恒空。故 `_watch_source_venues`"按 id 序取该源首个 venue"对 arxiv 已**不再
 决定收割面**——只剩 `quirks.inception`（其影响由 `since` 收窄兜底）与日志身份两项。
 
-**`query` 的关键词布尔式仍下达不了，且没有本地补偿**（如实列账）：OAI-PMH 无关键词
-查询能力，`sources.arxiv.query` 的字段级布尔式不进请求，本地也没有对应谓词兑现它
-（`filter.PREDICATE_REGISTRY` 只有 `ssrn.topic_filter`，且谓词签名不带参数、无法承载
-订阅级表达式）——这条上实际生效的只有 `filters:` 三谓词。9 个预置靠"`title_regex_any`
-手工镜像 query 词族"这条**约定**兜底（llm-agents 的 T8 修复即为此），不是机制；
-WARNING 如实点名 `search_query` 无补偿。参数化谓词机制留 Phase 7 检查单 #4。
+**`query` 的关键词布尔式仍下达不了，但自 Phase 7 T9 起有本地补偿**：OAI-PMH 无关键词
+查询能力，`sources.arxiv.query` 的字段级布尔式依旧不进请求；本模块也不再把它塞进
+`search_query` 这个此前"下达不了"的死胡同参数（`compile._compile_arxiv` 已改为不产
+该 pushdown 条目，`AdapterFetcher` 那条"参数无法下达"WARNING 因此对 arxiv query 自然
+不再触发——它现在真的被本地兑现了，不是被悄悄丢弃）。`arxiv.query_bool` 谓词（挂
+`PlanStep.predicate_params`）经 `_scoped_predicates`/`filter_papers(...,
+predicate_params=...)` 接入本模块，对标题/摘要做真实求值（范围=ti/abs 字段 +
+AND/OR/ANDNOT + 引号短语，`filter.py`/`subs/types.py` docstring）。9 个预置的
+`title_regex_any` 镜像**继续保留**（决策④，防御纵深，与新机制叠加而非被取代）。
 
 ## 与既有 pipeline 队列的接缝（plan §7 风险②："T5 只派生任务不改 runner"）
 
@@ -864,8 +875,22 @@ def _dedupe_within_batch(candidates: Sequence[_Candidate]) -> list[_Candidate]:
 
 
 def _scoped_predicates(step: PlanStep) -> tuple[str, ...]:
-    """该源的**源专属**补偿谓词（点分名）——通用三谓词由 `LocalFilter` 路径承担。"""
-    return tuple(name for name in step.local_predicates if is_source_scoped_predicate(name))
+    """该源的**源专属**补偿谓词（点分名）——通用三谓词由 `LocalFilter` 路径承担。
+
+    Phase 7 T9 追加：并入 `step.predicate_params` 里的谓词名（构造器形态、带订阅级
+    参数的补偿谓词，如 arxiv 的 `arxiv.query_bool`）——此前这条通道只读
+    `local_predicates`（免参谓词，如 `ssrn.topic_filter`），`predicate_params` 里的
+    名字因此从未真正流进 `filter_papers`。两路径产出的名字天然不重叠（`compile.py`
+    从不把同一谓词名同时放进两个字段），故直接拼接、保序去重即可；`is_source_
+    scoped_predicate` 过滤对 `predicate_params` 侧是防御性的（`compile.py` 的产出
+    纪律本就只放点分名）。
+    """
+    local_names = (name for name in step.local_predicates if is_source_scoped_predicate(name))
+    param_names = (name for name, _ in step.predicate_params if is_source_scoped_predicate(name))
+    seen: dict[str, None] = {}
+    for name in (*local_names, *param_names):
+        seen.setdefault(name, None)
+    return tuple(seen)
 
 
 def _log_dropped_unknown_year(subscription: str, source: str, stubs: Sequence[PaperStub]) -> int:
@@ -943,7 +968,10 @@ def _run_source(
     if subscription.filters.min_year is not None:
         _log_dropped_unknown_year(subscription.name, source, stubs)
     outcome.kept = filter_papers(
-        stubs, subscription.filters, extra_predicates=_scoped_predicates(step)
+        stubs,
+        subscription.filters,
+        extra_predicates=_scoped_predicates(step),
+        predicate_params=dict(step.predicate_params),
     )
     return outcome
 

@@ -360,20 +360,16 @@ class PlanStep:
       值一律字符串——编译产物直接就是查询参数形态；需要 dict 视图时用 `as_params()`。
     - `local_predicates` 列出该源**下推不了**、必须在本地过滤器（T3）补偿的谓词
       标记。空元组 = 该源已完整下推。**免参数**——`filter.PREDICATE_REGISTRY`
-      按名字直接取到构造器、以空参数构造即可执行（如 `ssrn.topic_filter`）；这条
-      通道正是 `subs/watch.py` 现有 `_scoped_predicates`/`extra_predicates=` 唯一
-      消费的字段。
+      按名字直接取到构造器、以空参数构造即可执行（如 `ssrn.topic_filter`）。
     - `predicate_params`（Phase 7 T9 新增；plan §4 T9"参数化谓词签名"冻结件）是
       **参数化补偿谓词**的 (谓词名, 订阅级参数) 有序 k-v 序列——`PREDICATE_REGISTRY`
       的构造器形态谓词（如 arxiv 的 `arxiv.query_bool`，`compile._compile_arxiv`
       产出）据此参数构造出真正的 `PaperStub -> bool` 闭包。与 `local_predicates`
-      **刻意分离、互不混入**：本卡（T9）不改 `subs/watch.py`，`local_predicates`
-      仍是唯一喂给现有 `filter_papers(..., extra_predicates=...)` 调用点的字段——
-      若把需要参数的谓词名也混进 `local_predicates`，现有调用点在缺
-      `predicate_params` 的情况下会把它当"免参谓词"处理，构造器发现参数为空即
-      报错，生产路径 `subs watch` 会被直接破坏。本字段因此是一条**尚未被
-      watch.py 消费**的新接缝，实际接入（把 `predicate_params` 也传给
-      `filter_papers`）留给后续卡（plan §2 冻结表"消费方=subs 链全体后续"）。
+      **刻意分离**（各自的谓词名不重叠，`compile.py` 的产出纪律保证）：`subs/
+      watch.py` 的 `_scoped_predicates` 把两个字段的点分名合并后一并喂进
+      `filter_papers` 的 `extra_predicates=`，`predicate_params=` 把
+      `dict(step.predicate_params)` 原样转交——两个字段因此都会被消费，只是各自
+      走一条独立的名字/参数通道（免参 vs 带参），不是"只认其一"。
     - `note` 是编译期备注（如 "ssrn 无关键词下推能力，关键词全量本地补偿"），
       供日报/诊断呈现，不参与判定。
     """

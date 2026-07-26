@@ -539,6 +539,43 @@ def test_source_scoped_predicate_only_reaches_its_own_source(env: _Env) -> None:
     assert by_source["crossref"].matched_rules == ()
 
 
+def test_arxiv_query_bool_narrows_beyond_the_title_regex_mirror(env: _Env) -> None:
+    """Phase 7 T9 追加改动：`arxiv.query_bool` 经 `watch._scoped_predicates` +
+    `filter_papers(..., predicate_params=...)` 真实接入运行时——与
+    `filters.title_regex_any` 镜像**叠加**执行（决策④，防御纵深，非替换），且有
+    **独立贡献**：镜像放过、但精确布尔式拦下的条目必须被剔除，证明新机制不是
+    "反正镜像已经挡住了"的重复劳动。
+
+    镜像 `title_regex_any=["agent"]` 是宽松子串匹配；查询式
+    `ti:"agentic" AND NOT ti:"survey"` 精确得多——两条区分用例：
+    - "A Survey of Agentic Systems"：镜像命中（含"agent"），但 `ANDNOT ti:"survey"`
+      拦下（题目含"survey"）。
+    - "Multi-Agent Coordination Survey"：镜像命中（"Multi-Agent"含"agent"），但
+      `ti:"agentic"` 原子本身不命中（题目只有"Agent"无"agentic"精确短语）——不同的
+      拦截路径，同样证明谓词在独立生效。
+    """
+    corpus = {
+        "arxiv": [
+            _stub("Agentic Tool Use in LLMs", "10.48550/arxiv.2601.1"),  # 两道都过 → 收
+            _stub("A Survey of Agentic Systems", "10.48550/arxiv.2601.2"),  # 镜像放过/谓词拦
+            _stub("Multi-Agent Coordination Survey", "10.48550/arxiv.2601.3"),  # 同上，另一路径
+            _stub("Unrelated Topology Results", "10.48550/arxiv.2601.4"),  # 两道都拦，基线
+        ]
+    }
+    fetcher = _StubFetcher(corpus)
+    subscription = _load_one(
+        env,
+        sources={"arxiv": {"categories": ["cs.AI"], "query": 'ti:"agentic" AND NOT ti:"survey"'}},
+        filters={"title_regex_any": ["agent"]},
+    )
+
+    summary = run_watch(env.context(fetcher=fetcher, venues={}), subscription, now=DAY)
+
+    assert summary.seen_count == 4
+    assert [entry.title for entry in summary.entries] == ["Agentic Tool Use in LLMs"]
+    assert summary.entries[0].matched_rules == ("title_regex_any[0]", "arxiv.query_bool")
+
+
 # ---------------------------------------------------------------------------
 # 失败处置
 # ---------------------------------------------------------------------------
@@ -709,6 +746,50 @@ def _assert_deduped(summary: RunSummary, expected: int) -> None:
     paper_ids = [entry.paper_id for entry in summary.entries]
     assert len(set(paper_ids)) == expected
     assert all(paper_ids)
+
+
+def test_arxiv_query_bool_applies_uniformly_across_fan_out_categories(env: _Env) -> None:
+    """Phase 7 T9 追加改动④：fan-out 交互说明——`arxiv.query_bool` 是**订阅级**
+    （非分类级）参数，`_compile_arxiv` 只产一份 `predicate_params`，跟分类无关；
+    `_run_source` 对多个 fan-out 请求的结果先聚合（`stubs.extend` 循环，未改动），
+    `filter_papers` 再逐条目求值（per-stub 循环，未改动）——语义上就是"fan-out
+    展开后逐条目独立过滤"，不存在"汇总后过滤"与"逐条目过滤"的二选一，因为过滤
+    从来就是逐条目的，只是"条目"来自哪个 fan-out 分类对它不可见也不重要。
+
+    本测试**不改**、也不依赖 `_compose_arxiv`/`_DELIVERABLE_PARAMS`/`_FANOUT_KEY`
+    的任何行为——只验证既有 fan-out 展开出的多条请求，其聚合结果被同一个查询
+    谓词正确、统一地过滤。
+    """
+    fetcher = _PerRequestFetcher(
+        {
+            ("arxiv", "cs.AI"): [_stub("Agentic Planning", "10.48550/arxiv.2601.10")],
+            ("arxiv", "cs.LG"): [
+                _stub("Agentic Optimization", "10.48550/arxiv.2601.11"),
+                _stub("A Survey of Agentic Learning", "10.48550/arxiv.2601.12"),  # 谓词应拦
+            ],
+        }
+    )
+    subscription = _load_one(
+        env,
+        sources={
+            "arxiv": {
+                "categories": ["cs.AI", "cs.LG"],
+                "query": 'ti:"agentic" AND NOT ti:"survey"',
+            }
+        },
+        filters={"title_regex_any": ["agent"]},
+    )
+
+    summary = run_watch(env.context(fetcher=fetcher, venues={}), subscription, now=DAY)
+
+    assert len(fetcher.requests) == 2  # 两分类各自 fan-out 一条请求——本卡未改这条语义
+    assert summary.seen_count == 3
+    assert {entry.title for entry in summary.entries} == {
+        "Agentic Planning",
+        "Agentic Optimization",
+    }
+    expected_rules = ("title_regex_any[0]", "arxiv.query_bool")
+    assert all(entry.matched_rules == expected_rules for entry in summary.entries)
 
 
 def test_batch_dedupe_crossref_two_issns_hitting_the_same_doi(env: _Env) -> None:

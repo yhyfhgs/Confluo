@@ -20,10 +20,10 @@ arxiv 行两栏都要看细则（`_compile_arxiv` docstring）：分类条目由
 并成对补上派生的 `arxiv_set`（经 venue quirks 进 OAI `set=`）；`query` 的关键词布尔式
 **无下推通道**（OAI-PMH 无关键词能力），但自 Phase 7 T9 起有了参数化本地补偿谓词
 `arxiv.query_bool`（挂 `PlanStep.predicate_params`，`filter.PREDICATE_REGISTRY` 新登记
-的构造器）——该谓词标记**未混入** `local_predicates`，`subs/watch.py` 现有运行时通道
-尚未消费它（T9 任务卡边界：本卡不改 watch.py），故当前实际生效、影响 `subs watch`
-真实运行结果的仍只有 `filters` 三谓词；`predicate_params` 是已建好、经单元测试验证、
-等待后续卡接入的机制，如实列账不假装已经接通。
+的构造器）——该谓词标记不进 `local_predicates`（那是免参谓词的通道），而是经
+`subs/watch.py` 的 `_scoped_predicates`/`filter_papers(..., predicate_params=...)`
+接入，在真实 `subs watch` 运行中对标题/摘要真实求值（T9 同卡追加改动接通，不是
+留给后续卡的空壳）。
 
 ## 三条不变量（下游可依赖）
 
@@ -127,10 +127,10 @@ _ARXIV_NOTE = (
     "（T5 展开；请求量 = N 分类 × M 月桶，每个分类独立收割其 archive 的 set）；"
     "query → 编译为参数化本地补偿谓词 arxiv.query_bool（Phase 7 T9；挂 "
     "predicate_params，不进 pushdown——OAI-PMH 无关键词查询能力，下推通道不存在）："
-    "范围=ti/abs 字段 + AND/OR/ANDNOT + 引号短语；该谓词标记未混入 local_predicates，"
-    "subs/watch.py 现有运行时通道尚未消费（本卡边界，接入留后续卡）——9 个 preset 的 "
-    "filters.title_regex_any 镜像目前仍是唯一实际生效的本地收窄，继续保留（防御纵深，"
-    "决策④）；"
+    "范围=ti/abs 字段 + AND/OR/ANDNOT + 引号短语；经 subs/watch.py 的 "
+    "_scoped_predicates/filter_papers(predicate_params=...) 接入，在真实 subs watch "
+    "运行中真实生效（非仅编译产物）——9 个 preset 的 filters.title_regex_any 镜像"
+    "继续叠加执行（防御纵深，决策④，非被取代）；"
     "增量窗由 T4 产出、T5 经 SourceRequest.since 下推为月桶起点"
 )
 
@@ -253,15 +253,13 @@ def _compile_arxiv(selector: SourceSelector, venue: VenueSpec | None) -> PlanSte
     实现把归一后的查询式塞进这个死胡同纯属诊断展示；现在同一段归一逻辑改喂一个真
     会被求值的谓词。
 
-    **本卡不改 `subs/watch.py`**（Phase 7 T9 任务卡边界）：新谓词标记连同其参数只挂
-    在 `predicate_params`，**不**混入 `local_predicates`——后者是 `watch._scoped_
-    predicates` 唯一读取、进而喂给现有 `filter_papers(..., extra_predicates=...)`
-    调用点的字段；那个调用点目前不传 `predicate_params`，若把需要参数的谓词名也放
-    进 `local_predicates`，构造器会在缺参数时报错，现有生产路径 `subs watch` 会被
-    直接破坏。`predicate_params` 因此是一条**尚未被 watch.py 消费**的新接缝，实际
-    接入留给后续卡（plan §2 冻结表"参数化谓词签名"行：消费方=subs 链全体后续）。9
-    个 preset 现有的 `filters.title_regex_any` 镜像继续保留（决策④，防御纵深，新
-    机制叠加非替换）。
+    新谓词标记连同其参数只挂在 `predicate_params`，不混入 `local_predicates`——
+    两者是刻意分离的两条通道（免参 vs 带参），`watch._scoped_predicates` 把两侧的
+    点分名合并后一并喂给 `filter_papers`，`predicate_params=` 再把参数原样转交
+    （`watch.py` 模块 docstring"参数化谓词"段）；若误把需要参数的谓词名直接塞进
+    `local_predicates`（跳过 `predicate_params`），构造器会在缺参数时报错——这正是
+    两个字段要分开、不能合并成一个的理由。9 个 preset 现有的 `filters.title_regex_any`
+    镜像继续保留（决策④，防御纵深，新机制叠加非替换）。
 
     归一后为空串的 `query`（如只写了空白）不产 `predicate_params` 条目——空查询串
     没有诊断价值。

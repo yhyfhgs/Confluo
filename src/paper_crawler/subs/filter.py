@@ -47,10 +47,11 @@ Phase 7 T9"参数化谓词签名"冻结件的落点：此前签名不带参数�
 - `ARXIV_QUERY_BOOL`（`"arxiv.query_bool"`，Phase 7 T9 新增）：构造器接
   `compile._compile_arxiv` 归一后的 arXiv 查询布尔式（`subs.types.parse_arxiv_query`
   解析出的语法树，范围=ti/abs 字段 + AND/OR/ANDNOT + 引号短语，决策⑤ YAGNI），返回
-  按标题/摘要文本求值的闭包。**该标记不进 `PlanStep.local_predicates`**——
-  `subs/watch.py` 现有的 `extra_predicates=` 调用点只传裸名字、不传参数，见
-  `compile.py::_compile_arxiv` docstring 的接缝说明；本模块提供的是完整、可独立
-  测试的机制，实际接入 watch.py 运行时留给后续卡。
+  按标题/摘要文本求值的闭包。该标记本身不进 `PlanStep.local_predicates`（那是免参
+  谓词的通道）——挂在独立的 `PlanStep.predicate_params`；`subs/watch.py` 的
+  `_scoped_predicates` 把两个字段的点分名合并后一并喂进 `extra_predicates=`，
+  `predicate_params=` 把参数原样转交，`arxiv.query_bool` 因此在真实 `subs watch`
+  运行中被求值（追加改动，同一卡内接通，见 `watch.py` 模块 docstring"参数化谓词"段）。
 
 ### 信号缺失时的兜底：pass-through 放行（T5 随卡小修，controller 裁决 2026-07-26）
 
