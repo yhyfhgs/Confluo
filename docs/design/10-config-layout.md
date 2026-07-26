@@ -2,7 +2,7 @@
 title: 配置分层与敏感边界规范
 status: implemented
 owner: fable5
-updated: 2026-07-23
+updated: 2026-07-26
 ---
 
 # 10 · 配置分层加载 + 敏感边界规范
@@ -39,7 +39,8 @@ config/                        # 仓库内，只放规范与样例——真实�
 ```
 1. env（PAPER_CRAWLER_* / 各 [auth.*] env 覆盖）        ← 最高（CI/临时会话不落盘凭证）
 2. 项目级 ./paper-crawler.toml（**仅非敏感键**）         ← 新增层（本机工作区层：路径/限速/venue 目录等；gitignored 不随仓库分发——可分发的默认配置模板走 config/config.example.toml。复审 n4 取舍明示）
-3. config-home config.toml（$PAPER_CRAWLER_HOME 或 ~/.paper-crawler）  ← 家目录，仓库外，可含敏感槽
+3. config-home config.toml（$PAPER_CRAWLER_HOME 或 ~/.paper-crawler）  ← git 追踪范围外，可含敏感槽
+   （D-032：本机经 ~/.zshenv env 指向仓库根 .paper-crawler/，整目录 .gitignore 强制忽略）
 4. 内置默认（Config dataclass 字段默认值）              ← 兜底
 ```
 
@@ -56,7 +57,8 @@ _SENSITIVE_CONFIG_KEY_RE = r"api[-_]?key|apikey|token|insttoken|passwd|password|
 # 不含裸 `key`（误伤 key_ref 类引用名）与 `email`（identity.email 属合法非凭证键）——复审 §4 建议采纳（2026-07-23）。
 项目级 toml 解析后遍历（含嵌套表）：任一叶子键名命中 → raise CrawlerError(
     CONFIG, "项目级 ./paper-crawler.toml 含敏感键 <key>；凭证禁入项目文件（易误提交）——"
-            "挪至家目录 config.toml（$PAPER_CRAWLER_HOME，仓库外）或环境变量 PAPER_CRAWLER_*")
+            "挪至 config-home config.toml（$PAPER_CRAWLER_HOME）或环境变量 PAPER_CRAWLER_*")
+# 文案 D-032 随修：config-home 不再必然是「家目录/仓库外」——改中性表述（护栏语义不变）。
 ```
 - **护栏范围**：仅项目级层（第 2 层）；家目录 config.toml（第 3 层，仓库外）**允许**敏感槽——那是设计的凭证归处。
 - **护栏理由**：项目级文件在仓库工作树内，敏感值极易随 `git add .` 误提交（AC-0.3 违规）；护栏在启动期响亮拦截。
@@ -93,11 +95,11 @@ crawler config show [--home H]
 
 | 边界 | 规则 | 依据 |
 |---|---|---|
-| 凭证物理位置 | 只存 config-home（仓库外）或 env；**绝不入仓库工作树** | AC-0.3 不变式 |
+| 凭证物理位置 | 只存 config-home（git 追踪范围外；D-032 起本机=仓库根 `.paper-crawler/`，整目录强制 ignore）或 env；**绝不入 git 追踪范围** | AC-0.3 + D-032 |
 | 项目级文件 | 仅非敏感键（路径/限速/venue 目录）；敏感键 → 拒启动（§3.1） | D-025 护栏 |
 | 日志/报告 | 敏感值一律 obslog `redact`（cookie/token/api_key/insttoken/password/secret/email/…，§auth-framework §5） | AC-0.4 |
 | 有状态凭证 | storage_state/cookie jar → AES-GCM `CredentialStore`（0600，keyring 主密钥） | D-023 ②类 |
-| git 双保险 | `paper-crawler.toml`/`config.toml`（家目录副本误置）/`*.enc`/`.filekey`/`profiles.toml` 入 .gitignore | 07 §7 |
+| git 双保险 | `/.paper-crawler/`（整目录锚定，D-032）+ `paper-crawler.toml`/`*.enc`/`.filekey`/`profiles.toml` 入 .gitignore；守卫测试 check-ignore 断言 | 07 §7 + D-032 |
 
 ## 7. 测试与验收
 
@@ -111,3 +113,4 @@ crawler config show [--home H]
 | # | 日期 | 修订 | 依据 |
 |---|---|---|---|
 | 1 | 2026-07-23 | 初稿（D-025 用户架构令）：仓库内 config/ 规范文件夹 + 四层加载链 + 敏感键防误提交护栏 + `config show` 脱敏 + 第三方凭证槽归集规范 + 敏感边界不变式；归 T2 扩容 | 用户架构令 2026-07-23 + [D-025](../plan/decision-log.md) |
+| 2 | 2026-07-26 | D-032：config-home 物理迁入仓库根 `.paper-crawler/`（`~/.zshenv` env 主指向 + launchd `--home` 硬化 + `resolve_home()` 兜底纪律）；凭证红线表述「仓库外」收窄为「git 追踪范围外 + 整目录强制 ignore」；新增 git clean 操作红线（AGENTS §6） | 用户架构令 2026-07-26 + [D-032](../plan/decision-log.md) |

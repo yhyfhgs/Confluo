@@ -1,7 +1,7 @@
 # AGENTS.md — AI/LLM 协作者工作规范
 
 > 适用对象：所有在本仓库工作的 AI 助手（Claude Code、其他 LLM agent）及其 subagent。
-> 人类维护者同样建议遵循。最后更新：2026-07-21。
+> 人类维护者同样建议遵循。最后更新：2026-07-26。
 
 ## 0. 一句话定位
 
@@ -79,6 +79,7 @@ updated: 2026-07-20
 3. 默认遵守 robots.txt 与站点 ToS；rate limit 保守（见各 adapter 文档）；UA 表明身份。
 4. 凭证、session state、cookie、下载的 PDF 一律不入 git（见 .gitignore 与 [docs/design/07-auth-session.md](docs/design/07-auth-session.md)）。
 5. 下载内容仅限本地个人科研使用；任何"再分发"功能不予设计。
+6. 运行时 config-home 在仓库根 `.paper-crawler/`（D-032：`.gitignore` 整目录忽略，经 `$PAPER_CRAWLER_HOME` 指向）：**禁止裸 `git clean -fdx`**，必须带 `-e .paper-crawler`——`clean -x` 无视 ignore 规则，会连凭证与数据库一并抹掉。
 
 ## 7. Subagent 使用规范
 

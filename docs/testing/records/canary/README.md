@@ -40,11 +40,12 @@ scripts/canary_weekly.sh --adapter mock_platform --record    # 同上，额外�
 ### 手动接入 launchd（macOS）
 
 1. 复制模板并替换占位符（`__REPO_ROOT__` 换成本机 clone 的绝对路径、`__LOG_DIR__` 换成你想
-   存日志的目录，建议 `~/.paper-crawler/logs`，需自行 `mkdir -p`）：
+   存日志的目录，建议 `$PAPER_CRAWLER_HOME/logs`——D-032 后即仓库根 `.paper-crawler/logs`，
+   需自行 `mkdir -p`）：
 
    ```bash
-   mkdir -p ~/.paper-crawler/logs
-   sed -e "s#__REPO_ROOT__#$(pwd)#g" -e "s#__LOG_DIR__#$HOME/.paper-crawler/logs#g" \
+   mkdir -p "$PAPER_CRAWLER_HOME/logs"
+   sed -e "s#__REPO_ROOT__#$(pwd)#g" -e "s#__LOG_DIR__#$PAPER_CRAWLER_HOME/logs#g" \
      scripts/com.papercrawler.canary-weekly.plist.template \
      > ~/Library/LaunchAgents/com.papercrawler.canary-weekly.plist
    ```

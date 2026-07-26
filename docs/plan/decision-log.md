@@ -302,3 +302,17 @@ updated: 2026-07-26
   4. **候审边 from/to 定向如实化**：定向是建边时刻快照、非不变量（identifier 增长不重定向）；`candidate_duplicate` 语义上是**无序对**，消费方不得依赖 from/to 字面序。
 - **影响**：schema v2→v3（备份链/幂等/失败回滚经审查亲测）；design/06 §2/§3 已随卡更新；`IngestResult` 三枚举与退出码契约不变；行为面为旧候审的向下收敛+同级收敛的确定化，绝不自动合并/不删行语义不变；性能 +0.023ms/ingest 常数开销（审查实测）。
 - **落款**：F1 opus 执行 + opus 审查（放行附条件全闭合，变异体 M3/M4/M8 补锁后 KILLED）+ fable 合并裁决 2026-07-26。
+
+## D-032 config-home 迁入仓库根 `.paper-crawler/`（env 主指向；凭证红线表述收窄）
+
+- 状态：accepted · 日期：2026-07-26 · 依据：用户架构令 2026-07-26（config 归集进项目文件夹）+ 迁移实录（[session-010](../logs/2026-07-26-session-010.md)）
+- **背景**：用户令「散落 `~/.xxx` 的论文平台 config 归集到项目文件夹统一管理」。D-025 已归集**规范与样例**（仓库内 `config/`），但真实值仍在家目录。实际散点盘点：`~/.paper-crawler`（唯一需人编辑的 config 是 1KB `config.toml`，其余为 DB/数据/日志）、`~/.kaggle/access_token`（外部 kaggle CLI 自有产物）、`~/Library/LaunchAgents/com.papercrawler.openreview-token.plist`（launchd 硬约束位置）。
+- **决策**：
+  1. **config-home 物理迁入仓库根 `.paper-crawler/`**（config.toml/catalog.sqlite/data/logs/reports 整体原样迁移），指向机制 = `PAPER_CRAWLER_HOME` env（`~/.zshenv` 全局 export，覆盖交互/非交互 zsh）。**加载链与优先级零变更**（D-025 四层原样）。symlink 过渡方案经评估被用户否决——家目录彻底干净。
+  2. **launchd 硬化**：plist 模板 `ProgramArguments` 显式携 `--home`（launchd 不读 shell env，防静默回落）；日志路径随 home 派生。已重装生效（顺带修复 07-24 起停摆的 token 刷新）。
+  3. **兜底路径纪律**：绕过 env 的 `Path.home()/".paper-crawler"` 硬编码兜底会静默重建空家目录——一律改经新公共 `config.resolve_home()`（与 `Config.load` home 链单一同源；首例修正 openalex 预算 state 兜底）。
+  4. **红线表述收窄**：AC-0.3 本体（凭证不入 **git 历史**）不变；D-025 §6「凭证只存仓库外」收窄为「凭证只存 config-home（git 追踪范围外，`.gitignore` 锚定 `/.paper-crawler/` 整目录强制忽略）或 env」。AC-0.3 守卫测试（check-ignore 参数化）扩 3 条覆盖该目录。
+  5. **周边散点处置**：`~/.kaggle/access_token` **登记不搬**（外部 CLI 自有文件，物理搬动会破坏该 CLI；Kaggle 回填特性排期时按 D-025 §5 收值入 `[auth.kaggle]` 槽）；plist 位置属 launchd 硬约束，登记为「安装产物，源=scripts/refresh_openreview_token.py」。canary-weekly 模板文档同步改用 `$PAPER_CRAWLER_HOME`。
+  6. **新增操作红线（入 AGENTS §6）**：本仓库禁止裸 `git clean -fdx`——必须带 `-e .paper-crawler`（`clean -x` 无视 ignore 规则，一条命令可抹掉凭证+数据库）。
+- **影响**：`config/README.md` 升级为全配置地图；`10-config-layout.md` §3/§6 随修。**存量文档读法**：既有文档中 `~/.paper-crawler` 字样此后读作「config-home 默认值」——本机经 env 指向仓库内，无 env 的环境仍回落家目录，语义不破（01/02/07/auth-framework 等不逐一改写）。迁移验收：`crawler config show` 与迁移前逐键一致（仅 home 行 default→env）；全量门禁 3824 passed / 覆盖率 98.99% 全绿。
+- **落款**：fable 设计+执行 2026-07-26（用户两轮批准：迁入方向 + env 机制）。

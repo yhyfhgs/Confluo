@@ -10,7 +10,7 @@
 
 ## 0. 前置：凭证配置（凭证隔离，绝不入 URL/git）
 
-- [ ] 家目录 `~/.paper-crawler/config.toml`（仓库外，不入 git）新增：
+- [ ] config-home `.paper-crawler/config.toml`（仓库根，git 忽略区，D-032；无 env 环境为 `~/.paper-crawler`）新增：
       ```toml
       [auth.elsevier]
       api_key = "<真实 Elsevier API key>"
