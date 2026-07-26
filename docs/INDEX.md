@@ -1,7 +1,7 @@
 # 文档索引（唯一权威清单）
 
 > 本表是全仓库文档的单一事实来源（D-008）。任何新增/改名/废弃文档必须同一提交内更新本表（AGENTS.md §4）。
-> status 取值与流转见 [process/status-workflow.md](process/status-workflow.md)。最后盘点：2026-07-27（Phase 7 W0：T2 卡 D-034 FTS5 + D-035 repec 双 ADR + 06/aggregators 增补）。
+> status 取值与流转见 [process/status-workflow.md](process/status-workflow.md)。最后盘点：2026-07-27（Phase 7 W0：T2 卡 D-034 FTS5 + D-035 repec 双 ADR + 06/aggregators 增补；T18 卡 AC-BF 编号转正 + AC-5.1b 承接指针 + AC-7 验收记录骨架）。
 
 ## 按意图导航（先于逐目录清单）
 
@@ -54,7 +54,7 @@
 | [design/09-search-filter.md](design/09-search-filter.md) | 主题订阅与精确搜索 | implemented | 2026-07-27 |
 | [design/auth-framework.md](design/auth-framework.md) | 认证框架实现级详设（07/04 的实现级扩展：四 Provider + 凭证库 + CLI + pipeline 接缝） | implemented | 2026-07-26 |
 | [design/10-config-layout.md](design/10-config-layout.md) | 配置归集与分层规范（D-025：config/ 文件夹 + 加载链 + 敏感键护栏） | implemented | 2026-07-23 |
-| [design/11-browser-fetch.md](design/11-browser-fetch.md) | Browser-Fetch 横切件详设（三消费方统一浏览器取回通道 + CF-403 冷却缺口方案；D-029 案 B 承接，D-030 定稿） | approved | 2026-07-26 |
+| [design/11-browser-fetch.md](design/11-browser-fetch.md) | Browser-Fetch 横切件详设（三消费方统一浏览器取回通道 + CF-403 冷却缺口方案；D-029 案 B 承接，D-030 定稿；§10 AC-BF 已于 T18 转正，正式落点见 acceptance-criteria.md） | approved | 2026-07-27 |
 | [design/12-fulltext-extract.md](design/12-fulltext-extract.md) | 全文抽取（stage 5 extract）实现级详设（pypdf 基线 + GROBID 可选增强 + asset 级幂等键全序取 max；D-033 承载） | approved | 2026-07-27 |
 
 ## design/adapters/ — 平台 adapter 详设
@@ -100,7 +100,7 @@
 | 路径 | 标题 | status | updated |
 |---|---|---|---|
 | [testing/test-plan.md](testing/test-plan.md) | 测试计划与测试类型（T1–T6） | approved | 2026-07-26 |
-| [testing/acceptance-criteria.md](testing/acceptance-criteria.md) | 验收标准总表（AC-0…AC-8） | approved | 2026-07-24 |
+| [testing/acceptance-criteria.md](testing/acceptance-criteria.md) | 验收标准总表（AC-0…AC-8，含 AC-BF 转正区） | approved | 2026-07-27 |
 | testing/records/ | 测试执行留痕（目录，随执行追加） | — | — |
 | [testing/records/2026-07-21-phase1-acceptance.md](testing/records/2026-07-21-phase1-acceptance.md) | Phase 1 验收记录（AC-1 全过） | — | 2026-07-21 |
 | [testing/records/2026-07-22-arxiv-acceptance.md](testing/records/2026-07-22-arxiv-acceptance.md) | arXiv 验收记录（AC-2.3 双层 PASS） | — | 2026-07-22 |
@@ -111,6 +111,7 @@
 | [testing/records/2026-07-24-ac3-acceptance.md](testing/records/2026-07-24-ac3-acceptance.md) | AC-3.1~3.4 独立汇总验收记录（数据模型与合并引擎，Phase 3 判据补记收口） | approved | 2026-07-24 |
 | [testing/records/2026-07-24-ac5-acceptance.md](testing/records/2026-07-24-ac5-acceptance.md) | AC-5 离线端到端汇总验收记录（AC-5.1a/5.2/5.3/5.4 离线 DoD 达成，T7 draft；AC-5.1b defer Phase 6） | approved | 2026-07-24 |
 | [testing/records/2026-07-26-ac6-acceptance.md](testing/records/2026-07-26-ac6-acceptance.md) | AC-6 离线端到端验收 + 在线冒烟记录（订阅与搜索，AC-6.1~6.4 离线 DoD 四条 PASS，fable 亲验签署"达成"；§4 已知限制 #1 arxiv 恒失败 / #2 ssrn 整年枚举经 F7 修复并在线复验，§4.1a 台账；F7 期新发现 #6 arxiv search_query 无本地补偿——上半边 fan-out 已修复，下半边参数化谓词已由 Phase 7 T9 闭合，追记见该条） | approved | 2026-07-27 |
+| [testing/records/2026-07-27-ac7-acceptance.md](testing/records/2026-07-27-ac7-acceptance.md) | AC-7 验收记录骨架（全文抽取与库增强，Phase 7 T18 产出；AC-7.1/7.2 离线载体已引用 T7 既有测试并 PASS，在线半区 pending 归 T19；AC-7.3/7.4 因 T13/T14/T16 未合并如实标 pending） | draft | 2026-07-27 |
 | [testing/records/canary/README.md](testing/records/canary/README.md) | Canary 健康矩阵记录目录（`crawler canary --record` 落盘，按日覆盖；+周跑 launchd/cron 模板说明） | approved | 2026-07-26 |
 
 ## process/ — 流程规范

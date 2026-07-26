@@ -2,7 +2,7 @@
 title: 验收标准总表
 status: approved
 owner: fable5
-updated: 2026-07-24
+updated: 2026-07-27
 ---
 
 # 验收标准（Acceptance Criteria）
@@ -58,7 +58,7 @@ updated: 2026-07-24
 | ID | 场景 | 通过判据 |
 |---|---|---|
 | AC-5.1a | SSRN 元数据层增量（聚合 API 主路径，CI 可判） | ①7 收割日回放（含重叠 created 窗 + ~1 日延迟注入）→ abstract_id 清单无重复无遗漏；②econ/fin 主题过滤＝确定性过滤逻辑单测（固定 fixture 输入→期望输出精确断言；原「一致率≥95% vs OpenAlex field 基准」废止——过滤信号本取自 OpenAlex field，自比恒 100% 为空判）；③全程零 SSRN 站点接触（obslog 断言无 `*.ssrn.com` 请求）；限速审计经 obslog jsonl（聚合 API 请求不入 FetchLog） |
-| AC-5.1b | SSRN 全文层（模式 B 浏览器取回，opt-in，非 CI） | 遇 Cloudflare 挑战正确 BLOCKED(challenge)+平台冷却 24h（离线 challenge fixture 可判）；真实取回落盘＝用户参与 runbook（须换非阻断网络）；限速 ≤1 req/5s（仅模式 B 触 `*.ssrn.com` 时，FetchLog 审计）。**Phase 5 defer 至 Phase 6 横切件统一设计**（D-029 案 B；本 Phase 不声明 FETCH 能力，不阻塞离线 DoD） |
+| AC-5.1b | SSRN 全文层（模式 B 浏览器取回，opt-in，非 CI） | 遇 Cloudflare 挑战正确 BLOCKED(challenge)+平台冷却 24h（离线 challenge fixture 可判）；真实取回落盘＝用户参与 runbook（须换非阻断网络）；限速 ≤1 req/5s（仅模式 B 触 `*.ssrn.com` 时，FetchLog 审计）。**Phase 5 defer 至 Phase 6 横切件统一设计**（D-029 案 B；本 Phase 不声明 FETCH 能力，不阻塞离线 DoD）。**承接指针（Phase 7 T18，2026-07-27）**：三判据现分别由 AC-BF.1（挑战 BLOCKED+冷却）／AC-BF.3（真实取回 runbook）／AC-BF.4（限速 FetchLog 审计）承接兑现（见下方 AC-BF 区；design/11 §10）——T11 已将 ssrn 模式 B 接入 browser-fetch 通道并产 `RENDER_PAGE` 计划，本行判据语义不变、不重复立条 |
 | AC-5.2 | NBER >18 月开放 | `pull nber --year <当前-2>`（>18 月区）无凭证成功：prefix enumerate 该年 + resolve 直链 + fetch PDF 魔数合格（离线 fixture 回放 PASS + 在线冒烟 1 篇实证，D-018 分层）；<18 月抽样 → resolve 判 no_entitlement（非 integrity）、报告提示订阅、且 resolve 本身零网络（无软门请求发出，不利用软门绕过——见调研伦理批注）；通用 adapter DoD：resolve/fetch/enumerate 逻辑单测 + fixture 回放 + www/back 双域限速假时钟断言全 PASS |
 | AC-5.3 | TE/QE 开放刊 | OJS-OAI 枚举 + galley 全文成功抓取，无需认证：①`timeline {te,qe}` 覆盖 volume_map 全区间；②`pull {te,qe} --year <Y> --limit N` 落盘 N 个 `%PDF` 文件 >10KB、DB↔文件对账一致；D-019 锚点：TE/QE crossref-by-ISSN 计数各 ≥1 行（对账编辑部记录差额，如实注明差额成因，不阻塞） |
 | AC-5.4 | 平台归属正确性 | POM 走 SAGE adapter（非 Wiley/INFORMS）；SODA 走 SIAM（非 ACM）——路由解析正确（Phase 4 既有判据，未变更）。**Phase 5 新增**：aea 8 刊 DOI code→venue 路由正确（P&P 归位暂缓、不入 8 刊清单）；ECMA 域名三段路由正确（当前段自营域→galley 取回 / 过刊段 Wiley 域→no_entitlement 零网络 / pre-DOI 段 JSTOR 域→零 asset 零网络，且当前段 404 终态诚实改判 no_entitlement 而非 GONE、TE/QE 404 仍判 GONE 不误判）；wiley 10.3982 前缀移除后不再误路由 ECMA/TE/QE 至 wiley（D-028）。aea 元数据/enumerate/DOI 解析无专属 AC-5.x，按通用 adapter DoD（fixture 回放 + 单测全 PASS）+ 本条路由类比收口 |
@@ -80,6 +80,23 @@ updated: 2026-07-24
 | AC-7.2 | GROBID 可选 | GROBID 开/关两模式均产出，关闭时降级为纯文本抽取不报错 |
 | AC-7.3 | 去重审核工具 | `dedupe review` 逐条展示证据，merge/reject 后 same_as/rejected 正确落库且可回滚（物理不删行） |
 | AC-7.4 | 全库对账 | 全库 `verify` 通过；preprint↔published 关联报告生成 |
+
+## AC-BF · Browser-Fetch 横切件（design/11 转正，Phase 7 T6/T11 落地）
+
+> **转正说明**（Phase 7 T18，2026-07-27）：编号继承 [design/11 §10](../design/11-browser-fetch.md) 草案原文（`AC-BF.1`~`AC-BF.6`），**判据语义不变**——转正只做两件事：①编号由"临时"转"正式"（本区即正式落点，design/11 §10 转为草案溯源）；②逐条补测试载体出处（grep 实况，2026-07-27，代码基线 `b3b8502`）。**未按 D-030 §12 裁决点⑦原议"转正为 `AC-<phase>.x`"重编号**——`AC-7.x` 已被本 Phase 自身的全文抽取/去重/对账四条占用（见上 AC-7），沿用 `AC-BF` 前缀可避免编号碰撞，且与本文件 `AC-0`/`AC-8` 两个既有"主题式而非阶段式"编号先例同构。
+>
+> **与既有 AC 的关系**：**AC-5.1b**（SSRN 全文层，见上 AC-5 区）由 AC-BF.1+AC-BF.3+AC-BF.4 承接兑现，AC-5.1b 行已加承接指针（不重复立条）；**aea 全文 AC**（[phase5-report 检查单 #9](../reports/2026-07-24-phase5-report.md)"待 browser-fetch 通道+auth 落地时立专属 AC"）同样由本区承接，aea 机构认证面另属 auth 域不在此列；**AC-4.6**（风控即停）是 AC-BF.1 的父条——AC-BF.1 是其在浏览器传输层的具化，不替代原条（原条覆盖 httpx 路径）。
+
+| ID | 场景 | 通过判据 | 已落测试载体（grep 实况，2026-07-27） |
+|---|---|---|---|
+| AC-BF.1 | 风控即停（红线核心） | 注入 CF 挑战响应（403+`cf-mitigated` / 200+"Just a moment" / CAPTCHA 三形态各一）→ ① 判 CHALLENGE ② 抛 `Challenged`→BLOCKED ③ 域冷却 24h 写入且**下次 drain 读得到** ④ 报告显著提示 ⑤ **零重试零绕过**（调用序列断言：`goto`=1、`download_via`=0） | 判据①⑤：`tests/unit/test_browser_fetch.py::test_t2_t3_challenge_stops_immediately`；判据②：`tests/integration/test_browser_fetch_pipeline.py::test_challenge_raises_and_logs_failure_row`；判据③（E-1 修复判据载体）：`tests/integration/test_cf403_cooldown.py::test_t7_open_access_challenge_cooldown_blocks_second_drain` + `test_challenge_writes_domain_key_not_adapter_key`；判据④沿用 AC-4.6 既有报告机制（`pipeline/report.py` blocked 计数+提示文案），design/11 §6.2 明文"不新增报告结构"，非缺口。**载体缺口**：`download_via` 内部第二跳导航不重新过判定器（若该处才发质询→归 `TRANSIENT` 进重试表，非 `Challenged`）——上述调用序列断言仅覆盖 `goto` 层判据⑤，不覆盖此二跳场景；已登记 `browserfetch.py` 模块 docstring"已知边界 #2"+`tests/manual/browser_fetch_runbook.md` §5 第 2 行，fable 已裁"本 Phase 维持现状"（过度重试方向安全），转正不因此改判据文字 |
+| AC-BF.2 | AC-0.2 静态红线 | 全仓静态扫描：本通道代码无求解/绕过语义（无打码服务调用、无 UA/指纹轮换、无 stealth 插件、无质询脚本执行）；`hcaptcha`/`recaptcha` 串仅出现在检测上下文 | `tests/unit/test_browser_fetch.py::test_ac_bf2_module_source_has_no_solver_or_evasion_semantics`（同名直接载体）；UA 恒定诚实旁证：`test_default_launcher_wires_identity_header_and_storage_state` + `tests/integration/test_browser_fetch_pipeline.py::test_identity_header_is_honest_ua_string` |
+| AC-BF.3 | 单篇取回（对标 AC-4.1） | 用户已 CF-cleared session + 非阻断网络下，`crawler grab --doi <X> --browser` 取回 1 篇，`%PDF` 魔数校验过、>10KB、DB↔文件对账一致 | `tests/manual/browser_fetch_runbook.md` §3（T-11，**非 CI**，用户参与，结果留痕 `testing/records/`）；离线对应物：`tests/unit/test_browser_fetch.py::test_t1_ok_path_downloads_to_dest` |
+| AC-BF.4 | 预算与限速审计（对标 AC-4.4/AC-0.5） | ① 单 venue×域单日 browser-fetch 尝试 ≤ `browser_daily_cap`（FetchLog 对账，成败均计）；② 相邻两次请求间隔 ≥ 域声明下限（ssrn ≥5s；obslog `channel="browser"` 事件时序审计）；③ 达 cap → BLOCKED 非 FAILED | 判据①③：`tests/integration/test_browser_fetch_pipeline.py::test_t5_quota_boundary_allows_cap_minus_one` + `test_t5_quota_blocks_at_cap_without_extra_fetch_log`（拒绝不落尝试行，非 failed）+ `test_t5_quota_is_scoped_to_venue_and_domain`；熔断三判定：`test_t5_cooldown_precedes_quota` + `test_t5_breaker_after_three_consecutive_failures`；L2 限速机制：`test_rate_gate_charges_每次导航`（`RateLimiter` 假时钟断言）。**载体缺口**：判据②字面"obslog 时序审计"无直接载体——`browserfetch.py` 已知边界 #3（T6 审查登记，本卡转正评估结论：维持现状）如实：obslog 每次调用只记 `rate_wait_ms` 汇总，无请求发起时刻序列，真实约束在 `RateLimiter` 桶配置（已测）而非日志；时序审计留 T19 在线批人工计时佐证 |
+| AC-BF.5 | 无权限降级（对标 AC-4.3） | 判 NO_ENTITLEMENT → asset 标 `no_entitlement`、**不计 failures**、不重试；有 DOI 时派生 OA-fallback（既有链）；无 OA 副本时如实无副本 | `tests/unit/test_browser_fetch.py::test_t2_no_entitlement_returns_outcome_without_raising`（`fetch_one` 层，不抛异常）；`tests/integration/test_browser_fetch_pipeline.py::test_no_entitlement_raises_for_existing_oa_chain`（stage 层转译接入既有 OA-fallback 链）；不计 failures 回归：`test_t5_no_entitlement_rows_do_not_trip_the_breaker` + `test_t5_no_entitlement_rows_are_transparent_to_the_streak` |
+| AC-BF.6 | CF-403 缺口闭合（S-c 已采纳，D-030） | 403+`cf-mitigated: challenge` → `challenge`（非 `no_entitlement`）+ 冷却；403 无该头 / wiley TDM 403 → `no_entitlement` **行为逐字不变**（回归锁定）；全库 fixture 零翻转 | `tests/unit/test_http.py::test_t6_form1_cf_403_maps_challenge` + `test_t6_form2_plain_403_stays_no_entitlement` + `test_t6_form2_cf_mitigated_other_value_stays_no_entitlement` + `test_t6_form3_wiley_tdm_403_stays_no_entitlement`（三形态+回归锁定）；`test_t6_full_repo_403_fixture_scan_zero_flip` + `test_t6_scan_finds_the_expected_403_fixture_corpus`（全库零翻转+扫描器自证不空跑）；端到端：`tests/integration/test_cf403_cooldown.py::test_t6_cf403_through_http_client_reaches_cooldown` + `test_plain_403_still_no_entitlement_end_to_end` |
+
+**载体缺口小计**：2 处（AC-BF.1 判据⑤的 `download_via` 二跳导航细分场景；AC-BF.4 判据②的时序审计字面形态），均为 T6/T11 审查已登记的已知边界（非本卡新发现），本卡按"如实标注不改判据"原则转正，不因转正而扩大或缩小判据范围。
 
 ## AC-8 · Venue 追踪（跨 Phase，随会议 adapter 验收）
 

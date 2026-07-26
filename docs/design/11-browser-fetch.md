@@ -2,7 +2,7 @@
 title: Browser-Fetch 横切件（浏览器上下文取回通道）实现级详设
 status: approved
 owner: fable5
-updated: 2026-07-26
+updated: 2026-07-27
 ---
 
 # 11 · Browser-Fetch 横切件详设
@@ -549,7 +549,12 @@ BudgetGate.check_or_raise(venue_id, domain):
 
 ## 10. 验收标准草案（AC-BF.x）
 
-> **编号说明**：`AC-BF.x` 为**临时编号**——本通道落地 Phase 未定（Phase 6 末 stretch 或 Phase 7），
+> **已转正（Phase 7 T18，2026-07-27）**：正式编号见 [acceptance-criteria.md AC-BF 区](../testing/acceptance-criteria.md)——
+> **沿用本节草案编号 `AC-BF.1`~`AC-BF.6`**（未改判据语义，只补测试载体出处；未按下方"编号说明"原议改写为
+> `AC-<phase>.x`，理由见 acceptance-criteria.md AC-BF 区转正说明：避免与 Phase 7 自身 `AC-7.x` 碰撞）。
+> 本节以下草案文本原样保留供溯源，**不再是判据的权威落点**（权威落点=acceptance-criteria.md）。
+>
+> **编号说明**（草案原文，历史保留）：`AC-BF.x` 为**临时编号**——本通道落地 Phase 未定（Phase 6 末 stretch 或 Phase 7），
 > 落地 Phase 确定后转正为 `AC-<phase>.x` 并回填 [acceptance-criteria.md](../testing/acceptance-criteria.md)
 > 及其 FR→AC 覆盖映射表（D-016）。**提请 fable 定稿裁决编号归属**（§12-裁决点⑦）。
 > 形态对齐 AC-4.1（单篇取回）/ AC-4.3（no_entitlement 降级）/ AC-4.6（风控即停）三条先例。
@@ -615,5 +620,6 @@ BudgetGate.check_or_raise(venue_id, domain):
 
 | # | 日期 | 修订 | 依据 |
 |---|---|---|---|
+| 3 | 2026-07-27 | **T18 转正**：§10 头部加"已转正"指向 `acceptance-criteria.md` AC-BF 区（编号沿用 `AC-BF.1`~`AC-BF.6`，未改判据语义，只补测试载体出处；未按裁决点⑦原议重编号为 `AC-<phase>.x`——避免与 Phase 7 自身 `AC-7.x` 碰撞）；本节草案文本原样保留供溯源，不再是权威落点 | phase7-implementation-plan.md T18 + acceptance-criteria.md AC-BF 区 |
 | 2 | 2026-07-26 | **fable 定稿（draft→approved）**：§12 八项裁决回填（①案 A ②S-c ③E-1 ④CLI 缓议 ⑤A-1 三合一 ⑥配额 min ⑦AC-BF 临时编号 ⑧不落 S-a）；D-030 ADR 落 decision-log；S-c/E-1 立 F6 实现卡（phase6-plan 增补） | fable 通读全文 + [D-030](../plan/decision-log.md) |
 | 1 | 2026-07-26 | 初稿（Phase 6 R1，status draft，opus 起草）：三消费方需求归纳；ssrn.md §11 时序两案**重铸为形态两案** + 10 维量化取舍表 + 推荐案 A；AC-0.2 红线段前置；`ChallengeDetector` 接线（判定器传输无关的正面结论）+ **CF-403 冷却缺口三方案量化比较与 S-c 契约演进案**；**新发现第二缺口：冷却键粒度 + open_access family 写而不读**；BLOCKED 人工介入流；四层预算护栏（唯一事实源 = FetchLog，零新表）；上下文接缝伪代码（含 §3.6 演进缝预留）；★接缝 A-1 裁决建议；11 项测试方法 + 6 类测试类型 + AC-BF.1~6 草案 | [ssrn.md §11](adapters/ssrn.md) 设计种子 + [D-029](../plan/decision-log.md) + [phase5-report §6 #2/#9](../reports/2026-07-24-phase5-report.md) + [post-phase5-audit §3 S3-P2/§6 #2](../reports/2026-07-24-post-phase5-audit.md) + [auth-framework §8/§9/§10/§11](auth-framework.md) + 实码核对（`http.py:89-90`、`runner.py:456/461/663/589-608`、`auth/browser.py`、`auth/challenge.py`、`0001_init.sql:152-185`） |
