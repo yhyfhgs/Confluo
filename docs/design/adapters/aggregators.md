@@ -430,7 +430,9 @@ openalex/s2 **不承担枚举**（capabilities 已收回 ENUMERATE，§1；两�
 `subs/watch.py:200`；**`subs/model.py:19,172` 的"六源"是 DSL `SOURCE_FIELDS`、与优先级表无关，不得连坐**）；
 `pyproject.toml` entry-points +1；两处测试断言——`tests/integration/test_cli_canary.py` 的
 `_EXPECTED_CANARY_ADAPTER_IDS` 20→21，`tests/unit/test_adapter_loading.py:70` 的 `assert adapter.domains`
-按网络面分类改判（`_ZERO_NETWORK_ADAPTERS = {"repec"}` 双向断言，**正向锁定零网络**而非豁免）；
+按网络面分类改判（`_ZERO_NETWORK_ADAPTERS = {"repec"}` 双向断言，**正向锁定零网络**而非豁免）——同文件
+`:67-68` 另要求 `source_note` 非空且 `rpm > 0`，故 repec 须声明**名义 `RatePolicy`**，`source_note` 如实写
+"零网络源，限速闸不生效，本值为占位名义"（**不得编造假出处**）；
 `registry.py:330`「空 domains（畸形 adapter）」注释语义调和（enrich 源不进 registry 路由 ⇒ 该分支对 repec
 不可达，代码与文案零改动，仅注释收窄）。**零 schema migration**（`identifier.scheme` 无 CHECK 约束）。
 

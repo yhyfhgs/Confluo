@@ -174,7 +174,8 @@ Phase 6，Phase 6 关账时未兑现（该 Phase 的搜索面全部落在订阅 
   增长，漏一处即索引静默漂移。**两条不变式（D-034 决策 3 写死 SQL）**：①`paper_id` 每次写入同写 `new.id`、
   UPDATE 取 DELETE+INSERT 形态（写成 `UPDATE … SET title=…WHERE rowid=` 会在 rowid 重编号后复活静默错
   映射）；②两处 DELETE 带 `AND paper_id = old.id` 双条件（只按 rowid 删会误删无辜他行＝假阴性；加判别后
-  退化为可检出的冗余行）。**迁移器须先扩展**：`db.py::_iter_statements` 现逐 `;` 断句、切不了
+  DELETE 落空 → 后续 INSERT 撞占用 rowid 抛 `IntegrityError`＝**写入响亮失败+回滚**，须 `crawler reindex`
+  恢复写路径，T12 须把该异常同款翻译为可操作 `CrawlerError`）。**迁移器须先扩展**：`db.py::_iter_statements` 现逐 `;` 断句、切不了
   `BEGIN…END` 触发器（实测复现），T12 范围内含该扩展。
 - **方言隔离**：`0001`–`0003` 保持方言中性（§6/D-001 不变）；`0004` 是**唯一**允许含 SQLite 专有特性的
   迁移文件，PG 迁移时整文件替换为 `tsvector` 生成列 + GIN 索引（等价性与**不可移植面**——查询语法、
