@@ -327,6 +327,62 @@ def test_decide_without_candidate_edge_raises(repo: Repo) -> None:
     assert _same_as_rows(repo) == []
 
 
+def test_merge_refused_when_the_pair_also_has_a_preprint_of_edge(repo: Repo) -> None:
+    """独立审查 P1-1（D-007 红线）：kind 隔离判到**对**——同一对同时挂
+    candidate_duplicate 与 preprint_of 时 merge 必须被响亮拒绝，且**不留任何副作用**
+    （候审行的 decided 不动、无 same_as、无聚合）。reject 仍允许。"""
+    a = _paper(repo, doi="10.9999/pp1", title="Preprint Version")
+    b = _paper(repo, doi="10.9999/pp2", title="Published Version")
+    _candidate(repo, a, b)  # 弱信号候审
+    _candidate(repo, a, b, kind="preprint_of", confidence=1.0, reason="meta-clue:doi")
+
+    with pytest.raises(CrawlerError) as excinfo:
+        repo.decide_candidate(a, b, "merge")
+
+    assert excinfo.value.error_class is ErrorClass.CONFIG
+    assert "preprint_of" in str(excinfo.value) and "D-007" in str(excinfo.value)
+    assert _candidate_row(repo)["decided"] is None  # 事务回滚，零副作用
+    assert _same_as_rows(repo) == []
+    assert repo.merged_groups() == []
+
+    # 误报候审仍可关掉：reject 不受红线限制（只置态、不产生聚合）。
+    repo.decide_candidate(a, b, "reject")
+    assert _candidate_row(repo)["decided"] == "rejected"
+    assert repo.merged_groups() == []
+
+
+def test_merge_refused_for_preprint_pair_built_by_the_real_ingest_chain(repo: Repo) -> None:
+    """同上，但两条边全由**真实链路**产生（审查复现场景）：弱信号（同标题归一形+同首
+    作者）建 candidate_duplicate，arxiv 侧 `doi` 回填线索建 preprint_of。"""
+    engine = MergeEngine(repo)
+    published = engine.ingest(
+        PaperStub(
+            title="Order Flow and Prices",
+            identifiers=(("doi", "10.1016/j.jfineco.2024.99"),),
+            authors=("Jane Smith",),
+        ),
+        source="crossref",
+    ).paper_id
+    preprint = engine.ingest(
+        PaperStub(
+            title="Order flow and prices",
+            identifiers=(("arxiv", "2401.00042"),),
+            authors=("Jane Smith",),
+            meta=(("doi", "10.1016/j.jfineco.2024.99"), ("journal_ref", "JFE 2024")),
+        ),
+        source="s2",
+    ).paper_id
+
+    kinds = {str(row["kind"]) for row in repo.db.query("SELECT kind FROM paper_relation")}
+    assert kinds == {"candidate_duplicate", "preprint_of"}  # 两种边真实并存
+    candidate = repo.list_candidates()[0]
+    assert candidate.preprint_of == (preprint, published)  # 呈现面拿得到警示数据
+
+    with pytest.raises(CrawlerError):
+        repo.decide_candidate(preprint, published, "merge")
+    assert repo.merged_groups() == []
+
+
 def test_decide_same_paper_twice_raises(repo: Repo) -> None:
     a = _paper(repo, doi="10.9999/self", title="One")
 
@@ -355,19 +411,25 @@ def test_revert_restores_pending_state_and_undoes_aggregation(repo: Repo) -> Non
     assert len(_same_as_rows(repo)) == 1  # 关系行留痕，不物理删
 
 
-def test_revert_then_merge_again_reuses_the_same_row(repo: Repo) -> None:
+def test_revert_then_merge_again_reuses_the_row_and_keeps_history(repo: Repo) -> None:
+    """独立审查 P2-3：复活既有 same_as 行时**叠加**证据、不整体覆写——上次回滚写的
+    `reverted_at` 必须留存（"这条边曾被回滚过又重新合并"是审计最该看见的事实；关系行
+    本身绝不删，历史只存在于 evidence 里）。`decided` 列才是权威态。"""
     a = _paper(repo, doi="10.9999/w1", title="One")
     b = _paper(repo, doi="10.9999/w2", title="Two")
     _candidate(repo, a, b)
     repo.decide_candidate(a, b, "merge")
     repo.revert_candidate(a, b)
+    reverted_at = json.loads(_same_as_rows(repo)[0]["evidence_json"])["reverted_at"]
 
     repo.decide_candidate(a, b, "merge")
 
     rows = _same_as_rows(repo)
     assert len(rows) == 1
     assert rows[0]["decided"] == "merged"
-    assert "reverted_at" not in json.loads(rows[0]["evidence_json"])
+    evidence = json.loads(rows[0]["evidence_json"])
+    assert evidence["reverted_at"] == reverted_at  # 历史保留，不被覆写抹掉
+    assert evidence["decided_at"] and evidence["reason"] == "dedupe-review-merge"
     assert len(repo.merged_groups()) == 1
 
 

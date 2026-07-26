@@ -250,6 +250,81 @@ def test_broken_config_toml_exits_2_without_traceback(home: Path) -> None:
     assert "错误" in all_output(result)
 
 
+def test_review_warns_when_the_pair_also_has_a_preprint_of_edge(repo: Repo, home: Path) -> None:
+    """独立审查 P1-1 呈现面：这类 pair 的 merge 会被拒，列表里就要说明白，且给出的
+    下一步只剩 reject（不再打印 `merge|reject` 误导人去试）。"""
+    a, b = _pair(repo)
+    repo.db.execute(
+        "INSERT INTO paper_relation "
+        "(from_paper, to_paper, kind, confidence, evidence_json, decided) VALUES (?,?,?,?,?,?)",
+        (a, b, "preprint_of", 1.0, '{"reason": "meta-clue:doi"}', None),
+    )
+
+    result = runner.invoke(app, ["dedupe", "review", "--home", str(home)])
+
+    out = all_output(result)
+    assert result.exit_code == 0, out
+    assert "preprint_of" in out and "D-007" in out
+    assert f"crawler dedupe decide {a} {b} reject" in out
+    assert "merge|reject" not in out
+
+
+def test_decide_merge_on_a_preprint_pair_exits_2_without_side_effects(
+    repo: Repo, home: Path
+) -> None:
+    """D-007 红线：merge 被响亮拒绝（退出 2）、库内零副作用；**无 --force 旁路**。"""
+    a, b = _pair(repo)
+    repo.db.execute(
+        "INSERT INTO paper_relation "
+        "(from_paper, to_paper, kind, confidence, evidence_json, decided) VALUES (?,?,?,?,?,?)",
+        (a, b, "preprint_of", 1.0, '{"reason": "meta-clue:doi"}', None),
+    )
+
+    result = runner.invoke(app, ["dedupe", "decide", a, b, "merge", "--home", str(home)])
+
+    out = all_output(result)
+    assert result.exit_code == 2
+    assert "preprint_of" in out and "D-007" in out
+    assert repo.db.query("SELECT * FROM paper_relation WHERE kind = 'same_as'") == []
+    assert repo.merged_groups() == []
+    # reject 仍可用（关掉误报候审是合法操作）。
+    assert (
+        runner.invoke(app, ["dedupe", "decide", a, b, "reject", "--home", str(home)]).exit_code == 0
+    )
+
+
+def test_revert_notes_that_the_pair_is_still_merged_via_another_edge(
+    repo: Repo, home: Path
+) -> None:
+    """独立审查 P2-2：回滚只解除**这一条**边；两者若经 A~B、B~C 仍同类，出口须提示，
+    否则人会以为"回滚了却没生效"。"""
+    a, b = _pair(repo)
+    c = repo.upsert_paper(
+        VENUE_ID, None, PaperStub(title="Third", identifiers=(("doi", "10.9999/c3"),))
+    )
+    repo.db.execute(
+        "INSERT INTO paper_relation "
+        "(from_paper, to_paper, kind, confidence, evidence_json, decided) VALUES (?,?,?,?,?,?)",
+        (b, c, "candidate_duplicate", 0.5, "{}", None),
+    )
+    repo.decide_candidate(a, b, "merge")
+    repo.decide_candidate(b, c, "merge")
+    # 再把 a~c 也裁决为 merge（冗余连通），使回滚 a~b 后两者仍同类。
+    repo.db.execute(
+        "INSERT INTO paper_relation "
+        "(from_paper, to_paper, kind, confidence, evidence_json, decided) VALUES (?,?,?,?,?,?)",
+        (a, c, "candidate_duplicate", 0.5, "{}", None),
+    )
+    repo.decide_candidate(a, c, "merge")
+
+    result = runner.invoke(app, ["dedupe", "revert", a, b, "--home", str(home)])
+
+    out = all_output(result)
+    assert result.exit_code == 0, out
+    assert "已回滚为待审" in out
+    assert "折叠不解除" in out
+
+
 def test_revert_unknown_pair_exits_2(repo: Repo, home: Path) -> None:
     a, _b = _pair(repo)
     other = repo.upsert_paper(

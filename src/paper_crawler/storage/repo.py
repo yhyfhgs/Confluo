@@ -280,11 +280,27 @@ def _weak_key(incoming: MergeInput) -> tuple[str, str] | None:
 #
 # 这是本卡冻结的**权威说明**（消费方 T14 verify / T16 preprint 报告按此对齐）。六条：
 #
-# 1. **kind 隔离**：审核流程只认 `candidate_duplicate`（"这两篇疑似同一著作"，无序对）。
-#    `preprint_of` 的 `decided=NULL` 语义是"边已生效、可选复核"而非"待审阻塞"
-#    （merge.py 裁决 7），**不进**本流程：既不出现在待审列表，也不能被 `decide_candidate`
-#    裁决，更不参与聚合——预印本与发表版是两条独立著作记录（design/06 §3：双条 paper
-#    双份全文），合并它们会丢失"同一著作的两个版本各有各的资产"这一事实。
+# 1. **kind 隔离——口径是"逐对"，不是"逐边"**（独立审查 P1-1 修复）：审核流程只认
+#    `candidate_duplicate`（"这两篇疑似同一著作"，无序对）；`preprint_of` 的
+#    `decided=NULL` 语义是"边已生效、可选复核"而非"待审阻塞"（merge.py 裁决 7），
+#    不出现在待审列表、不能被 `decide_candidate` 裁决、不参与聚合。
+#    **但"这条边不是 candidate_duplicate"还不够**：同一对 paper 完全可能**同时**挂两种
+#    边——弱信号（标题+首作者相同）建 `candidate_duplicate`，随后 arxiv `journal_ref`/`doi`
+#    回填又建 `preprint_of`（审查实测的真实链路）。此时若只按边判 kind，`decide … merge`
+#    会照常成功、把预印本与刊发版聚合折叠，**直接违反 D-007「双条 paper 双份全文、不合并」
+#    红线**。故判据下沉到**对**：`decide_candidate` 在 merge 前查该无序对是否存在任一方向的
+#    `preprint_of` 边，存在即**响亮拒绝**（`CrawlerError(CONFIG)` → CLI 退出 2）。
+#    - **不设 `--force` 旁路**（controller 裁决：红线不设旁路）。数据若真有矛盾（两条边并存
+#      本身就是矛盾信号），处置是修正线索/删错边的独立动作，不是在 merge 上开后门。
+#    - **`reject` 仍允许**：把误报的候审关掉是合法且无害的操作（只置 `decided='rejected'`，
+#      不产生任何聚合），预印本对上的误报候审正该被 reject 掉。
+#    - `review` 呈现面对这类 pair 显示 `preprint_of` 警示行（`DedupeCandidate.preprint_of`），
+#      让人在裁决前就看见，而不是等 merge 被拒才知道。
+#    - **残留面（如实记录，本卡未改）**：**先** merge、**后**才建 `preprint_of` 边的历史顺序
+#      不被本守卫覆盖——`_upsert_preprint_relation` 不查 same_as，聚合侧也不因 preprint_of
+#      的存在而解除既有折叠。今日不可达则不臆造机制（弱信号候审与线索回填谁先谁后由数据
+#      决定），发现即由人工 `dedupe revert` 处置；若未来要结构性堵住，属 `merge.py` 建边
+#      侧的裁决面（新增 ADR），不在本卡冻结件内。
 #
 # 2. **裁决落库**：`merge` → ①候审行 `decided='merged'`（出待审队列、留审计痕迹）
 #    ②新增/复活 `same_as(decided='merged')` 行——**聚合的唯一载体是 same_as**，候审行
@@ -322,6 +338,21 @@ def _weak_key(incoming: MergeInput) -> tuple[str, str] | None:
 # 任何一行，回滚是**完全**的：聚合视图消失、候选回到待审队列、实体三表逐行不变
 # （`tests/unit/test_dedupe.py` 以三表快照前后相等锁定）。关系行**绝不物理删除**——沿
 # `_upsert_candidate`/`_upsert_preprint_relation` 的同一条底线。
+# **注意**：回滚解除的是**这一条** same_as 边；若两 paper 还经其他已裁决边同属一个连通类
+# （A~B、B~C 都 merge 过，回滚 A~B 后 A 与 C 仍同类），折叠不会解除——`revert_candidate`
+# 的调用方应在出口处提示（`dedupe_cli` 已做），否则人会误以为"回滚了却没生效"。
+#
+# **`decided=NULL` 的语义重载（controller 裁决，独立审查 P2-1）**：same_as 行被回滚后
+# `decided` 置回 NULL，与 schema 注释里的"null=待审"共用同一个值——今日无歧义，因为**没有
+# 任何路径自动建 same_as 边**（自动建边只产 `candidate_duplicate` 与 `preprint_of`），
+# same_as 行恒由本流程写出。**未来引入任何自动建 same_as 边的机制之前，必须先裁此语义**：
+# 用 `evidence_json.reverted_at` 判别"回滚留痕 vs 真待审"，还是扩 `decided` 值域（如
+# `reverted`）——后者动数据模型的取值域，**走 ADR**。在此之前不得默认 NULL 只有一种含义。
+#
+# **消费方性能提示（独立审查 P2-4）**：要遍历全部合并类请用 `merged_views()` / `merged_groups()`
+# **一次取全**；`merged_view(paper_id)` / `merged_group(paper_id)` 每次都会重算整张索引
+# （全表扫 same_as 边 + 重建连通分量），逐 paper 调用是 O(paper 数 × 全表)。单点查询用它，
+# 批量报告（T16）用 `merged_views()`。
 # ---------------------------------------------------------------------------
 
 # `list_candidates(state=…)` 的取值域；"pending" = 待审（decided IS NULL）。
@@ -329,6 +360,13 @@ CANDIDATE_STATES: tuple[str, ...] = ("pending", "merged", "rejected", "all")
 # `decide_candidate(decision=…)` 的取值域 → 落库的 `decided` 值。
 DEDUPE_DECISIONS: dict[str, str] = {"merge": "merged", "reject": "rejected"}
 _SAME_AS_MERGE_REASON = "dedupe-review-merge"
+# 无序对查一条关系边（两个方向都查——`(from,to,kind)` 主键不认方向，而
+# `candidate_duplicate` 的落行方向是建边时刻的快照，见 `_upsert_candidate`）。
+# 读写两条路径共用同一条谓词，避免"只在一处加双向查"的漂移。
+_RELATION_PAIR_SQL = (
+    "SELECT from_paper, to_paper, confidence, evidence_json, decided FROM paper_relation "
+    "WHERE kind = ? AND ((from_paper = ? AND to_paper = ?) OR (from_paper = ? AND to_paper = ?))"
+)
 # 人工裁决的 same_as 边置信度恒 1.0（自动信号的原始 confidence 另存 evidence_json）。
 _SAME_AS_CONFIDENCE = 1.0
 # 批量 IN 查询的参数分块上限（SQLite 默认 999 变量上限的保守分片）。
@@ -349,7 +387,11 @@ class PaperBrief:
 
 @dataclass(frozen=True)
 class DedupeCandidate:
-    """一条 `candidate_duplicate`（无序对归一：`paper_a.paper_id < paper_b.paper_id`）。"""
+    """一条 `candidate_duplicate`（无序对归一：`paper_a.paper_id < paper_b.paper_id`）。
+
+    `preprint_of`：该**对**若另挂 `preprint_of` 边则为其 `(from, to)`（预印本→发表版），
+    否则 None——呈现面据此给出"不可 merge（D-007）"警示（聚合语义 1 的逐对口径）。
+    """
 
     paper_a: PaperBrief
     paper_b: PaperBrief
@@ -357,6 +399,7 @@ class DedupeCandidate:
     reason: str | None
     evidence: Mapping[str, object]
     decided: str | None
+    preprint_of: tuple[str, str] | None = None
 
 
 @dataclass(frozen=True)
@@ -1289,6 +1332,7 @@ class Repo:
         for _rank, low, high, row in pairs:
             evidence = _evidence_dict(row["evidence_json"])
             reason = evidence.get("reason")
+            preprint = self._pair_relation(low, high, "preprint_of")
             out.append(
                 DedupeCandidate(
                     paper_a=self._paper_brief(low),
@@ -1297,6 +1341,11 @@ class Repo:
                     reason=reason if isinstance(reason, str) else None,
                     evidence=evidence,
                     decided=row["decided"],
+                    preprint_of=(
+                        None
+                        if preprint is None
+                        else (str(preprint["from_paper"]), str(preprint["to_paper"]))
+                    ),
                 )
             )
         return out
@@ -1344,6 +1393,12 @@ class Repo:
         （聚合撤销、行留痕），反之亦然——`decided` 是人的判断，不是一次性写死的墓碑。
         两 paper 之间没有 `candidate_duplicate` 边（含只有 `preprint_of` 的情形）→
         `CrawlerError(CONFIG)` 响亮拒绝：绝不凭空造 same_as，人工合并也必须有候审证据在先。
+
+        **preprint_of 共存守卫（独立审查 P1-1，聚合语义 1 的逐对口径）**：该对若另挂任一
+        方向的 `preprint_of` 边，`merge` **一律拒绝**（D-007 红线：预印本↔刊发版是两条
+        独立著作记录，双份全文，不合并）——kind 隔离必须判到"对"，只判"这条边是不是
+        candidate_duplicate"堵不住两种边并存的真实链路（弱信号候审 + arxiv 回填线索）。
+        **无 `--force` 旁路**；`reject` 不受此限（关掉误报候审是合法操作）。
         """
         if decision not in DEDUPE_DECISIONS:
             raise CrawlerError(
@@ -1362,6 +1417,15 @@ class Repo:
                     f"{low} 与 {high} 之间没有 candidate_duplicate 边"
                     "（preprint_of 边不进 dedupe 流程）",
                 )
+            if decision == "merge":
+                preprint = self._find_relation(conn, low, high, "preprint_of")
+                if preprint is not None:
+                    raise CrawlerError(
+                        ErrorClass.CONFIG,
+                        f"该 pair 存在 preprint_of 关系（{preprint['from_paper']} → "
+                        f"{preprint['to_paper']}，预印本→发表版）——预印本↔刊发版不是重复，"
+                        "不可合并（D-007：双条 paper 双份全文）。若该候审属误报，用 reject 关闭。",
+                    )
             changed = row["decided"] != decided
             if changed:
                 conn.execute(
@@ -1430,33 +1494,43 @@ class Repo:
     def _find_relation(
         conn: sqlite3.Connection, paper_a: str, paper_b: str, kind: str
     ) -> sqlite3.Row | None:
-        """按**无序对**查一条关系边（两个方向都查——`(from,to,kind)` 主键不认方向，
-        而 `candidate_duplicate` 的落行方向是建边时刻的快照，见 `_upsert_candidate`）。"""
+        """写事务内按无序对查一条关系边（谓词见 `_RELATION_PAIR_SQL`）。"""
         row: sqlite3.Row | None = conn.execute(
-            "SELECT from_paper, to_paper, confidence, evidence_json, decided FROM paper_relation "
-            "WHERE kind = ? AND ((from_paper = ? AND to_paper = ?) "
-            "                 OR (from_paper = ? AND to_paper = ?))",
-            (kind, paper_a, paper_b, paper_b, paper_a),
+            _RELATION_PAIR_SQL, (kind, paper_a, paper_b, paper_b, paper_a)
         ).fetchone()
         return row
+
+    def _pair_relation(self, paper_a: str, paper_b: str, kind: str) -> sqlite3.Row | None:
+        """只读路径的同款无序对查询（`list_candidates` 的 preprint_of 共存探测用）。"""
+        rows = self.db.query(_RELATION_PAIR_SQL, (kind, paper_a, paper_b, paper_b, paper_a))
+        return rows[0] if rows else None
 
     def _promote_same_as(
         self, conn: sqlite3.Connection, low: str, high: str, candidate: sqlite3.Row
     ) -> bool:
-        """建/复活 `same_as(decided='merged')`；返回是否改变了库态（幂等重放 → False）。"""
+        """建/复活 `same_as(decided='merged')`；返回是否改变了库态（幂等重放 → False）。
+
+        **证据不整体覆写**（独立审查 P2-3，controller 裁：审计历史价值 > 字段整洁）：复活
+        既有行时在其 `evidence_json` **上叠加**本次的四个键（reason/candidate_reason/
+        candidate_confidence/decided_at），既有键（尤其上一次回滚写的 `reverted_at`）原样
+        保留——"这条边曾被回滚过、又被重新合并"是审计时最该看见的事实，被一次覆写抹掉就
+        再也追不回来（关系行本身绝不删，历史只存在于 evidence 里）。因此 `reverted_at` 的
+        语义是"**最近一次**回滚时刻"，可能早于 `decided_at`（即已被重新合并）：读者按两个
+        时间戳的先后判断当前是"合并生效"还是"已回滚"，`decided` 列才是权威态。
+        """
         existing = self._find_relation(conn, low, high, "same_as")
         if existing is not None and existing["decided"] == "merged":
             return False
-        evidence = json.dumps(
+        history = _evidence_dict(existing["evidence_json"]) if existing is not None else {}
+        history.update(
             {
                 "reason": _SAME_AS_MERGE_REASON,
                 "candidate_reason": _evidence_reason(candidate["evidence_json"]),
                 "candidate_confidence": candidate["confidence"],
                 "decided_at": utcnow_iso(),
-            },
-            ensure_ascii=False,
-            sort_keys=True,
+            }
         )
+        evidence = json.dumps(history, ensure_ascii=False, sort_keys=True)
         if existing is None:
             conn.execute(
                 "INSERT INTO paper_relation "

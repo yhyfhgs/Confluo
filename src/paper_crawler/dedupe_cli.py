@@ -117,13 +117,22 @@ def _render_candidate(index: int, candidate: DedupeCandidate) -> str:
         "side", [_brief_row("A", candidate.paper_a), _brief_row("B", candidate.paper_b)]
     )
     evidence = json.dumps(dict(candidate.evidence), ensure_ascii=False, sort_keys=True)
-    action = (
-        f"crawler dedupe decide {candidate.paper_a.paper_id} "
-        f"{candidate.paper_b.paper_id} merge|reject"
-    )
-    return "\n".join(
-        [head, _indent(table), _indent(f"证据  {evidence}"), _indent(f"裁决  {action}")]
-    )
+    lines = [head, _indent(table), _indent(f"证据  {evidence}")]
+    pair = f"{candidate.paper_a.paper_id} {candidate.paper_b.paper_id}"
+    if candidate.preprint_of is None:
+        lines.append(_indent(f"裁决  crawler dedupe decide {pair} merge|reject"))
+    else:
+        # 逐对 kind 隔离的呈现面（独立审查 P1-1）：这类 pair 的 merge 会被响亮拒绝，
+        # 先在列表里说明白，不让人到 `decide` 报错时才知道；给出的下一步只剩 reject。
+        src, dst = candidate.preprint_of
+        lines.append(
+            _indent(
+                f"警示  该 pair 另挂 preprint_of（{src} → {dst}，预印本→发表版）：不可 merge"
+                "（D-007 双条 paper 双份全文）；属误报候审请 reject"
+            )
+        )
+        lines.append(_indent(f"裁决  crawler dedupe decide {pair} reject"))
+    return "\n".join(lines)
 
 
 def _render_group(index: int, view: MergedView) -> str:
@@ -232,6 +241,15 @@ def dedupe_revert(
             typer.echo(f"已回滚为待审：{pair}")
         else:
             typer.echo(f"已是待审状态，无需回滚：{pair}")
+        # 冗余连通提示（独立审查 P2-2）：回滚解除的只是**这一条** same_as 边；若两者还经
+        # 其他已裁决边同属一个连通类（A~B、B~C 都 merge 过，只回滚 A~B），折叠不会解除
+        # ——不提示会让人误以为"回滚了却没生效"。
+        group = repo.merged_group(outcome.paper_a)
+        if group is not None and outcome.paper_b in group.members:
+            typer.echo(
+                "注意：两者仍经其他 same_as 边同属一个合并类，折叠不解除"
+                "（`crawler dedupe groups` 查看该类的其余边）"
+            )
     raise typer.Exit(code=0)
 
 
