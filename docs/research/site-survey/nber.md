@@ -2,7 +2,7 @@
 title: 站点勘察：NBER Working Papers（nber.org / back.nber.org）
 status: approved
 owner: fable5
-updated: 2026-07-24
+updated: 2026-07-27
 ---
 
 # NBER Working Papers LIVE 勘察报告 [Phase 5 R0b]
@@ -64,6 +64,8 @@ Disallow: /wpsubmit/ /confsubmit/ /chapter_revise/ /2009_redesign/ /marc/ /nomin
 
 - **`Crawl-delay: 10`** — 本主机须 ≥10s/请求（严于系统 2s 基线，硬约束）。
 - **`/rss/`、`/sitemap.txt` 未被 Disallow** → feed 与 sitemap 合规。禁区均为投稿/管理路径，与抓取无关。
+
+**[LIVE 2026-07-27]** `GET https://www2.nber.org/robots.txt` → **403 Forbidden**（`Apache/2.4.66 (FreeBSD)` 源站签名，非代理拦截）——**该第三主机不提供可判读 robots.txt**，`www.nber.org` 的 nginx/Drupal robots **不可外推**（REP 按 origin 生效，两域服务器栈不同）。403 系 `/robots.txt` **路径特异**：同域数据路径 [LIVE 2026-07-26] 4/4 成功。合规取舍已由 fable 裁决（RFC 9309 §2.3.1.3 4xx="Unavailable"、无可违反规则；附条件＝数据端点遇 403/429 立即停手），详见 [aggregators.md §5.7](../../design/adapters/aggregators.md)。本节原双主机判读不受影响（`www2` 是 `nber` adapter `domains[1]` 的低号 301 目标，非枚举/取回主路径）。
 
 ---
 
