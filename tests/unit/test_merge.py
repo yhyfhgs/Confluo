@@ -3,12 +3,14 @@
 覆盖：source 校验 / 纯新建 / 强合并 / 字段级来源优先级收敛（升/降/补空/同级 tie-break）/
 未知 provenance 保护（upsert_paper 存量字段不被覆盖）/ 弱信号候审（正反例 + 观测级键集合）/
 跨 paper identifier 冲突 / candidate 单行不重复与证据刷新规则 / 幂等 / matched_identifiers
-口径 / DOI 归一强合并。
+口径 / DOI 归一强合并 / preprint_of 建边（T10：MergeEngine.ingest() 路径；pull 路径
+`upsert_paper` 的对应用例见 test_repo.py）。
 """
 
 from __future__ import annotations
 
 import json
+import logging
 from collections.abc import Iterator
 from pathlib import Path
 
@@ -682,6 +684,160 @@ def test_cross_paper_conflict_winner_has_more_identifiers(
         "SELECT * FROM paper WHERE id = (SELECT paper_id FROM identifier WHERE value='2401.9')"
     )[0]
     assert p2["abstract"] is None  # 败者不被并入
+
+
+# -- preprint_of 建边（T10；design/06 §3 单一事实源，检查单 #5）-------------
+#
+# `MergeEngine.ingest()`（aggregator/enrich 路径）与 `upsert_paper`（pull 路径，见
+# test_repo.py 对应节）共享同一个 `Repo._apply_preprint_clues` 机制——本节验证该机制经
+# `MergeEngine.ingest()` 触达时行为一致。**如实注记**：今天真正携带 doi/arxiv 线索的
+# adapter（arxiv/cvf/openreview）实际走的是 `upsert_paper`（pull 路径），并不经过
+# `MergeEngine.ingest()`；本节的 `source=` 仅取 `SOURCE_PRIORITY` 的合法值作 provenance
+# 标签，不代表现实中存在"arxiv adapter 经 MergeEngine.ingest 接入"的数据流——纯粹验证
+# 机制本身在这条写路径上同样可达（任务报告 NEEDS_DECISION 已如实记录该接线决策）。
+
+
+def _preprint_edges(repo: Repo) -> list[object]:
+    return [r for r in _relations(repo) if r["kind"] == "preprint_of"]
+
+
+def test_ingest_doi_clue_builds_preprint_of_edge_via_merge_engine(
+    env: tuple[Repo, MergeEngine, Path],
+) -> None:
+    """arxiv 先例：meta['doi'] 回填命中既有 identifier → 建边，自身=from（预印本）。"""
+    repo, engine, _ = env
+    engine.ingest(_stub(title="Published", ids=(("doi", "10.1/pub"),)), source="crossref")
+    result = engine.ingest(
+        _stub(title="Preprint", ids=(("arxiv", "2401.5"),), meta=(("doi", "10.1/pub"),)),
+        source="official",
+    )
+    edges = _preprint_edges(repo)
+    assert len(edges) == 1
+    preprint_id = _paper_id_by_identifier(repo, "arxiv", "2401.5")
+    published_id = _paper_id_by_identifier(repo, "doi", "10.1/pub")
+    assert edges[0]["from_paper"] == preprint_id
+    assert edges[0]["to_paper"] == published_id
+    assert result.action == "created"  # 冻结口径不变：preprint_of 只是 DB 副作用
+
+
+def test_ingest_arxiv_clue_builds_reverse_direction_edge(
+    env: tuple[Repo, MergeEngine, Path],
+) -> None:
+    """cvf/openreview 先例：meta['arxiv'] 线索命中 → from=目标（预印本），自身=to（发表版）。"""
+    repo, engine, _ = env
+    engine.ingest(_stub(title="Preprint", ids=(("arxiv", "2401.6"),)), source="official")
+    engine.ingest(
+        _stub(title="Published", ids=(("cvf", "cvpr2024/x"),), meta=(("arxiv", "2401.6"),)),
+        source="official",
+    )
+    edges = _preprint_edges(repo)
+    assert len(edges) == 1
+    preprint_id = _paper_id_by_identifier(repo, "arxiv", "2401.6")
+    published_id = _paper_id_by_identifier(repo, "cvf", "cvpr2024/x")
+    assert edges[0]["from_paper"] == preprint_id
+    assert edges[0]["to_paper"] == published_id
+
+
+def test_ingest_dangling_doi_clue_skipped_no_edge(
+    env: tuple[Repo, MergeEngine, Path], caplog: pytest.LogCaptureFixture
+) -> None:
+    """查不到目标端＝线索悬空：DEBUG 记录后跳过，不建悬空边（controller 裁决③）。"""
+    repo, engine, _ = env
+    with caplog.at_level(logging.DEBUG, logger="paper_crawler"):
+        engine.ingest(
+            _stub(title="Preprint", ids=(("arxiv", "2401.7"),), meta=(("doi", "10.1/missing"),)),
+            source="official",
+        )
+    assert _preprint_edges(repo) == []
+    assert any("dangling" in r.getMessage() for r in caplog.records)
+
+
+def test_ingest_preprint_clue_evidence_refreshes_on_change(
+    env: tuple[Repo, MergeEngine, Path],
+) -> None:
+    """未裁决边 + 线索值变化（journal_ref 更新）→ 刷新证据（同构 `_upsert_candidate` 刷新规则，
+    本 kind 线索强度对等、无需强度序，仅"未裁决+证据有变化"即刷新）。"""
+    repo, engine, _ = env
+    engine.ingest(_stub(title="Published", ids=(("doi", "10.1/pub2"),)), source="crossref")
+    engine.ingest(
+        _stub(
+            title="Preprint",
+            ids=(("arxiv", "2401.8"),),
+            meta=(("doi", "10.1/pub2"), ("journal_ref", "v1 draft note")),
+        ),
+        source="official",
+    )
+    before = _preprint_edges(repo)[0]["evidence_json"]
+    assert "v1 draft note" in before
+
+    engine.ingest(
+        _stub(
+            title="Preprint",
+            ids=(("arxiv", "2401.8"),),
+            meta=(("doi", "10.1/pub2"), ("journal_ref", "v2 final ref")),
+        ),
+        source="official",
+    )
+    after = _preprint_edges(repo)[0]["evidence_json"]
+    assert "v2 final ref" in after
+    assert "v1 draft note" not in after
+
+
+def test_ingest_decided_preprint_edge_is_never_rewritten(
+    env: tuple[Repo, MergeEngine, Path],
+) -> None:
+    """已人工裁决（decided 非空）的 preprint_of 边不被后续观测刷新——绝不覆盖人工结论
+    （controller 裁决⑤：decided=NULL 是"有效待复核"而非"待审阻塞"，但已裁决行仍受保护）。"""
+    repo, engine, _ = env
+    engine.ingest(_stub(title="Published", ids=(("doi", "10.1/pub3"),)), source="crossref")
+    engine.ingest(
+        _stub(
+            title="Preprint",
+            ids=(("arxiv", "2401.9"),),
+            meta=(("doi", "10.1/pub3"), ("journal_ref", "v1")),
+        ),
+        source="official",
+    )
+    repo.db.execute("UPDATE paper_relation SET decided = 'merged' WHERE kind = 'preprint_of'")
+    before = _preprint_edges(repo)[0]["evidence_json"]
+
+    engine.ingest(
+        _stub(
+            title="Preprint",
+            ids=(("arxiv", "2401.9"),),
+            meta=(("doi", "10.1/pub3"), ("journal_ref", "v2")),
+        ),
+        source="official",
+    )
+    edges = _preprint_edges(repo)
+    assert len(edges) == 1
+    assert edges[0]["decided"] == "merged"
+    assert edges[0]["evidence_json"] == before
+
+
+def test_ingest_preprint_clue_idempotent_reingest(env: tuple[Repo, MergeEngine, Path]) -> None:
+    """同一线索重复观测 → 边只一行（幂等）。"""
+    repo, engine, _ = env
+    engine.ingest(_stub(title="Published", ids=(("doi", "10.1/pub4"),)), source="crossref")
+    stub = _stub(title="Preprint", ids=(("arxiv", "2401.10"),), meta=(("doi", "10.1/pub4"),))
+    engine.ingest(stub, source="official")
+    engine.ingest(stub, source="official")
+    assert len(_preprint_edges(repo)) == 1
+
+
+def test_ingest_preprint_clue_does_not_merge_papers(
+    env: tuple[Repo, MergeEngine, Path],
+) -> None:
+    """preprint_of 是纯 DB 副作用：不改变 `IngestResult.action`、两 paper 各自保留（design/06
+    §3 明文：双条 paper 双份全文、preprint_of 是关联边不是去重合并）。"""
+    repo, engine, _ = env
+    engine.ingest(_stub(title="Published", ids=(("doi", "10.1/pub5"),)), source="crossref")
+    result = engine.ingest(
+        _stub(title="Preprint", ids=(("arxiv", "2401.11"),), meta=(("doi", "10.1/pub5"),)),
+        source="official",
+    )
+    assert result.action == "created"
+    assert len(_papers(repo)) == 2  # 两条 paper 都保留，未被合并成一条
 
 
 # -- 幂等 --------------------------------------------------------------------

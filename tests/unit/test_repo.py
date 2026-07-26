@@ -1,12 +1,15 @@
 """仓储层语义测试（phase1-plan Task 2；Refs: D-007, D-017, AC-1.1）。
 
 重点：upsert_paper 强合并（补缺不覆盖）、upsert_issue/plan_asset 的 NULL-安全幂等键、
-paper_issue_link 幂等建链、外键约束、counts 对账口径。
+paper_issue_link 幂等建链、外键约束、counts 对账口径、preprint_of 建边（T10；pull 路径
+`upsert_paper` 消费 meta 线索——见"-- preprint_of 建边"节；MergeEngine.ingest() 路径的对应
+用例在 test_merge.py）。
 """
 
 from __future__ import annotations
 
 import json
+import logging
 import re
 import sqlite3
 from collections.abc import Iterator
@@ -256,6 +259,144 @@ def test_upsert_paper_second_call_no_new_fields_is_noop_merge(repo: Repo) -> Non
     rows = repo.db.query("SELECT abstract, year FROM paper")
     assert len(rows) == 1
     assert rows[0]["abstract"] == "A" and rows[0]["year"] == 2024
+
+
+# -- preprint_of 建边（T10；design/06 §3 单一事实源，检查单 #5）-------------
+#
+# `upsert_paper`（pull 路径）是 arxiv/cvf/openreview 等真实 adapter 线索的实际必经之路
+# （T10 grep 实况核实：这些 adapter 的 PaperStub 经 `_stage_enumerate` 走本方法，不走
+# `MergeEngine.ingest`）——故本节直接用 `upsert_paper` 验证建边机制；`MergeEngine.ingest()`
+# 路径共享同一 `Repo._apply_preprint_clues` 机制，对应用例见 test_merge.py。
+
+
+def _preprint_edges(repo: Repo) -> list[sqlite3.Row]:
+    return repo.db.query(
+        "SELECT pf.title AS from_title, pt.title AS to_title, r.confidence, "
+        "       r.evidence_json, r.decided "
+        "FROM paper_relation r "
+        "JOIN paper pf ON pf.id = r.from_paper "
+        "JOIN paper pt ON pt.id = r.to_paper "
+        "WHERE r.kind = 'preprint_of' "
+        "ORDER BY pf.title, pt.title"
+    )
+
+
+def test_upsert_paper_doi_clue_builds_preprint_of_edge_when_target_exists(repo: Repo) -> None:
+    """arxiv 先例：meta['doi'] 回填线索命中既有 identifier → 建边，自身=from（预印本）。"""
+    repo.upsert_paper(VENUE_ID, None, _stub(doi="10.9999/published", title="Published Version"))
+    repo.upsert_paper(
+        VENUE_ID,
+        None,
+        PaperStub(
+            title="Preprint Version",
+            identifiers=(("arxiv", "2401.00100"),),
+            meta=(("doi", "10.9999/published"),),
+        ),
+    )
+    edges = _preprint_edges(repo)
+    assert len(edges) == 1
+    assert edges[0]["from_title"] == "Preprint Version"
+    assert edges[0]["to_title"] == "Published Version"
+    assert edges[0]["confidence"] == 1.0
+    assert edges[0]["decided"] is None
+
+
+def test_upsert_paper_arxiv_clue_builds_reverse_direction_edge(repo: Repo) -> None:
+    """cvf/openreview 先例：meta['arxiv'] 线索命中 → 自身=to（发表版），目标=from（预印本）。"""
+    repo.upsert_paper(
+        VENUE_ID,
+        None,
+        PaperStub(title="Preprint Version", identifiers=(("arxiv", "2401.00200"),)),
+    )
+    repo.upsert_paper(
+        VENUE_ID,
+        None,
+        PaperStub(
+            title="Conference Version",
+            identifiers=(("cvf", "cvpr2024/foo"),),
+            meta=(("arxiv", "2401.00200"),),
+        ),
+    )
+    edges = _preprint_edges(repo)
+    assert len(edges) == 1
+    assert edges[0]["from_title"] == "Preprint Version"
+    assert edges[0]["to_title"] == "Conference Version"
+
+
+def test_upsert_paper_dangling_preprint_clue_skips_edge_and_logs_debug(
+    repo: Repo, caplog: pytest.LogCaptureFixture
+) -> None:
+    """查不到目标端＝线索悬空：as-is 跳过 + DEBUG 记录，不建悬空边（controller 裁决③）。"""
+    with caplog.at_level(logging.DEBUG, logger="paper_crawler"):
+        repo.upsert_paper(
+            VENUE_ID,
+            None,
+            PaperStub(
+                title="Preprint Version",
+                identifiers=(("arxiv", "2401.00300"),),
+                meta=(("doi", "10.9999/never-lands"),),
+            ),
+        )
+    assert _preprint_edges(repo) == []
+    assert any("dangling" in r.getMessage() for r in caplog.records)
+
+
+def test_upsert_paper_preprint_clue_evidence_includes_journal_ref(repo: Repo) -> None:
+    """同 stub 携带 journal_ref 时作为补充证据搭车进 evidence_json（不单独驱动查找）。"""
+    repo.upsert_paper(VENUE_ID, None, _stub(doi="10.9999/withref", title="Published"))
+    repo.upsert_paper(
+        VENUE_ID,
+        None,
+        PaperStub(
+            title="Preprint",
+            identifiers=(("arxiv", "2401.00400"),),
+            meta=(("doi", "10.9999/withref"), ("journal_ref", "Journal of Testing, 2026")),
+        ),
+    )
+    edges = _preprint_edges(repo)
+    assert len(edges) == 1
+    assert "Journal of Testing, 2026" in edges[0]["evidence_json"]
+
+
+def test_upsert_paper_preprint_clue_no_self_referencing_edge(repo: Repo) -> None:
+    """同一 paper 已持有 doi+arxiv 两 scheme（先例：既存强合并）、meta 线索指回自身 → 自指
+    防御，不建边（正常数据不会出现，保守跳过）。"""
+    repo.upsert_paper(
+        VENUE_ID,
+        None,
+        PaperStub(
+            title="Merged", identifiers=(("doi", "10.9999/selfref"), ("arxiv", "2401.00500"))
+        ),
+    )
+    repo.upsert_paper(
+        VENUE_ID,
+        None,
+        PaperStub(
+            title="Merged",
+            identifiers=(("doi", "10.9999/selfref"),),
+            meta=(("arxiv", "2401.00500"),),
+        ),
+    )
+    assert _preprint_edges(repo) == []
+
+
+def test_upsert_paper_without_preprint_clue_keys_is_noop(repo: Repo) -> None:
+    """meta 不含 'doi'/'arxiv' 键 → 不建任何 preprint_of 边（纯烟雾测试）。"""
+    repo.upsert_paper(VENUE_ID, None, _stub(doi="10.9999/plain", meta=(("pages", "1-10"),)))
+    assert _preprint_edges(repo) == []
+
+
+def test_upsert_paper_preprint_clue_idempotent_reingest(repo: Repo) -> None:
+    """同一线索重复观测 → 边只一行（幂等，同构于 candidate_duplicate）。"""
+    repo.upsert_paper(VENUE_ID, None, _stub(doi="10.9999/idem-pub", title="Published"))
+    stub = PaperStub(
+        title="Preprint",
+        identifiers=(("arxiv", "2401.00600"),),
+        meta=(("doi", "10.9999/idem-pub"),),
+    )
+    repo.upsert_paper(VENUE_ID, None, stub)
+    repo.upsert_paper(VENUE_ID, None, stub)
+    assert len(_preprint_edges(repo)) == 1
 
 
 # -- paper_issue_link 幂等 ---------------------------------------------------

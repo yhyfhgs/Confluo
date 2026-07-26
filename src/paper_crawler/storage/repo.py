@@ -20,7 +20,7 @@ from typing import TYPE_CHECKING, Literal
 
 from paper_crawler.errors import CrawlerError, ErrorClass, SubscriptionInvalid
 from paper_crawler.ids import normalize_identifier, normalize_title
-from paper_crawler.obslog import redact
+from paper_crawler.obslog import log_event, redact
 from paper_crawler.storage.db import Database
 from paper_crawler.types import (
     AssetPlan,
@@ -54,6 +54,34 @@ _UNKNOWN_RANK = float("inf")
 # ——两者的 min 都等于"更早的那次观测"）。其余字段是自由文本，走"更长者胜"复合序，
 # 见 `_prefers_on_tie`。
 _ORDERED_SCALAR_FIELDS = frozenset({"year", "pub_date"})
+
+# preprint_of 建边线索表（T10，检查单 #5；design/06 §3 单一事实源）。meta 键→(目标
+# identifier scheme, 自身在边中的角色)。角色 "from"=自身是预印本、"to"=自身是发表版——
+# 语义由线索键本身固定，与产出该线索的 adapter 无关：
+#   - 'doi'：自身回填了发表版 DOI（先例：arxiv 的 `journal_ref`/`doi` 回填字段，design/06
+#     §3 原文逐字；openreview 同键同语义，见 `adapters/openreview/parse.py` docstring
+#     "跨源关联线索...Phase 3 ingest 建边——arxiv R3 裁决先例"）；
+#   - 'arxiv'：自身链接了预印本的 arXiv id（先例：cvf `META_ARXIV`/openreview `arxiv` 线索键，
+#     两处 adapter docstring 均明文"线索、不产 identifier——防跨源早合并，先例 arxiv/
+#     openreview"）。
+# 'journal_ref'（arxiv 专属自由文本，doi 回填的伴随字段）无法解析为 identifier，故不入本
+# 表——只在同一 stub 也带 'doi' 时作为补充证据搭车进 evidence_json，不单独触发查找。
+#
+# **核验偏离（如实记录，T10 任务报告 NEEDS_DECISION 复述）**：design/06 §3 另列"Crossref/
+# OpenAlex 的 preprint 关系字段"与"SSRN→DOI 提示"两类线索——grep 实况核验：现有
+# `adapters/{crossref,openalex,ssrn}/parse.py` 均**未产出**此类字段（crossref meta 仅
+# volume/issue；openalex meta 仅 is_oa/oa_status/oa_url/pdf_url；ssrn 是给同一 paper 补第
+# 二 identifier `(ssrn, abstract_id)`，同一著作同一 paper 行，非跨 paper 线索）。本卡消费
+# "已落地的线索"，不新增 adapter 解析能力，故这两类线索暂无输入、本表不含对应项。
+_PREPRINT_CLUE_ROLES: dict[str, tuple[str, Literal["from", "to"]]] = {
+    "doi": ("doi", "from"),
+    "arxiv": ("arxiv", "to"),
+}
+# 线索均为归一 identifier 精确匹配（非启发式），强度对等、无 weak/strong 分级——故
+# `_upsert_preprint_relation` 不需要 `_upsert_candidate` 那套 `_EVIDENCE_STRENGTH` 序，
+# 刷新规则简化为"未裁决 + 证据有变化即刷新"（仍不覆盖已裁决行、不物理删行，同构于
+# `_upsert_candidate` 的两条底线）。
+_PREPRINT_CLUE_CONFIDENCE = 1.0
 
 
 @dataclass(frozen=True)
@@ -313,6 +341,12 @@ class Repo:
         直到某次 `MergeEngine.ingest` 并入它时记下那次观测的键（与改造前"无 `_first_author` 即
         无从确认姓氏、保守不建 candidate"的实际行为一致）。`title_norm` 列现留两个用途：
         0003 迁移回填存量历史键的取数源，以及归一标题的展示/检索面（`idx_paper_title_norm`）。
+
+        **preprint_of 建边（T10）**：拿到 `paper_id` 后同事务内消费 `stub.meta` 里的
+        preprint 线索（`_apply_preprint_clues`）——真实携带 arxiv/cvf/openreview 等 adapter
+        线索的 `PaperStub` 恰是经本方法（`_stage_enumerate` pull 路径）落库，故本调用点是
+        该线索族的实际生效面；`merge_ingest` 分支树也调用同一方法（aggregator/enrich 路径
+        对等覆盖），权威说明见 merge.py 裁决点 7。
         """
         identifiers = tuple(
             normalize_identifier(scheme, value) for scheme, value in stub.identifiers
@@ -354,6 +388,7 @@ class Repo:
                 self._merge_paper_fields(conn, paper_id, stub, now)
 
             self._ensure_identifiers(conn, paper_id, identifiers)
+            self._apply_preprint_clues(conn, paper_id, stub.meta)
 
             if issue_id is not None:
                 conn.execute(
@@ -434,12 +469,13 @@ class Repo:
         """`MergeEngine.ingest` 的原子机制载体（查→并→补 单事务；SQL/事务在 repo，策略注入）。
 
         沿 `finalize_fetch` 先例：整条「identifier 查重 → 分支（新建 / 强合并 / 跨 paper
-        冲突 / 弱信号候审）→ 字段级来源优先级收敛 → 补 identifier / 建 candidate_duplicate」
-        在单个 `BEGIN IMMEDIATE` 事务内完成——立即取写锁，读+写同一快照，杜绝并发裂脑
-        （plan §2-1「防并发裂脑」）。`identifiers` 已由 MergeEngine 经 `ids.normalize_identifier`
-        归一（含 doi）。裁决语义的**权威说明在 merge.py docstring**（跨冲突取 identifier 多者/
-        平局小 id、弱信号绝不自动合并、未知 provenance 视最高、candidate 端点按最小 identifier
-        定向）；本方法只承载其 SQL 机制。返回 `IngestOutcome`，由 MergeEngine 包装为
+        冲突 / 弱信号候审）→ 字段级来源优先级收敛 → 补 identifier / 建 candidate_duplicate /
+        建 preprint_of（T10，`_apply_preprint_clues`）」在单个 `BEGIN IMMEDIATE` 事务内完成
+        ——立即取写锁，读+写同一快照，杜绝并发裂脑（plan §2-1「防并发裂脑」）。`identifiers`
+        已由 MergeEngine 经 `ids.normalize_identifier` 归一（含 doi）。裁决语义的**权威说明在
+        merge.py docstring**（跨冲突取 identifier 多者/平局小 id、弱信号绝不自动合并、未知
+        provenance 视最高、candidate 端点按最小 identifier 定向、preprint_of 线索表与方向
+        约定见裁决点 7）；本方法只承载其 SQL 机制。返回 `IngestOutcome`，由 MergeEngine 包装为
         `IngestResult`。
         """
         with self.db.tx() as conn:
@@ -465,6 +501,8 @@ class Repo:
                 # 改写标题"不再抹掉此前/此后的匹配面（审计 P1）。action 仍报 `merged`
                 # ——`IngestResult` 三枚举是冻结件，候审边只作为 DB 副作用记录，不改口径。
                 self._apply_weak_signal(conn, paper_id, incoming)
+                # preprint_of 建边（T10）同为 DB 副作用，不改变 action 口径。
+                self._apply_preprint_clues(conn, paper_id, incoming.meta)
                 return IngestOutcome(paper_id, "merged", tuple(matched))
             return self._merge_ingest_conflict(
                 conn, distinct, incoming, identifiers, tuple(matched)
@@ -485,6 +523,7 @@ class Repo:
         """
         new_id = self._create_paper(conn, incoming, identifiers)
         matches = self._apply_weak_signal(conn, new_id, incoming)
+        self._apply_preprint_clues(conn, new_id, incoming.meta)  # T10：DB 副作用，不改 action
         if not matches:
             return IngestOutcome(new_id, "created", ())
         return IngestOutcome(new_id, "candidate_flagged", ())
@@ -519,6 +558,7 @@ class Repo:
                 )
         # 冲突边先落（证据更强，见 `_upsert_candidate` 的强度序），再记本次观测的弱信号键。
         self._apply_weak_signal(conn, winner, incoming)
+        self._apply_preprint_clues(conn, winner, incoming.meta)  # T10：DB 副作用，不改 action
         return IngestOutcome(winner, "candidate_flagged", matched)
 
     def _create_paper(
@@ -815,6 +855,107 @@ class Repo:
             "UPDATE paper_relation SET confidence = ?, evidence_json = ? "
             "WHERE from_paper = ? AND to_paper = ? AND kind = ?",
             (confidence, evidence_json, row["from_paper"], row["to_paper"], "candidate_duplicate"),
+        )
+
+    # -- preprint_of 建边（T10；检查单 #5，design/06 §3 单一事实源） --------
+
+    def _apply_preprint_clues(
+        self, conn: sqlite3.Connection, paper_id: str, meta: tuple[tuple[str, str], ...]
+    ) -> None:
+        """消费本次观测 meta 里的 preprint 线索，建/刷新 preprint_of 边。
+
+        逐键查 `_PREPRINT_CLUE_ROLES`：命中键→按其目标 scheme 归一（`normalize_identifier`，
+        与 identifier 写入同一入口）→ 查 `identifier` 表解析目标端。**建边时机**＝本次
+        ingest 消费到线索的当下、一次性尝试（controller 已裁决③）：查不到目标端（线索悬空）
+        → DEBUG 记录后跳过、不建悬空边、**不回溯重判**——不同于弱信号候审的观测级键集合
+        机制，本卡接受顺序敏感的 best-effort 语义：目标端若晚于线索到达入库，这条线索就此
+        错过，除非同一 paper 的后续观测重复携带该线索（下次 ingest 会重新尝试查找）。
+
+        方向固定不看快照（controller 裁决①，与 `candidate_duplicate` 的定向快照/无序对语义
+        不同——preprint_of 方向本身是语义不变量）：`role="from"` 即自身是预印本、目标是
+        发表版；`role="to"` 反之。'journal_ref'（arxiv 专属自由文本）不可独立驱动查找，只在
+        'doi' 线索命中时作为补充证据搭车进 evidence_json。
+
+        调用方（`upsert_paper` 与 `merge_ingest` 分支树）都在同一事务、拿到 `paper_id` 后
+        调用本方法——两条写路径共享同一套判定，见 merge.py 裁决点 7。
+        """
+        meta_map = dict(meta)
+        journal_ref = meta_map.get("journal_ref")
+        for clue_key, (target_scheme, role) in _PREPRINT_CLUE_ROLES.items():
+            raw_value = meta_map.get(clue_key)
+            if not raw_value:
+                continue
+            scheme, value = normalize_identifier(target_scheme, raw_value)
+            row = conn.execute(
+                "SELECT paper_id FROM identifier WHERE scheme = ? AND value = ?",
+                (scheme, value),
+            ).fetchone()
+            if row is None:
+                log_event(
+                    "DEBUG",
+                    f"preprint_of clue dangling: {clue_key}={raw_value!r} has no matching "
+                    f"identifier (scheme={scheme!r}) yet; skipped, no edge built",
+                    paper_id=paper_id,
+                )
+                continue
+            target_id = str(row["paper_id"])
+            if target_id == paper_id:
+                continue  # 自指防御：正常数据不会出现，保守跳过（不建自环边）
+            from_paper, to_paper = (
+                (paper_id, target_id) if role == "from" else (target_id, paper_id)
+            )
+            evidence: dict[str, object] = {
+                "reason": f"meta-clue:{clue_key}",
+                "clue_key": clue_key,
+                "clue_value": raw_value,
+            }
+            if clue_key == "doi" and journal_ref:
+                evidence["journal_ref"] = journal_ref
+            self._upsert_preprint_relation(
+                conn, from_paper, to_paper, _PREPRINT_CLUE_CONFIDENCE, evidence
+            )
+
+    @staticmethod
+    def _upsert_preprint_relation(
+        conn: sqlite3.Connection,
+        from_paper: str,
+        to_paper: str,
+        confidence: float,
+        evidence: dict[str, object],
+    ) -> None:
+        """建/刷新 preprint_of（from=预印本→to=发表版）；方向由角色表冻结、非任意快照定向。
+
+        与 `_upsert_candidate` 的三点差异（其余同构，含"绝不删行"底线）：
+        ①preprint_of 方向是**语义不变量**（controller 裁决①），故只按精确 `(from_paper,
+        to_paper, kind)` 主键查/插，不需要 `_upsert_candidate` 那样的双向 OR 查询（那是
+        `candidate_duplicate` 无序对+快照定向的产物，本 kind 不适用）；
+        ②本 kind 的证据全部来自归一 identifier 精确匹配、强度对等，省去
+        `_EVIDENCE_STRENGTH` 序，仅以"evidence_json 是否有变化"判断要不要刷新；
+        ③`decided` 语义按表设计是"NULL=有效待复核"（controller 裁决⑤）而非
+        `candidate_duplicate` 的"待审阻塞"——但仍尊重已人工裁决的行：已裁决（decided 非空）
+        绝不覆盖，与 `_upsert_candidate` 同一底线。
+        """
+        evidence_json = json.dumps(evidence, ensure_ascii=False, sort_keys=True)
+        row = conn.execute(
+            "SELECT evidence_json, decided FROM paper_relation "
+            "WHERE from_paper = ? AND to_paper = ? AND kind = ?",
+            (from_paper, to_paper, "preprint_of"),
+        ).fetchone()
+        if row is None:
+            conn.execute(
+                "INSERT INTO paper_relation "
+                "(from_paper, to_paper, kind, confidence, evidence_json, decided) "
+                "VALUES (?,?,?,?,?,?) "
+                "ON CONFLICT (from_paper, to_paper, kind) DO NOTHING",
+                (from_paper, to_paper, "preprint_of", confidence, evidence_json, None),
+            )
+            return
+        if row["decided"] is not None or row["evidence_json"] == evidence_json:
+            return
+        conn.execute(
+            "UPDATE paper_relation SET confidence = ?, evidence_json = ? "
+            "WHERE from_paper = ? AND to_paper = ? AND kind = ?",
+            (confidence, evidence_json, from_paper, to_paper, "preprint_of"),
         )
 
     def list_papers(self, venue_id: str, issue_id: str | None = None) -> list[sqlite3.Row]:

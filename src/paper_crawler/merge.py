@@ -70,6 +70,31 @@
    冲突可升级弱信号边，反向不降级）；**绝不删行**。
 6. **幂等**：同一 stub 重复 ingest → identifier 已命中该 paper（强合并分支）、字段同值不覆盖、
    弱信号键已在集合内不重判、candidate 至多一行且证据不变则不写 → DB 终态不变。
+7. **preprint_of 建边**（Phase 7 T10；检查单 #5；design/06 §3 单一事实源；机制见
+   `repo.py::Repo._apply_preprint_clues`/`_upsert_preprint_relation`）：`Repo.upsert_paper`
+   （pull 路径）与本引擎的 `Repo.merge_ingest`（aggregator/enrich 路径，含新建/强合并/冲突
+   胜者三分支）在拿到 `paper_id` 后都消费本次观测 `meta` 里的线索——两条写路径共享同一
+   机制，因为**真实携带线索的 adapter（arxiv/cvf/openreview）今天走的是 `upsert_paper`
+   （pull 路径），并不经过 `MergeEngine.ingest`**（T10 grep 实况核实；仅在 `merge_ingest`
+   一处接线不足以让该功能对现有数据生效，故双路径接线是本卡的既遂决定，非任务卡字面
+   仅指 `MergeEngine.ingest()` 的原样落地——见 T10 任务报告 NEEDS_DECISION）。
+   线索表（meta 键→(目标 identifier scheme, 自身角色)）目前两项：'doi'→自身=预印本
+   （`from`，先例 arxiv 的 `journal_ref`/`doi` 回填字段，design/06 §3 原文）；'arxiv'→
+   自身=发表版（`to`，先例 cvf/openreview 的 `arxiv` 线索键）。'journal_ref'（arxiv 专属
+   自由文本）不可解析为 identifier、不可独立驱动查找，只在同 stub 也带 'doi' 时作为补充
+   证据搭车进 `evidence_json`。design/06 §3 另列的"Crossref/OpenAlex 的 preprint 关系
+   字段"与"SSRN→DOI 提示"两类：grep 实况核验现有三个 adapter 均未产出此类字段（如实见
+   `repo.py` 线索表注释），暂无输入、不在表中。
+   **方向是语义不变量、不是快照**（与 candidate_duplicate 相反）：from(预印本)→to(发表版)
+   写死，同一 (from,to) 组合无论哪一侧线索先发现都落到同一方向，故不需要 candidate 那样
+   的双向查询或无序对归一。**建边时机**＝ingest 消费到线索的当下、一次性尝试、不回溯：
+   查不到目标端（线索悬空）→ DEBUG 记录后跳过、不建悬空边（controller 裁决③）——这是
+   accepted 的顺序敏感/best-effort 语义，不同于弱信号候审的观测级键集合机制，本卡不为其
+   补建等价的顺序无关性。`decided` 字段（controller 裁决⑤）：自动建边即生效，NULL 是
+   "有效、待人工可选复核"而非 candidate_duplicate 的"待审阻塞"——不进 T13 dedupe review
+   流程（那条流程只消费 candidate_duplicate）。**双条 paper 双份全文、不合并**（design/06
+   §3 明文：preprint_of 是关联边不是去重合并）——不改动任何既有强合并/弱信号/冲突分支，
+   `IngestResult.action` 口径不变（同第 4 条候审边的先例，纯 DB 副作用）。
 
 首作者姓氏：`PaperStub.authors` 冻结为名字串组（types.py），不改 types——由 `authors[0]`
 启发式取姓（逗号前段，或末词）再经 `normalize_title` 归一为比对键（best-effort 弱信号）。
