@@ -79,6 +79,17 @@ except ImportError:  # pragma: no cover - Windows has no fcntl; exercised via _H
 _HAS_FLOCK = fcntl is not None
 
 
+class LedgerCorruptError(RuntimeError):
+    """账本文件存在但内容无法安全、完整解析（独立审查 P0-1/P0-2 坐实）。
+
+    **绝不**在此情形下静默退回空账本——`record_entry` 的读→加→写会紧接着对
+    `load_ledger` 的返回值做无条件整体覆写；若把"解析失败"悄悄当成"空账本"，
+    那次覆写就会把文件里原本存在、只是暂时解析不出来的数据**永久抹除**。调用方
+    （库层直调者或 `main()`）应人工检查/修复该文件的内容，或显式移走/重命名，
+    让工具从一份新的空账本重新开始——都不该由本工具自作主张替你决定。
+    """
+
+
 @dataclass(frozen=True)
 class LedgerEntry:
     """一条消费记录：时间戳 + 会话戳 + 批次 + 数量。"""
@@ -108,9 +119,14 @@ Ledger = dict[str, LedgerRow]
 _EMPTY_ROW = LedgerRow(consumed=0, entries=())
 
 
-def _parse_entry(value: object) -> LedgerEntry | None:
+def _parse_entry(value: object) -> LedgerEntry:
+    """把一条已解析的 JSON 值转成 `LedgerEntry`；任何畸形（含 `count` 非 bool 的
+    正整数——独立审查 P0-2）**响亮抛 `LedgerCorruptError`**，不再静默丢弃该条目
+    （旧行为：返回 `None` 由调用方过滤——那正是 P0-2 坐实的丢数据路径：`count`
+    传 float 落盘后，下次解析判畸形丢弃，再一次 `record_entry` 就把它永久覆写掉）。
+    """
     if not isinstance(value, dict):
-        return None
+        raise LedgerCorruptError(f"entry is not a JSON object: {value!r}")
     ts, session, batch, count = (
         value.get("ts"),
         value.get("session"),
@@ -118,40 +134,55 @@ def _parse_entry(value: object) -> LedgerEntry | None:
         value.get("count"),
     )
     if not isinstance(ts, str) or not isinstance(session, str) or not isinstance(batch, str):
-        return None
-    if isinstance(count, bool) or not isinstance(count, int):
-        return None
+        raise LedgerCorruptError(f"entry has non-string ts/session/batch: {value!r}")
+    if isinstance(count, bool) or not isinstance(count, int) or count <= 0:
+        raise LedgerCorruptError(
+            f"entry.count must be a positive int (non-bool); got {count!r} in {value!r}"
+        )
     return LedgerEntry(ts=ts, session=session, batch=batch, count=count)
 
 
-def _parse_row(value: object) -> LedgerRow | None:
+def _parse_row(value: object) -> LedgerRow:
+    """把一条已解析的 JSON 值转成 `LedgerRow`；任何畸形**响亮抛 `LedgerCorruptError`**
+    （不再静默丢弃整行——理由同 `_parse_entry`）。"""
     if not isinstance(value, dict):
-        return None
+        raise LedgerCorruptError(f"row is not a JSON object: {value!r}")
     consumed = value.get("consumed")
     if isinstance(consumed, bool) or not isinstance(consumed, int):
-        return None
+        raise LedgerCorruptError(f"row.consumed must be an int (non-bool); got {consumed!r}")
     raw_entries = value.get("entries")
     if not isinstance(raw_entries, list):
-        return None
-    entries = [parsed for item in raw_entries if (parsed := _parse_entry(item)) is not None]
-    return LedgerRow(consumed=consumed, entries=tuple(entries))
+        raise LedgerCorruptError(f"row.entries must be a list; got {raw_entries!r}")
+    entries = tuple(_parse_entry(item) for item in raw_entries)
+    return LedgerRow(consumed=consumed, entries=entries)
 
 
 def load_ledger(path: Path) -> Ledger:
-    """读取账本；不存在/畸形整体 → 空账本。单行畸形只丢该行，不连累其余行。"""
+    """读取账本。文件**不存在** → 空账本（合法的"首次运行"起点）。文件**存在但
+    无法安全、完整解析**（JSON 语法错误/读取失败/顶层非对象/任意一行或一条记录
+    畸形）→ **fail-loud：抛 `LedgerCorruptError`，绝不静默退回空账本**——静默会让
+    `record_entry` 紧接着对着这份"看起来空"的账本做无条件整体覆写，把解析失败的
+    那部分数据永久抹除（独立审查 P0-1 实测坐实：预置两行→截断 JSON→`record` 后
+    两行全部消失）。`status` 读路径同样直接传播本异常，不得静默报 `consumed: 0`。
+    """
     if not path.is_file():
         return {}
     try:
         raw = json.loads(path.read_text(encoding="utf-8"))
-    except (OSError, UnicodeDecodeError, json.JSONDecodeError):
-        return {}
+    except (OSError, UnicodeDecodeError) as exc:
+        raise LedgerCorruptError(f"{path}: cannot read ledger file ({exc})") from exc
+    except json.JSONDecodeError as exc:
+        raise LedgerCorruptError(f"{path}: invalid JSON ({exc})") from exc
     if not isinstance(raw, dict):
-        return {}
+        raise LedgerCorruptError(
+            f"{path}: top-level JSON must be an object; got {type(raw).__name__}"
+        )
     ledger: Ledger = {}
     for name, value in raw.items():
-        row = _parse_row(value)
-        if row is not None:
-            ledger[str(name)] = row
+        try:
+            ledger[str(name)] = _parse_row(value)
+        except LedgerCorruptError as exc:
+            raise LedgerCorruptError(f"{path}: row {name!r} is malformed ({exc})") from exc
     return ledger
 
 
@@ -205,7 +236,18 @@ def record_entry(
     *,
     now: Callable[[], datetime] | None = None,
 ) -> LedgerRow:
-    """记一笔消费：读→加→写整段在跨进程排他锁下执行，返回该行更新后的状态。"""
+    """记一笔消费：读→加→写整段在跨进程排他锁下执行，返回该行更新后的状态。
+
+    `count` 必须是非 bool 的正整数——**库层运行时守卫**（独立审查 P0-2/P1）：CLI
+    的 `main()` 已有一层 `--count` 校验，但那只挡得住经 argparse 的调用；绕过 CLI
+    直调本函数（如脚本内部调用、未来的库消费方）仍可能传 `2.7`/`0`/`-50` 等坏值——
+    一旦放行落盘，`existing.consumed + count` 会污染该行的 `consumed`（变 float 或
+    负数），下次 `load_ledger`→`_parse_row` 判其畸形并 `raise`，此前"静默丢弃"的
+    旧版本更会在下一次 `record_entry` 时被无条件整体覆写永久抹除——在此处直接拒绝，
+    防止坏数据第一步就写入文件，与 CLI 层校验构成两层防御。
+    """
+    if isinstance(count, bool) or not isinstance(count, int) or count <= 0:
+        raise ValueError(f"count must be a positive int (non-bool); got {count!r}")
     clock = now or (lambda: datetime.now(UTC))
     with _locked(path):
         ledger = load_ledger(path)
@@ -279,7 +321,11 @@ def main(argv: list[str]) -> int:
         if not args.row.strip() or not args.session.strip() or not args.batch.strip():
             print("error: --row/--session/--batch must be non-empty", file=sys.stderr)
             return 1
-        row = record_entry(path, args.row, args.session, args.batch, args.count)
+        try:
+            row = record_entry(path, args.row, args.session, args.batch, args.count)
+        except (ValueError, LedgerCorruptError) as exc:
+            print(f"error: {exc}", file=sys.stderr)
+            return 1
         print(f"ledger: {path}")
         print(
             f"recorded: row={args.row!r} count={args.count} session={args.session!r} "
@@ -288,7 +334,12 @@ def main(argv: list[str]) -> int:
         return 0
 
     if args.action == "status":
-        ledger = load_ledger(path)
+        try:
+            ledger = load_ledger(path)
+        except LedgerCorruptError as exc:
+            # fail-loud（P0-1）：只读路径也不得静默把损坏文件当空账本报 consumed: 0。
+            print(f"error: {exc}", file=sys.stderr)
+            return 1
         print(f"ledger: {path}")
         if args.row:
             print(render_detail(args.row, ledger.get(args.row, _EMPTY_ROW)))
