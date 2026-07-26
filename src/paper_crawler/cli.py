@@ -725,6 +725,14 @@ def grab(
         str | None, typer.Option("--venue", help="显式指定 venue（优先于库内 DOI 反查）")
     ] = None,
     force: Annotated[bool, typer.Option("--force", help="绕过入队新鲜度，强制重跑")] = False,
+    browser: Annotated[
+        bool,
+        typer.Option(
+            "--browser",
+            help="允许对 render_page 计划走浏览器上下文取回（需先在 config 打开 "
+            "[browserfetch].enabled；遇风控只停手不绕过）",
+        ),
+    ] = False,
     home: HomeOpt = None,
     verbose: VerboseOpt = False,
 ) -> None:
@@ -734,7 +742,11 @@ def grab(
     单篇 lookup → `MergeEngine.ingest(source='crossref')` 建最小 paper 行并绑定 venue，再走单篇
     resolve+fetch（复用 pull 全链：auth 健康门/日配额/工作时段窗/OA 兜底全生效）。退出码
     （design/05 Task 口径）：0=成功（资产落盘）/ 1=业务失败（无资产/blocked/未收录）/ 2=用法·
-    配置错（缺 --doi / 未知 venue / 无法确定 venue）。
+    配置错（缺 --doi / 未知 venue / 无法确定 venue / `--browser` 但通道未在 config 打开）。
+
+    `--browser`（11-browser-fetch §7.1 L1，D-029 opt-in）：**用户显式发起的单篇**才可能走
+    浏览器上下文取回；非批量、非默认。遇风控/CAPTCHA 只分类停手（BLOCKED + 域冷却 24h），
+    **绝不求解或绕过**（AC-0.2）——恢复须由你本人在自己的浏览器完成站点验证后 resume。
     """
     if not doi:
         _usage_error("必须指定 --doi")
@@ -743,6 +755,15 @@ def grab(
         _usage_error(f"无效 DOI: {doi!r}")
 
     with _env(home, verbose, auth=True) as env:
+        if browser:
+            # 三级门（§7.1 L1）：config 未打开时**响亮拒绝**而非静默降级——否则用户以为
+            # 走了浏览器通道，实际是 skipped，误判"站点没货"。
+            if not env.ctx.config.browser_fetch_enabled:
+                _usage_error(
+                    "--browser 需先在 config-home config.toml 打开 [browserfetch].enabled = true"
+                    "（D-029：该通道默认关、非批量、仅用户显式单篇）"
+                )
+            env.ctx.browser_fetch = True
         try:
             venue_id = _grab_resolve_venue(env, doi_norm, venue)
         except CrawlerError as exc:
