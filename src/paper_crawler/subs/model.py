@@ -50,7 +50,7 @@ from typing import Any, Literal, NoReturn
 import yaml
 
 from paper_crawler.errors import SubscriptionInvalid
-from paper_crawler.subs.types import parse_arxiv_query
+from paper_crawler.subs.types import DATE_WINDOW_PARAMS, parse_arxiv_query
 
 # --- DSL 词表（T2 编译器的能力面契约）---------------------------------------
 
@@ -163,6 +163,19 @@ def _require_regex(pattern: str, *, where: str, path: str) -> str:
     return pattern
 
 
+# arxiv `query` 里手写日期窗参数名的早验名单——与 `compile._DATE_WINDOW_NAMES` 同一张
+# `DATE_WINDOW_PARAMS` 反向导出（独立审查 P2③）：本函数把"日期窗不在 DSL 里"这条更
+# 具体、更有用的提示**排在**通用语法解析之前——否则 `submittedDate`/`from-pub-date`
+# 这类名字词法上完全符合 `field:phrase` 原子形态，会被 `parse_arxiv_query` 当成
+# "不支持的字段前缀"报出一条不知所云的通用词法错，把 `compile._reject_date_window`
+# 本该给出的提示遮蔽掉（`_reject_date_window` 本身仍保留、仍会在编译期再判一次——
+# 两处各自独立判断，同 `_require_regex`/`parse_arxiv_query` 各自独立解析一次的先例，
+# 不是本函数取代了它）。
+_ARXIV_QUERY_DATE_WINDOW_NAMES: frozenset[str] = frozenset(
+    name.lower() for names in DATE_WINDOW_PARAMS.values() for name in names
+)
+
+
 def _require_arxiv_query_syntax(text: str, *, where: str, path: str) -> None:
     """arxiv `query` 布尔式的语法早验（Phase 7 T9；plan §4 T9"参数化谓词签名"冻结件，
     范围=ti/abs 字段 + AND/OR/ANDNOT + 引号短语，决策⑤ YAGNI）。
@@ -177,7 +190,21 @@ def _require_arxiv_query_syntax(text: str, *, where: str, path: str) -> None:
 
     只对 `arxiv` 源的 `query` 字段生效——`s2` 同名字段是自由文本，交给 S2 的
     bulk search 端点，没有本地布尔语法。
+
+    **日期窗名字先判**（独立审查 P2③）：手写日期窗与语法解析器的"未知字段前缀"
+    报错面有重叠（`submittedDate` 等名字词法上就是一个合法的 `field:phrase`
+    原子形状），若先跑通用解析，用户只会看到一条不知所云的"不支持的字段前缀"，
+    看不出问题其实是"日期窗不该手写"。
     """
+    lowered = text.lower()
+    for name in sorted(_ARXIV_QUERY_DATE_WINDOW_NAMES):
+        if name in lowered:
+            _fail(
+                where,
+                path,
+                f"不得手写日期窗 {name!r}（日期窗不在 DSL 里：增量窗由 watermark 注入，"
+                f"design/09 §5 / model.SOURCE_FIELDS 注释）",
+            )
     try:
         parse_arxiv_query(text)
     except ValueError as exc:

@@ -16,7 +16,7 @@ name: llm-agents
 sources:                       # 只列想要的源，各源有专属段
   arxiv:
     categories: [cs.AI, cs.LG, cs.CL, cs.MA]     # 官方分类（核对：docs/research/site-survey/arxiv.md 分类体系表）
-    query: >                   # 编译为 arXiv API search_query 的字段级布尔式
+    query: >                   # 编译为本地补偿谓词 arxiv.query_bool 的字段级布尔式（Phase 7 T9）
       (ti:"agent" OR abs:"agentic" OR abs:"tool use")
       AND NOT ti:"survey"
   openalex:                    # 聚合源兜底（收 arXiv 外的 OA 预印本）

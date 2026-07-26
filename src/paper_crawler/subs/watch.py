@@ -317,19 +317,14 @@ _DELIVERABLE_PARAMS: dict[str, frozenset[str]] = {
 # （刊期）。crossref 两轴同名同义，不豁免（冗余但无害，多一道保险）。
 _SKIP_RESULT_SIDE_WINDOW: frozenset[str] = frozenset({"ssrn"})
 
-# 下达不了时 WARNING 的补语：**默认**说"其余条件由本地过滤兜底"，源专属处置写进下表。
+# 下达不了时 WARNING 的补语：全源统一用这一句"其余条件由本地过滤兜底"（独立审查
+# P2①：曾有 `_UNDELIVERABLE_FALLBACK["arxiv"]` 专属覆写，称"search_query 的关键词
+# 布尔式无本地补偿谓词"——Phase 7 T9 起两处前提同时不再成立：①`compile._compile_arxiv`
+# 已不再产 `search_query` pushdown 条目，`_DELIVERABLE_PARAMS["arxiv"]` 之外的
+# dropped 集合对真实编译产物因此恒为空，这条 WARNING 分支对 arxiv 已不会触发；
+# ②即便触发，`query` 现在确有本地补偿——`arxiv.query_bool`（`filter.py`），"无本地
+# 补偿谓词"这句话本身也已经是假话。专属覆写已删除，回落到通用文案。）
 _FALLBACK_LOCAL_FILTER = "，其余条件由本地过滤兜底"
-
-_UNDELIVERABLE_FALLBACK: dict[str, str] = {
-    # arxiv 修复后 dropped 集合只可能剩 `search_query`（分类已按 arxiv_category fan-out
-    # 真实下达），而它没有任何本地补偿谓词（模块 docstring 末段列账）——不许说"由本地过滤
-    # 兜底"，那会让用户以为关键词布尔式仍在生效。
-    "arxiv": (
-        "；增量窗已按月桶下推（DISCOVER since=）+ 结果面按日收窄，分类已按 arxiv_category "
-        "逐分类 fan-out 下推，但 search_query 的关键词布尔式**无本地补偿谓词**，实际只有"
-        "订阅 filters: 三谓词生效——收窄请写进 filters.title_regex_any"
-    ),
-}
 
 # 参数名 → `VenueSpec.identifiers` 的键：adapter 真正读的字段通道（`quirks` 之外）。
 # 值一律写成单元素 list——`_enum_key_of` 对 `identifiers.issn` 取 `[0]`。
@@ -389,10 +384,10 @@ class AdapterFetcher:
         不静默丢弃是本条的全部意义：早期版本注入真实 venue 时整份扔掉 `params`，日报
         看起来一切正常，实际枚举的是 venue 全量面（审查 P1-A#2）。
 
-        措辞按源如实：**只有真的有本地补偿时才说"由本地过滤兜底"**。arxiv 的
-        `search_query` 既没下推也没有对应谓词（`filter.PREDICATE_REGISTRY` 里没有它），
-        实际生效的只有订阅级 `filters:` 三谓词——早期版本对所有源统一写"其余条件由本地
-        过滤兜底"，那句话在 arxiv 上是假的（F7 列账）。
+        补语统一用 `_FALLBACK_LOCAL_FILTER`（独立审查 P2①：arxiv 曾有专属覆写，理由
+        是"search_query 无本地补偿"——Phase 7 T9 起该前提已不成立，`compile.py` 不再
+        产 `search_query`、`query` 也确有本地补偿 `arxiv.query_bool` 了，专属覆写已
+        删除，见 `_FALLBACK_LOCAL_FILTER` 定义处的完整说明）。
         """
         deliverable = _DELIVERABLE_PARAMS.get(request.source, frozenset())
         dropped = sorted({name for name, _ in request.params if name not in deliverable})
@@ -403,7 +398,7 @@ class AdapterFetcher:
             "WARNING",
             f"watch[{request.subscription}]: 编译产物参数 {dropped} 无法下达到源 "
             f"{request.source} 的请求面（该 adapter 的 DISCOVER/ENUMERATE 无对应接缝）"
-            f"{_UNDELIVERABLE_FALLBACK.get(request.source, _FALLBACK_LOCAL_FILTER)}",
+            f"{_FALLBACK_LOCAL_FILTER}",
             stage="watch",
             venue=request.source,
         )
@@ -590,11 +585,22 @@ def _compose_arxiv(
        （`category.split(".", 1)[0]`）。
     2. **窗仍在有 `search_query` 时 AND 进同一个 `search_query`**：宿主形态出处 =
        `watermark.py` 模块 docstring 的"窗口参数的宿主形态"表（arxiv 的 `submittedDate`
-       不是独立 URL 参数）。`compile._wrap` 已保证复合查询式自带外层括号，故直接 ` AND `
-       追加不改变结合律。**无 query 时窗不再单独合成一个 `search_query` 条目**——窗真实
-       生效的两条通道是 `SourceRequest.since`（→ `discover_timeline` 月桶）与结果面
-       `_within_since` 收窄；把窗硬造成一个必然"无法下达"的参数，只会对 8 个纯分类预置
-       每轮制造一条假警报（F7 的"响亮降级不撒谎"纪律）。
+       不是独立 URL 参数）。`subs.types.wrap_arxiv_query`（Phase 7 T9 前名
+       `compile._wrap`，已搬家改名——原引用是悬空的，独立审查 P2②坐实）已保证复合
+       查询式自带外层括号，故直接 ` AND ` 追加不改变结合律。**无 query 时窗不再单独
+       合成一个 `search_query` 条目**——窗真实生效的两条通道是 `SourceRequest.since`
+       （→ `discover_timeline` 月桶）与结果面 `_within_since` 收窄；把窗硬造成一个
+       必然"无法下达"的参数，只会对 8 个纯分类预置每轮制造一条假警报（F7 的
+       "响亮降级不撒谎"纪律）。**此分支现状（独立审查 P2②如实列账）**：Phase 7 T9
+       起 `compile._compile_arxiv` 已不再产 `search_query` pushdown 条目（`query`
+       改走参数化本地补偿谓词 `arxiv.query_bool`，见 `filter.py`/`compile.py`），
+       `step.pushdown` 因此不会再出现该键——本分支对**真实编译产物**恒走
+       `else`（`expression` 恒为空串）。保留而不删的理由：(a) 它验证的"窗与查询式
+       同宿主合并"逻辑仍然正确、仍有测试锁定其纯函数行为本身（`test_subs_watch.py`
+       多例直构 `PlanStep` 驱动，不依赖 `_compile_arxiv` 是否会产出这个形状）；
+       (b) 本卡授权范围明确排除"fan-out 语义改动"，删除会牵动这些既有测试的断言
+       面，超出本轮"filter 消费点 + 文档/死码纠偏"的授权边界；如需真正移除，留待
+       controller 另行裁决。
     3. **零分类退化为单条**（恒至少一条请求，零请求 = 静默不拉该源；同 `_compose_fanout`）。
     """
     key = _FANOUT_KEY["arxiv"]

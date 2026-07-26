@@ -2,7 +2,7 @@
 title: AC-6 离线端到端验收 + 在线冒烟记录 — 订阅与搜索（Phase 6 T9）
 status: approved
 owner: t9
-updated: 2026-07-26
+updated: 2026-07-27
 ---
 
 # AC-6 离线端到端验收 + 在线冒烟记录（订阅与搜索，Phase 6 T9）
@@ -184,6 +184,8 @@ llm-agents 与 econometrics-methods 两个已实跑的 preset，dry-run 净候�
    > 连带改动：`search_query` 现**只装 `query` 布尔式**，分类不再拼入——分类经 fan-out 真实生效后，若仍把 `cat:` 组留在一个下达不了的参数里，那条"无法下达"WARNING 对分类部分就成了**假警报**（F7 立的"响亮降级不撒谎"纪律同样禁止假警报）。WARNING 文案已相应改为只点名 `search_query` 的关键词布尔式，措辞锁专测同步升级（新增"不含'分类组'"与"dropped 列表只含 `search_query`"两条断言）。
    > **下半边维持列账不变**：`query` 的关键词布尔式仍既无下推通道、也无本地补偿谓词（`PREDICATE_REGISTRY` 的谓词签名不带参数，承载不了订阅级表达式），仍靠 `filters.title_regex_any` 手工镜像词族这条**约定**兜底；参数化谓词机制留 Phase 7 检查单 #4。
    > 离线回归：`make check` **3828 passed / 28 skipped / 98.99% / EXIT=0**（较 §4.1a 的 3820 只增不减）；新增 fan-out 与 quirks 覆盖专测含一条 `MockTransport` 端到端——注入 `arxiv_cs_ai`（`set: cs`）而请求携 `q-fin.PR` 时，实际发出的 OAI URL 为 `set=q-fin`。**本条为离线判据，未做在线复验**（§4.1a 的在线预算已用尽，如实标注）。
+
+   > **下半边闭合追记（2026-07-27，Phase 7 T9，`feat/p7-t9-param-predicates`；勿与本记录标题的 Phase 6 T9 混淆，二者恰好同编号）**：本条**下半边已闭合**——`query` 的关键词布尔式自此既有本地补偿谓词、又在 watch 运行时真实生效，AC-6.4"正确性以本地过滤为准"在此条上恢复被机制保证。`subs/filter.py::PREDICATE_REGISTRY` 改造为**构造器形态**（`Callable[[str], PredicateFn]`，接订阅级参数），新增 `arxiv.query_bool` 谓词——`subs/compile.py::_compile_arxiv` 把归一后的查询式挂到新字段 `PlanStep.predicate_params`（不再落 `pushdown`，取代此前的 `search_query` 纯诊断串）；`subs/watch.py::_scoped_predicates`/`_run_source` 追加消费 `predicate_params`（一次 controller 追加授权的窄口子，仅限 filter 消费点，未碰 `_compose_arxiv`/`_DELIVERABLE_PARAMS`/`_FANOUT_KEY` 或任何 fan-out 语义），使该谓词在真实 `subs watch` 运行中对标题/摘要求值。9 个预置的 `filters.title_regex_any` 手工镜像**继续保留**（防御纵深，非替换）。语法范围=ti/abs 字段 + AND/OR/ANDNOT + 引号短语（YAGNI，覆盖现有 9 preset 实测形态），订阅加载期即校验（`model.py`）。独立审查（Opus，20+ 用例布尔对抗矩阵）NEEDS_FIX 一轮，修复未闭合引号静默吞入（会致谓词对任何 stub 恒 False、上游静默清零零告警的 P1 级缺陷）+ 若干真话核对与死代码清理后转 re-review。离线回归：`make check` **3928 passed / 28 skipped / 98.99% / EXIT=0**（较 Phase 7 开工基线 3832 净增 96，含端到端 watch 集成用例）。
 
 ### 4.1a F7 修复后的在线复验台账（2026-07-26 执行，预算 ≤6 请求，controller 授权）
 

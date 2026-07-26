@@ -170,6 +170,18 @@ def _evaluate_arxiv_query(node: ArxivQueryNode, stub: PaperStub) -> bool:
 
     字段缺失（如 `stub.abstract is None`）→ 该原子判 `False`（无法确认时诚实剔除，
     呼应 `filter_papers` 的 `min_year`/`ssrn.topic_filter` 同款取舍）。
+
+    **`ANDNOT` 右操作数字段缺失时的极性**（独立审查 P2④ 追记，非新增行为，只是
+    补充说明）：`a ANDNOT b` == `a and not b`。若 `b`（排除子句）因字段缺失判
+    `False`，`not False == True`，整式退化为 `a`——即"无法确认排除条件是否成立
+    时，不做排除"，是**保守面向纳入**的一面（不能证明该排除，就不当它成立）。
+    这与"字段缺失一律判该原子 False"是**同一条规则的两种表现**，不是第二套
+    语义：规则恒是"字段缺失 → 该原子 False"，只是这个 `False` 落在 `ANDNOT` 的
+    **右侧（否定位）**时，双重否定把它翻成了"不排除"而非"不匹配"。9 个 preset
+    现状的 `ANDNOT` 右侧恒是 `ti:"survey"`（`stub.title` 从不为 `None`），这条
+    极性在生产路径上从未真正触发——仅当自定义订阅对 `abs:` 字段做 `ANDNOT`
+    排除、且该 stub 摘要缺失时才会体现（专测见
+    `test_construct_arxiv_query_bool_andnot_missing_right_field_lets_it_through`）。
     """
     if isinstance(node, ArxivQueryAtom):
         text = _arxiv_field_text(node.field, stub)

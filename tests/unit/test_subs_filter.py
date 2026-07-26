@@ -294,6 +294,21 @@ def test_construct_arxiv_query_bool_andnot_semantics() -> None:
     assert predicate(_stub("A Survey of Agentic Systems")) is False
 
 
+def test_construct_arxiv_query_bool_andnot_missing_right_field_lets_it_through() -> None:
+    """独立审查 P2④ 锁定：`ANDNOT` 右操作数字段缺失（`abstract is None`）时该原子判
+    `False`，`not False == True`，整式退化为左操作数——"无法确认排除条件成立"时
+    **不做排除**（保守面向纳入，`_evaluate_arxiv_query` docstring 详述极性）。
+
+    与"字段缺失一律 False"是同一条规则：正位置（左操作数/独立原子）缺字段 → 该
+    原子不贡献匹配（`test_construct_arxiv_query_bool_missing_abstract_field_is_false`
+    已锁定）；此处缺字段的原子恰好落在 `ANDNOT` 的否定位，双重否定翻成"放行"。
+    """
+    predicate = build_predicate(ARXIV_QUERY_BOOL, '(ti:"agent" ANDNOT abs:"excluded")')
+    assert predicate(_stub("Agentic Tool Use", abstract=None)) is True  # 左真+右缺 → 放行
+    assert predicate(_stub("Agentic Tool Use", abstract="an excluded topic")) is False  # 右确有
+    assert predicate(_stub("Unrelated Paper", abstract=None)) is False  # 左假 → 仍剔除
+
+
 def test_construct_arxiv_query_bool_and_semantics() -> None:
     """`AND`（非 `ANDNOT`）语义：语法支持但 9 个 preset 现状不用（决策⑤范围仍含它）。"""
     predicate = build_predicate(ARXIV_QUERY_BOOL, '(ti:"agent" AND abs:"tool")')

@@ -30,6 +30,7 @@ from paper_crawler.subs.model import (
     load_subscriptions_dir,
     parse_subscription,
 )
+from paper_crawler.subs.types import DATE_WINDOW_PARAMS
 
 _FIXTURES = Path(__file__).resolve().parents[1] / "fixtures" / "subs"
 
@@ -254,6 +255,27 @@ _INVALID: list[tuple[str, dict[str, object], str]] = [
         {"name": "probe", "sources": {"arxiv": {"query": 'ti:"agent" OR'}}},
         "arXiv 查询式语法非法",
     ),
+    # 独立审查 P1-1：未闭合引号（此前被词法层静默吞入，参数化谓词对任何 stub 恒
+    # False，watch 运行时把整个 arxiv 源静默清零、零告警——见 test_subs_types.py
+    # 的 parse_arxiv_query 专测；此处补订阅加载期的端到端拒载）。
+    (
+        "arxiv query 未闭合引号",
+        {"name": "probe", "sources": {"arxiv": {"query": 'ti:"agent'}}},
+        "未闭合或多余的引号",
+    ),
+    # 独立审查 P2③：手写日期窗须给出"日期窗不在 DSL 里"这条具体提示，不能被通用
+    # 语法解析器的"不支持的字段前缀"抢先报出并遮蔽（`submittedDate` 词法上完全
+    # 符合 field:phrase 原子形状）。
+    (
+        "arxiv query 手写日期窗",
+        {
+            "name": "probe",
+            "sources": {
+                "arxiv": {"query": 'ti:"agent" AND submittedDate:[202601010000 TO 202601310000]'}
+            },
+        },
+        "不得手写日期窗",
+    ),
 ]
 
 
@@ -302,6 +324,25 @@ def test_arxiv_query_with_valid_boolean_syntax_parses_fine() -> None:
         }
     )
     assert sub.selector_for("arxiv") is not None
+
+
+def test_arxiv_query_date_window_names_give_the_specific_message() -> None:
+    """独立审查 P2③ 回归锁：手写日期窗必须报"不得手写日期窗"这条具体提示，不能被
+    通用语法解析器的"不支持的字段前缀"抢先报出（`DATE_WINDOW_PARAMS` 反向导出的
+    全部 8 个名字逐一验证，同 `test_subs_compile.py::
+    test_date_window_guard_names_are_derived_from_the_seam_table` 的口径，只是
+    这里走**订阅加载期**——`model.py`——而非编译期）。
+    """
+    names = {name for names in DATE_WINDOW_PARAMS.values() for name in names}
+    assert len(names) == 8
+    for name in names:
+        with pytest.raises(SubscriptionInvalid) as excinfo:
+            parse_subscription(
+                {"name": "probe", "sources": {"arxiv": {"query": f'ti:"agent" AND {name}:X'}}}
+            )
+        message = str(excinfo.value)
+        assert "不得手写日期窗" in message, f"{name}: 被通用语法错误遮蔽 —— {message!r}"
+        assert "不支持的字段前缀" not in message
 
 
 def test_s2_query_free_text_is_not_subject_to_arxiv_boolean_syntax() -> None:

@@ -402,6 +402,11 @@ def test_parse_arxiv_query_ignores_the_optional_outer_wrap() -> None:
         ('"stray quote"', "无法识别的查询片段"),  # 引号前没有 field: 前缀，词法层面就认不出
         ('ti:""', "短语为空"),  # 空引号短语（field: 后紧跟一对空引号）
         ('(ti:"a" OR)', "期望字段原子"),  # OR 之后紧跟右括号——原子位置读到了算子/括号
+        # 独立审查 P1-1：未闭合引号（无内部空白）此前被词法层的裸词兜底分支静默吞入
+        # （首尾不成对 → 不剥引号 → phrase 残留字面量 `"` → 谓词对任何 stub 恒 False，
+        # 上游 filter_papers 因此把整个源静默清零、零告警）。两例对照独立审查报告原文：
+        ('ti:"agent', "未闭合或多余的引号"),  # 单原子内直接缺收尾引号
+        ('ti:"a" OR abs:"b', "未闭合或多余的引号"),  # 前一原子完整，后一原子缺收尾引号
     ],
 )
 def test_parse_arxiv_query_rejects_invalid_syntax(text: str, needle: str) -> None:

@@ -51,7 +51,7 @@
 | [design/06-data-model.md](design/06-data-model.md) | 数据模型与入库设计 | implemented | 2026-07-27 |
 | [design/07-auth-session.md](design/07-auth-session.md) | 认证与会话管理 | implemented | 2026-07-23 |
 | [design/08-venue-tracking.md](design/08-venue-tracking.md) | Venue 时间轴与年度追踪 | approved | 2026-07-20 |
-| [design/09-search-filter.md](design/09-search-filter.md) | 主题订阅与精确搜索 | implemented | 2026-07-26 |
+| [design/09-search-filter.md](design/09-search-filter.md) | 主题订阅与精确搜索 | implemented | 2026-07-27 |
 | [design/auth-framework.md](design/auth-framework.md) | 认证框架实现级详设（07/04 的实现级扩展：四 Provider + 凭证库 + CLI + pipeline 接缝） | implemented | 2026-07-26 |
 | [design/10-config-layout.md](design/10-config-layout.md) | 配置归集与分层规范（D-025：config/ 文件夹 + 加载链 + 敏感键护栏） | implemented | 2026-07-23 |
 | [design/11-browser-fetch.md](design/11-browser-fetch.md) | Browser-Fetch 横切件详设（三消费方统一浏览器取回通道 + CF-403 冷却缺口方案；D-029 案 B 承接，D-030 定稿） | approved | 2026-07-26 |
@@ -110,7 +110,7 @@
 | [testing/records/2026-07-23-ac4-acceptance.md](testing/records/2026-07-23-ac4-acceptance.md) | AC-4 离线端到端验收汇总记录（AC-4.2~4.6 离线 DoD 达成，T7a draft；AC-4.1 真实凭证归 T7b） | approved | 2026-07-23 |
 | [testing/records/2026-07-24-ac3-acceptance.md](testing/records/2026-07-24-ac3-acceptance.md) | AC-3.1~3.4 独立汇总验收记录（数据模型与合并引擎，Phase 3 判据补记收口） | approved | 2026-07-24 |
 | [testing/records/2026-07-24-ac5-acceptance.md](testing/records/2026-07-24-ac5-acceptance.md) | AC-5 离线端到端汇总验收记录（AC-5.1a/5.2/5.3/5.4 离线 DoD 达成，T7 draft；AC-5.1b defer Phase 6） | approved | 2026-07-24 |
-| [testing/records/2026-07-26-ac6-acceptance.md](testing/records/2026-07-26-ac6-acceptance.md) | AC-6 离线端到端验收 + 在线冒烟记录（订阅与搜索，AC-6.1~6.4 离线 DoD 四条 PASS，fable 亲验签署"达成"；§4 已知限制 #1 arxiv 恒失败 / #2 ssrn 整年枚举经 F7 修复并在线复验，§4.1a 台账；F7 期新发现 #6 arxiv search_query 无本地补偿转 Phase 7 检查单） | approved | 2026-07-26 |
+| [testing/records/2026-07-26-ac6-acceptance.md](testing/records/2026-07-26-ac6-acceptance.md) | AC-6 离线端到端验收 + 在线冒烟记录（订阅与搜索，AC-6.1~6.4 离线 DoD 四条 PASS，fable 亲验签署"达成"；§4 已知限制 #1 arxiv 恒失败 / #2 ssrn 整年枚举经 F7 修复并在线复验，§4.1a 台账；F7 期新发现 #6 arxiv search_query 无本地补偿——上半边 fan-out 已修复，下半边参数化谓词已由 Phase 7 T9 闭合，追记见该条） | approved | 2026-07-27 |
 | [testing/records/canary/README.md](testing/records/canary/README.md) | Canary 健康矩阵记录目录（`crawler canary --record` 落盘，按日覆盖；+周跑 launchd/cron 模板说明） | approved | 2026-07-26 |
 
 ## process/ — 流程规范

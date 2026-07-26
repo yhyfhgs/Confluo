@@ -2,7 +2,7 @@
 title: 主题订阅与精确搜索
 status: implemented
 owner: fable5
-updated: 2026-07-26
+updated: 2026-07-27
 ---
 
 # 09 · 主题订阅与精确搜索（Topic/Tag DSL）
@@ -23,7 +23,7 @@ name: llm-agents
 sources:                       # 只列想要的源，各源有专属段
   arxiv:
     categories: [cs.AI, cs.LG, cs.CL, cs.MA]     # 官方分类（见 research/site-survey/arxiv.md 全表）
-    query: >                   # 编译为 arXiv API search_query 的字段级布尔式
+    query: >                   # 编译为本地补偿谓词 arxiv.query_bool 的字段级布尔式（Phase 7 T9）
       (ti:"agent" OR abs:"agentic" OR abs:"tool use")
       AND NOT ti:"survey"
   openalex:                    # 聚合源兜底（收 arXiv 外的 OA 预印本）

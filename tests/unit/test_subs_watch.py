@@ -477,13 +477,18 @@ def test_ssrn_result_side_window_is_skipped_because_the_axis_differs() -> None:
     assert titles == ["早于窗", "窗内", "窗下界当天", "无日期"]  # 一条都不丢
 
 
-def test_arxiv_undeliverable_warning_does_not_claim_a_local_fallback(
+def test_arxiv_undeliverable_warning_uses_the_generic_fallback_text(
     caplog: pytest.LogCaptureFixture,
 ) -> None:
-    """arxiv 的 search_query 既没下推也**没有**本地补偿谓词——WARNING 不许说"本地兜底"。
+    """独立审查 P2① 措辞锁同步：`_UNDELIVERABLE_FALLBACK["arxiv"]` 专属覆写已删除
+    （其"search_query 无本地补偿谓词"的前提自 Phase 7 T9 起不再成立——`compile.py`
+    已不再产 `search_query`，`query` 也确有本地补偿 `arxiv.query_bool` 了）；本例
+    直接构造一个携带任意"下达不了的参数"的请求（**不代表**真实编译产物会产生
+    `search_query`——那条路径已被 `compile._compile_arxiv` 堵死，见其 docstring
+    与 `test_subs_compile.py`），只用来验证通用 fallback 机制本身仍正确工作。
 
     分类修复后本条同时锁住"不误报"的一侧：fan-out 的两个键**是**能下达的，故 dropped
-    列表只许有 `search_query`，文案也不许再提"分类组"（那会变成假警报）。
+    列表只许有那个陌生参数，文案也不许再提"分类组"（那会变成假警报）。
     """
     fetcher = AdapterFetcher({"arxiv": _TwoIssueAdapter()})
     request = SourceRequest(
@@ -492,7 +497,7 @@ def test_arxiv_undeliverable_warning_does_not_claim_a_local_fallback(
         params=(
             ("arxiv_category", "cs.AI"),
             ("arxiv_set", "cs"),
-            ("search_query", '(ti:"agent")'),
+            ("some_unexpected_param", "x"),
         ),
         since="2026-07-19",
     )
@@ -501,11 +506,11 @@ def test_arxiv_undeliverable_warning_does_not_claim_a_local_fallback(
 
     (warning,) = [r for r in caplog.records if "无法下达" in r.getMessage()]
     message = warning.getMessage()
-    assert "无本地补偿谓词" in message
-    assert "其余条件由本地过滤兜底" not in message
+    assert "其余条件由本地过滤兜底" in message  # 通用 fallback，不再有 arxiv 专属文案
+    assert "无本地补偿谓词" not in message  # 该说法自 T9 起已假，不应再出现
     assert "分类组" not in message  # 分类现在真的生效了，再提它就是假警报
-    # dropped 列表逐字：只有 search_query——两个 fan-out 键不被误报成"下达不了"。
-    assert "编译产物参数 ['search_query'] 无法下达" in message
+    # dropped 列表逐字：只有陌生参数——两个 fan-out 键不被误报成"下达不了"。
+    assert "编译产物参数 ['some_unexpected_param'] 无法下达" in message
 
 
 def test_ssrn_window_params_no_longer_warn_as_undeliverable(

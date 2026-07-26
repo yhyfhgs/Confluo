@@ -321,6 +321,16 @@ class _ArxivQueryParser:
             )
         if len(phrase) >= 2 and phrase.startswith('"') and phrase.endswith('"'):
             phrase = phrase[1:-1]
+        if '"' in phrase:
+            # 独立审查 P1-1 坐实：未闭合引号（如 `ti:"agent`，无内部空白）会被词法层的
+            # `[^\s()]+` 兜底分支整体吞成一个 token——上面的"首尾成对"剥引号条件不满足
+            # （只有开引号、没有收引号），phrase 里因此**残留一个字面量 `"`**。若在此
+            # 放行，短语永远不可能出现在任何真实标题/摘要里（论文文本没有裸引号字符），
+            # 谓词会对**任何** stub 恒返回 False——上游 `filter_papers` 因此把整个源
+            # 静默过滤到空，且零告警（正撞本模块 docstring"不可静默清零"的红线）。剩余
+            # 的裸引号（无论落在开头/中间/结尾）都判定为引号未闭合，响亮拒载而非猜测
+            # 用户想在哪里收口。
+            raise ValueError(f"未闭合或多余的引号：{token!r}")
         if not phrase:
             raise ValueError(f"字段 {field!r} 的短语为空：{token!r}")
         return ArxivQueryAtom(field=field, phrase=phrase)
