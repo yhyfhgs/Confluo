@@ -200,9 +200,10 @@ def _rank(priority: Mapping[str, int], source: str) -> float:
 
 
 def _prefers_on_tie(field_key: str, incoming: object, current: object) -> bool:
-    """**同级**来源（=同一来源的二次观测，六枚举优先级两两互异）异值时的确定性 tie-break。
+    """**同级**来源（=同一来源的二次观测，七枚举优先级两两互异）异值时的确定性 tie-break。
 
-    `SOURCE_PRIORITY`（D-021，design/06 §3 来源优先级表）只对**跨源**冲突定序；同源二次观测
+    `SOURCE_PRIORITY`（D-021 决策 3，经 D-035 扩为七位重编号；design/06 §3 来源优先级表）
+    只对**跨源**冲突定序；同源二次观测
     给出不同值时表无话可说，原实现落到「先到者胜」——即注入顺序决定终值（审计 P3
     「同源二次观测异值先到胜」）。此处按字段类别取两种**全序**，故 `min` 仍是幂等+交换+结合
     的格运算，同一批观测无论以何种顺序到达都收敛到同一终值（AC-3.4）：

@@ -197,7 +197,9 @@ DEFAULT_REPORT_ROOT = Path("docs") / "reports" / "watch"
 
 # 每个订阅源在 `MergeEngine.ingest(source=…)` 里的来源身份。两套词表不同名是有原因的：
 # `subs.model.SOURCE_FIELDS` 是**订阅 DSL 的源**（用户写什么），`merge.SOURCE_PRIORITY`
-# 是**字段收敛的来源优先级**（谁的值更可信，D-021 冻结六枚举）。映射按"这批字节实际
+# 是**字段收敛的来源优先级**（谁的值更可信，D-021 决策 3 冻结、经 D-035 扩为七枚举）。
+# 两个"六/七"无关：`SOURCE_FIELDS` 的源集合不随本表扩位而变（D-035 明文排除连坐）。
+# 映射按"这批字节实际
 # 来自哪儿"如实填，不按名字像不像：
 #
 # - arxiv → `official`：arXiv 就是其预印本的第一手记录（同 pull 路径 `upsert_paper`

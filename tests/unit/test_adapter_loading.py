@@ -2,6 +2,7 @@
 
 import pytest
 
+from helpers.zero_network import assert_domains_match_network_face
 from paper_crawler.adapter import (
     HttpClientConsumer,
     SourceAdapter,
@@ -43,8 +44,14 @@ EXPECTED_ADAPTER_IDS = {
     "econsoc",  # Phase 5 T6（open_access；Econometric Society 三刊，OJS OAI + 域名分段路由）
     "ssrn",  # Phase 5 T4（open_access；DISCOVER|ENUMERATE|RESOLVE，委 crossref + landing-only）
     "nber",  # Phase 5 T3（open_access，RESOLVE|FETCH；enumerate 走 crossref prefix 10.3386）
+    "repec",  # Phase 7 T8（aggregator-enrich；**零网络**——bulk 快照本地 join，D-035）
 }
 VALID_FAMILIES = {"open_access", "auth_gated", "aggregator"}
+
+# **零网络 adapter 白名单**（D-035 决策 1）的权威定义在 `helpers/zero_network.py`——本仓库
+# 有**两条** domains 断言（此处 + `tests/contract/test_adapter_contract.py`），两处各写一份
+# 集合必然漂移（"注册了却没同步"反模式已复现三次）。判定语义是**双向**的：`domains == ()`
+# 当且仅当 adapter 属该集合，故 repec 的零网络性质被**正向锁定**而非豁免。
 
 
 @pytest.fixture
@@ -67,8 +74,8 @@ def test_every_adapter_has_complete_metadata(adapters: dict[str, SourceAdapter])
         assert adapter.default_rate.source_note != ""  # 出处必注（design/02）
         assert adapter.default_rate.requests_per_minute > 0
         assert isinstance(adapter.auth_requirement, AuthLevel)
-        assert adapter.domains  # 非空
-        assert all(isinstance(d, str) and d for d in adapter.domains)
+        # domains 按网络面**双向**断言：空当且仅当零网络源（口径与 contract 侧同源）。
+        assert_domains_match_network_face(adapter_id, adapter.domains)
 
 
 def test_adapters_satisfy_runtime_checkable_protocol(

@@ -379,9 +379,9 @@ openalex/s2 **不承担枚举**（capabilities 已收回 ENUMERATE，§1；两�
 - 镜像：默认 `www2.nber.org`（探针 4/4 稳），`repec.nber.org` 备（1 次连接层失败，样本=1 不构成判罚）。
   **两域 robots 未核**（原勘察只覆盖 www/back）——**T8 首个动作是补两域 robots 核验**（plan §3 T8-robots
   ≤2 请求），不通过则停手上报。
-- **两域 robots 核验结果 [LIVE 2026-07-27]（T8 首步执行，2/2 请求已记 `T8-robots` 账本行）——判定：
-  ⛔ 未通过（"无从判读"，非 "被 Disallow"）；T8 据此停手上报，实现未开工。** 诚实 UA
-  `PaperCrawler/0.1.0 (personal research)`，`httpx` 直接 GET、跟随重定向：
+- **两域 robots 核验结果 [LIVE 2026-07-27]（T8 首步执行，2/2 请求已记 `T8-robots` 账本行）——核验判定：
+  ⚠ 无从判读（非 "被 Disallow"）；据此上报 NEEDS_DECISION，已由 fable 附条件放行（见本条末）。**
+  诚实 UA `PaperCrawler/0.1.0 (personal research)`，`httpx` 直接 GET、跟随重定向：
 
   | # | 目标 | 结果 |
   |---|---|---|
@@ -393,13 +393,28 @@ openalex/s2 **不承担枚举**（capabilities 已收回 ENUMERATE，§1；两�
     **环境障碍 vs 站点侧不可区分**（样本仍 =1，不构成判罚）。
   - **403 是 `/robots.txt` 路径特异、非对本 UA 的全站封禁**：探针 [LIVE 2026-07-26] 对 `www2.nber.org`
     的 bulk ReDIF 路径 4/4 成功（§6.2）。故"取不到 robots"与"取不到数据"是两件事。
-  - **待裁决的合规取舍（NEEDS_DECISION，尚无 ADR；[D-035](../../plan/decision-log.md) 决策 3 的"镜像"条以
-    "robots 未核、不通过则停手"立论，本结果即其兑现输入）**：RFC 9309
-    §2.3.1.3 把 4xx 归为 "Unavailable status"、明文 *crawler MAY access any resources*（即无可违反的
-    Disallow 规则）；但 AC-0.5「robots+ToS 遵守」要求的是**已核验的放行**，而 403（区别于 404）本身是一条
-    否定性应答。二者取舍不属执行 agent 权限，**须 fable 裁定后 T8 方可续做**——`www.nber.org` 的 robots
-    （[nber.md §1](../../research/site-survey/nber.md)，nginx/Drupal，`/papers/` 放行）**不可外推**到
+  - 提交裁决时的合规取舍陈述（保留原文）：RFC 9309 §2.3.1.3 把 4xx 归为 "Unavailable status"、明文
+    *crawler MAY access any resources*（即无可违反的 Disallow 规则）；但 AC-0.5「robots+ToS 遵守」要求的是
+    **已核验的放行**，而 403（区别于 404）本身是一条否定性应答。二者取舍不属执行 agent 权限——`www.nber.org`
+    的 robots（[nber.md §1](../../research/site-survey/nber.md)，nginx/Drupal，`/papers/` 放行）**不可外推**到
     `www2.nber.org`：REP 按 origin 生效，且两域服务器栈不同（nginx vs Apache/FreeBSD）。
+
+- **✅ 裁决（fable，2026-07-27）：附条件放行，离线部分立即开工。**
+  - **裁决依据**：①RFC 9309 §2.3.1.3：robots.txt 返回 4xx 归 "Unavailable" 类，标准明文 crawler MAY
+    access any resources；Google 现行实现同解（4xx 视同无 robots，无限制）。403 是对 `/robots.txt` 资源
+    本身的应答，非对爬取行为的 Disallow——**不存在可违反的规则**。②ReDIF/RePEc 是为机器批量交换设计的
+    公开元数据分发网络，NBER 主动向其发布 bulk 文件＝分发意图明示，取用行为与该体系设计目的一致
+    （区别于"爬网站"）。③已坐实的路径特异事实（bulk 路径 [LIVE] 4/4 成功）支持"robots 不可得 ≠ 数据
+    不可取"。
+  - **附加条件（T19 执行时为硬约束）**：
+    a) T19 真实拉取前**先重试 `repec.nber.org` robots 一次**（TLS 中断可能瞬时），可判读则按其规则为准
+       （Disallow 即停）；
+    b) 仍不可判读则按本裁决执行，但限**最小请求量（≤4，§3 `T8-bulk` 预算行）、逐请求间隔 ≥10s、诚实 UA**；
+    c) **数据路径本身若遇 403/429 等任何拒绝信号，立即停止并把 repec 通道出列回报**——本裁决只覆盖
+       "robots 不可判读"情形，**不覆盖"数据端点明确拒绝"**。
+  - 落地位置：条件 a/b/c 由 `scripts/repec_snapshot.py` 承载（该脚本是唯一网络面）；条件 b 的 ≥10s 间隔与
+    ≤4 请求为其默认值，条件 c 为其拒绝信号早停分支。**T8 离线实现（fixture 驱动）不受本条约束**——src 侧
+    `enrich_batch` 零网络，由 socket 猴补专测机械锁定。
 
 **快照落盘契约**（`<config-home>/state/repec/`，经 `config.resolve_home()`，D-032 红线）
 
@@ -577,6 +592,9 @@ openalex/s2 **不承担枚举**（capabilities 已收回 ENUMERATE，§1；两�
 | 16 | 2026-07-27 | **新增 §5.7 `repec`（aggregator-enrich）契约级设计**：定位/与 §5.3-§5.4 的本质差异表（零网络 vs 在线批查）/bulk-only 与零 HTML 红线/`state/repec/` 快照落盘契约（布局+manifest+失效语义+网络面移出 src）/`enrich_batch` 映射与未命中三分观测/DOI↔handle 仅 NBER 语法映射边界/可寻址集合如实入档（≈3.6 万 NBER WP，SSRN 结构性为 0）/接入面改动清单/fixture 清单。同批：§1 分工表 +1 行、§6 identifier scheme 表 +1 行、§6 优先级表按 D-035 扩为七位重编号、H1 与 front matter 标题同步。**本节是契约级设计、实现未落地**（`status: implemented` 覆盖的仍是 §5.1–§5.5 五源），显式标注于节首。 | [D-035](../../plan/decision-log.md)（P7-T2 卡产出，独立审查 NEEDS_FIX→修复→fable 落章生效）；[enrich-eval-p6.md §2/§6.2 探针 GO](../../research/enrich-eval-p6.md)；[phase7-implementation-plan §4 T2/T8](../../plan/phase7-implementation-plan.md) |
 
 | 17 | 2026-07-27 | **§5.7 回填两域 robots 核验结果 [LIVE]（T8 首步，2/2 请求已记 `T8-robots` 账本行）——判定"未通过（无从判读）"**：`www2.nber.org/robots.txt` **403 Forbidden**（源站 Apache 亲答，非代理拦截；403 系 `/robots.txt` 路径特异——同域 bulk ReDIF 路径探针 4/4 成功）、`repec.nber.org/robots.txt` **TLS 握手中断**（与探针 P3 及 repec.md 台账 #3/#6 同类，环境 vs 站点不可区分）⇒ **两域皆无可判读 robots.txt，bulk ReDIF 路径既未被 Allow 也未被 Disallow**。原节内"两域 robots 未核…不通过则停手上报"一句**保留不抹**（痕迹），新结果作 [LIVE] 注记追加。**T8 据此停手，实现零开工**；RFC 9309 §2.3.1.3（4xx=Unavailable→MAY access）与 AC-0.5（要求已核验放行）的取舍**交 fable 裁定**（NEEDS_DECISION），`www.nber.org` robots **明示不可外推**（REP 按 origin 生效 + 两域服务器栈不同） | T8 首步在线核验（[online-budget.md](../../process/online-budget.md) 三条纪律；[plan §3 T8-robots](../../plan/phase7-implementation-plan.md)） |
+| 18 | 2026-07-27 | **§5.7 追记 fable 对上条 NEEDS_DECISION 的裁决：附条件放行、离线部分立即开工**。依据＝①RFC 9309 §2.3.1.3 4xx 归 "Unavailable"、标准明文 MAY access（Google 现行实现同解），403 是对 `/robots.txt` 资源本身的应答而非对爬取行为的 Disallow ⇒ **不存在可违反的规则**；②ReDIF/RePEc 是为机器批量交换设计的公开元数据分发网络、NBER 主动发布 bulk 文件＝分发意图明示（区别于"爬网站"）；③路径特异事实支持"robots 不可得 ≠ 数据不可取"。三项**附加条件**（T19 硬约束）逐条入档：a) 真实拉取前重试 `repec.nber.org` robots 一次，可判读则以其为准（Disallow 即停）；b) 仍不可判读则 ≤4 请求 + 间隔 ≥10s + 诚实 UA；c) **数据端点遇 403/429 等任何拒绝信号立即停止并把 repec 通道出列回报**（本裁决不覆盖"数据端点明确拒绝"）——由 `scripts/repec_snapshot.py` 承载。上条"未通过"表述据此改为"无从判读（已附条件放行）"，**核验事实原文不抹** | fable 裁决 2026-07-27（T8 NEEDS_DECISION 回执） |
+| 19 | 2026-07-27 | **§5.7 由契约级设计转为实现落地**（T8）：`adapters/repec/{__init__,adapter,parse}.py` + `scripts/repec_snapshot.py` + 接入面清单全项。实现期判读三点**逐条标 [未实测] 与 [LIVE] 分离**（**按实测收窄而非按推断扩张**，§5.7 原文授权；唯一 [LIVE] 依据是探针实测的字段名与 `D1; J13; J15` 值形态）：①**记录边界＝`Template-Type:` 行**（规范定义的记录起始标记），**空行既不切记录也不终止续行**——摘要内空行是段落分隔，用空行作边界会把记录腰斩、丢掉后半截字段；字段名大小写不敏感，续行空格折叠。②`t` 系列 handle 段**未实测**：`10.3386/t{n}` 暂走与 `w{n}` 同一 `nberwo` 段，但该推断**不被固化为事实**——快照查无该 handle 时计入"覆盖缺口"而非静默丢弃，T19 实测若证伪则改为只映射 `w`。③快照文件命名不预设：`manifest.files[].name` 记实际名，加载器按 manifest 遍历。fixture 为**自造合成样本**（`tests/fixtures/repec/README.md` 逐条标注出处），真实快照拉取归 T19 | T8 实现（[plan §4 T8](../../plan/phase7-implementation-plan.md)；[D-035](../../plan/decision-log.md)） |
+| 20 | 2026-07-27 | **在线预算如实入档：`T8-robots` 行超线 1（3/2）**。第 3 次请求发生在 T8 实现期对 `scripts/repec_snapshot.py` 跑 `--dry-run` 冒烟时——该脚本的 `--dry-run` 按裁决条件 (a) **仍执行 robots 重试**（只跳过数据请求），故冒烟意外触网 1 次 `www2.nber.org/robots.txt`（403 复现，与首次核验一致，无新信息）。已按 [online-budget.md §2 纪律 2](../../process/online-budget.md) 即时记账（`--batch` 注明成因）、按纪律 3 于此入档。**性质**：协调可见性问题，非 AC-0 红线触碰（robots 请求本身是合规动作）。**教训**：涉网脚本的"干跑"须先确认其干跑边界——本脚本的 `--dry-run` 语义是"零**数据**请求"而非"零请求"，该语义已写入其模块 docstring 与 `--dry-run` 帮助文案 | T8 实现期自查（[plan §3](../../plan/phase7-implementation-plan.md) `T8-robots` ≤2） |
 
 ## 10. 风险与维护
 

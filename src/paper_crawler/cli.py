@@ -86,6 +86,7 @@ from paper_crawler.adapters.nber import adapter as nber_adapter
 from paper_crawler.adapters.nber.adapter import NberAdapter
 from paper_crawler.adapters.openalex import budget as openalex_budget
 from paper_crawler.adapters.openalex.adapter import OpenAlexAdapter
+from paper_crawler.adapters.repec.adapter import RepecAdapter
 from paper_crawler.adapters.unpaywall import report as oa_report
 from paper_crawler.adapters.unpaywall.adapter import UnpaywallAdapter
 from paper_crawler.auth.cli import auth_app
@@ -1330,7 +1331,10 @@ def oa_report_cmd(
 # pull 六阶段、不产 RunReport、无任何 AC 依赖它**（同 `oa-report` 的定位/退出码
 # 口径：薄包装接线，纯逻辑在各 adapter 自身，本节只做装配 + 循环编排 + 摘要渲染）。
 
-_ENRICH_SOURCES = ("openalex", "s2")
+# repec 置末位（D-035 决策 1「元组扩位最小改」——既有两源相对序不变）。它与前两者的
+# 本质差异：**零网络**（bulk 快照本地 join，`domains = ()`），门控是快照存在性与新鲜度
+# 而非 key/预算。registry role 声明式改造挂 P8，本 Phase 走元组扩位。
+_ENRICH_SOURCES = ("openalex", "s2", "repec")
 # 每次 `enrich_batch` 调用处理的 DOI 数上限——CLI 层的"外层分页"，与各 adapter 内部
 # 自己的批量机制（openalex URL 长度自算、s2 官方 ≤500/批）是两层独立的粒度：外层页
 # 控制进度可见度/预算熔断响应粒度（一页可能触发数个真实请求），内层页是单次真实
@@ -1359,13 +1363,18 @@ def _chunked(items: list[str], size: int) -> Iterator[list[str]]:
 def _apply_enrich_key(
     env: CliEnv, adapter: object, source_id: str, dedicated: list[HttpClient]
 ) -> None:
-    """为 enrich source（openalex/s2）注入 key/client（抽自 `_prepare_enrich_source`，供
-    `canary` 装配 `_bind_healthcheck_credentials` 复用——单一装配语义，不两处各写一份）。
+    """为 enrich source 注入其运行所需的门控件（抽自 `_prepare_enrich_source`，供 `canary`
+    装配 `_bind_healthcheck_credentials` 复用——单一装配语义，不两处各写一份）。
 
     - s2 有 key → 构造携 `x-api-key` 头的**专属** `HttpClient`（append 到 `dedicated`，调用
       方负责 `close()`；绝不复用共享 `env.http`——头会随他域请求外泄，凭证红线）；无 key →
       注入共享 client（`enrich_batch` 入口会直接 CONFIG、不发请求，s2 adapter docstring）。
     - openalex 的 key 走每请求 URL 查询参数（非 client 级头），复用共享 client 即可。
+    - **repec 无 key、无 client**（零网络源，D-035）——它的"门控"是 bulk 快照，故此处注入的
+      是**快照根目录** `<config-home>/state/repec`（经 `config.resolve_home()`，D-032 红线：
+      禁 `Path.home()` 硬编码）。刻意不给它注入任何 `HttpClient`：本函数是 enrich 源的唯一
+      装配缝，"从这里就拿不到 client"是"零网络"的第二道结构保证（第一道是 adapter 侧不实现
+      `HttpClientConsumer`）。
     """
     if source_id == "s2":
         key = env.ctx.config.s2_api_key
@@ -1391,6 +1400,8 @@ def _apply_enrich_key(
                 daily_budget_usd=env.ctx.config.openalex_daily_budget_usd,
                 state_path=env.ctx.config.home / "state" / "openalex-budget.json",
             )
+    elif source_id == "repec" and isinstance(adapter, RepecAdapter):
+        adapter.configure_snapshot(env.ctx.config.home / "state" / "repec")
 
 
 def _prepare_enrich_source(
@@ -1417,7 +1428,11 @@ def _prepare_enrich_source(
 
     dedicated: list[HttpClient] = []
     _apply_enrich_key(env, candidate, source_id, dedicated)
-    env.ctx.limiter.register(candidate.domains[0], candidate.default_rate)
+    # 空 domains 跳过限速登记——零网络 enrich 源（repec，`domains = ()` 是结构性宣告"本源无
+    # 网络面"，D-035 决策 1）没有可登记的主域，无条件 `domains[0]` 会 IndexError。与同文件
+    # `_register_rate_domains` 的既有"空 domains 跳过"**同构化**（两条装配路径本就该一致）。
+    if candidate.domains:
+        env.ctx.limiter.register(candidate.domains[0], candidate.default_rate)
     return candidate, (dedicated[0] if dedicated else None)
 
 
@@ -1484,11 +1499,25 @@ def _openalex_budget_note(env: CliEnv) -> str:
     )
 
 
+def _enrich_extra_note(env: CliEnv, adapter: EnrichmentSource) -> str | None:
+    """摘要行的 source 专属附注：openalex→预算消耗；repec→快照新鲜度 + 未命中三分；s2→无。
+
+    按 adapter **实例类型**分派（而非 source_id 字符串）——注记内容取自 adapter 自身的观测
+    面，谁产的数谁渲染。repec 的三分计数（不可寻址/覆盖缺口/无 JEL）是 D-035 决策 4 的契约
+    要求：openalex/s2 的"未命中"只有一种含义，repec 的三种成因必须各自可见。
+    """
+    if isinstance(adapter, OpenAlexAdapter):
+        return _openalex_budget_note(env)
+    if isinstance(adapter, RepecAdapter):
+        return adapter.summary_note()
+    return None
+
+
 @app.command()
 def enrich(
     venue: Annotated[str | None, typer.Option("--venue", help="仅富化该 venue 的 paper")] = None,
     source: Annotated[
-        str | None, typer.Option("--source", help="仅跑该 enrich source（openalex|s2）")
+        str | None, typer.Option("--source", help="仅跑该 enrich source（openalex|s2|repec）")
     ] = None,
     limit: Annotated[
         int | None, typer.Option("--limit", help="限制扫描的 DOI 数量（默认不限）")
@@ -1533,8 +1562,7 @@ def enrich(
             finally:
                 if dedicated is not None:
                     dedicated.close()
-            extra_note = _openalex_budget_note(env) if source_id == "openalex" else None
-            typer.echo(_render_enrich_summary(summary, extra_note=extra_note))
+            typer.echo(_render_enrich_summary(summary, extra_note=_enrich_extra_note(env, adapter)))
     raise typer.Exit(code=0)
 
 

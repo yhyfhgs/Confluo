@@ -1,0 +1,19 @@
+合成样本，非上游取回件——出处与依据见本目录 README.md。
+本文件专测畸形/截断记录的跳过口径（无稳定身份不产 stub，非异常）。
+
+Template-Type: ReDIF-Paper 1.0
+Author-Name: No Handle Author
+Title: A Record Without Any Handle Field
+Creation-Date: 2020
+
+Template-Type: ReDIF-Paper 1.0
+Handle: RePEc:nbr:nberwo:7777
+Creation-Date: 2019
+Classification-JEL: E31
+
+Template-Type: ReDIF-Paper 1.0
+Title: Truncated Record — Stream Ends Mid-Field
+Author-Name: Cut Off
+Handle: RePEc:nbr:nberwo:8888
+Classification-JEL: G12; not-a-jel-code; G2
+Abstract: This abstract is cut off mid-sen

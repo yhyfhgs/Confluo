@@ -61,6 +61,9 @@ ssrn = "paper_crawler.adapters.ssrn.adapter:SsrnAdapter"
 # Phase 5 T3：NBER Working Papers（open_access；RESOLVE|FETCH，enumerate 走 crossref prefix
 # 10.3386，>18 月离线开放窗全文，<18 月软门 no_entitlement 不绕过，D-014/nber.md §3）。
 nber = "paper_crawler.adapters.nber.adapter:NberAdapter"
+# Phase 7 T8：repec（aggregator-enrich；capabilities 空集，**零网络**——bulk ReDIF 快照本地
+# join，domains=() 结构性宣告无网络面；取快照的网络面在 scripts/repec_snapshot.py，D-035）。
+repec = "paper_crawler.adapters.repec.adapter:RepecAdapter"
 
 [dependency-groups]
 dev = [

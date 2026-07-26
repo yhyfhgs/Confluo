@@ -92,6 +92,7 @@ from helpers.econsoc_fixtures import fixture_bytes as econsoc_fixture_bytes
 from helpers.oup_silverchair_fixtures import landing_transport, oup_fixture, static_cookie_supplier
 from helpers.pmlr_fixtures import fixture_bytes as pmlr_fixture_bytes
 from helpers.unpaywall_fixtures import fixture_bytes as unpaywall_fixture_bytes
+from helpers.zero_network import assert_domains_match_network_face
 from paper_crawler.adapter import AdapterBase, AdapterFamily, SourceAdapter, load_adapters
 from paper_crawler.adapters.aaai_ojs.adapter import AaaiOjsAdapter
 from paper_crawler.adapters.acl_anthology.adapter import AclAnthologyAdapter
@@ -669,13 +670,16 @@ def test_default_rate_source_note_is_nonempty(
     assert adapters[adapter_id].default_rate.source_note != ""
 
 
-def test_domains_is_a_nonempty_tuple_of_strings(
+def test_domains_matches_declared_network_face(
     adapter_id: str, adapters: dict[str, SourceAdapter]
 ) -> None:
-    domains = adapters[adapter_id].domains
-    assert isinstance(domains, tuple)
-    assert domains
-    assert all(isinstance(d, str) and d for d in domains)
+    """`domains` 空当且仅当 adapter 属零网络白名单（`helpers.zero_network`，D-035 决策 1）。
+
+    原断言是无条件"非空"；repec（zero-network enrich 源，`domains = ()` 是结构性宣告"本源
+    无网络面"）会直接打红。改**判定**而非给占位域名——判定收窄后比原来更强：既锁住"零网络
+    源必须真的没有域名"，也保留"其余 adapter 不得空 domains"的原有效力。
+    """
+    assert_domains_match_network_face(adapter_id, adapters[adapter_id].domains)
 
 
 # --- contract-case adapter：能力全链路 ------------------------------------------------

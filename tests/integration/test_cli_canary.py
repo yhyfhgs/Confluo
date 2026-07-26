@@ -123,6 +123,7 @@ _EXPECTED_CANARY_ADAPTER_IDS = (
     "ssrn",  # Phase 5 T4（healthcheck 猴补丁为 healthy——经内部 crossref lookup 发真实请求）
     "nber",  # Phase 5 T3（open_access，healthcheck 猴补丁为 healthy）
     "aea",  # Phase 5 T5（auth_gated 无网络探针 → 恒 SKIP，同 elsevier_sd；此前漏列本次补齐）
+    "repec",  # Phase 7 T8（零网络 enrich；无快照 → NotImplementedError → SKIP 行）
 )
 
 

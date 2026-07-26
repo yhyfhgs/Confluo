@@ -325,8 +325,13 @@ class VenueRegistry:
         rate_overrides: dict[str, float] = {}
         rpm = spec.rate_limit.requests_per_minute
         if rpm is not None:
-            # 每域限速覆盖以 fulltext_adapter 主域为键；domains 为空元组（畸形 adapter）
-            # 时无键可用，早失败为 CONFIG（同上文两处未注册引用的处置），避免裸 IndexError。
+            # 每域限速覆盖以 fulltext_adapter 主域为键；domains 为空元组时无键可用，早失败
+            # 为 CONFIG（同上文两处未注册引用的处置），避免裸 IndexError。
+            # **空 domains 的两种成因**（D-035 决策 1 语义调和）：①**无网络面**——enrich 零
+            # 网络源（repec，`domains = ()` 是结构性宣告）；②**畸形 adapter**。本路径只对
+            # 参与 venue 路由的 adapter 到达（enrich 源不是任何 venue 的 metadata_source/
+            # fulltext_source、不进 registry 路由 ⇒ 对 repec **不可达**），故此处空 domains
+            # 仍判畸形，代码与错误文案零改动。
             if not fulltext_adapter.domains:
                 raise CrawlerError(
                     ErrorClass.CONFIG,

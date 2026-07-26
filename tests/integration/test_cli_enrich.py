@@ -18,6 +18,7 @@ import yaml
 from typer.testing import CliRunner
 
 from paper_crawler.adapters.openalex.adapter import OpenAlexAdapter
+from paper_crawler.adapters.repec.adapter import RepecAdapter
 from paper_crawler.adapters.s2.adapter import S2Adapter
 from paper_crawler.cli import app
 from paper_crawler.errors import CrawlerError, ErrorClass
@@ -216,9 +217,10 @@ def test_created_vs_merged_action_counts_reflected_in_summary(
 # --- 双 source（省略 --source）------------------------------------------------------------------
 
 
-def test_omitting_source_runs_both_openalex_and_s2(
+def test_omitting_source_runs_all_three_enrich_sources(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
+    """省略 `--source` 跑全部 `_ENRICH_SOURCES`——P7 T8 起为三源（repec 末位，D-035 决策 1）。"""
     home = _make_home(tmp_path)
     _seed_dois(home, {_VENUE_A: ["10.0/a"]})
 
@@ -232,15 +234,21 @@ def test_omitting_source_runs_both_openalex_and_s2(
         calls.append("s2")
         return []
 
+    def _fake_repec(self: RepecAdapter, dois: Sequence[str]) -> list[PaperStub]:
+        calls.append("repec")
+        return []
+
     monkeypatch.setattr(OpenAlexAdapter, "enrich_batch", _fake_openalex)
     monkeypatch.setattr(S2Adapter, "enrich_batch", _fake_s2)
+    monkeypatch.setattr(RepecAdapter, "enrich_batch", _fake_repec)
 
     result = runner.invoke(app, ["enrich", "--home", str(home)])
 
     assert result.exit_code == 0, result.output
-    assert set(calls) == {"openalex", "s2"}
+    assert calls == ["openalex", "s2", "repec"]  # 顺序即元组序，repec 末位
     assert "[openalex]" in result.output
     assert "[s2]" in result.output
+    assert "[repec]" in result.output
 
 
 # --- --venue 过滤 / --limit 截断 ------------------------------------------------------------------
@@ -315,7 +323,10 @@ def test_s2_no_key_configured_shows_config_stop_reason_when_run_via_both_sources
 ) -> None:
     """未打猴补丁的真实 `S2Adapter.enrich_batch`（无 key）在 CLI 编排下自然产出
     "提前终止: config: ..." 摘要行，不影响 openalex 分支继续跑完（不同 source 互相
-    独立，见 `enrich` 命令 docstring）。"""
+    独立，见 `enrich` 命令 docstring）。
+
+    repec 同批走真实实现（本用例的 home 无 `state/repec/` 快照）→ 同款 CONFIG"提前终止"
+    ——三源的门控失败口径**完全同构**（s2 缺 key / openalex 预算熔断 / repec 缺快照）。"""
     home = _make_home(tmp_path)
     _seed_dois(home, {_VENUE_A: ["10.0/a"]})
 
@@ -330,7 +341,8 @@ def test_s2_no_key_configured_shows_config_stop_reason_when_run_via_both_sources
     assert result.exit_code == 0, result.output
     assert "[openalex]" in result.output
     assert "[s2]" in result.output
-    assert "提前终止: config" in result.output
+    assert "[repec]" in result.output
+    assert result.output.count("提前终止: config") == 2  # s2 缺 key + repec 缺快照
 
 
 # --- config 凭证注入确实传达到 adapter 实例 -----------------------------------------------------

@@ -18,12 +18,14 @@
 
 1. **强合并**：stub 任一（归一后）identifier 命中恰一个既有 paper → 并入，字段按下条收敛，
    补 stub 其余 identifier。查→并→补在 `Repo.merge_ingest` 单事务内（防并发裂脑）。
-2. **字段级来源优先级收敛**：优先级 `official > crossref > dblp > openalex > s2 > heuristic`
-   （`SOURCE_PRIORITY`，D-021 冻结）。新值仅当①现值空、②新源优先级**严格高于**现值来源、
+2. **字段级来源优先级收敛**：优先级
+   `official > crossref > dblp > openalex > s2 > repec > heuristic`
+   （`SOURCE_PRIORITY`，D-021 决策 3 冻结、经 D-035 扩为七位重编号）。新值仅当①现值空、
+   ②新源优先级**严格高于**现值来源、
    或③**同级但值序更小**时写入。provenance 记于 `paper.meta_json._field_src`。**未记录来源的
    存量字段**（upsert_paper pull 路径所写）视为**最高优先**——只补空、绝不覆盖（保守保护官方
    proceedings 数据）。
-   ③是 Phase 6 F1 修补的顺序敏感缝（审计 P3「同源二次观测异值先到胜」）：六枚举优先级两两
+   ③是 Phase 6 F1 修补的顺序敏感缝（审计 P3「同源二次观测异值先到胜」）：七枚举优先级两两
    互异，故"同级"只可能是**同一来源的二次观测**给出不同值；原实现同级一律不覆盖=先到者胜
    （顺序敏感）。改判为取值序更小者（`repo._prefers_on_tie`）——`min` 幂等+交换+结合，任意
    到达顺序收敛同一终值；跨源冲突仍完全由优先级表裁决，tie-break 不介入。
@@ -142,13 +144,26 @@ from paper_crawler.ids import normalize_identifier, normalize_title
 from paper_crawler.storage.repo import IngestAction, MergeInput, Repo
 from paper_crawler.types import PaperStub
 
-# 字段级来源优先级（越大越强，D-021 冻结）。`source` 参数值域即此六枚举。
+# 字段级来源优先级（越大越强）。`source` 参数值域即此七枚举。
+#
+# **[D-035 修订 D-021 决策 3，2026-07-27]** 表由六位扩为**七位并整体重编号**，给 repec 腾出
+# 最低非-heuristic 位。为何必须重编号：原表 `s2 1` 与 `heuristic 0` 相邻、无整数空位，插位
+# 无法不动既有值；重编号保持"heuristic=0 为底 + 严格全序"的表面语义（`repo._prefers_on_tie`
+# 的同级 tie-break 依赖"优先级两两互异"，重编号后仍成立）。
+#
+# **重编号对存量数据零影响（已核实）**：provenance 落 `paper.meta_json._field_src` 记的是
+# **来源名字符串**而非优先级数值（`storage/repo.py`），数值只在同一进程内做比较（`_rank`）。
+#
+# repec 取最低位的实体理由：其重叠字段（title/authors/year/abstract）是 NBER archive 自报经
+# RePEc 分发的**二手面**，质量不足以压过 crossref/dblp/openalex/s2 任一；而其独家增值
+# （JEL / `Publication-Status`）落 `meta`、三路皆缺 ⇒ **只补空即可全额兑现**，不需要高位次。
 SOURCE_PRIORITY: dict[str, int] = {
-    "official": 5,
-    "crossref": 4,
-    "dblp": 3,
-    "openalex": 2,
-    "s2": 1,
+    "official": 6,
+    "crossref": 5,
+    "dblp": 4,
+    "openalex": 3,
+    "s2": 2,
+    "repec": 1,
     "heuristic": 0,
 }
 
@@ -191,7 +206,7 @@ class MergeEngine:
         self._repo = repo
 
     def ingest(self, stub: PaperStub, *, source: str) -> IngestResult:
-        """把一条 `PaperStub` 收敛入库；`source` 须为 `SOURCE_PRIORITY` 六枚举之一。
+        """把一条 `PaperStub` 收敛入库；`source` 须为 `SOURCE_PRIORITY` 七枚举之一。
 
         归一 identifier（DOI 经 normalize_doi）与 title（弱信号键）、取首作者姓氏后，委托
         `Repo.merge_ingest` 在单事务内完成查/并/补/候审，返回结果包装为 `IngestResult`。
