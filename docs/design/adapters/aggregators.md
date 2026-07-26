@@ -1,13 +1,13 @@
 ---
-title: Adapter 设计 · 聚合元数据源（Crossref/DBLP/OpenAlex/S2/Unpaywall/CORE）
+title: Adapter 设计 · 聚合元数据源（Crossref/DBLP/OpenAlex/S2/Unpaywall/CORE/RePEc）
 status: implemented
 owner: fable5
-updated: 2026-07-26
+updated: 2026-07-27
 ---
 
-# Adapter · `aggregators`（五源 committed + core 保留的合册实现级详设）
+# Adapter · `aggregators`（五源 committed + core/repec 保留的合册实现级详设）
 
-> 本文档覆盖 `crossref` / `dblp` / `openalex` / `s2` / `unpaywall` 五个 **Phase 3 committed** adapter 与 `core`（**Phase 3 范围外，本期不实现**）。它们是 D-005「元数据主干」的执行者，接口小而同构、合册设计、分别实现。
+> 本文档覆盖 `crossref` / `dblp` / `openalex` / `s2` / `unpaywall` 五个 **Phase 3 committed** adapter 与 `core`（**Phase 3 范围外，本期不实现**）、`repec`（**enrich 通道，Phase 7 T8 落地**，§5.7；契约冻结见 [D-035](../../plan/decision-log.md)）。它们是 D-005「元数据主干」的执行者，接口小而同构、合册设计、分别实现。
 > 勘察依据：[research/site-survey/metadata-apis.md](../../research/site-survey/metadata-apis.md)（[LIVE] 2026-07-20，含 [2026-07-22 增量复核](../../research/site-survey/metadata-apis.md)）、[aggregators-unpaywall-dblp-core.md](../../research/site-survey/aggregators-unpaywall-dblp-core.md)（[LIVE] 2026-07-20，2026-07-22 小修）。
 > 接口冻结件依据：[plan/phase3-implementation-plan.md §2](../../plan/phase3-implementation-plan.md)（MergeEngine / VenueSpec 分离语义 / 无 FETCH 契约 / 在线预算）；数据模型：[design/06 §2/§3/§5](../06-data-model.md)。
 > **本稿是 Phase 3 五源 adapter 开工的详设硬门禁**（双评审 approved 前 T3~T6 不开工，plan §2 门禁）。
@@ -22,6 +22,7 @@ updated: 2026-07-26
 | `s2` | aggregator | （不声明；无 ENUMERATE/SEARCH/FETCH） | 次级补充（**enrich 通道**，§5.4）：引用图、TLDR、fieldsOfStudy（**需 key**） | ✅ committed（T6） |
 | `unpaywall` | aggregator | RESOLVE | OA 副本发现（按 DOI，`no_entitlement` 兜底） | ✅ committed（T5） |
 | `core` | aggregator | （不声明） | 次级 OA 兜底 | ⛔ **Phase 3 范围外，不实现**（§5.6） |
+| `repec` | aggregator-enrich | （不声明） | enrich 通道（§5.7）：**JEL 分类** + wp↔published 版本关联；bulk 快照本地 join、**零网络** | 🕓 **Phase 7 T8**（D-027→D-035） |
 
 - **能力面修订（2026-07-22，D1）**：`crossref`/`dblp`/`openalex`/`s2` **均不声明 SEARCH**。此前草案给 crossref/openalex/s2 标 SEARCH、给 dblp 隐含 search API——现全部收回：
   - **dblp 去 SEARCH 是合规修订**：DBLP `/search/**` 属 robots 禁区（§3），venue 枚举只走 `/db/**` 卷 XML + dump，**无 search 路径**。
@@ -342,6 +343,92 @@ openalex/s2 **不承担枚举**（capabilities 已收回 ENUMERATE，§1；两�
 - 限速 token 制（未认证 100/日·10/分；注册 1,000/日·25/分；简单 1 token、复杂 3–5）。定位：次级 OA 兜底（Unpaywall 之后），其直接托管全文可救活死链 green OA。
 - 若未来纳入：capabilities `RESOLVE, SEARCH`；实现前用真 key 复核限速与 Cloudflare 态势。
 
+### 5.7 repec（aggregator-enrich，**零网络本地 join**；Phase 7 T8 落地，契约冻结见 D-035）
+
+> **本节是契约级设计，实现尚未落地**——`status: implemented` 覆盖的是 §5.1–§5.5 五源；repec 由
+> [phase7-implementation-plan §4 T8](../../plan/phase7-implementation-plan.md) 承接，权威决策
+> [D-035](../../plan/decision-log.md)，评估与探针实据见
+> [research/enrich-eval-p6.md §2/§6.2](../../research/enrich-eval-p6.md)（approved）与
+> [repec.md](../../research/site-survey/repec.md)（[LIVE] 2026-07-24）。实现级细节（ReDIF 字段全表、
+> 上游文件命名）以 T8 实测为准，本节只冻结接口面与落盘契约。
+
+**定位**：`role: aggregator-enrich`（同 openalex/s2 一档，D-027）。capabilities **恒为空集**，不进 pull
+六阶段；驱动路径＝`crawler enrich --source repec`。**独家增值＝JEL 分类 + wp↔published 版本关联**
+（crossref/openalex/nber.org 三路皆缺，[LIVE 2026-07-24]）。
+
+**与 §5.3/§5.4 两源的本质差异（这是本节存在的理由）**
+
+| 面 | openalex / s2（§5.3/§5.4） | repec |
+|---|---|---|
+| 数据获取 | 按 DOI 在线批查（HTTP 往返） | **bulk 快照本地 join，全程零网络** |
+| `domains` | 各自站点域 | **空元组 `()`**（结构性宣告无网络面） |
+| 门控 | key / credit 预算 | 快照存在性与新鲜度 |
+| 限速登记 | `limiter.register(domains[0], …)` | 无（装配处按空 domains 跳过） |
+| 新鲜度 | 实时 | `manifest.fetched_at`（须进摘要行） |
+| 幂等性 | 受上游变动影响 | 对固定快照是 `(dois, snapshot)` 的**纯函数** |
+| healthcheck | 无 key → SKIP（怕消耗 credit） | 无快照 → SKIP；**有快照则零成本可高频探测** |
+
+**取用通道与合规红线**
+
+- **只走 bulk ReDIF**（探针 [LIVE 2026-07-26] 确证 `Classification-JEL` 与 `Publication-Status` 均在 bulk 面）；
+  OAI-PMH 端点活但 `earliestDatestamp=2021-09-23` ⇒ 增量面只覆盖 2021-09 起，**全量必须 bulk 直连**。
+- **零 HTML 硬红线**：绝不解析 `ideas.repec.org` / `econpapers.repec.org` 的 HTML 条目页（哪怕 robots 允许）
+  ——RePEc 官方明文强烈不建议爬 HTML 并设隐私红线（AC-0.5 / AGENTS §6.3；同 §3 的其它红线同级）。
+- 镜像：默认 `www2.nber.org`（探针 4/4 稳），`repec.nber.org` 备（1 次连接层失败，样本=1 不构成判罚）。
+  **两域 robots 未核**（原勘察只覆盖 www/back）——**T8 首个动作是补两域 robots 核验**（plan §3 T8-robots
+  ≤2 请求），不通过则停手上报。
+
+**快照落盘契约**（`<config-home>/state/repec/`，经 `config.resolve_home()`，D-032 红线）
+
+```
+<config-home>/state/repec/
+├── manifest.json        # {"schema":1,"archive":"nbr","series":["nberwo"],"mirror":…,
+│                        #  "source_urls":[…],"fetched_at":"<UTC ISO8601>",
+│                        #  "files":[{"name":…,"bytes":…,"sha256":…}],"record_count":N}
+└── nbr/nberwo/…         # ReDIF 原样字节（上游文件命名与切分待 T8 实测，本契约不预设）
+```
+
+- **原样字节 + sha256 落盘**：ReDIF 是上游权威格式，本地解析口径可能随实现修正，保留原文才能不重新联网
+  即可重解析。
+- **取快照的网络面在 `src/` 之外**：`scripts/repec_snapshot.py`（不入包、不占门禁覆盖，沿 `scripts/` 先例）。
+  唯一网络动作在 scripts 侧 ⇒ src 侧 `enrich_batch` 的"零网络"是**可被 socket 猴补机械证明的结构事实**。
+  代价如实记：该脚本的镜像回退/校验逻辑无自动化测试，靠 T19 在线批人工核验。
+- **失效语义**：快照**缺失** → `CrawlerError(CONFIG, …)` → 经既有 `_run_enrich_source` per-source 捕获记
+  "提前终止"，不崩其它 source、不改退出码（与 s2 缺 key / openalex 熔断同构）；快照**过期**（>30 天，模块
+  常量、不开 config 槽）→ **响亮 WARNING + 摘要行注记，继续运行**（对 enrich-eval §2.7 DoD② 字面的有意
+  收窄，理由与记账见 D-035 决策 3）。
+- **不建派生索引**：3.6 万条量级，首次调用惰性全量解析入进程内 dict 即可（不建 `index.sqlite`、不入主库表）。
+
+**`enrich_batch(dois)` 映射与观测**
+
+| PaperStub 面 | 来源（ReDIF 字段） | 说明 |
+|---|---|---|
+| identifier(doi) | 入参 DOI | `10.3386/w{n}`／`t{n}` |
+| identifier(repec) | `RePEc:nbr:nberwo:{n}` | **非跨源合并锚点**（跨源锚仍是 DOI）；入库后天然是 *RePEc 内部* 幂等锚点，须在 adapter 注释写清防误读 |
+| meta.jel | `Classification-JEL` | 覆盖率 [LIVE]：1989=0% / 2000=87.4% / **2010 起=100%** |
+| meta.published_in | `Publication-Status` | 原串直落，供 T10 `preprint_of` 建边消费（本节不建边） |
+| title/authors/year/abstract | 同名 ReDIF 字段 | 照常产出——`SOURCE_PRIORITY` 最低位（`repec 1`）天然只补空，**无须实现特殊"只补不覆盖"逻辑** |
+
+- **DOI↔handle 映射边界**：`10.3386/w{n}`／`t{n}` → `RePEc:nbr:nberwo:{n}` 的**纯语法映射**，复用
+  `adapters/nber/parse.py` 既有 series 号归一（零模糊匹配、零启发式）。`t` 系列落哪个 series 段、期刊条目
+  怎么 join **均未核实**（[推断] 不作依据）——T8 若实测 `t` 不落 `nberwo`，按实测**收窄**而非按推断扩张。
+- **未命中三分观测（不静默丢弃）**：(a) DOI 非 `10.3386` 前缀＝结构性不可寻址；(b) 前缀符但快照无该
+  handle＝覆盖缺口；(c) handle 命中但无 JEL＝增值为空。**三类各有计数并进摘要行**——openalex/s2 的"未命中"
+  只有一种含义，此三分是 repec 专有的契约要求（审计 S1 原则）。
+- **可寻址集合如实入档**：≈**3.6 万篇 NBER WP**；**SSRN 结构性为 0**（[LIVE]：442KB archives 全表无 "ssrn"
+  串——SSRN 是 Elsevier 商业源、不在 RePEc）。即本通道覆盖面比同库 ssrn 语料（141 万 DOI）**小两个数量级**，
+  这是接受该通道时已定价的事实。
+
+**接入面改动清单（T8）**：`_ENRICH_SOURCES` → `("openalex","s2","repec")`；`_prepare_enrich_source` 补空
+`domains` 守卫（与 `_register_rate_domains` 既有"空 domains 跳过"同构化）；`--source` help 文案；
+`SOURCE_PRIORITY` 七位重编号（§6）；`pyproject.toml` entry-points +1 与 `tests/integration/
+test_cli_canary.py` 的 `_EXPECTED_CANARY_ADAPTER_IDS` 20→21。**零 schema migration**（`identifier.scheme`
+无 CHECK 约束）。
+
+**fixture 清单**：①正常 ReDIF 记录（含 `Classification-JEL` + `Publication-Status`）②缺 JEL 的历史记录
+③畸形/截断记录 → `parse` ④多记录切分 ⑤快照缺失 ⑥快照过期。另需 DOI↔handle 映射矩阵 ≥8 例、
+`enrich_batch` 零网络专测（socket 猴补）、domains 空集断言。
+
 ## 6. 与合并引擎的交互面（plan §2-1 / 06 §3）
 
 > 五源产出的 PaperStub 汇入 `MergeEngine.ingest(stub, source=…)`（plan §2-1 冻结）。本节冻结 adapter 侧的 identifier scheme、source 标记、DOI 归一入口，与 unpaywall 的 Asset.version 映射。
@@ -355,6 +442,7 @@ openalex/s2 **不承担枚举**（capabilities 已收回 ENUMERATE，§1；两�
 | openalex | `(openalex, W…)` + `(doi, doi)` | W-id 裸值；DOI 经 `normalize_doi()` |
 | s2 | `(s2, paperId)` + `(doi, externalIds.DOI)` | paperId 原样；DOI 经 `normalize_doi()` |
 | unpaywall | 无（RESOLVE，以输入 DOI 为键） | — |
+| repec（§5.7，P7 T8） | `(repec, RePEc:nbr:nberwo:{n})` + `(doi, 入参 DOI)` | handle 原样；DOI 经 `normalize_doi()` |
 
 - **DOI 归一唯一入口**：所有 DOI 写入前经 `ids.normalize_doi()`（小写化、剥 `https://doi.org/`、`doi:` 前缀）——crossref/unpaywall/dblp ee 回填/openalex/s2 共用（plan §2-1）。identifier `(scheme,value)` 全局唯一 → 天然强合并锚点（AC-3.1）。
 - **identifier 产出的「同源著作」判界（2026-07-22 修订清单 A-C4，评审 A 专项论证）**：identifier 产出由**是否指称同一著作**（same-work）支配，**非**由「谁铸造/注册该 id」支配。dblp `inproceedings` 记录**即该已刊会议论文本身**、其 `ee` 官方 doi.org 链接是**该同一论文自己的 DOI**（同源）→ 产 `(doi,…)` identifier 作跨源合并锚点（AC-3.1 必要条件）；区别于 arxiv `journal_ref/doi`、neurips 内嵌 arxiv/openreview id——那些指向**异源著作**（预印本 DOI 指其已刊正式版，两条 paper 经 `preprint_of` 相连而不合并，D-007）→ **仅入 `meta`、不产 identifier**（neurips「防跨源早合并」先例）。dblp 虽非 DOI 注册本源（Crossref/DataCite 代出版社铸造），但 `ee` 是其人工策展的同源身份断言 → 产锚点与该先例不冲突。
@@ -362,8 +450,8 @@ openalex/s2 **不承担枚举**（capabilities 已收回 ENUMERATE，§1；两�
 
 **source 优先级标记（字段级来源收敛，AC-3.4 基石）**
 
-- 各源写字段时携带 provenance tag：crossref→`"crossref"`、dblp→`"dblp"`、openalex→`"openalex"`、s2→`"s2"`。unpaywall 不写元数据字段（只产 Asset），不入此收敛。
-- **字段级来源优先级（plan §2-1 / D-021 已冻结，★W0 仲裁 2026-07-22）**：`official > crossref > dblp > openalex > s2 > heuristic`（**已含 dblp 级**）。理由（D-021 决策 3）：Crossref 为 DOI 注册源头（出版社存缴）元数据居先；DBLP 人工策展（CC0）质量高于 openalex/s2 机器聚合层，低于出版社直连 crossref。dblp（会议主干、paper 级 `ee` 回填 DOI）的字段据此有确定优先级——此前草案「未列 dblp／[UNRESOLVED] 待仲裁」的表述**已作废**（该位次已由 D-021 定裁，位置与原建议一致）。
+- 各源写字段时携带 provenance tag：crossref→`"crossref"`、dblp→`"dblp"`、openalex→`"openalex"`、s2→`"s2"`、repec→`"repec"`（§5.7，P7 T8）。unpaywall 不写元数据字段（只产 Asset），不入此收敛。
+- **字段级来源优先级（plan §2-1 / D-021 已冻结，★W0 仲裁 2026-07-22）**：`official > crossref > dblp > openalex > s2 > heuristic`（**已含 dblp 级**）。**[D-035 修订 D-021 决策 3，2026-07-27]** 表扩为七位并整体重编号以给 repec 腾出最低非-heuristic 位：`official 6 > crossref 5 > dblp 4 > openalex 3 > s2 2 > repec 1 > heuristic 0`（`s2 1` 与 `heuristic 0` 相邻无整数空位，插位必须重编号；provenance 落 `_field_src` 记的是**来源名字符串**非数值，故重编号对存量数据零影响）。repec 取最低位＝其重叠字段是二手面、而其独家增值（JEL/`Publication-Status`）三路皆缺 ⇒ 只补空即可全额兑现。理由（D-021 决策 3）：Crossref 为 DOI 注册源头（出版社存缴）元数据居先；DBLP 人工策展（CC0）质量高于 openalex/s2 机器聚合层，低于出版社直连 crossref。dblp（会议主干、paper 级 `ee` 回填 DOI）的字段据此有确定优先级——此前草案「未列 dblp／[UNRESOLVED] 待仲裁」的表述**已作废**（该位次已由 D-021 定裁，位置与原建议一致）。
 
 **VenueSpec 分离语义**（plan §2-2，纯附加）：`metadata_source: str | None`（默认 None=沿用 adapter 自身；对齐 plan §2-2——现冻结 types.py 为必填 `str`，本字段松弛为可选 `str | None` 属有意的纯附加变更）；声明值须是已注册 aggregator id；期刊 kind + `metadata_source=crossref` 时 issn 必填。
 
@@ -453,6 +541,7 @@ openalex/s2 **不承担枚举**（capabilities 已收回 ENUMERATE，§1；两�
 | 12 | 2026-07-23 | **§5.3/§5.4 healthcheck 措辞对齐 T6 实现**：openalex healthcheck 门控收紧为与 s2 统一"无 key → `NotImplementedError`→canary SKIP"，废止原"匿名即可探测"表述（★裁决 2026-07-23；理由=防 `crawler canary` 周期性高频调用时静默消耗 openalex 每日 credit 配额） | T6 实现（`adapters/openalex/adapter.py` 模块 docstring 自述"收紧于设计稿 §5.3"） |
 | 13 | 2026-07-23 | **文档转正**：front matter `status: approved`→`implemented`（T1~T7 五源 adapter + 合并引擎全部合并落地；AC-3.5 在线实跑 PASS 建议，待 controller 终签） | Phase 3 收尾（[records/2026-07-23-ac35-acceptance.md](../../testing/records/2026-07-23-ac35-acceptance.md)） |
 | 14 | 2026-07-26 | **§5.2 回填 dblp 真实枚举卷响应 schema**：在线卷页根元素 `<bht>`（记录嵌 `<dblpcites>/<r>` 两层包装）vs 历史 dump `<dblp>`（`proceedings`/`inproceedings` 为直接子元素）两形态并存，此前仅 `dblp/parse.py` 模块 docstring 与测试 fixture 记录该真实结构，本文档未同步回填（文档滞后修正，非实质设计变更） | Phase 6 F2（[2026-07-24-post-phase5-audit.md §5](../../reports/2026-07-24-post-phase5-audit.md)） |
+| 16 | 2026-07-27 | **新增 §5.7 `repec`（aggregator-enrich）契约级设计**：定位/与 §5.3-§5.4 的本质差异表（零网络 vs 在线批查）/bulk-only 与零 HTML 红线/`state/repec/` 快照落盘契约（布局+manifest+失效语义+网络面移出 src）/`enrich_batch` 映射与未命中三分观测/DOI↔handle 仅 NBER 语法映射边界/可寻址集合如实入档（≈3.6 万 NBER WP，SSRN 结构性为 0）/接入面改动清单/fixture 清单。同批：§1 分工表 +1 行、§6 identifier scheme 表 +1 行、§6 优先级表按 D-035 扩为七位重编号、H1 与 front matter 标题同步。**本节是契约级设计、实现未落地**（`status: implemented` 覆盖的仍是 §5.1–§5.5 五源），显式标注于节首。 | [D-035](../../plan/decision-log.md)（P7-T2 卡产出，待 fable 签署）；[enrich-eval-p6.md §2/§6.2 探针 GO](../../research/enrich-eval-p6.md)；[phase7-implementation-plan §4 T2/T8](../../plan/phase7-implementation-plan.md) |
 | 15 | 2026-07-26 | **§5.5 幻影字段清账（非设计变更）**：删"或 VenueSpec 声明 OA-fallback 优先"——`VenueSpec` schema 从无该字段；实况是 `cli.py::_assemble_auth_seam` 对 OA-fallback 总开关无条件置位。同批订正 [auth-framework.md §8.1](../auth-framework.md)、[ssrn.md §4.4](ssrn.md) 两处同源表述 | P6-T10 收尾盘点发现 |
 
 ## 10. 风险与维护

@@ -2,7 +2,7 @@
 title: R2 合并评估：repec aggregator-enrich 通道 + ssrn 覆盖候补 ladder
 status: approved
 owner: fable5
-updated: 2026-07-26
+updated: 2026-07-27
 ---
 
 # R2 · repec enrich 通道 + ssrn 覆盖候补 ladder 合并评估（approved，fable 已裁决签署，见 §6/§5#2）
@@ -437,8 +437,8 @@ ssrn 语料是 141 万篇——**repec enrich 的覆盖面比 ssrn 小两个数�
 |---|---|---|
 | Q1 | **再缓，定档 Phase 7 首批候选**（探针 GO 为绿灯前提入档） | 决定性=消费端缺位（JEL 无 DSL 过滤键 + `preprint_of` 建边零实现）；Phase 7 范围本含 preprint↔published 关联报告，天然合批 |
 | Q2 | 已批准并执行，结果 §6.2 | 占机动预算 6/10 |
-| Q3 | **缓**——`SOURCE_PRIORITY` 扩位随 Phase 7 立卡时 ADR | 不为未立卡的通道预改冻结表 |
-| Q4 | 同 Q3，bulk 快照落盘契约随立卡 ADR | — |
+| Q3 | **缓**——`SOURCE_PRIORITY` 扩位随 Phase 7 立卡时 ADR。**[已兑现 2026-07-27 → [D-035](../plan/decision-log.md) 决策 2：七位重编号 `official 6 … repec 1 / heuristic 0`]** | 不为未立卡的通道预改冻结表 |
+| Q4 | 同 Q3，bulk 快照落盘契约随立卡 ADR。**[已兑现 2026-07-27 → [D-035](../plan/decision-log.md) 决策 3 + [aggregators.md §5.7](../design/adapters/aggregators.md)]** | — |
 | Q5 | JEL 不进 design/09 DSL（本 Phase 不动） | T1 冻结件在关键路径 |
 | Q6 | 否；「`preprint_of` 设计有代码无」登记 Phase 7 检查单（T10 落） | 两处 `paper_relation` 插入点均硬编码 `candidate_duplicate` 的事实入档 |
 | Q7 | **(b) RePEc 交叉核对正式改判「结构性无效·出列」** | SSRN 不在 RePEc（442KB archives 全表零 "ssrn"，[LIVE]）——可闭合缺口恒为 0；ssrn.md §9.1 行随本提交回填 |
@@ -455,4 +455,5 @@ ssrn 语料是 141 万篇——**repec enrich 的覆盖面比 ssrn 小两个数�
 |---|---|---|---|
 | 1 | 2026-07-26 | 初稿（R2 起草，opus）：① repec enrich 评估（建议再缓 + 探针 + 任务卡草稿）；② ssrn ladder 三路径评估（推荐序 a≫b 出列≫c 否决 + 量化表 + M1-d 供数清单 + 任务卡草稿）；§4 交裁决 13 项 | 既有 [LIVE] 勘察（repec.md / ssrn.md / nber.md / aggregators.md）+ 本仓库源码事实（C1–C13）；**零网络** |
 | 2 | 2026-07-26 | **fable 定稿（draft→approved）**：§6 定稿裁决附录（M1-d U1–U5 回填 + repec 探针 GO + Q1–Q13 裁决表）；联动回填 ssrn.md §9.1 / repec.md §7.1 / design-09 §5 D-029 注记 / plan-T4 卡 ssrn 表述 / nber.yaml N-5 | fable 通读 + M1-d/探针供数 |
+| 4 | 2026-07-27 | **Q3/Q4 兑现登记（非结论变更）**：§6.3 裁决表 Q3/Q4 两行原写"缓至 Phase 7 立卡时 ADR"，现由 Phase 7 T2 卡的 [D-035](../plan/decision-log.md) 兑现（`SOURCE_PRIORITY` 七位重编号 + `state/repec/` 快照契约），两行补指针；实现级契约落 [aggregators.md §5.7](../design/adapters/aggregators.md)。**同批如实记**：D-035 决策 3 把 §2.7 DoD② 的"快照过期→响亮失败"收窄为"响亮警告+继续"，理由与记账在 ADR 内（本文档 §2.7 原文不改） | [phase7-implementation-plan §4 T2](../plan/phase7-implementation-plan.md)；D-035 |
 | 3 | 2026-07-26 | **文档滞后清账**：H1 标题仍留"（draft，待 fable 裁决）"字样，与 front matter（已 `approved`，行 2 记录的定稿事实）不一致——改为"（approved，fable 已裁决签署，见 §6/§5#2）"；同批修正 `docs/INDEX.md` 该行 status 列（此前仍误标 `draft`） | Phase 6 T10 收尾（终审附条件）盘点发现 |

@@ -1,7 +1,7 @@
 # 文档索引（唯一权威清单）
 
 > 本表是全仓库文档的单一事实来源（D-008）。任何新增/改名/废弃文档必须同一提交内更新本表（AGENTS.md §4）。
-> status 取值与流转见 [process/status-workflow.md](process/status-workflow.md)。最后盘点：2026-07-26（Phase 6 T10 收尾：phase6-report + 幻影字段清账 + design/09 转 implemented 登记）。
+> status 取值与流转见 [process/status-workflow.md](process/status-workflow.md)。最后盘点：2026-07-27（Phase 7 W0：T2 卡 D-034 FTS5 + D-035 repec 双 ADR + 06/aggregators 增补）。
 
 ## 按意图导航（先于逐目录清单）
 
@@ -12,7 +12,7 @@
 | 设计/实现一个新 adapter | [design/02 框架](design/02-plugin-framework.md) → [adapters/README 模板](design/adapters/README.md) → 同族样例（Atypon 看 [informs](design/adapters/informs.md)，Silverchair 看 [oup](design/adapters/oup-silverchair.md)，OA 看 [pmlr](design/adapters/pmlr.md)）→ [test-plan fixture 规范](testing/test-plan.md) |
 | 理解认证与合规边界 | [design/04](design/04-auth-gated-module.md) → [design/07](design/07-auth-session.md) → [decision-log](plan/decision-log.md) D-006/D-014 → [AC-0 红线](testing/acceptance-criteria.md) |
 | 开始 Phase 1 开发 | [development-plan §Phase 1](plan/development-plan.md) → design/01/02/05/06 → [status-workflow 开工门禁](process/status-workflow.md) |
-| 查"为什么这样设计" | [plan/decision-log.md](plan/decision-log.md)（D-001…D-033） |
+| 查"为什么这样设计" | [plan/decision-log.md](plan/decision-log.md)（D-001…D-035） |
 | 了解某站点的实测事实 | research/site-survey/ 对应勘察（各 adapter 文档 §2 已内联引用） |
 
 ## 根文档
@@ -36,7 +36,7 @@
 | [plan/phase6-implementation-plan.md](plan/phase6-implementation-plan.md) | Phase 6 实施计划（订阅与搜索：DSL + watch + 护栏 + 日报 任务切分） | approved | 2026-07-26 |
 | [plan/phase7-implementation-plan.md](plan/phase7-implementation-plan.md) | Phase 7 实施计划（全文抽取与库增强：extract/browser-fetch/repec/dedupe 22 卡切分） | approved | 2026-07-27 |
 | [plan/progress.md](plan/progress.md) | 项目进度跟踪 | approved | 2026-07-26 |
-| [plan/decision-log.md](plan/decision-log.md) | 架构决策记录（D-001…D-033） | approved | 2026-07-27 |
+| [plan/decision-log.md](plan/decision-log.md) | 架构决策记录（D-001…D-035） | approved | 2026-07-27 |
 
 ## design/ — 核心设计（00–12）
 
@@ -48,7 +48,7 @@
 | [design/03-open-access-module.md](design/03-open-access-module.md) | Open-Access 获取模块 | approved | 2026-07-20 |
 | [design/04-auth-gated-module.md](design/04-auth-gated-module.md) | Auth-Gated 获取模块 | implemented | 2026-07-23 |
 | [design/05-pipeline.md](design/05-pipeline.md) | 六阶段 Pipeline 与任务系统 | implemented | 2026-07-26 |
-| [design/06-data-model.md](design/06-data-model.md) | 数据模型与入库设计 | implemented | 2026-07-26 |
+| [design/06-data-model.md](design/06-data-model.md) | 数据模型与入库设计 | implemented | 2026-07-27 |
 | [design/07-auth-session.md](design/07-auth-session.md) | 认证与会话管理 | implemented | 2026-07-23 |
 | [design/08-venue-tracking.md](design/08-venue-tracking.md) | Venue 时间轴与年度追踪 | approved | 2026-07-20 |
 | [design/09-search-filter.md](design/09-search-filter.md) | 主题订阅与精确搜索 | implemented | 2026-07-26 |
@@ -75,7 +75,7 @@
 | [design/adapters/aaai-ojs.md](design/adapters/aaai-ojs.md) | AAAI OJS | implemented | 2026-07-26 |
 | [design/adapters/acm-dl.md](design/adapters/acm-dl.md) | ACM Digital Library（D-020：Phase 2 出列；D-024：Phase 4 重评维持出列，全文改道 unpaywall OA-fallback） | review | 2026-07-23 |
 | [design/adapters/ieee-xplore.md](design/adapters/ieee-xplore.md) | IEEE Xplore | review | 2026-07-20 |
-| [design/adapters/aggregators.md](design/adapters/aggregators.md) | 聚合元数据源（6 合册） | implemented | 2026-07-26 |
+| [design/adapters/aggregators.md](design/adapters/aggregators.md) | 聚合元数据源（7 合册：五源 committed + core 存档 + repec enrich 契约） | implemented | 2026-07-27 |
 | [design/adapters/elsevier-sd.md](design/adapters/elsevier-sd.md) | Elsevier ScienceDirect（实现级，P4-W0/T3） | implemented | 2026-07-23 |
 | [design/adapters/wiley.md](design/adapters/wiley.md) | Wiley Online Library（实现级，P4-W0，D-024 纳入） | implemented | 2026-07-24 |
 | [design/adapters/oup-silverchair.md](design/adapters/oup-silverchair.md) | OUP（Silverchair）（实现级，P4-W0/T4） | implemented | 2026-07-23 |
@@ -147,7 +147,7 @@
 | [research/site-survey/publisher-platforms-econfin.md](research/site-survey/publisher-platforms-econfin.md) | 勘察：Econ/Fin 六出版社平台 | approved | 2026-07-20 |
 | [research/site-survey/publisher-platforms-cs.md](research/site-survey/publisher-platforms-cs.md) | 勘察：IEEE/AEA/SIAM/MIT Press | approved | 2026-07-20 |
 | [research/site-survey/publisher-platforms-p4-recheck.md](research/site-survey/publisher-platforms-p4-recheck.md) | 复核：出版社平台增量勘察（Elsevier/OUP/Wiley/ACM）+凭证核查 [LIVE 07-23] | draft | 2026-07-23 |
-| [research/enrich-eval-p6.md](research/enrich-eval-p6.md) | 评估：repec enrich 通道 + ssrn 覆盖候补 ladder（P6-R2，fable 已裁决签署：repec 再缓定档 Phase 7 首批候选；ssrn ladder (b)出列/(c)否决/(a)条件立卡） | approved | 2026-07-26 |
+| [research/enrich-eval-p6.md](research/enrich-eval-p6.md) | 评估：repec enrich 通道 + ssrn 覆盖候补 ladder（P6-R2，fable 已裁决签署：repec 再缓定档 Phase 7 首批候选；ssrn ladder (b)出列/(c)否决/(a)条件立卡；Q3/Q4 已由 D-035 兑现） | approved | 2026-07-27 |
 | [research/github-similar-projects.md](research/github-similar-projects.md) | 调研：GitHub 同类项目（20 项）+架构总结 | approved | 2026-07-20 |
 
 ## diagrams/ — SVG 图（源文件即交付物）

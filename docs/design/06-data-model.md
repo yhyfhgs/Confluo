@@ -2,7 +2,7 @@
 title: 数据模型与入库设计
 status: implemented
 owner: fable5
-updated: 2026-07-26
+updated: 2026-07-27
 ---
 
 # 06 · 数据模型与入库设计
@@ -153,7 +153,30 @@ CREATE TABLE subscription_run (
 -- task / fetch_log 见 design/05 §2、§7（字段同文档所列）
 ```
 
-索引要点：`identifier(scheme,value)` 主键即索引；`paper(title)` 建 FTS5 虚表（标题+摘要检索）；`asset(state)`、`task(state, kind)` 部分索引服务调度查询。
+索引要点：`identifier(scheme,value)` 主键即索引；`asset(state)`、`task(state, kind)` 部分索引服务调度查询；
+**全文检索索引见下**。
+
+**FTS5 检索索引（schema v4 / `0004_fts_paper.sql`；权威决策 [D-034](../plan/decision-log.md)）**——本节原文
+曾写「`paper(title)` 建 FTS5 虚表（标题+摘要检索）」，那是**未落地的设计声明**：D-017 决策 4 把它推迟到
+Phase 6，Phase 6 关账时未兑现（该 Phase 的搜索面全部落在订阅 DSL 的本地过滤谓词上），D-034 如实记债后把
+兑现 Phase 改判 Phase 7 T12。落地形态：
+
+- **表**：`paper_fts(paper_id UNINDEXED, title, abstract)`，**content-owning**（自持内容）形态，
+  `tokenize='porter unicode61 remove_diacritics 2'`。**不取** external-content / contentless——`paper.id` 是
+  ULID 文本主键、无 INTEGER PRIMARY KEY，二者均以隐式 rowid 为唯一连接键而 `VACUUM` 可重编号 rowid，
+  会让检索结果**静默指向错误的 paper**；content-owning 把 `paper_id` 物化进索引行，结果正确性不依赖
+  rowid 稳定性（代价＝多存一份 title+abstract 副本，估算 ≈13 MB/万篇，D-034 决策 2 定价）。
+- **范围**：`title` + `abstract` **二字段**。**全文正文索引与向量索引 defer**（phase7-plan §8：正文索引等
+  抽取产物规模实测后于 P8 评估经济性；向量索引无消费场景 + 引重依赖）——故 `fulltext.text_path` 指向的
+  正文**不入库、不入索引**，`fulltext` 表语义不变。
+- **同步**：`0004` 内三触发器（`AFTER INSERT` / `AFTER UPDATE OF title, abstract` / `AFTER DELETE` ON
+  `paper`），FTS 行 rowid 显式绑 `paper.rowid`。触发器而非应用层同步——写 `paper` 的路径不止一处且仍在
+  增长，漏一处即索引静默漂移。
+- **方言隔离**：`0001`–`0003` 保持方言中性（§6/D-001 不变）；`0004` 是**唯一**允许含 SQLite 专有特性的
+  迁移文件，PG 迁移时整文件替换为 `tsvector` 生成列 + GIN 索引（等价性与**不可移植面**——查询语法、
+  排序函数、词干化实现三项不等价——见 D-034 决策 6）。检索一律经 `repo.search_papers()` 单点封装。
+- **维护**：`crawler reindex [--check]`（重建 / `integrity-check` 只读校验）；日常由触发器维护，仅在分词器
+  变更、执行过 `VACUUM`、手工 DB 手术后或 `--check` 报不一致时需要重建。
 
 ## 3. 去重与合并（ingest 阶段算法）
 
@@ -208,5 +231,6 @@ data/
 
 | # | 日期 | 修订 | 依据 |
 |---|---|---|---|
+| 3 | 2026-07-27 | **FTS5 索引要点落地化（设计声明→冻结形态）**：§2 索引要点行由一句「`paper(title)` 建 FTS5 虚表（标题+摘要检索）」展开为 FTS5 索引小节——表形态（content-owning `paper_fts`，附 external-content/contentless 的否决理由）、范围（title+abstract，正文与向量索引 defer）、触发器同步、`0004` 方言隔离不变式与 PG 替代方案指针、`crawler reindex` 维护面。**同批如实记债**：原句是 D-017 决策 4 推迟到 Phase 6 而 Phase 6 未兑现的悬空声明。§2 表定义与实体语义零变更（FTS 虚表是 `paper` 的派生索引、不引入新实体），故 status 保持 `implemented`。 | [D-034](../plan/decision-log.md)（T2 卡产出，待 fable 签署）；[phase7-implementation-plan §2/§4 T2/§8](../plan/phase7-implementation-plan.md)；D-017 决策 4 |
 | 2 | 2026-07-26 | **实现级演进（AC-3.4 顺序无关修复）**：§2 新增 `paper_weak_key` 表（schema v3 / `0003_paper_weak_key.sql`，纯附加、方言中性、Python 步回填存量键）+ `paper_relation` 的 candidate_duplicate 无序对语义注记；§3 补齐字段级收敛的第③条（同源二次观测确定性 tie-break + `meta_json._field_tie` 取证）与弱信号匹配键改为观测级键集合（含漏标代价如实记）。实体模型语义不变（新表是弱信号匹配面的倒排索引，不引入新实体），故 status 保持 `implemented`。 | Phase 6 F1（[phase6-implementation-plan §4 F1](../plan/phase6-implementation-plan.md)）；缺陷台账 [post-phase5-audit §3 P1-1 + P3「同源二次观测异值先到胜」](../reports/2026-07-24-post-phase5-audit.md)；**[D-031](../plan/decision-log.md) 已落（2026-07-26）**（decision-log 补记后本行补链接） |
 | 1 | 2026-07-24 | **开放修订议题登记（非设计变更）**：`asset` 表落盘路径布局（§4 `data/pdf/{venue_id}/{year}/{paper_ulid}.pdf`）不含 `version`（§2 `asset.version`，如 `publishedVersion`）判别位——OA-fallback 产生的 OA 副本 asset 与原平台 asset（`version=None`）仅靠内部 ULID 区分，版本身份并存但路径本身不可读出版本语义；该并存不覆盖行为已被 `test_no_entitlement_triggers_oa_fallback_direct_fetch` 验证，但设计文档层面此前未显式承认此路径布局缺口。本条**仅登记议题**，不改 §2/§4 既有设计；是否需在路径中纳入 version 判别位留待后续修订评估。 | Phase 4 T7a 发现；[2026-07-23-phase4-report.md §5「asset 路径 version 债务」](../reports/2026-07-23-phase4-report.md) + [AC-4 离线汇总记录 §5「asset 路径 version 债务（→ T8 / design 修订）」](../testing/records/2026-07-23-ac4-acceptance.md)；phase4-report §6 开工检查单 #1② 移交 |

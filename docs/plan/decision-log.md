@@ -338,3 +338,105 @@ updated: 2026-07-27
   - **AC-7.1 判据两路径分叉**（不弱于原文，正式编号与验收记录模板归 T18，本卡不改 `acceptance-criteria.md`）：GROBID 路径比 TEI `titleStmt/title`；纯文本路径比正文前 2000 字符内的最优子串；两者同用归一化 Levenshtein ≤ 0.15，DP 实现约 15 行落 `tests/helpers/`，**零新依赖**、T7 与 T19 共用同一判据。**阈值 0.15 与 2000 字符窗未经真实标定**（r2 P2-⑤，如实声明）：离线载体的标题是自己注进去的、结构上标定不了阈值，第一次真实接触在 T19；处置口径写死＝T19 不达标**先判「阈值未标定」而非「抽取器不合格」**，人工过目失配样本区分三成因（抽取器真错 / 标题归一化不足 / 阈值过紧），**允许一次**基于实测分布的阈值修订并入 T19 验收记录 + 回填详设与 T18 的 AC 表述，此后再改须走 ADR（防「调阈值直到通过」的验收自证）。**AC-7.2 覆盖三态**（url 未配 / mock 在线 / 服务不可用逐行），第三态即「关闭时降级不报错」的严格形式。
 - **影响**：`design/12-fulltext-extract.md` 新建（`review` → fable 签署后 `approved`）；**design/05 §1 stage 5 行的幂等键注记与 design/06 §2 `fulltext` 表 DDL / §4 布局，由 T7 实现卡随迁移回填**（沿 D-031/F1 的「设计文档随实现卡更新」先例，避免与 T2 在 design/06 上撞面）；T7 施工面＝`pipeline/extract.py`（新）+ `_stage_extract` 改写 + `_fulltext_final_path` + config 两槽 + `HttpClient.post_multipart` + `StageContext` 一可选字段 + `000N` 迁移 + `pyproject` 加 pypdf；**T7 不碰 `cli.py`/`repo.py`/`types.py`**（主动退出 phase7 §5 已列的 cli.py 四卡冲突面）；T14 按上方**四类**口径扩 `verify`（三类缺陷 + `stale_fulltext` 信息级）；T19 按 §12 判据做真实批（GROBID 真实冒烟为条件项，本地服务零在线预算）；**T12 与本条零接缝**（见附带裁决）。T7 另须落三项回归锁：GROBID 空产物不压制既有正文、rank 序 `extract_failed > noop`、L1 生成器自校验（防生成器 bug 伪装成抽取失败）。
 - **落款**：P7-T1（opus）起草 2026-07-27 → 独立审查（opus）NEEDS_FIX（7 必修 + 7 P2，六项主裁决方向全部认同）→ **r2 全部吸收** → re-review（①②③⑤ CLOSED）→ **r3 文档级补正 4 处**（`--force` 绕过预判 + 预判护栏 + 判别子订正 + 重复算力形态 B；无新裁决）。逐条落点见 [12-fulltext-extract §14 修订记录第 2/3 行](../design/12-fulltext-extract.md)；两项子裁决 **fable 已 approve（2026-07-27）**；**ADR 本体待 fable 终签转 accepted**。
+## D-034 FTS5 检索索引形态：content-owning `paper_fts`（title+abstract）+ 触发器同步 + `0004` 方言隔离迁移（修订 D-017 决策 4 的兑现 Phase）
+
+- 状态：accepted · 日期：2026-07-27 · 依据：[phase7-implementation-plan §2/§4 T2/§8](phase7-implementation-plan.md)；D-017 决策 4；[design/06 §2 索引要点](../design/06-data-model.md)
+- **revises**：**D-017 决策 4**（兑现 Phase「Phase 6」→「Phase 7 T12」，原则部分全部保留）。D-017 其余三项（包管理/质量工具/依赖最小化）不受影响，故**不 supersede 整条**。
+- **背景（先记债，再修订）**：D-017 决策 4（2026-07-21）定「design/06 §2 的 paper FTS5 虚表不进 schema v1，**推迟到 Phase 6**（搜索需求）以独立 migration 追加」。Phase 6（订阅与搜索）已于 2026-07-26 关账打 tag `phase-6`，**该承诺未兑现**：Phase 6 的"搜索"面全部落在订阅 DSL 的本地过滤谓词上（design/09 `filters:` 三键 `title_regex_any`/`exclude_regex`/`min_year` 均为 Python 侧正则/比较），全程未建任何 FTS 结构、也无任何 SQL 检索消费方。两处代码注释至今仍写着"不用 FTS5（D-017，推迟 Phase 6）"（`src/paper_crawler/storage/db.py:6`、`src/paper_crawler/storage/migrations/0001_init.sql:3`）——文档与代码一致地停在一个已过期的承诺上。本条不把落空粉饰为"计划内 defer"，如实记债后再修订兑现 Phase。
+- **决策**：
+  1. **索引范围＝`paper.title` + `paper.abstract` 二字段**（controller 已裁，plan §4 T2）。全文正文索引与向量索引 **defer**，理由逐字引 plan §8：「**全文正文 FTS 索引与向量索引**：defer——正文索引等抽取产物规模实测（P8 评估经济性），向量索引无消费场景+引重依赖（YAGNI）」。本条**不为正文预留虚表列**，届时另立新 migration（改列须重建索引，预留无收益）。
+  2. **表形态＝content-owning（自持内容）FTS5 虚表**，**否决 external-content 与 contentless 两案**：
+     ```sql
+     CREATE VIRTUAL TABLE paper_fts USING fts5(
+       paper_id UNINDEXED, title, abstract,
+       tokenize = 'porter unicode61 remove_diacritics 2'
+     );
+     ```
+     - **决定性否决理由：`paper` 无 INTEGER PRIMARY KEY**。`paper.id` 是 ULID 文本主键（D-007），故其 rowid 是**隐式**的；SQLite 文档明载「无显式 INTEGER PRIMARY KEY 的表，`VACUUM` 可重编号其 rowid」。external-content（`content='paper'`）与 contentless 两案都以 rowid 为唯一连接键、**且查询只能返回 rowid**（列值须回表 join）——rowid 一旦被重编号，检索结果**静默指向错误的 paper**。content-owning 形态把 `paper_id` 作 UNINDEXED 列**物化进索引行**，查询直接读出 ULID、结果正确性不依赖 rowid 稳定性；rowid 只用作写路径的 O(log n) 定位键，最坏后果是残留/重复行（`crawler reindex` 可修复）。**故障模式从"静默错误"降为"可检出的冗余"**——这是本项目对"静默失败"一贯姿态（审计 S1 原则）的直接应用。
+     - **第二理由：external-content 的删除契约易静默损坏**。其 DELETE/UPDATE 必须以特殊命令 `INSERT INTO fts(fts,rowid,…) VALUES('delete',…)` **携旧值**发出，旧值与索引内容不符即索引损坏且不报错；content-owning 表用普通 `DELETE`/`INSERT` 即可。T12 是 Sonnet 档实现卡，契约越窄越好。
+     - **体积代价如实定价（估算，[未实测]）**：content-owning 多存一份 title+abstract 副本。按 title ≈ 0.1 KB、abstract ≈ 1.2 KB 计，源文本 ≈ **13 MB/万篇**；FTS5 倒排索引约为文本的 50–70%，故 content-owning ≈ **20–23 MB/万篇**、external/contentless ≈ **7–9 MB/万篇**，差额 ≈ **13 MB/万篇**。本库可寻址量级 10⁴–10⁵ 篇 ⇒ 差额 10 MB–130 MB。单机个人工具（D-001）下可接受，且**因范围锁死二字段而有界**（正文入索引才是数量级跳变，已 defer）。**本估算无实测支撑**（不读 `.paper-crawler/`，D-032 红线）——T12 落地后须在验收记录回填实测值。
+     - 分词器 `porter unicode61 remove_diacritics 2`：语料以英文学术文本为主，porter 词干化提升召回；`remove_diacritics 2` 与 `ids.normalize_title` 的 Unicode 折叠取向一致。**分词器可改**——改动等价于一次 `crawler reindex`，故属**可逆选择**，不值得设计期过度论证。本机 SQLite 3.50.2 已实测该 tokenize 串与显式 rowid 写入均可用。
+  3. **同步策略＝SQL 触发器（写路径全覆盖）+ `reindex` 兜底**：
+     - 三触发器随虚表同建于 `0004`：`AFTER INSERT ON paper`、`AFTER UPDATE OF title, abstract ON paper`、`AFTER DELETE ON paper`；FTS 行 rowid 显式绑 `paper.rowid`，UPDATE/DELETE 以 `WHERE rowid = old.rowid` 定位（O(log n)；若改以 UNINDEXED 列 `paper_id` 定位则退化为全表扫描，故 rowid 绑定是必需而非优化）。
+     - **否决应用层同步**（在 `repo.upsert_paper`/`merge_ingest` 内手写）：写 `paper` 的路径不止一处且仍在增长（Phase 7 的 T7 extract 回写、T10 建边、T13 dedupe 决策），漏一处即索引静默漂移；触发器由 DB 保证"任何写路径都覆盖"，是**结构性**而非纪律性保障。
+     - `UPDATE OF title, abstract` 限定列：避免 `ingest_state`/`updated_at` 等高频列更新空转重建索引行。
+  4. **迁移形态＝`0004_fts_paper.sql`（schema v3→v4，纯 SQL，无 Python 步）**：
+     - 单文件内容＝虚表 DDL + 三触发器 + 存量回填 `INSERT INTO paper_fts(rowid, paper_id, title, abstract) SELECT rowid, id, title, COALESCE(abstract,'') FROM paper;`。
+     - **复用既有迁移机制零改动**（`storage/db.py:254-324`）：顺序执行、单事务、失败整步 ROLLBACK、迁移前自动备份 `{db}.v3.bak`、`schema_version` 单行表。**不注册 `_PY_MIGRATIONS` 条目**（无需 Python 回填）。
+     - **文件名对 plan 的偏离**：plan §4 T2 写示意名 `0004_fts_title.sql`，实际范围是 title+abstract 二字段，故定名 `0004_fts_paper.sql`；plan §2 冻结件表本就写通配 `0004_*.sql`，无违约。
+     - **方言隔离不变式**：`0001`–`0003` 保持方言中性（D-001/D-017）；**`0004` 是唯一允许含 SQLite 专有特性的迁移文件**（虚表 + 触发器），PG 迁移时整文件被等价 PG 脚本替换（决策 6）。该不变式写入 `0004` 文件头注释。
+     - **FTS5 模块缺失须响亮**：无 FTS5 编译支持的 SQLite 在 `CREATE VIRTUAL TABLE` 抛 `sqlite3.OperationalError: no such module: fts5`——既有机制已整步回滚，但错误面向用户不可读。T12 须在 `Database._apply` 加一层异常翻译 → `CrawlerError(CONFIG, …)` 并附可操作指引，且有专测（monkeypatch 触发）。
+  5. **rebuild 命令形态＝独立顶层命令 `crawler reindex [--check]`**（读/写不混载）：
+     - `crawler search QUERY [--limit N] [--venue ID]`：只读检索（T12），经 `repo.search_papers()` 单一查询入口。
+     - `crawler reindex`：`DELETE FROM paper_fts` + 全表重灌，**单事务**、幂等、结束打印重建行数；`--check` 只跑 `INSERT INTO paper_fts(paper_fts) VALUES('integrity-check')` 只读校验、不改数据。
+     - **否决 `crawler search --rebuild`**（读写混一命令、与位置参数互斥、语义拧巴）与 `crawler index <verb>` 命令组（为单个动词开命令组，与 `crawler verify` 的顶层维护动词先例不一致）。
+     - **何时需要 rebuild**：①分词器变更；②对本库执行过 `VACUUM`（rowid 可能重编号）；③手工 DB 手术/备份回滚后；④`--check` 报不一致时。**日常写路径由触发器维护，不需要定期 rebuild。**
+     - **操作注记（登记，非红线）**：对本库执行裸 `VACUUM` 后应跟一次 `crawler reindex`；本项目代码目前不执行 `VACUUM`。
+  6. **PG 迁移路径下的 FTS 面替代方案**（把 D-017 决策 4 的一句"可在 PG 侧以 tsvector 等价替换"落成可执行方案，并如实标出不可移植面）：
+     - **结构等价**：`0004` 整文件替换为 `ALTER TABLE paper ADD COLUMN search_tsv tsvector GENERATED ALWAYS AS (to_tsvector('english', coalesce(title,'') || ' ' || coalesce(abstract,''))) STORED;` + `CREATE INDEX … USING GIN(search_tsv);`。两侧"派生索引随源列自动维护"语义同构（SQLite 靠触发器、PG 靠生成列），**应用层零分支**。
+     - **可移植性的真正保障是查询面单点封装**（而非 schema 中性）：全部检索经 `repo.search_papers(expr, *, limit, venue_id)` 唯一入口，方言 SQL 封在该方法内，CLI 只见 `paper_id` + 片段。T12 必须建立该单点，**不得让 `MATCH` 语法散入 CLI 层**。
+     - **不可移植面如实入档（不假装等价）**：①**查询语法不等价**——FTS5 `MATCH` 表达式（`NEAR/`、列限定 `title:`、前缀 `*`）与 PG `websearch_to_tsquery`/`plainto_tsquery` 无逐项对应，迁移时**用户可见的查询语法会变**；②**排序不等价**——`bm25()` 与 `ts_rank_cd()` 同族不同实现，同一查询的结果排序不逐位一致（命中集合大体一致）；③词干化实现不同（porter 分词器 vs PG `english` 词典）。三项均为迁移期已知代价，不构成本次否决理由（PG 迁移本身仍是纸面路径，D-001）。
+  7. **D-017 决策 4 修订文本**（D-017 原文按 ADR append-only 不改，本条为修订载体）：
+     > D-017 决策 4「推迟到 **Phase 6** 以独立 migration 追加」中的**兑现 Phase 改判为 Phase 7**（T12 落地 `0004_fts_paper.sql`）；Phase 6 未兑现属**承诺落空**、非计划内 defer（见背景）。**D-017 决策 4 的原则部分全部保留并被本决策严格遵守**：①FTS5 不进主 schema——`0001`–`0003` 至今零 FTS 结构，本次以**独立** migration 追加；②主 schema 保持方言中性——SQLite 专有特性全部隔离在 `0004` 单文件内；③PG 侧以 tsvector 等价替换——落地方案见决策 6。
+     - **两处代码注释修订指令（T12 执行；本卡纯设计、零 src 改动）**：
+       - `src/paper_crawler/storage/db.py:6`「Global Constraints §7/§9：ULID 文本主键、UTC 时间戳、方言中性、**不用 FTS5**」→「…方言中性（`0001`–`0003`）；FTS5 限于 `0004_fts_paper.sql` 单文件（D-034 修订 D-017 决策 4）」。
+       - `src/paper_crawler/storage/migrations/0001_init.sql:3`「不建 FTS5（D-017，推迟 Phase 6）」→「**本文件**不建 FTS5（方言中性不变式）；FTS5 虚表由 `0004_fts_paper.sql` 追加（D-034 修订 D-017 决策 4 的兑现 Phase）」。
+- **影响**：schema v3→v4；**T12 承接实现**（`0004_fts_paper.sql` + `repo.search_papers` + `crawler search`/`crawler reindex` + `_apply` 异常翻译 + 上述两处注释修订）；[design/06 §2 索引要点](../design/06-data-model.md) 行随本条更新（原文"`paper(title)` 建 FTS5 虚表（标题+摘要检索）"是**未落地的设计声明**，现指向本条并写明表名/范围/迁移号/同步机制）；`0001`–`0003` 与迁移器机制零改动；本条不新增 AC（T12 的 DoD 在其卡内）。
+- **落款**：T2（opus）起草，纯设计卡零 src 改动；**待 T2 独立审查 + fable 签署后生效**（plan §1-7：D-033/034/035 经 fable 签署后方可作为实现依据）。
+
+## D-035 repec 接入形态：`_ENRICH_SOURCES` 元组扩位 + `SOURCE_PRIORITY` 七位重编号（修订 D-021 决策 3）+ `state/repec/` bulk 快照契约 + 零网络 `enrich_batch`
+
+- 状态：accepted · 日期：2026-07-27 · 依据：[research/enrich-eval-p6.md §2/§6.2/§6.3](../research/enrich-eval-p6.md)（approved，探针 GO）、D-027、D-021 决策 3、[phase7-implementation-plan §4 T2/T8/§8](phase7-implementation-plan.md)
+- **revises**：**D-021 决策 3**（六源优先级表扩为七源并重编号）。D-021 其余三项（DBLP robots/限速、S2 无 key 404 口径、OpenAlex `meta.cost_usd` 核销）不受影响，故**不 supersede 整条**。
+- **背景**：D-027（2026-07-24）把 RePEc 降为 enrich 通道候选、挂 Phase 6 评估；R2 评估（enrich-eval-p6，approved）裁「再缓，定档 **Phase 7 首批候选**」，并把 **Q3**（`SOURCE_PRIORITY` 扩位）与 **Q4**（bulk 快照落盘契约）明文**缓至 Phase 7 立卡时以 ADR 定**（§6.3 裁决表）。前置探针（6/6 请求，[LIVE 2026-07-26]）判 **GO**：JEL 在 bulk ReDIF 面确证（字段名 `Classification-JEL`，`nbr:nberwo:35506` = `D1; J13; J15` 与 HTML 勘察逐字节吻合），覆盖率 1989=0% / 2000=87.4% / **2010 起=100%**；`Publication-Status`（wp↔published 关联）同在 bulk 面；OAI 端点活但 `earliestDatestamp=2021-09-23` ⇒ 增量面仅覆盖 2021-09 起，**全量快照必须走 bulk 直连**；镜像 `repec.nber.org` 1 次连接层失败（样本=1，不构成判罚）、`www2.nber.org` 4/4 稳。本条即 Q3/Q4 的兑现，并冻结 T8 的接入面。
+- **决策**：
+  1. **接入形态＝`_ENRICH_SOURCES` 元组扩位（最小改）**：`cli.py:1308` 的 `("openalex","s2")` → `("openalex","s2","repec")`，repec 置末位（既有两源相对序不变）。registry role 声明式改造**挂 P8**，理由逐字引 plan §8：「**registry role 声明式改造**（D-035 相关）：P7 走 `_ENRICH_SOURCES` 元组扩位最小改，role 字段挂 P8」。
+     - 装配主干**零改动**成立（enrich-eval C2/C3 已验证）：`_prepare_enrich_source` 是通用装配，`_apply_enrich_key` 是无 else 的 if/elif 链（repec 无 key，天然落空跑通）。
+     - **唯一必须改的一行**：`_prepare_enrich_source`（`cli.py:1395`）无条件 `limiter.register(candidate.domains[0], …)`，对零网络源的空 `domains` 会 IndexError。裁决：**repec 声明 `domains = ()`**（结构性宣告"本源无网络面"）+ 该处补空守卫，与同文件 `_register_rate_domains` 的「空 domains 跳过」既有语义**同构化**（两条装配路径本就该一致）。**否决**"给 repec 挂一个从不请求的域名"——那是为绕过一行校验而写进代码的假事实。
+     - `--source` help 文案（`cli.py:1466`）同步为 `（openalex|s2|repec）`。
+     - **冲突面登记**：`pyproject.toml` entry-points +1 与 Phase 6 F5 落地的 canary 集合等值自断言撞车——T8 须同批把 `tests/integration/test_cli_canary.py:105` 的 `_EXPECTED_CANARY_ADAPTER_IDS` 由 20 项扩为 21 项（该断言正是为此设计的响亮门，不是障碍）。
+  2. **`SOURCE_PRIORITY` 扩位＝全表重编号取七位，repec 取最低非-heuristic 位**（修订 D-021 决策 3）：
+     `official 6 / crossref 5 / dblp 4 / openalex 3 / s2 2 / repec 1 / heuristic 0`
+     - 取 R2 §4 Q3 起草人倾向原案。**为何必须重编号**：`s2 1` 与 `heuristic 0` 相邻、无整数空位，插位无法不动既有值；重编号保持"heuristic=0 为底 + 严格全序"的表面语义（`_prefers_on_tie` 的同级 tie-break 依赖"优先级两两互异"，重编号后仍成立）。
+     - **重编号对存量数据零影响（已核实）**：provenance 落 `paper.meta_json._field_src` 记的是**来源名字符串**而非优先级数值（`storage/repo.py:551,602,652`），数值只在同一进程内做比较（`merge.py::_rank`）；全库 grep 无任何测试断言具体数值。
+     - **repec 取最低位的实体理由**：其重叠字段（title/authors/year/abstract）是 NBER archive 自报经 RePEc 分发的二手面，质量不足以压过 crossref/dblp/openalex/s2 任一；而其**独家增值（JEL / `Publication-Status`）落 `meta`、三路皆缺 ⇒ 只补空即可全额兑现**，不需要高位次。这正是 D-027「字段级优先级低位、只补不覆盖」的机制化落地。
+  3. **`state/repec/` bulk 快照落盘契约**（Q4 兑现；这是**新落盘子系统**，不是"再加一个 enrich 分支"）：
+     - **位置**：`<config-home>/state/repec/`，经 `config.resolve_home()` 解析（**D-032 红线**：禁 `Path.home()` 硬编码兜底）。沿 `state/openalex-budget.json`（`adapters/openalex/budget.py`）与 `state/cooldown/` 的既有 state 先例。
+     - **布局**：
+       ```
+       <config-home>/state/repec/
+       ├── manifest.json          # 快照元数据（下）
+       └── nbr/nberwo/…           # ReDIF 原样字节，按 archive/series 分目录
+       ```
+       `manifest.json` ＝ `{"schema":1,"archive":"nbr","series":["nberwo"],"mirror":"<host>","source_urls":[…],"fetched_at":"<UTC ISO8601>","files":[{"name":…,"bytes":…,"sha256":…}],"record_count":<int>}`。**原样字节 + sha256 落盘**：ReDIF 是上游权威格式，本地解析口径可能随实现修正，保留原文才能不重新联网即可重解析。
+       **[未实测]** 上游 series 文件的实际命名与切分（单大文件 vs 逐条文件）由 T8 实现期实测确定——本契约只冻结「archive/series 分目录 + 原样落盘 + manifest 记账」三点，**不预设文件名**（探针只验了字段面，未验目录形态）。
+     - **刷新＝显式、非自动；且取快照的网络面在 `src/` 之外**：新增 `scripts/repec_snapshot.py`（不入 `src/paper_crawler` 包、不占门禁覆盖，沿 `scripts/` 既有先例与 plan §4 T4 `scripts/budget_ledger.py` 同款理由）。**这是本决策的结构性要点**：唯一的网络动作在 scripts 侧 ⇒ src 侧 `enrich_batch` 的"零网络"成为**可被 socket 猴补机械证明的结构事实**，而非靠自律；同时取快照本就是低频运维动作（同 R2 Q11「历史 backfill＝一次性运维动作」先例），不属爬虫功能面。
+       - 镜像：默认 `www2.nber.org`（探针 4/4 稳），`repec.nber.org` 为备。**T8 首个动作是两域 robots 核验**（plan §3 T8-robots ≤2 请求；不通过则停手上报，探针 §6.2 已明记该合规缺口）。
+       - **代价如实记**：scripts/ 不占门禁覆盖 ⇒ 镜像回退与校验逻辑无自动化测试，靠 T19 在线批人工核验。
+     - **失效语义（对 R2 §2.7 DoD② 字面的有意收窄，显式记账）**：
+       - **快照缺失** → `enrich_batch` 抛 `CrawlerError(CONFIG, "repec 快照缺失，先跑 scripts/repec_snapshot.py …")`；经既有 `_run_enrich_source` 的 per-source `CrawlerError` 捕获 → 该 source 摘要行记"提前终止"，**不崩其它 source、不改整体退出码**——与 s2 缺 key / openalex 预算熔断**完全同构**（`cli.py:1406-1409` 既有口径）。
+       - **快照过期**（`fetched_at` 早于 30 天）→ **响亮 WARNING + 摘要行注记，继续运行**。R2 §2.7 DoD② 原文写"快照缺失/过期时响亮失败"；此处把"过期"从**失败**收窄为**响亮警告**。理由：`Classification-JEL` 与 `Publication-Status` 是准静态字段（历史条目基本不变），让一个 31 天未刷新的快照使整条通道不可用，代价与收益不匹配；"响亮、不静默"这一实质要求全额保留。**此为对 approved 评估文档字面 DoD 的收窄，如实入档供审查复核。**
+       - 阈值 30 天取**模块常量**、**不开 config 槽**：过期只影响一条警告文案、非行为开关（YAGNI，D-017 依赖/配置最小化姿态）；且 `config.py` 在本 Phase 已是 T6/T7 双方争用的冲突面（plan §5），不增第三个声索方。
+     - **不建派生索引**：可寻址量级 3.6 万条（crossref `10.3386` total-results 35,976），`enrich_batch` 首次调用惰性全量解析入进程内 dict、进程内缓存即可；**不建 `index.sqlite`、不入主库表**（YAGNI，且避免与 schema 迁移链纠缠）。
+     - **`healthcheck` 语义**：快照缺失 → `raise NotImplementedError("repec 快照未落盘")` → `crawler canary` 既有 SKIP 分支（**零 canary 改动**，复用 openalex/s2 未配置 key 的先例）；快照在 → 健康并带 `record_count` + `fetched_at`。**与 openalex/s2 相反的性质**：repec healthcheck 零网络零预算，canary 高频调用无成本（openalex 当初收紧 healthcheck 正是怕悄悄消耗 credit）。
+  4. **`enrich_batch(dois)` duck-type 契约（与在线源的语义差异，逐面写明）**：
+
+     | 面 | openalex / s2 | repec |
+     |---|---|---|
+     | 数据获取 | 按 DOI **在线批查**（HTTP 往返） | 快照**本地 join**，**全程零网络**（socket 猴补专测锁定） |
+     | 门控 | key（s2 必需）/ credit 预算（openalex） | 无 key、无预算；门控＝**快照存在性与新鲜度** |
+     | 限速 | `limiter.acquire(host)` 逐请求 | 无（`domains = ()`，不登记限速域） |
+     | 新鲜度 | 实时 | ＝`manifest.fetched_at`（**须在摘要行可见**） |
+     | 幂等性 | 受上游变动影响 | 对固定快照是 `(dois, snapshot)` 的**纯函数**——可重放、可用于回归锁定 |
+     | 失败面 | 网络 / 402 / 404 / 缺 key | 仅"快照缺失/损坏/过期" |
+
+     - **未命中三分观测（不静默丢弃，审计 S1 原则）**：repec 的"无结果"有三种成因，须**各有计数并进摘要行**——(a) DOI 不属 `10.3386` 前缀 ⇒ **结构性不可寻址**（非缺陷）；(b) 属 `10.3386` 但快照内无该 handle ⇒ **覆盖缺口**（可指示快照陈旧或 series 未覆盖）；(c) handle 命中但无 `Classification-JEL` ⇒ **增值为空**（探针实测：1989 年代条目即此类）。openalex/s2 的"未命中"只有一种含义，故此三分是 repec 专有的契约要求。
+     - **DOI↔handle 映射边界（唯一可靠面＝NBER 语法映射）**：`10.3386/w{n}` / `10.3386/t{n}` → `RePEc:nbr:nberwo:{n}`，复用 `adapters/nber/parse.py` 既有 series 号归一（**零模糊匹配、零启发式**）。**`t` 系列落哪个 series 段、期刊条目怎么 join 均未核实**（R2 §2.2-2 标 [推断]，不作依据）——T8 若实测 `t` 系列不落 `nberwo`，**按实测收窄而非按推断扩张**。
+     - **可寻址集合如实入档**：≈ **3.6 万篇 NBER WP**，其中 JEL 覆盖 2010 起 100%、2000 年 87.4%、1989 年 0%；**SSRN 结构性为 0**（[LIVE 2026-07-24]：442KB archives 全表无 "ssrn" 串，SSRN 是 Elsevier 商业源、不在 RePEc）——即本通道覆盖面比同库 ssrn 语料（141 万 DOI）**小两个数量级**。这是接受该通道时**已定价**的事实，不因立卡而改写。
+     - **产出 stub**：`identifiers = ((doi, …), (repec, handle))`；`meta` 携 `jel`（列表）/ `published_in`（`Publication-Status` 原串）。title/authors/year/abstract **照常产出**——靠 `SOURCE_PRIORITY` 最低位天然只补空，**无须实现特殊"只补不覆盖"逻辑**（决策 2 的机制化收益）。
+     - **`(repec, handle)` 的锚点语义**：按 D-027 明文**非跨源合并锚点**（跨源锚仍是 DOI）；但 `MergeEngine` 强合并按 `(scheme,value)` 命中，故它入库后天然是 *RePEc 内部* 的幂等锚点——二者不冲突，**须在 `adapters/repec/adapter.py` 注释写清防误读**（R2 §2.2-3 原文要求）。`identifier.scheme` 无 CHECK 约束 ⇒ **零 migration**。
+     - **零 HTML 硬红线**：只走 ReDIF/OAI bulk 面，**绝不解析 `ideas.repec.org`/`econpapers.repec.org` 的 HTML 条目页**（哪怕其 robots 允许）——RePEc 官方明文强烈不建议爬 HTML 并设隐私红线（"Email addresses are released under no circumstances"）。写进 T8 的 DoD 与 adapter 模块 docstring。
+     - **外层分页** `_ENRICH_PAGE_SIZE=200` 对零网络源无实际意义但**不特化**（保持装配同构；一次全量解析后逐页 join 的开销可忽略）。
+- **不在本决策内（显式出列）**：JEL 进 design/09 DSL 过滤键（`filters.jel_any`）——R2 Q5 裁「本 Phase 不动」，检索面另卡；`preprint_of` 建边归 plan §4 T10（本条只保证 `Publication-Status` 落 `meta` 供其消费）；非 DOI WP 长尾枚举与期刊条目 join（D-027 明文出列）；OpenAlex 补枚举 ladder(a)（plan §8 defer P8 候选）。
+- **影响**：**T8 承接实现**（`adapters/repec/{__init__,adapter,parse}.py` + `scripts/repec_snapshot.py` + `_ENRICH_SOURCES` 扩位 + `_prepare_enrich_source` 空 domains 守卫 + `--source` help 文案 + `SOURCE_PRIORITY` 重编号 + `pyproject.toml` entry-points +1 + canary 集合断言 20→21）；`merge.py` 六枚举闭表→七枚举（D-021 决策 3 位次表被本条取代）；**零 schema migration**；实现级契约详见 [design/adapters/aggregators.md §5.7](../design/adapters/aggregators.md)；`venues/econ/nber.yaml` 的 N-5 注记（"唯一已知源 RePEc nbr:nberwo ReDIF"）在 T8 落地后可回改，属文档面。
+- **落款**：T2（opus）起草，纯设计卡零 src 改动；**待 T2 独立审查 + fable 签署后生效**（plan §1-7）。
