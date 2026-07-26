@@ -106,6 +106,7 @@ from paper_crawler.merge import MergeEngine
 from paper_crawler.obslog import log_event, redact, setup_logging
 from paper_crawler.pipeline import PipelineRunner, RunReport, Selector, StageContext
 from paper_crawler.pipeline.cooldown_cli import cooldown_app
+from paper_crawler.preprint_report import build_preprint_report, render_preprint_report_markdown
 from paper_crawler.ratelimit import RateLimiter
 from paper_crawler.registry import VenueRegistry
 from paper_crawler.storage.db import Database
@@ -1320,6 +1321,24 @@ def oa_report_cmd(
         adapter = _prepare_unpaywall_adapter(env)
         rep = oa_report.build_oa_report(dois, adapter.lookup)
         typer.echo(oa_report.render_oa_report_markdown(rep))
+    raise typer.Exit(code=0)
+
+
+# -- preprint-report --------------------------------------------------------------
+
+
+@app.command("preprint-report")
+def preprint_report_cmd(home: HomeOpt = None, verbose: VerboseOpt = False) -> None:
+    """preprint↔published 关联报告（T16；AC-7.4 后半，design/06 §3 preprint_of 语义）。
+
+    全库只读展示 `paper_relation(kind='preprint_of')` 边（`Repo.list_preprint_relations`）
+    ——不写 DB、不改变任何 `decided`/证据字段。退出码恒为 0（同 `oa-report`：报告展示
+    事实非对账判据，零边同样是合法结果——正文响亮说明"暂无关联边"而非静默空文档）。
+    """
+    with _env(home, verbose) as env:
+        rows = env.ctx.repo.list_preprint_relations()
+        rep = build_preprint_report(rows)
+        typer.echo(render_preprint_report_markdown(rep))
     raise typer.Exit(code=0)
 
 

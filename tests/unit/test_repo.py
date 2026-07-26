@@ -18,7 +18,7 @@ from pathlib import Path
 import pytest
 
 from paper_crawler.storage.db import Database
-from paper_crawler.storage.repo import FetchLogRow, Repo
+from paper_crawler.storage.repo import FetchLogRow, MergeInput, Repo
 from paper_crawler.types import AssetKind, AssetPlan, AuthLevel, IssueRef, PaperStub, VenueSpec
 
 # AC-0.4 红线扫描：库内不得残留 (session|token|key) 的 key=value / 引号变体形态。
@@ -607,6 +607,152 @@ def test_upsert_paper_decided_preprint_edge_not_rewritten_via_pull_path(repo: Re
     assert len(edges) == 1
     assert edges[0]["decided"] == "rejected"
     assert edges[0]["evidence_json"] == before
+
+
+# -- preprint_of 关联报告查询（T16；AC-7.4 后半，design/06 §3）--------------
+#
+# `list_preprint_relations` 是只读 join 视图，供 `preprint_report.build_preprint_report`
+# 消费；本节只验证查询本身（双端 title/year/venue join、venue 可空、排序、decided 原样
+# 透出）——边的建立逻辑已由上一节（T10）与 test_merge.py 覆盖，不重复造边场景。
+
+
+def _second_venue(venue_id: str = "arxiv_mock", full_name: str = "ArXiv Mock") -> VenueSpec:
+    """第二个最小合法 venue（不同于 fixture 自带的 `VENUE_ID`），供跨 venue join 断言。"""
+    return VenueSpec(
+        id=venue_id,
+        kind="preprint_channel",
+        names={"full": full_name, "aliases": []},
+        field=["cs_ai"],
+        identifiers={},
+        metadata_source="mock_platform",
+        fulltext_source="mock_platform",
+    )
+
+
+def _merge_input(
+    *,
+    title: str,
+    year: int | None = None,
+    meta: tuple[tuple[str, str], ...] = (),
+    source: str = "crossref",
+) -> MergeInput:
+    """`Repo.merge_ingest` 直调入参（绕开 `MergeEngine`——本文件只测 `Repo` 层）。
+
+    `priority` 是调用方自定义的最小映射，不借用生产 `SOURCE_PRIORITY`（`merge_ingest`
+    对 `source`/`priority` 无枚举校验，那是 `MergeEngine.ingest` 的职责，见 merge.py）。
+    仅用于构造 venue_id=NULL 的 aggregator 路径 paper（`_create_paper` "venue-agnostic"
+    先例），验证 `list_preprint_relations` 的 LEFT JOIN venue 在两端皆缺 venue 时不报错。
+    """
+    return MergeInput(
+        title=title,
+        title_norm=title.lower(),
+        first_author=None,
+        abstract=None,
+        year=year,
+        pub_date=None,
+        meta=meta,
+        source=source,
+        priority={"crossref": 1, "official": 2},
+    )
+
+
+def test_list_preprint_relations_empty_is_empty_list(repo: Repo) -> None:
+    assert repo.list_preprint_relations() == []
+
+
+def test_list_preprint_relations_joins_titles_years_and_venue_names(repo: Repo) -> None:
+    """两端均经 pull 路径（各自绑定 venue）→ join 出双端 title/year/venue 名。"""
+    repo.upsert_venue(_second_venue())
+    repo.upsert_paper(VENUE_ID, None, _stub(doi="10.9999/pub-a", title="Published A", year=2025))
+    repo.upsert_paper(
+        "arxiv_mock",
+        None,
+        PaperStub(
+            title="Preprint A",
+            identifiers=(("arxiv", "2401.01111"),),
+            year=2024,
+            meta=(("doi", "10.9999/pub-a"),),
+        ),
+    )
+    rows = repo.list_preprint_relations()
+    assert len(rows) == 1
+    row = rows[0]
+    assert row["preprint_title"] == "Preprint A"
+    assert row["preprint_venue"] == "ArXiv Mock"
+    assert row["preprint_year"] == 2024
+    assert row["published_title"] == "Published A"
+    assert row["published_venue"] == "Mock Journal"
+    assert row["published_year"] == 2025
+    assert row["confidence"] == 1.0
+    assert row["decided"] is None
+    assert "doi" in row["evidence_json"]
+
+
+def test_list_preprint_relations_null_venue_for_aggregator_created_papers(repo: Repo) -> None:
+    """两端均经 aggregator 路径（`merge_ingest`，venue_id=NULL）→ 两侧 venue 名均为 None。"""
+    repo.merge_ingest(
+        _merge_input(title="Published Agg", year=2025, source="crossref"),
+        identifiers=(("doi", "10.5/agg"),),
+    )
+    repo.merge_ingest(
+        _merge_input(title="Preprint Agg", meta=(("doi", "10.5/agg"),), source="official"),
+        identifiers=(("arxiv", "2401.09999"),),
+    )
+    rows = repo.list_preprint_relations()
+    assert len(rows) == 1
+    assert rows[0]["preprint_venue"] is None
+    assert rows[0]["published_venue"] is None
+    assert rows[0]["preprint_title"] == "Preprint Agg"
+    assert rows[0]["published_title"] == "Published Agg"
+
+
+def test_list_preprint_relations_orders_named_venues_before_null_then_by_year_and_title(
+    repo: Repo,
+) -> None:
+    """排序：published venue 非空者优先（按名称），NULL venue 分组殿后。"""
+    repo.upsert_venue(_second_venue())
+    repo.upsert_paper(
+        VENUE_ID, None, _stub(doi="10.9999/named-pub", title="Z Named Pub", year=2020)
+    )
+    repo.upsert_paper(
+        "arxiv_mock",
+        None,
+        PaperStub(
+            title="Named Preprint",
+            identifiers=(("arxiv", "2401.02222"),),
+            meta=(("doi", "10.9999/named-pub"),),
+        ),
+    )
+    repo.merge_ingest(
+        _merge_input(title="Agg Published", source="crossref"),
+        identifiers=(("doi", "10.5/agg2"),),
+    )
+    repo.merge_ingest(
+        _merge_input(title="Agg Preprint", meta=(("doi", "10.5/agg2"),), source="official"),
+        identifiers=(("arxiv", "2401.03333"),),
+    )
+    rows = repo.list_preprint_relations()
+    assert len(rows) == 2
+    assert rows[0]["published_venue"] == "Mock Journal"
+    assert rows[1]["published_venue"] is None
+
+
+def test_list_preprint_relations_includes_non_pending_decided_state(repo: Repo) -> None:
+    """`decided` 非空（已人工裁决，如 rejected）的边仍原样返回——报告不静默隐藏（响亮呈现）。"""
+    repo.upsert_paper(VENUE_ID, None, _stub(doi="10.9999/rej-pub", title="Rejected Pub"))
+    repo.upsert_paper(
+        VENUE_ID,
+        None,
+        PaperStub(
+            title="Rejected Preprint",
+            identifiers=(("arxiv", "2401.04444"),),
+            meta=(("doi", "10.9999/rej-pub"),),
+        ),
+    )
+    repo.db.execute("UPDATE paper_relation SET decided = 'rejected' WHERE kind = 'preprint_of'")
+    rows = repo.list_preprint_relations()
+    assert len(rows) == 1
+    assert rows[0]["decided"] == "rejected"
 
 
 # -- paper_issue_link 幂等 ---------------------------------------------------

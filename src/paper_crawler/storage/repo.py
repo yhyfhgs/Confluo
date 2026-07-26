@@ -1082,6 +1082,45 @@ class Repo:
             (confidence, evidence_json, from_paper, to_paper, "preprint_of"),
         )
 
+    # -- preprint_of 关联报告查询（T16；AC-7.4 后半，design/06 §3 单一事实源）----
+
+    def list_preprint_relations(self) -> list[sqlite3.Row]:
+        """preprint_of 边的只读关联视图（T16；`preprint_report.build_preprint_report` 的
+        唯一数据源）。
+
+        逐边一行，双端各自 join 出 title/year/venue 名——venue 名可能为 `NULL`：
+        aggregator 路径（`merge_ingest`→`_create_paper`）建的 paper `venue_id=NULL`
+        （"venue-agnostic"，见该方法 docstring），两端各自独立可空，故用两次
+        `LEFT JOIN`（而非 `JOIN`）venue，任一端缺 venue 都不丢该边。`kind='preprint_of'`
+        固定；`decided` 原样返回（`None`=待复核，也可能是人工 `merged`/`rejected`——
+        `_upsert_preprint_relation` docstring "decided 非空=已人工裁决"）：本查询不按
+        `decided` 过滤，报告层如实展示全部边，不静默隐藏已裁决记录（AC-7.4"关联报告"
+        的可审计性要求）。
+
+        排序：published venue 名非空者优先、按名称升序（`(vb.name IS NULL)` 在 SQLite
+        中假=0/真=1，ASC 下非空排前）、NULL venue 分组殿后；组内按 published year→
+        published 标题→preprint 标题排序，末尾以两端 paper_id 兜底全确定性（同
+        `list_papers` "ORDER BY title, id" 先例，防同标题同年份时输出顺序不稳定）。
+        """
+        return self.db.query(
+            "SELECT "
+            "  r.from_paper AS preprint_id, r.to_paper AS published_id, "
+            "  r.confidence AS confidence, r.evidence_json AS evidence_json, "
+            "  r.decided AS decided, "
+            "  pp.title AS preprint_title, pp.year AS preprint_year, "
+            "  vp.name AS preprint_venue, "
+            "  pb.title AS published_title, pb.year AS published_year, "
+            "  vb.name AS published_venue "
+            "FROM paper_relation r "
+            "JOIN paper pp ON pp.id = r.from_paper "
+            "JOIN paper pb ON pb.id = r.to_paper "
+            "LEFT JOIN venue vp ON vp.id = pp.venue_id "
+            "LEFT JOIN venue vb ON vb.id = pb.venue_id "
+            "WHERE r.kind = 'preprint_of' "
+            "ORDER BY (vb.name IS NULL), vb.name, pb.year, pb.title, pp.title, "
+            "         r.from_paper, r.to_paper"
+        )
+
     def list_papers(self, venue_id: str, issue_id: str | None = None) -> list[sqlite3.Row]:
         """列出某 venue 的 paper；给定 issue_id 时限定该期内（经 paper_issue_link）。按标题排序。"""
         if issue_id is not None:
