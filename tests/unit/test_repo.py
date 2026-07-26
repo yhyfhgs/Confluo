@@ -709,20 +709,29 @@ def test_list_preprint_relations_null_venue_for_aggregator_created_papers(repo: 
 def test_list_preprint_relations_orders_named_venues_before_null_then_by_year_and_title(
     repo: Repo,
 ) -> None:
-    """排序：published venue 非空者优先（按名称），NULL venue 分组殿后。"""
+    """排序：published venue 非空者优先（NULL venue 分组殿后）；同组内按 year 升序，
+    同 year 再按 published 标题排序（逐一实测三条同组边的相对顺序，而非仅两组之间）。
+    """
     repo.upsert_venue(_second_venue())
-    repo.upsert_paper(
-        VENUE_ID, None, _stub(doi="10.9999/named-pub", title="Z Named Pub", year=2020)
-    )
-    repo.upsert_paper(
-        "arxiv_mock",
-        None,
-        PaperStub(
-            title="Named Preprint",
-            identifiers=(("arxiv", "2401.02222"),),
-            meta=(("doi", "10.9999/named-pub"),),
-        ),
-    )
+
+    def _named_edge(*, doi: str, title: str, year: int, arxiv_id: str) -> None:
+        repo.upsert_paper(VENUE_ID, None, _stub(doi=doi, title=title, year=year))
+        repo.upsert_paper(
+            "arxiv_mock",
+            None,
+            PaperStub(
+                title=f"Preprint of {title}",
+                identifiers=(("arxiv", arxiv_id),),
+                meta=(("doi", doi),),
+            ),
+        )
+
+    # 同组（published venue = Mock Journal）三条边：故意乱序建边，验证输出顺序与建边
+    # 顺序无关，只由 (year, published 标题) 决定——2019 排最前；2020 的两条按标题排序。
+    _named_edge(doi="10.9999/z-2020", title="Z Named Pub", year=2020, arxiv_id="2401.02222")
+    _named_edge(doi="10.9999/early-2019", title="B Earlier Pub", year=2019, arxiv_id="2401.02223")
+    _named_edge(doi="10.9999/a-2020", title="A Same Year Pub", year=2020, arxiv_id="2401.02224")
+
     repo.merge_ingest(
         _merge_input(title="Agg Published", source="crossref"),
         identifiers=(("doi", "10.5/agg2"),),
@@ -731,10 +740,15 @@ def test_list_preprint_relations_orders_named_venues_before_null_then_by_year_an
         _merge_input(title="Agg Preprint", meta=(("doi", "10.5/agg2"),), source="official"),
         identifiers=(("arxiv", "2401.03333"),),
     )
+
     rows = repo.list_preprint_relations()
-    assert len(rows) == 2
-    assert rows[0]["published_venue"] == "Mock Journal"
-    assert rows[1]["published_venue"] is None
+    assert len(rows) == 4
+    assert [r["published_title"] for r in rows[:3]] == [
+        "B Earlier Pub",  # year 2019：全组最早
+        "A Same Year Pub",  # year 2020，标题字典序早于下一条
+        "Z Named Pub",  # year 2020，标题字典序较晚
+    ]
+    assert rows[3]["published_venue"] is None  # NULL venue 分组殿后
 
 
 def test_list_preprint_relations_includes_non_pending_decided_state(repo: Repo) -> None:

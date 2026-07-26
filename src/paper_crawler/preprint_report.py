@@ -22,9 +22,10 @@ design/06 §3 preprint_of 语义锚点：**双条 paper 双份全文、不合并
 ## 设计决策（供审查核对）
 - **表格列**：每边一行，preprint/published 各自"标题"列 + "venue/year"合并列
   （如 `ArXiv Mock (2024)`），另加"证据"列（`clue_key=clue_value`，folded 进
-  provenance 标签）与"decided"列——六列，兼顾 AC-7.4 描述的全部字段（标题/venue/
-  year/证据来源/decided）与表格宽度可读性；venue 与 year 合并展示是本卡在给定
-  自由度内的选择（plan §4 T16"按 venue 或年分组你裁"同一自由度延伸至列布局）。
+  provenance 标签）与"decided"列——六列。字段选择为本卡设计裁量（标题/venue/
+  year/证据来源/decided），AC-7.4 原文仅要求"关联报告生成"、未列字段；venue 与
+  year 合并展示同样是本卡设计裁量：分组取 venue 优先、组内按年升序，venue 缺失
+  归尾组（"报告结构"节已述），列布局延伸同一裁量取舍，与表格宽度可读性权衡。
 - **证据来源字段**（`evidence_source`）：解析自 `paper_relation.evidence_json` 的
   `source`（aggregator/`merge_ingest` 路径）或 `venue_id`（pull/`upsert_paper` 路径）
   ——`_apply_preprint_clues` docstring "二者互斥"，本模块按此优先取 `source`、
