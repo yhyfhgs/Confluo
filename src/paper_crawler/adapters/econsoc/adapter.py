@@ -15,9 +15,18 @@
   （信封复用 `_oai`）；**客户端过滤 = DOI 后缀刊别（membership）+ dc:date 年（partition）**
   ——DOI 后缀（ecta/te/qe）判刊别（design §4），dc:date 年把刊全量切成"一年一 issue"的片
   （econsoc DOI **不编码卷号**，异于 aaai 的 DOI-卷号切片，故年切片由 dc:date 承担、令
-  `--year Y` 语义正确）。当前刊（volume_map 最大年）加 `from=<今日−回看天数>` datestamp 窗
-  做增量（datestamp≠发表日，故仅作窗、membership 仍靠后缀/年）；去重由下游 `identifier('doi')`
-  主键天然保证。ECMA 委 crossref（不经本 adapter）。
+  `--year Y` 语义正确）。**跨年分区缓存 + 当前年首拉全量修复**（结构移植自 aaai_ojs F3
+  的 `_cached_partition`/`_backfill_pages`，T15/检查单#6；分区键改用年份而非卷号）：任一
+  年份（历史年或当前年）首次在本 adapter 实例内被问到（缓存未命中）都触发**单趟全量
+  收割**（无 datestamp 窗——datestamp≠发表日，与 aaai 同理由）→ 目标年即时产出、**全部
+  已注册年份（含当前年）**就地按 dc:date 年 partition 缓存；此后同实例内再问到任一已
+  缓存年份 → 零请求命中缓存。**与 aaai_ojs 的关键差异**（controller 裁决②，闭合"当前年
+  首拉漏收窗口外早发论文"缺口）：aaai_ojs 的可缓存集合**排除**当前届（当前届恒走回看窗、
+  永不读写缓存，design/adapters/aaai-ojs.md §4 护栏①）——econsoc **反其道**：当前年纳入
+  可缓存集合，使任一年份的首趟全量收割都顺带把当前年一并纳入缓存，从而**首次收割当前年
+  即完整**，不必像 aaai_ojs 当前届那样只能等滚入历史后才补全（旧回看窗机制已整体由本
+  结构取代，不再保留固定 `from=` 增量路径）。去重由下游 `identifier('doi')` 主键天然
+  保证。ECMA 委 crossref（不经本 adapter）。
 - `resolve_assets`（★ 网络绑定，`resolve_offline=False`）：**ECMA 分段前置**（§3.3 方向 a）——
   按 DOI+落地域名判段：过刊段（doi.wiley.com）→ `NO_ENTITLEMENT`/skip（跨 adapter handoff
   defer，D-028）、pre-DOI 段（JSTOR/10.2307）→ 零资产 skip、当前段 → 下述统一路径。**统一
@@ -46,7 +55,6 @@ from __future__ import annotations
 
 import os
 from collections.abc import Iterable, Iterator
-from datetime import UTC, datetime, timedelta
 from urllib.parse import urlencode
 
 from paper_crawler.adapter import AdapterBase, AdapterFamily
@@ -79,9 +87,12 @@ from paper_crawler.useragent import build_user_agent
 # quirks 覆盖（默认 econtheory.org/ojs）；ojs_code∈{te,qe}（ECMA 不在此实例，无 OAI 端点）。
 _DEFAULT_OAI_BASE = "https://econtheory.org/ojs"
 _METADATA_PREFIX = "oai_dc"
-# 当前刊增量的固定回看天数（§4，沿 aaai 常量语义）。窗口越长越抗 datestamp 滞后；当前刊初始
-# 完整基线由历史全量收割建立，本窗口只捕获增量新增（去重由 DOI 主键保证）。
-_LOOKBACK_DAYS = 30
+# 跨年分区缓存的记录数硬顶（结构移植自 aaai_ojs 审计 S1-P1 修复，§4）。econsoc 单刊全库
+# 实测量级 TE completeListSize=656（crossref total=735）、QE total=617（site-survey
+# econometric-society.md §4/§1）——本常量取 ~7× 观测上限的余量：正常运行永不触顶；真触顶
+# 说明刊规模已远超勘察量级，此时**响亮降级**（WARN 事件 + 关缓存回退逐年收割）而非静默
+# 吃内存——缓存是纯性能设施，关掉只慢不错（同 aaai_ojs 语义）。
+_BACKFILL_CACHE_MAX_RECORDS = 5_000
 
 # 合并前端（当前段 landing + galley fetch，CF 前置，survey §4）。resolve 按 DOI 构造 landing。
 _LANDING_TMPL = "https://www.econometricsociety.org/doi/{doi}"
@@ -148,6 +159,13 @@ class EconsocAdapter(AdapterBase):
 
     def __init__(self, http: HttpClient | None = None) -> None:
         self._http = http
+        # 跨年分区缓存（结构移植自 aaai_ojs F3，T15/检查单#6）：单趟全量收割的产物，
+        # key=(venue_id, oai_base)，value=已注册年份（**含当前年**，与 aaai_ojs 排除
+        # 当前届不同，见 `_backfill_pages`/模块 docstring）→ 该年 PaperStub 序列。
+        # **实例内存态、非持久化**：随 adapter 实例（=一次 CLI 进程内的 registry 实例）
+        # 生灭，跨进程不复用、不落盘（同 aaai_ojs 先例，design/adapters/aaai-ojs.md §4）。
+        self._backfill_key: tuple[str, str] | None = None
+        self._backfill: dict[int, tuple[PaperStub, ...]] | None = None
 
     def set_http_client(self, client: HttpClient) -> None:
         """注入组装好的 `HttpClient`（`adapter.HttpClientConsumer` 协议，同 arxiv/aaai 先例）。"""
@@ -189,49 +207,143 @@ class EconsocAdapter(AdapterBase):
     def enumerate_issue(self, venue: VenueSpec, issue: IssueRef) -> Iterable[PaperStub]:
         """刊/年 IssueRef → OAI-PMH `ListRecords` 收割（DOI 后缀刊别 + dc:date 年双过滤）。
 
-        目标/窗口在此**急切**求值（非法 issue 早失败为 CONFIG）；翻页与网络在返回的生成器
-        惰性执行。当前刊（volume_map 最大年）加 `from=<今日−回看天数>` datestamp 窗做增量，
-        历史刊无窗全量收割；去重由下游 `identifier('doi')` 主键天然保证（§4）。**完整性
-        缺口响亮化**（F4 清账，S3-P2 审计，与 aaai_ojs 同构）：加窗时经 obslog 显式
-        INFO——若这是该刊/年**首次**收割，窗口外（今年早些时候发表）的论文本次不会
-        被收割覆盖，须等年份滚出为历史年后由无窗历史收割补齐、或手动跑一次无窗全量
-        收割；adapter 层无状态无法判定"是否首次"，故每次加窗都记录，交人工据此判断——
-        此前该缺口零日志、纯静默，仅测试断言 URL 含 `from=`，未触及语义完整性。**级别
-        取 INFO 非 WARNING**（F4 审查修正）：这是加窗增量路径的**常态**表现（每次当前
-        年收割都会触发，非偶发异常），全库 WARNING 语义惯例是"异常条件触发"（如
-        aaai_ojs 缓存触顶、TOML 畸形等）；此处是**常驻提示**——告知运行者"这次收割的
-        完整性边界在哪"，供必要时人工判断是否需要补一次无窗全量收割，非"出错了"。
+        目标在此**急切**求值（非法 issue 早失败为 CONFIG）；翻页与网络在返回的生成器
+        惰性执行。**跨年分区缓存 + 当前年首拉全量修复**（结构移植自 aaai_ojs F3
+        `_cached_partition`/`_backfill_pages`，T15/检查单#6，分区键改年份）：
+
+        - 先查缓存（`_cached_partition`）：命中（该年此前已被本实例的某趟全量收割
+          纳入 partition——无论是它自己触发的，还是另一年份触发的共享收割顺带缓存的）
+          → 直接返回缓存的该年记录，**零请求**。
+        - 未命中（该年在本实例内是首次被问到）→ 触发单趟全量收割（`_backfill_pages`，
+          无 datestamp 窗——datestamp≠发表日，历史年不可日期窗化，与 aaai 同理由）：
+          目标年即时产出、**全部已注册年份（含当前年）**就地按 dc:date 年 partition
+          缓存，供本实例内后续任一年份的查询零请求命中。
+
+        **当前年首拉完整性修复**（controller 裁决②，闭合"今年早发论文首拉漏收"缺口）：
+        与 aaai_ojs 相反——aaai_ojs 的可缓存集合**排除**当前届（当前届恒走回看窗、永不
+        读写缓存，design/adapters/aaai-ojs.md §4 护栏①），econsoc 把当前年**纳入**可
+        缓存集合（`_cacheable_years`），使当前年的首次收割也是一次无窗全量收割——不再
+        像旧版那样恒加 `from=<今日−回看天数>` 而首拉必然漏收窗口外的当年早期论文。旧的
+        固定回看窗机制已被本结构整体取代。去重由下游 `identifier('doi')` 主键天然保证。
         """
         year = _issue_year(issue, venue)
         code = _ojs_code(venue)
         oai_base = _oai_endpoint(venue, code)
-        frm = _lookback_from() if year == max(_volume_map(venue)) else None
-        if frm is not None:
+        cached = self._cached_partition(venue, oai_base, year)
+        if cached is not None:
             log_event(
-                "INFO",
-                f"econsoc {venue.id} {issue.label}: current-year harvest windowed to "
-                f"from={frm} (last {_LOOKBACK_DAYS}d only) — if this is the first-ever "
-                f"harvest of this venue/year, papers published earlier in {year} are NOT "
-                "covered by this run and will only be backfilled once the year rolls "
-                "into history (window-less) or via a manual full re-harvest",
+                "DEBUG",
+                "econsoc backfill partition cache hit",
                 venue=venue.id,
                 stage="enumerate",
                 bucket=issue.label,
-                lookback_days=_LOOKBACK_DAYS,
-                lookback_from=frm,
+                year=year,
+                papers=len(cached),
             )
-        url = _oai_list_url(oai_base, frm)
-        return self._enumerate_pages(venue, issue, code, year, oai_base, url)
+            return iter(cached)
+        if year == max(_volume_map(venue)):
+            log_event(
+                "INFO",
+                f"econsoc {venue.id} {issue.label}: first harvest this run of current "
+                f"year {year} (no partition cache yet) — running a full window-less "
+                "harvest instead of an incremental lookback query, closing the gap "
+                f"where papers published earlier in {year} (before a baseline existed) "
+                "would otherwise be missed; the resulting partition is cached for the "
+                "rest of this run so later re-enumeration of this year is served from "
+                "cache instead of repeating the full scan",
+                venue=venue.id,
+                stage="enumerate",
+                bucket=issue.label,
+                year=year,
+            )
+        return self._backfill_pages(venue, issue, year, code, oai_base, _oai_list_url(oai_base))
 
-    def _enumerate_pages(
+    # -- 跨年分区缓存（结构移植自 aaai_ojs 审计 S1-P1 修复；分区键=dc:date 年）-----------------
+
+    def _backfill_pages(
         self,
         venue: VenueSpec,
         issue: IssueRef,
-        code: str,
         year: int,
+        code: str,
         oai_base: str,
         url: str,
     ) -> Iterator[PaperStub]:
+        """单趟全量收割：目标年即时产出 + 其余已注册年份（含当前年）就地 partition 缓存。
+
+        为什么不用日期窗替代（同 aaai_ojs 已否决理由）：OAI `from/until` 过滤的是
+        `datestamp`（入库/修改时间）而非发表日，且会被站点侧再编辑改写——"今天正确的
+        窗"明天就静默少收。故年 partition 不能靠日期窗实现，单趟全量 + 客户端按
+        dc:date 年切片才是唯一既省请求又不漏收的路径。
+
+        缓存只在收割**自然跑完**（resumptionToken 耗尽）时发布：调用方提前 break 而
+        中断生成器，则本趟不发布任何缓存（宁可下次重扫，不要发布残缺分区）。
+
+        membership（DOI 后缀刊别，防御——端点已单刊）与 partition（dc:date 年）两维度
+        过滤：非本刊记录静默丢弃（沿既有防御语义，未计数——端点单刊下几乎不会触发）；
+        dc:date 缺失/畸形记录计入 `skipped_missing_date`（沿用既有 F2 语义，DEBUG，
+        不误归任何年）；本刊但年份不在 `cacheable`（未注册年份，真丢弃——此后不会被
+        任何年份的收割路径覆盖）计入 `discarded_unregistered_year`（INFO，同构 aaai
+        F4 审查的 `discarded_unregistered_volume`）。
+        """
+        cacheable = self._cacheable_years(venue)
+        partitions: dict[int, list[PaperStub]] | None = {y: [] for y in cacheable}
+        buffered = 0
+        discarded_unregistered = 0
+        skipped_missing_date = 0
+        for page in self._iter_pages(venue, issue, oai_base, url):
+            for record in page.records:
+                if record.journal != code:
+                    continue
+                record_year = _record_year(record)
+                if record_year is None:
+                    skipped_missing_date += 1
+                    continue
+                if record_year not in cacheable:
+                    discarded_unregistered += 1
+                    continue
+                stub = parse.to_paper_stub(record)
+                if record_year == year:
+                    yield stub
+                if partitions is not None:
+                    partitions[record_year].append(stub)
+                    buffered += 1
+                    if buffered > _BACKFILL_CACHE_MAX_RECORDS:
+                        partitions = None
+                        log_event(
+                            "WARN",
+                            "econsoc backfill partition cache disabled (record cap exceeded)",
+                            venue=venue.id,
+                            stage="enumerate",
+                            bucket=issue.label,
+                            cap=_BACKFILL_CACHE_MAX_RECORDS,
+                        )
+        if skipped_missing_date:
+            log_event(
+                "DEBUG",
+                "oai records skipped for missing/malformed dc:date",
+                venue=venue.id,
+                stage="enumerate",
+                bucket=issue.label,
+                skipped_missing_date=skipped_missing_date,
+            )
+        if discarded_unregistered:
+            log_event(
+                "INFO",
+                "econsoc backfill records discarded for unregistered/unparseable year",
+                venue=venue.id,
+                stage="enumerate",
+                bucket=issue.label,
+                year=year,
+                discarded_unregistered_year=discarded_unregistered,
+            )
+        if partitions is not None:
+            self._publish_backfill(venue, oai_base, partitions)
+
+    def _iter_pages(
+        self, venue: VenueSpec, issue: IssueRef, oai_base: str, url: str
+    ) -> Iterator[parse.OaiListPage[parse.EconsocRecord]]:
+        """`ListRecords` 翻页循环（resumptionToken 直到耗尽）+ 墓碑跳过数可观测。"""
         client = self._client()
         while True:
             page = parse.parse_oai_page(client.get_bytes(url))
@@ -245,32 +357,46 @@ class EconsocAdapter(AdapterBase):
                     bucket=issue.label,
                     skipped_tombstones=page.skipped_tombstones,
                 )
-            skipped_missing_date = 0
-            for record in page.records:
-                # membership = DOI 后缀刊别（防御，端点已单刊）；partition = dc:date 年（§4）。
-                if record.journal != code:
-                    continue
-                record_year = _record_year(record)
-                if record_year is None:
-                    # F2（审查可观测性）：本刊记录但 dc:date 缺失/畸形——年 partition 无法归年、
-                    # 静默丢弃会漏；计数可观测（对齐墓碑先例），**不误归任何年**（保持丢弃）。
-                    skipped_missing_date += 1
-                    continue
-                if record_year != year:
-                    continue
-                yield parse.to_paper_stub(record)
-            if skipped_missing_date:
-                log_event(
-                    "DEBUG",
-                    "oai records skipped for missing/malformed dc:date",
-                    venue=venue.id,
-                    stage="enumerate",
-                    bucket=issue.label,
-                    skipped_missing_date=skipped_missing_date,
-                )
+            yield page
             if page.resumption_token is None:
                 return
             url = _oai_resume_url(oai_base, page.resumption_token)
+
+    def _cacheable_years(self, venue: VenueSpec) -> frozenset[int]:
+        """可进缓存的年份集合 = 已注册年份全集（**含当前年**）。
+
+        与 aaai_ojs 的 `_cacheable_volumes`（排除当前届）刻意不同：econsoc 需要当前年
+        参与缓存共享，才能让"任一年份的首趟全量收割"顺带覆盖当前年，从而首拉当前年
+        即完整（controller 裁决②，见 `enumerate_issue`/模块 docstring）。
+        """
+        return frozenset(_volume_map(venue))
+
+    def _cached_partition(
+        self, venue: VenueSpec, oai_base: str, year: int
+    ) -> tuple[PaperStub, ...] | None:
+        """命中则返回该年分区（**空年返回空元组也算命中**，不触发重扫）；未命中 None。
+
+        命中判据二合一：缓存已发布、`(venue_id, oai_base)` 同源。年份不在上趟收割的
+        `cacheable` 集合内（如收割后才登记的新年份）在 `self._backfill` 里查无此键，
+        `dict.get` 天然返回 None，退回真收割而非静默产空序列。
+        """
+        if self._backfill is None or self._backfill_key != (venue.id, oai_base):
+            return None
+        return self._backfill.get(year)
+
+    def _publish_backfill(
+        self, venue: VenueSpec, oai_base: str, partitions: dict[int, list[PaperStub]]
+    ) -> None:
+        self._backfill_key = (venue.id, oai_base)
+        self._backfill = {yr: tuple(stubs) for yr, stubs in partitions.items()}
+        log_event(
+            "DEBUG",
+            "econsoc backfill partition cache published",
+            venue=venue.id,
+            stage="enumerate",
+            years=len(self._backfill),
+            papers=sum(len(stubs) for stubs in self._backfill.values()),
+        )
 
     # -- resolve（★ 网络绑定：ECMA 分段前置 + 统一落地页抽 galley）-----------------------------
 
@@ -469,15 +595,11 @@ def _oai_endpoint_for_code(base: str, code: str) -> str:
     return f"{base.rstrip('/')}/index.php/{code}/oai"
 
 
-def _lookback_from() -> str:
-    """当前刊增量的 datestamp 窗下界 ``from``（今日 − 回看天数，UTC 日期，date 粒度）。"""
-    return (datetime.now(UTC).date() - timedelta(days=_LOOKBACK_DAYS)).isoformat()
-
-
-def _oai_list_url(oai_base: str, frm: str | None) -> str:
+def _oai_list_url(oai_base: str) -> str:
+    """`ListRecords` 首页 URL（无 datestamp 窗——T15 起 econsoc 恒全量收割，见
+    `enumerate_issue`/`_backfill_pages`；旧的固定回看窗 `from=` 参数已被跨年分区缓存
+    结构整体取代）。"""
     params = {"verb": "ListRecords", "metadataPrefix": _METADATA_PREFIX}
-    if frm is not None:
-        params["from"] = frm
     return f"{oai_base}?{urlencode(params)}"
 
 

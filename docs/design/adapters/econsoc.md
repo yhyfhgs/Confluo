@@ -2,7 +2,7 @@
 title: Adapter 设计 · Econometric Society（econsoc，实现级）
 status: implemented
 owner: D3
-updated: 2026-07-26
+updated: 2026-07-27
 ---
 
 # Adapter · `econsoc`（Econometric Society 三刊 · 实现级详设）
@@ -113,7 +113,7 @@ ECMA(ECTA) 的 `10.3982` DOI 跨三个托管年代，**fulltext 分三段**：
   - **TE/QE（econsoc-owned）**：零网络，读 `quirks.volume_map`（year→volume；TE/QE 自 2006 连续卷）逐年产 IssueRef，幂等键 `(venue, year)`（沿 aaai-ojs.md §3.2 方案 B 届/年聚合）。`since` 收窄起点。**⚠ 卷↔年映射实现期由 OAI 全量收割 `dc:date` 最小值锚定**（earliestDatestamp 2006 不可信为发表下界——datestamp=入库时间，aaai §3.1 同类教训）。
   - **ECMA**：委 crossref（`metadata_source: crossref`）——econsoc 不参与 ECMA discover。
 - **enumerate_issue**：
-  - **TE/QE（OAI-PMH 收割，复用 `_oai.py` 信封核）**：`GET {oai_base}?verb=ListRecords&metadataPrefix=oai_dc`（+`resumptionToken`），`oai_base = econtheory.org/ojs/index.php/{ojs_code}/oai`（`ojs_code`∈{te,qe}，来自 `quirks.ojs_code`）。**客户端过滤 = DOI 后缀**（保留 `dc:identifier` 中 DOI 后缀匹配 `{TE|QE}` 且属该刊的记录）。`noRecordsMatch`＝非错误（空序列正常完成）；`<header status="deleted">` 墓碑跳过计数（`deletedRecord=no` 实测，墓碑罕见但仍守）。字段映射：`title=dc:title`、`abstract=dc:description`、`authors=(dc:creator,…)`、`year=int(dc:date[:4])`、`identifiers=(('doi',doi_lower),)`、`meta` 见 §3.4。**枚举策略同 aaai §4**：历史回填=一次全库收割按刊 partition；当前增量=固定回看窗 datestamp（datestamp≠发表日，故 membership 判据是 DOI 后缀非日期窗）；去重由 `identifier('doi')` 主键天然保证。
+  - **TE/QE（OAI-PMH 收割，复用 `_oai.py` 信封核）**：`GET {oai_base}?verb=ListRecords&metadataPrefix=oai_dc`（+`resumptionToken`），`oai_base = econtheory.org/ojs/index.php/{ojs_code}/oai`（`ojs_code`∈{te,qe}，来自 `quirks.ojs_code`）。**客户端过滤 = DOI 后缀**（保留 `dc:identifier` 中 DOI 后缀匹配 `{TE|QE}` 且属该刊的记录）。`noRecordsMatch`＝非错误（空序列正常完成）；`<header status="deleted">` 墓碑跳过计数（`deletedRecord=no` 实测，墓碑罕见但仍守）。字段映射：`title=dc:title`、`abstract=dc:description`、`authors=(dc:creator,…)`、`year=int(dc:date[:4])`、`identifiers=(('doi',doi_lower),)`、`meta` 见 §3.4。**枚举策略（T15/检查单#6 修订，结构移植自 aaai_ojs F3）**：跨年分区缓存——任一年份（历史年或当前年）在本 adapter 实例内首次被问到即触发单趟全量收割（datestamp≠发表日，日期窗对年 partition 不可用），目标年即时产出、**全部已注册年份（含当前年）**就地按 `dc:date` 年缓存，此后同实例内再问到已缓存年份零请求命中；去重由 `identifier('doi')` 主键天然保证。**与 aaai_ojs 的差异**：aaai_ojs 的当前届恒走固定回看窗、永不读写缓存（§4 护栏①，遗留"首拉当届漏收窗口外早发论文"缺口未修）——econsoc 反其道把当前年纳入可缓存集合，使首拉当前年即完整，不再依赖回看窗（旧固定回看窗机制已整体移除）。
   - **ECMA**：委 crossref-by-ISSN（不经 econsoc）。
 - **resolve_assets（★ 网络绑定，`resolve_offline = False`）**：输入 paper DOI。**统一路径**（三刊当前段）：`GET econometricsociety.org/doi/{DOI}` →302→ 落地页 → 解析 galley 链 `/publications/.../file/{file}.PDF` → `AssetPlan(kind=PDF, url=<galley 绝对 URL>, url_strategy=DIRECT, auth_needed=none, expected_type="application/pdf")`。**ECMA 分段前置**（§3.3 方向 a）：先判 DOI 落地域名——`doi.wiley.com`→判属过刊段 `no_entitlement`/skip（跨 adapter 交 wiley 的 handoff 显式 defer，§3.3 收口）、`jstor`→零资产（界外）、`econometricsociety.org`→上述 econsoc 路径。**⚠ 异于 aaai_ojs 零网络 resolve**：galley `{file}`/`{slug}` 不可由 DOI 构造 → 必 GET 落地页；故 econsoc **不置 `resolve_offline=True`**，resolve 经限速闸（D-022，正确——econometricsociety.org CF 前置需限速）。**实现期核实**（⚠）：econtheory oai_dc `dc:relation` 是否直给 galley 链——若给且指向 econometricsociety.org galley，则 TE/QE resolve 可退化零网络优化；保守设计取网络绑定路径。
 - **fetch_asset（流式）**：`HttpClient.stream`→`io.write_stream`；`%PDF` 魔数校验归 pipeline（冻结分工）。**adapter 职责**：把"PDF url 却回 HTML"嗅探为 `GONE`（撤稿）或 challenge（CF 挑战页，§5/§6）；复用 arxiv `_gone_guarded_stream` HTML 首字节嗅探。

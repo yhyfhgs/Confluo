@@ -66,7 +66,7 @@
 | [design/adapters/ssrn.md](design/adapters/ssrn.md) | Adapter 设计 · SSRN（聚合主路径/browser-fetch defer） | implemented | 2026-07-26 |
 | [design/adapters/nber.md](design/adapters/nber.md) | Adapter 设计 · NBER Working Papers（crossref prefix 枚举扩展 + www/back 双域 + program RSS watch 主通道） | implemented | 2026-07-26 |
 | [design/adapters/aea.md](design/adapters/aea.md) | Adapter 设计 · AEA（AER+AEJ 四系+Insights+JEL/JEP，crossref ISSN 枚举） | implemented | 2026-07-26 |
-| [design/adapters/econsoc.md](design/adapters/econsoc.md) | Adapter 设计 · Econometric Society（ECMA/TE/QE，OAI-PMH + ECMA 年代分段路由） | implemented | 2026-07-26 |
+| [design/adapters/econsoc.md](design/adapters/econsoc.md) | Adapter 设计 · Econometric Society（ECMA/TE/QE，OAI-PMH + ECMA 年代分段路由） | implemented | 2026-07-27 |
 | [design/adapters/openreview.md](design/adapters/openreview.md) | OpenReview | implemented | 2026-07-22 |
 | [design/adapters/pmlr.md](design/adapters/pmlr.md) | PMLR | implemented | 2026-07-26 |
 | [design/adapters/cvf.md](design/adapters/cvf.md) | CVF Open Access | implemented | 2026-07-23 |
