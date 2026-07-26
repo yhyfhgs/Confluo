@@ -19,8 +19,10 @@
 ## 1. 前置状态（当前，2026-07-27）
 
 - 横切件核心（`browserfetch.py` + stage 分支 + config 四槽 + `grab --browser`）已落地（Phase 7 T6）。
-- **三消费方 adapter 尚未接入**（归 Phase 7 T11）：在 T11 合并前，本 runbook 只能用于
-  "自建 venue + 手工 `RENDER_PAGE` 计划" 的连通性演练，不能覆盖 ssrn/aea/wiley 真实站点。
+- **三消费方 adapter 已接入**（Phase 7 T11 落地）：ssrn 模式 B（`resolve_assets` 产 landing
+  引用的 `RENDER_PAGE` 计划）、aea pubs 全文（订阅刊/OA 刊两分支均产 `RENDER_PAGE` 计划）、
+  wiley 页面兜底（TDM 无 token 时产 `RENDER_PAGE` 计划，与 TDM 互斥不双发）——本 runbook
+  现可覆盖三消费方真实站点（仍受 §5 清账表第 2 行"第二跳导航不过判定器"等已知边界约束）。
 - 真实浏览器依赖未装（可选 extra）：`pip install paper-crawler[auth-browser] && playwright install chromium`。
 - 在线预算：本演练计入 Phase 7 §3 `T19-bf` 行（三消费方各至多 3 请求，合计 ≤10）——**消费前先查
   `state/budget.json` 账本，消费后即记**。
@@ -70,8 +72,8 @@
 
 | # | 边界 | 对本 runbook 的影响 | 闭合归属 |
 |---|---|---|---|
-| 1 | **open_access 消费方无凭证注入面**：`storage_state` 只来自 runner 的 auth 健康门，而该门对 `family != "auth_gated"` 早返回 ⇒ **ssrn / aea 恒以干净上下文启动**（拿不到你已登录的 session） | 需登录才能取的 ssrn 模式 B / aea 订阅刊，当前**必然** BLOCKED；只有无需登录的 gold OA 面可演练 | **T11 前置设计项**——接入前须先裁 open_access 的凭证注入通道，否则接入即恒 BLOCKED |
-| 2 | 下载触发的第二次导航不再过判定器（与设计伪码同形） | 若站点在第二跳才发质询，本次归 **`TRANSIENT`**（下载未发生）而非 challenge——**不是绕过**，但**会进重试表**（4 次 / 2·8·30s），即对刚发过质询的域再敲三次。请在记录里如实区分，并留意 obslog 里同域连续 TRANSIENT | T11 按站点实况复核（是否把第二跳也喂判定器） |
+| 1 | ~~open_access 消费方无凭证注入面~~ **已闭合**（T11 controller 前置裁决）：`storage_state` 只来自 runner 的 auth 健康门，该门对 `family != "auth_gated"` 早返回 ⇒ ssrn/aea（`open_access` family）恒以干净上下文启动——**这是设计，非缺陷**：browser-fetch 对二者的语义=公开内容的浏览器渲染取回（非"需要登录"）；Cloudflare 拦截由既有 S-c 头级判定 + 域级冷却处置 | ssrn 模式 B、aea gold OA（jel/jep）可正常演练（干净上下文即预期姿态）；aea 订阅刊（aer/aeri/aej_\*）遇 CF/付费墙页按 challenge/no_entitlement 既有链处置——非阻塞性缺口，如实记录即可 | **已闭合**——见 design/11 controller 裁决 + `browserfetch.py` 模块 docstring 清账 #1 + `pipeline/stages.py::_browser_storage_state` docstring |
+| 2 | 下载触发的第二次导航不再过判定器（与设计伪码同形） | 若站点在第二跳才发质询，本次归 **`TRANSIENT`**（下载未发生）而非 challenge——**不是绕过**，但**会进重试表**（4 次 / 2·8·30s），即对刚发过质询的域再敲三次。请在记录里如实区分，并留意 obslog 里同域连续 TRANSIENT | T11 按站点实况复核（是否把第二跳也喂判定器）——**本卡评估结论**：建议改判 CHALLENGE 而非留 TRANSIENT，提案见 T11 卡报告，本卡不改行为 |
 | 3 | AC-BF.4② 的"相邻请求间隔"在 obslog 里只有 `rate_wait_ms` 汇总，无请求时刻序列 | 限速合规需靠 `RateLimiter` 桶配置 + 人工计时佐证，日志不能单独作为时序证据 | T18（AC-BF 转正时定审计载体） |
 | 4 | 直调 `fetch_one` 时冷却读侧只认**域**键，不读旧 `<adapter_id>.json` 兼容键 | 经 `crawler grab` 走时由 runner 的 pre-stage 冷却门先拦，不受影响 | T3（抽 `pipeline/cooldown.py` 后改委派） |
 

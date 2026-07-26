@@ -30,17 +30,25 @@ D-006 人在回路）；批量/并发（并发恒 1）；挑战求解/重试/UA 
 `fetch_one` 之上加**调用方作用域**的 context 复用器（追加一个 keyword-only 形参即可，
 对本签名纯附加、零破坏）——不引入常驻进程/账本表/批量 CLI。
 
-## 已知边界（清账指针；T6 审查登记，均**不改行为**）
+## 已知边界（清账指针；T6 审查登记，除 #1 已由 T11 controller 裁决闭合外均**不改行为**）
 
-1. **open_access 消费方无凭证注入面** → 归 **T11 前置设计项**：`storage_state` 只来自
-   runner 的 auth 健康门，而该门对 `family != "auth_gated"` 早返回 ⇒ ssrn/aea（本通道两个
-   主消费方）**恒以干净上下文启动**。方向 fail-safe（无凭证最多遇挑战即 BLOCKED，绝不误用
-   他人凭证），但 T11 接入前必须先裁 open_access 的凭证注入通道，否则接入即恒 BLOCKED。
-2. **下载触发的第二次导航不再过判定器** → 归 T11 按站点实况复核：`goto` 判定 OK 后，
-   `download_via(trigger=…)` 内的导航结果不重新分类（与 §4.2 设计伪码同形）。若站点在第二跳
-   才发质询，本次表现为**下载未发生 → 归 `TRANSIENT`**（审查实测；非 CrawlerError 的下载
-   异常统一映射 TRANSIENT）——**不是绕过**，但会**进重试表**（4 次尝试 / 2·8·30s 退避），
-   即对刚发过质询的域再敲三次。T11 接入真实站点时须复核是否把第二跳失败也喂判定器。
+1. **【已闭合，T11 controller 前置裁决】open_access 消费方干净上下文 by design**：
+   `storage_state` 只来自 runner 的 auth 健康门，而该门对 `family != "auth_gated"` 早
+   返回 ⇒ ssrn/aea（本通道两个主消费方，均 `open_access` family）**恒以干净上下文
+   启动**——这是这两个消费方的**应有姿态，不是凭证注入缺口**：browser-fetch 对它们的
+   语义是公开内容的浏览器渲染取回（解决"需要 JS 渲染"，非"需要登录"），Cloudflare 拦截
+   由既有 S-c 头级判定（403+`cf-mitigated`→CHALLENGE）+ 域级冷却处置。wiley 页面兜底
+   属 `auth_gated`，消费 runner 已为其建立的真实 session（既有路径覆盖，零改动）。
+   同一裁决同步 `pipeline/stages.py::_browser_storage_state` docstring 与
+   `tests/manual/browser_fetch_runbook.md` §5 清账表第 1 行。
+2. **下载触发的第二次导航不再过判定器**（T11 已复核，提案见 T11 卡报告，本卡**不改行为**，
+   待 controller 裁决）：`goto` 判定 OK 后，`download_via(trigger=…)` 内的导航结果不重新
+   分类（与 §4.2 设计伪码同形）。若站点在第二跳才发质询，本次表现为**下载未发生 →
+   归 `TRANSIENT`**（非 CrawlerError 的下载异常统一映射 TRANSIENT）——**不是绕过**，但会
+   **进重试表**（4 次尝试 / 2·8·30s 退避），即对刚发过质询的域再敲三次。T11 提案：改判
+   `CHALLENGE`（→ 域冷却，零重试）更贴合"检测到风控即停手"精神，但需
+   `BrowserFetchHandle.download_via` 在失败路径暴露响应快照才可行，属接口面扩张——本卡
+   不擅自改冻结接口，留待仲裁。
 3. **AC-BF.4② 时序载体不足** → 归 T18（AC-BF 转正时定审计载体）：obslog 每次调用只记
    `rate_wait_ms` 汇总，无请求发起时刻序列，"相邻两次请求间隔 ≥ 域声明下限"只能间接推算；
    限速的真实约束在 `RateLimiter` 桶上，不在日志上。
