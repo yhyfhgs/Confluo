@@ -618,6 +618,15 @@ def _browser_storage_state(ctx: StageContext, venue_id: str) -> bytes | None:
     provider**。无 session / 非 `playwright_state` 后端 → None = **合法路径**（gold OA 或
     未 opt-in 账号以干净上下文启动，遇挑战即 BLOCKED，符合红线）。条目缺失/密文损坏由
     `CredentialStore.read_state` 抛 `AuthRequired`（→ BLOCKED(auth) + 重登指引）。
+
+    ⚠ **已知边界（T11 前置设计项，审查 P1 登记）**：`ctx.auth_sessions` **只被 runner 的
+    auth 健康门写入，而该门对 `family != "auth_gated"` 早返回**（`runner.py` 的
+    `_auth_gate_ok`）——本通道的两个主消费方 ssrn / aea 恰是 `open_access` family，因此
+    在当前实现下**恒拿不到 storage_state、恒以干净上下文启动**。方向 fail-safe（无凭证
+    最多是遇挑战即 BLOCKED，绝不会误用他人凭证），但 **T11 接入前必须先裁决 open_access
+    消费方的凭证注入通道**（扩健康门 family 面 / 给 `RENDER_PAGE` 计划单独的 provider 解析
+    /其他），否则 ssrn 模式 B 与 aea 订阅刊接入即恒 BLOCKED。同一条登记在
+    `browserfetch.py` 模块 docstring 与 `tests/manual/browser_fetch_runbook.md` 清账节。
     """
     session = ctx.auth_sessions.get(venue_id)
     if session is None or session.backend is not SessionBackend.PLAYWRIGHT_STATE:

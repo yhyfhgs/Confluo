@@ -236,11 +236,16 @@ class _FieldSpec:
     key: str  # 点号显示路径，如 "auth.elsevier.api_key"
     table: tuple[str, ...]  # toml 表路径
     leaf: str  # 叶键名
-    kind: str  # "str" | "float" | "path" | "paths"
+    kind: str  # "str" | "int" | "bool" | "float" | "range" | "mapping" | "path" | "paths"
     env: str | None = None  # 环境变量名（仅 str 类有）
     default: object = None  # str→None；float→数值；path/paths 特殊（见 _resolve_field）
     sensitive: bool = False  # 硬凭证（config show 整值脱敏）
     is_email: bool = False  # email（config show 部分脱敏；护栏放行）
+    # int 类下界（含）：越界 → `CrawlerError(CONFIG)` 拒启动。当前只给**限速类**槽设 1——
+    # rpm ≤ 0 会让 token bucket 的补充速率归零，`acquire` 返回 `inf` 等待（进而 `round(inf)`
+    # OverflowError 被归 TRANSIENT 无限重试），是"畸形配置静默变成灾难"的典型面，必须响亮拒绝。
+    # 配额类槽不设下界：cap=0 语义明确（当日直接封停该通道），方向 fail-safe，无须拦。
+    min_value: int | None = None
 
 
 # 全部配置键的分层解析规格（顺序即 config show 呈现顺序）。
@@ -369,6 +374,7 @@ _FIELD_SPECS: tuple[_FieldSpec, ...] = (
         "int",
         env="PAPER_CRAWLER_BROWSER_RATE_RPM",
         default=10,
+        min_value=1,  # rpm ≤ 0 → 桶补充速率为 0 → 无限等待/溢出；响亮拒绝（见 _FieldSpec）
     ),
     _FieldSpec(
         "browserfetch.jitter_s",
@@ -391,6 +397,17 @@ def _default_venues_dirs(home: Path) -> tuple[Path, ...]:
     if home_venues.is_dir():
         candidates.append(home_venues)
     return tuple(candidates)
+
+
+def _checked_int(spec: _FieldSpec, value: int) -> int:
+    """int 槽的下界校验（`_FieldSpec.min_value`）；越界 → `CrawlerError(CONFIG)` 拒启动。"""
+    if spec.min_value is not None and value < spec.min_value:
+        raise CrawlerError(
+            ErrorClass.CONFIG,
+            f"配置项 {spec.key} 取值非法: {value}（须 ≥ {spec.min_value}）",
+            detail=spec.key,
+        )
+    return value
 
 
 def _resolve_field(
@@ -418,11 +435,11 @@ def _resolve_field(
         if spec.env:
             env_value = os.environ.get(spec.env, "").strip()
             if env_value:
-                return _Resolved(_to_int(env_value), "env")
+                return _Resolved(_checked_int(spec, _to_int(env_value)), "env")
         for doc, source in ((project_doc, "project"), (home_doc, "home")):
             raw = _lookup_toml(doc, spec.table, spec.leaf)
             if raw is not None:
-                return _Resolved(_to_int(raw), source)
+                return _Resolved(_checked_int(spec, _to_int(raw)), source)
         return _Resolved(spec.default, "default")
 
     if spec.kind == "bool":

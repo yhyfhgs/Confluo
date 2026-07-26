@@ -1093,10 +1093,23 @@ class Repo:
         FetchLog 派生——① 与"唯一事实源 = FetchLog"（§3.4 维度 4）一致，零新状态；② "当日停发"
         本就是**日**语义，跨进程重启不该清零（运行态版本一重启即失效，比设计意图更松）；
         ③ 方向 fail-safe（更保守），且当日出现一次成功即自然解除。
+
+        **`no_entitlement` 不计、亦不打断**（P2-2 审查修复）：NE 是项目里的**独立终态**、
+        预期内、不计失败率（auth-framework §8.5 / AC-4.3），与 §7.1 L4"连续非挑战**失败**"的
+        字面不符——把它当失败会让"三篇无订阅"误熔断整个域。故 SQL 侧直接**排除** NE 行：
+        它既不累加 streak，也不作为"成功"打断 streak（对判据完全透明）。
+
+        **跨通道计数取舍（P2-3，controller 已裁"接受为更保守"）**：本查询按**域**统计，不区分
+        取回通道——同域的 httpx direct 失败同样计入 browser 熔断。理由：熔断保护的对象是
+        **站点**而非通道，"这个域今天一直在失败"与是谁发的请求无关；且反向漏判（浏览器通道
+        对已在失败的域继续敲门）在红线敏感面上代价更高。代价是可能提前停发浏览器通道——
+        方向 fail-safe，且当日一次成功即解除。
         """
         rows = self.db.query(
             "SELECT error_class FROM fetch_log "
-            "WHERE domain = ? AND DATE(ts) = DATE('now') ORDER BY ts DESC, id DESC LIMIT ?",
+            "WHERE domain = ? AND DATE(ts) = DATE('now') "
+            "AND (error_class IS NULL OR error_class <> 'no_entitlement') "
+            "ORDER BY ts DESC, id DESC LIMIT ?",
             (domain, int(limit)),
         )
         streak = 0

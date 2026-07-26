@@ -741,6 +741,36 @@ def test_browserfetch_enabled_rejects_ambiguous_env(
     assert excinfo.value.error_class is ErrorClass.CONFIG
 
 
+@pytest.mark.parametrize("bad_rpm", ["0", "-5"])
+def test_browserfetch_rate_rpm_must_be_positive(tmp_path: Path, bad_rpm: str) -> None:
+    """rpm ≤ 0 → 拒启动：桶补充速率为 0 会让 `acquire` 返 `inf`（无限等待 / `round(inf)`
+    溢出被归 TRANSIENT 无限重试），畸形配置绝不能静默变成对站点的行为异常（审查 P2-5）。"""
+    home = tmp_path / "home"
+    home.mkdir()
+    (home / "config.toml").write_text(f"[browserfetch]\nrate_rpm = {bad_rpm}\n", encoding="utf-8")
+    with pytest.raises(CrawlerError) as excinfo:
+        Config.load(home=home)
+    assert excinfo.value.error_class is ErrorClass.CONFIG
+    assert excinfo.value.detail == "browserfetch.rate_rpm"
+
+
+def test_browserfetch_rate_rpm_env_is_validated_too(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setenv("PAPER_CRAWLER_BROWSER_RATE_RPM", "0")
+    with pytest.raises(CrawlerError) as excinfo:
+        Config.load(home=tmp_path)
+    assert excinfo.value.error_class is ErrorClass.CONFIG
+
+
+def test_browserfetch_daily_cap_zero_is_allowed_as_hard_stop(tmp_path: Path) -> None:
+    """cap=0 语义明确（当日封停该通道），方向 fail-safe——不拦（与 rpm 下界的区别）。"""
+    home = tmp_path / "home"
+    home.mkdir()
+    (home / "config.toml").write_text("[browserfetch]\ndaily_cap = 0\n", encoding="utf-8")
+    assert Config.load(home=home).browser_daily_cap == 0
+
+
 @pytest.mark.parametrize("bad", ["jitter_s = [5, 2]", "jitter_s = [-1, 2]", "jitter_s = [2]"])
 def test_browserfetch_jitter_malformed_is_loud(tmp_path: Path, bad: str) -> None:
     home = tmp_path / "home"

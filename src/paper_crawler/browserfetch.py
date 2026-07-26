@@ -29,6 +29,22 @@ D-006 人在回路）；批量/并发（并发恒 1）；挑战求解/重试/UA 
 **演进缝（§3.6，当前不做）**：若实测证实"每篇冷启抬高质询频次"，最小升级 = 在
 `fetch_one` 之上加**调用方作用域**的 context 复用器（追加一个 keyword-only 形参即可，
 对本签名纯附加、零破坏）——不引入常驻进程/账本表/批量 CLI。
+
+## 已知边界（清账指针；T6 审查登记，均**不改行为**）
+
+1. **open_access 消费方无凭证注入面** → 归 **T11 前置设计项**：`storage_state` 只来自
+   runner 的 auth 健康门，而该门对 `family != "auth_gated"` 早返回 ⇒ ssrn/aea（本通道两个
+   主消费方）**恒以干净上下文启动**。方向 fail-safe（无凭证最多遇挑战即 BLOCKED，绝不误用
+   他人凭证），但 T11 接入前必须先裁 open_access 的凭证注入通道，否则接入即恒 BLOCKED。
+2. **下载触发的第二次导航不再过判定器** → 归 T11 按站点实况复核：`goto` 判定 OK 后，
+   `download_via(trigger=…)` 内的导航结果不重新分类（与 §4.2 设计伪码同形）。若站点在第二跳
+   才发质询，表现为下载失败（魔数/INTEGRITY）而非 challenge——**不是绕过**，但会掩盖真因。
+3. **AC-BF.4② 时序载体不足** → 归 T18（AC-BF 转正时定审计载体）：obslog 每次调用只记
+   `rate_wait_ms` 汇总，无请求发起时刻序列，"相邻两次请求间隔 ≥ 域声明下限"只能间接推算；
+   限速的真实约束在 `RateLimiter` 桶上，不在日志上。
+4. **直调 `fetch_one` 时冷却读侧只认域键** → 归 T3（抽 `pipeline/cooldown.py` 后改委派）：
+   `challenge_cooldown_active` 不读旧 `<adapter_id>.json` 兼容键（键集在 runner 的
+   `_cooldown_keys`）。经 pipeline 走时由 runner 的 pre-stage 冷却门先拦，不受影响。
 """
 
 from __future__ import annotations

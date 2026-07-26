@@ -473,6 +473,27 @@ def test_t5_breaker_after_three_consecutive_failures(
     assert handle.calls == []
 
 
+def test_t5_no_entitlement_rows_do_not_trip_the_breaker(
+    env: Env, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """NE 是独立终态、**不是失败**（auth-framework §8.5 / §7.1 L4 字面"非挑战失败"）：
+    连续三篇无订阅不得误熔断整个域（审查 P2-2 回归）。"""
+    seed_fetch_log(env, count=3, error_class=ErrorClass.NO_ENTITLEMENT.value)
+    assert run_stage(env, FakeHandle(ok_page()), monkeypatch) == "done"
+
+
+def test_t5_no_entitlement_rows_are_transparent_to_the_streak(
+    env: Env, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """NE 行对判据**完全透明**：既不累加、也不当成功打断——夹在失败之间的 NE 不掩盖熔断。"""
+    seed_fetch_log(env, count=2, error_class=ErrorClass.TRANSIENT.value)
+    seed_fetch_log(env, count=1, error_class=ErrorClass.NO_ENTITLEMENT.value)
+    seed_fetch_log(env, count=1, error_class=ErrorClass.TRANSIENT.value)
+    with pytest.raises(CrawlerError) as excinfo:
+        run_stage(env, FakeHandle(ok_page()), monkeypatch)
+    assert excinfo.value.detail == "browser_breaker"
+
+
 def test_t5_breaker_resets_after_a_success(env: Env, monkeypatch: pytest.MonkeyPatch) -> None:
     """当日出现一次成功即解除熔断（连续性判据自最新起、遇成功即止）。"""
     seed_fetch_log(env, count=3, error_class=ErrorClass.TRANSIENT.value)
