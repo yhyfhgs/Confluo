@@ -179,6 +179,12 @@ llm-agents 与 econometrics-methods 两个已实跑的 preset，dry-run 净候�
    - `cli._watch_source_venues` 按 id 序取该源首个 venue → 生产 venues 目录下 arxiv 恒路由到 `arxiv_cs_ai`，故订阅声明的其余分类（llm-agents 的 cs.LG/cs.CL/cs.MA、asset-pricing 的全部 q-fin.*）**收不到任何条目**。
    F7 已就地做的是**列账 + 响亮化**：`subs/watch.py` 模块 docstring 末段写明两者，且该源的降级 WARNING 不再谎称"其余条件由本地过滤兜底"（改为点名"search_query 的分类组与关键词布尔式无本地补偿谓词，实际只有 filters: 三谓词生效"），并有专测锁住这句措辞。**建议的修复方向**（供 controller 排期）：`_compose_arxiv` 按 `categories` fan-out，每条请求带一个 `arxiv_category` 参数——它经既有 `venue_for` 并进 `quirks` 后正是 `_oai_target` 读的键（set 亦可由它派生），与 crossref `issn` 的下达形态同款，adapter 零改动；关键词布尔式则需要一条参数化谓词，属更大的改面。
 
+   > **修复追记（2026-07-26，`fix/arxiv-category-fanout`）**：本条**上半边已修复**——多分类失效与首 venue 路由两条净效果闭合。`_compile_arxiv` 现把 `categories` 编译成逐分类的 `arxiv_category` 重复键条目，`_compose_arxiv` 按该键逐条 fan-out 成独立请求，每条**成对**携带 `arxiv_category` 与派生的 `arxiv_set`（`category.split(".", 1)[0]`，与 `_oai_target` 的兜底派生同式），经既有 `AdapterFetcher.venue_for` 的 quirks 通道下达，**adapter 零改动**。
+   > **成对下推是实现期新发现**（故与上文"建议的修复方向"所提的单键方案不同）：生产路径恒注入真实 venue，其静态 `arxiv_set`（`arxiv_cs_ai` 的 `cs`）在 `venue_for` 的 `{**existing.quirks, **params}` 合并中**存活**——只推 `arxiv_category=q-fin.PR` 会变成"在 `set=cs` 里按 q-fin.PR 做客户端过滤"，跨 archive 的分类**恒空**。因此 `_DELIVERABLE_PARAMS["arxiv"]` 定为**双键**而非原建议的单键。`cli._watch_source_venues` 的"id 序首个 venue"对 arxiv 自此不再决定收割面，只剩 `quirks.inception`（由 `since` 收窄兜底）与日志身份两项影响。
+   > 连带改动：`search_query` 现**只装 `query` 布尔式**，分类不再拼入——分类经 fan-out 真实生效后，若仍把 `cat:` 组留在一个下达不了的参数里，那条"无法下达"WARNING 对分类部分就成了**假警报**（F7 立的"响亮降级不撒谎"纪律同样禁止假警报）。WARNING 文案已相应改为只点名 `search_query` 的关键词布尔式，措辞锁专测同步升级（新增"不含'分类组'"与"dropped 列表只含 `search_query`"两条断言）。
+   > **下半边维持列账不变**：`query` 的关键词布尔式仍既无下推通道、也无本地补偿谓词（`PREDICATE_REGISTRY` 的谓词签名不带参数，承载不了订阅级表达式），仍靠 `filters.title_regex_any` 手工镜像词族这条**约定**兜底；参数化谓词机制留 Phase 7 检查单 #4。
+   > 离线回归：`make check` **3828 passed / 28 skipped / 98.99% / EXIT=0**（较 §4.1a 的 3820 只增不减）；新增 fan-out 与 quirks 覆盖专测含一条 `MockTransport` 端到端——注入 `arxiv_cs_ai`（`set: cs`）而请求携 `q-fin.PR` 时，实际发出的 OAI URL 为 `set=q-fin`。**本条为离线判据，未做在线复验**（§4.1a 的在线预算已用尽，如实标注）。
+
 ### 4.1a F7 修复后的在线复验台账（2026-07-26 执行，预算 ≤6 请求，controller 授权）
 
 代码基线：`fix/watch-online-usability` @ `5a62004`（离线门禁 `make check` **3820 passed / 28 skipped / 98.99% / EXIT=0**，较本记录 §5 的 3804 只增不减：+16 为本次两接缝专测）。隔离 `--home`（scratchpad，非仓库路径）：`config.toml` 声明 `[identity].email` + `paths.venues_dirs` 指向**收窄的 venues 副本**（只放 `venues/preprint/arxiv-q-fin-pr.yaml` + `venues/econ/ssrn.yaml`）；`subscriptions/` 放 `llm-agents.yaml`/`asset-pricing.yaml` 的**原样拷贝**。

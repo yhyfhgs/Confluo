@@ -72,7 +72,7 @@ guard: {max_new_per_run: 100}
 
 | 源 | 原生能力（勘察依据） | 编译策略 | 本地补偿 |
 |---|---|---|---|
-| arXiv | 字段前缀 ti/abs/cat/au + 布尔 + submittedDate 窗口（research/site-survey/arxiv.md） | 完整下推 | 少 |
+| arXiv | 字段前缀 ti/abs/cat/au + 布尔 + submittedDate 窗口（research/site-survey/arxiv.md）；但 watch 通道是 OAI-PMH，**无关键词查询能力** | `categories` → `arxiv_category` **逐分类 fan-out**（每条请求成对带派生的 `arxiv_set`，经 venue quirks 进 OAI `set=` + 客户端 primary_category 过滤）；`query` **无下推通道** | 仅 `filters` 三谓词——`query` 的词族靠 `filters.title_regex_any` 手工镜像这条**约定**兜底，不是机制（见 §2 示例一脚注） |
 | SSRN | 仅分类浏览（network/eJournal）+ 站内搜索（无稳定 API） | 只下推分类，按日期倒序取增量窗口 | **关键词全在本地过滤** |
 | OpenAlex | filter=concepts/ids/type/from_publication_date | 概念+类型+日期下推 | 正则本地 |
 | Semantic Scholar | bulk search venue/year/fieldsOfStudy | 同上 | 正则本地 |
@@ -120,3 +120,4 @@ guard: {max_new_per_run: 100}
 | 1 | 2026-07-26 | 滞后修正（status 不降，仍 approved）：§2 示例一（llm-agents）补脚注——`title_regex_any` 需含 `sources.*.concepts`/`query` 声明词的全称对应式，防止照抄该示例时复现"query/concept 有词、title 本地过滤无对应式"的死子句缺陷 | T8（`subs/presets`）审查：用真实经典论文标题实测 9 件预置 topic 包，发现同类 P1 级缺陷 7 处并修复；本条为反哺设计文档源头示例 |
 | 2 | 2026-07-26 | **文档转正**：front matter `status: approved`→`implemented`——T1–T8 主线全部合并（DSL 地基/查询编译器/本地过滤+护栏/watermark 三策略/watch runner+CLI/日报渲染/nber RSS watch 转主/9 preset）；AC-6.1~6.4 离线 DoD 判据 T9 全部建议 PASS、fable 亲验签署"达成"（[2026-07-26-ac6-acceptance.md](../testing/records/2026-07-26-ac6-acceptance.md)） | Phase 6 T10 收尾（[phase6-report](../reports/2026-07-26-phase6-report.md)） |
 | 3 | 2026-07-26 | **§5 补 NBER 增量语义条目**（此前只有 arXiv/SSRN/OpenAlex-S2-Crossref 三条，NBER 缺席）：`IdSetDiff`（id 集合差分）权威归属由 SSRN（D-029 后已改 `DateCursor`）移交 NBER；一并登记口径收窄——19 官方 program 仅 5 个 `[LIVE]` 映射、`PE` 两义未核验排除、扩展前须先补勘察证据 | Phase 6 终审附条件：`subs/watermark.py:425` docstring 引用的"design/09 §5 第二条"实指已删除线的 SSRN 旧文，本条补齐 NBER 权威归属并订正该 docstring 引用 |
+| 4 | 2026-07-26 | **§3 能力映射表 arXiv 行改判如实两栏**：编译策略由"完整下推"改为"`categories` → `arxiv_category` 逐分类 fan-out（每条请求成对带派生的 `arxiv_set`，经 venue quirks 进 OAI `set=`）＋ `query` 无下推通道"；本地补偿由"少"改为"仅 `filters` 三谓词——`query` 词族靠 `title_regex_any` 手工镜像这条**约定**兜底、非机制" | 改动原因见 [AC-6 验收记录](../testing/records/2026-07-26-ac6-acceptance.md) §4 第 6 条及其修复追记：watch 通道是 OAI-PMH（无关键词查询能力），原表"完整下推"对 arXiv 不成立；fan-out 半边已由 `fix/arxiv-category-fanout` 闭合，谓词半边仍留（[phase6-report](../reports/2026-07-26-phase6-report.md) §6 检查单 #4） |

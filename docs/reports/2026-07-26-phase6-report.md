@@ -202,6 +202,12 @@ phase6-implementation-plan.md §3 的 phase 级 ≤60 名义预算。
   其余分类（如 llm-agents 的 `cs.LG`/`cs.CL`/`cs.MA`）实际收不到任何条目。F7 已做列账+响亮化
   WARNING+专测锁定措辞，修复方向已档（`arxiv_category` 走既有 `quirks` 通道 fan-out，adapter 零改动），
   但修复本身未落地。
+
+  > **修复追记（2026-07-26，`fix/arxiv-category-fanout`）**：**fan-out 半边已闭合**——`categories` 编译成
+  > 逐分类 `arxiv_category` 条目并由 `_compose_arxiv` 展开成独立请求，每条成对携带派生的 `arxiv_set`
+  > （只推分类名会被注入 venue 的静态 set 压住，跨 archive 分类恒空），走既有 `venue_for` quirks 通道、
+  > adapter 零改动；首 venue 路由对 arxiv 不再决定收割面。**谓词半边仍留**（`query` 布尔式无下推亦无
+  > 补偿，靠 `title_regex_any` 镜像约定兜底），见 §6 检查单 #4。详见 AC-6 记录 §4 第 6 条的同名追记。
 - **ssrn `FETCH` 仍未声明**：D-029 案 B + D-030 案 A 的组合结果——元数据层完整（`DISCOVER|ENUMERATE|
   RESOLVE`，站点零接触），全文层待 browser-fetch 横切件落地后才可能点亮，Phase 6 无变化。
 - **nber 隔离在线验证 + `asset-pricing` preset CLI 端到端补验残留**：F7 §4.1a 因 ssrn count-only 探测
@@ -231,6 +237,12 @@ phase6-implementation-plan.md §3 的 phase 级 ≤60 名义预算。
 4. **arxiv `search_query` 谓词/多分类 fan-out**（AC-6 记录 §4 第 6 条，F7 期发现未修）：`_compose_arxiv`
    按 `categories` fan-out（每条请求带一个 `arxiv_category`，走既有 `quirks` 通道，adapter 零改动）；
    关键词布尔式的本地补偿谓词需新的参数化谓词机制，改面更大。
+
+   > **修复追记（2026-07-26，`fix/arxiv-category-fanout`）**：**fan-out 半边已闭合**（实现期新发现须
+   > 成对下推 `arxiv_category`+派生 `arxiv_set`，否则注入 venue 的静态 set 存活、跨 archive 分类恒空）；
+   > 本条**残留的是谓词半边**——`query` 关键词布尔式的参数化本地补偿谓词机制，Phase 7 照旧。
+
+
 5. **`preprint_of` 建边零实现**（R2 Q6，enrich-eval-p6.md §附录）：repec 的 wp↔published 版本关联独家
    增值须先有此建边能力（merge/repo 侧新工作面），design/06 已有设计、无代码。
 6. **aaai/econsoc 回看窗完整性闭合评估**：aaai_ojs 冷回填已修（F3），econsoc 当前年 30 天回看窗完整性
