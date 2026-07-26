@@ -2,7 +2,7 @@
 title: 六阶段 Pipeline 与任务系统
 status: implemented
 owner: fable5
-updated: 2026-07-26
+updated: 2026-07-27
 ---
 
 # 05 · 六阶段 Pipeline 与任务系统
@@ -19,7 +19,7 @@ updated: 2026-07-26
 | 2 enumerate | Issue | `Paper` 行（metadata_only）+ `Identifier` | (source, source_key)，如 (crossref, doi) | `enumerate_issue` |
 | 3 resolve | Paper | `Asset` 行（planned，含 URL/auth 需求/类型） | (paper, asset_kind) | `resolve_assets` |
 | 4 fetch | Asset(planned) | 文件落盘 + Asset(fetched) + `FetchLog` | asset_id（文件存在且校验通过=完成） | `fetch_asset` |
-| 5 extract | Asset(fetched, pdf) | `Fulltext` 行 / Paper 字段补全 | (asset, extractor_ver)（Phase 1 noop 抽取按 paper 粒度落 fulltext——其 PK=paper_id；asset 级键随 Phase 7 真实抽取启用） | —（本地） |
+| 5 extract | Asset(fetched, pdf) | `Fulltext` 行 / Paper 字段补全 | **(asset_id, source_sha256, extractor, extractor_ver)**（Phase 7 T7 兑现「asset 级键」注记；表 PK 仍 paper_id——asset 级的是**键**不是基数。取代规则＝全序取 max `(rank, ver_key, char_count, asset_id)`，故终态与注入顺序无关。[D-033](../plan/decision-log.md) / [design/12](12-fulltext-extract.md) §5） | —（本地；GROBID 为可选本机服务） |
 | 6 ingest | Paper/Identifier 增量 | 合并关系（same_as/preprint_of/candidate）+ 索引 | 确定性合并规则版本 | —（本地） |
 
 阶段可单独执行（`crawler run enumerate --venue jfe --volume 160`），默认编排器按需级联（`pull` = 1→4，`--extract` 加 5，6 每次运行尾部自动跑）。

@@ -81,7 +81,7 @@ EXPECTED_INDEXES = {
 # 当前最新 schema 版本 = migrations/ 下迁移文件数。schema v2（Phase 3 T1）新增
 # 0002_title_norm.sql（title_norm 列 + doi identifier 归一回填）；schema v3（Phase 6 F1）新增
 # 0003_paper_weak_key.sql（观测级弱信号键倒排表 + 存量回填）。
-LATEST_SCHEMA_VERSION = 3
+LATEST_SCHEMA_VERSION = 4
 
 
 @pytest.fixture
@@ -209,10 +209,11 @@ def test_first_build_skips_backup_of_empty_v0(
     with closing(Database(db_path)) as database:
         assert database.migrate() == LATEST_SCHEMA_VERSION
     assert list(tmp_path.glob("*.v0.bak")) == []
-    # 跨到 0002/0003 时分别对 v1/v2 中间态备份（from_version=1 / 2）。
+    # 跨到 0002/0003/0004 时分别对 v1/v2/v3 中间态备份（from_version=1 / 2 / 3）。
     assert sorted(p.name for p in tmp_path.glob("*.bak")) == [
         "app.sqlite.v1.bak",
         "app.sqlite.v2.bak",
+        "app.sqlite.v3.bak",
     ]
 
 
@@ -564,3 +565,85 @@ def test_v2_to_v3_backfills_weak_keys_from_existing_papers(
         ("p1", "some paper", "smith")
     ]
     database.close()
+
+
+# -- schema v4（0004_fulltext_asset.sql；Phase 7 T7 / D-033）---------------------------------
+
+
+def _add_0004(tmp_path: Path) -> None:
+    shutil.copy(_REAL_MIGRATIONS_DIR / "0004_fulltext_asset.sql", tmp_path / "migrations")
+
+
+_FULLTEXT_V4_COLUMNS = {"asset_id", "source_sha256", "text_sha256", "state", "note"}
+
+
+def test_v4_adds_five_columns_and_backfills_noop_state(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """v3 库（含 Phase 1 noop 行）→ v4：五列存在、noop 行回填 `state='noop'`、
+    `ingest_state` **不回滚**（「只前进不回退」不破坏；design/12 §5.1）。"""
+    database = _seed_v1(tmp_path, monkeypatch)
+    _add_0002(tmp_path)
+    _add_0003(tmp_path)
+    assert database.migrate() == 3
+    database.execute(
+        "INSERT INTO paper (id, title, ingest_state) VALUES (?,?,?)",
+        ("p1", "Legacy Paper", "extracted"),
+    )
+    database.execute(
+        "INSERT INTO fulltext (paper_id, extractor, extractor_ver, text_path, char_count, "
+        "lang, extracted_at) VALUES (?,?,?,?,?,?,?)",
+        ("p1", "noop", "1", None, 0, None, "2026-01-01T00:00:00Z"),
+    )
+
+    _add_0004(tmp_path)
+    assert database.migrate() == 4
+
+    columns = {r["name"] for r in database.query("PRAGMA table_info(fulltext)")}
+    assert _FULLTEXT_V4_COLUMNS <= columns
+    row = database.query("SELECT * FROM fulltext WHERE paper_id = 'p1'")[0]
+    assert row["state"] == "noop"
+    assert row["asset_id"] is None and row["text_sha256"] is None  # legacy 行归一为 NULL
+    assert database.query("SELECT ingest_state FROM paper WHERE id = 'p1'")[0][0] == "extracted"
+    database.close()
+
+
+def test_v4_keeps_fulltext_primary_key_on_paper_id(db: Database) -> None:
+    """PK 保持 `paper_id`（design/06 §1「Paper 1─1 Fulltext」）——asset 级的是**键**不是基数。"""
+    db.migrate()
+    pk = [r["name"] for r in db.query("PRAGMA table_info(fulltext)") if r["pk"]]
+    assert pk == ["paper_id"]
+
+
+def test_v4_is_dialect_neutral() -> None:
+    """五条 ADD COLUMN + 一条 UPDATE，无 SQLite 专有特性（design/06 §6 迁移纪律）。"""
+    script = (_REAL_MIGRATIONS_DIR / "0004_fulltext_asset.sql").read_text(encoding="utf-8")
+    statements = list(_iter_statements(script))
+    assert len(statements) == 6
+    assert sum(1 for s in statements if s.upper().startswith("ALTER TABLE")) == 5
+    assert statements[-1].upper().startswith("UPDATE")
+    for token in ("AUTOINCREMENT", "WITHOUT ROWID", "fts5", "PRAGMA"):
+        assert token.lower() not in script.lower()
+
+
+def test_v4_backfill_is_idempotent(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """迁移幂等重跑：已 v4 的库再 migrate 不改版本、不改行。"""
+    database = _seed_v1(tmp_path, monkeypatch)
+    _add_0002(tmp_path)
+    _add_0003(tmp_path)
+    _add_0004(tmp_path)
+    assert database.migrate() == 4
+    assert database.migrate() == 4
+    database.close()
+
+
+def test_v4_column_comment_uses_the_prefix_free_relative_form() -> None:
+    """`text_path` 形态写死为**不含 `data/` 前缀**的相对路径（design/12 §5.4）。
+
+    带前缀会被 `verify._resolve` 解析成 `…/data/data/fulltext/…` 使**全库每一行都报
+    missing_file**。`0001_init.sql` 的旧列注释含该前缀，是既成事实的文档缺陷，**一个字节
+    都不改**；正确形态以本迁移的列注释与 design/06 §2 为准。
+    """
+    script = (_REAL_MIGRATIONS_DIR / "0004_fulltext_asset.sql").read_text(encoding="utf-8")
+    assert "data/fulltext/{" not in script
+    assert "相对 data_dir" in script

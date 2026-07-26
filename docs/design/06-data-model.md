@@ -130,12 +130,25 @@ CREATE TABLE paper_weak_key (       -- schema v3（0003）：弱信号候审的*
 -- 是输入集合（而非注入顺序）的函数 —— AC-3.4 的实现基石，见 §3。索引
 -- idx_paper_weak_key_lookup(title_norm, first_author) 服务"谁曾观测过这个键"的反查。
 
-CREATE TABLE fulltext (
-  paper_id TEXT PRIMARY KEY REFERENCES paper,
-  extractor TEXT, extractor_ver TEXT,
-  text_path TEXT,                   -- data/fulltext/{...}.txt|.tei.xml
-  char_count INTEGER, lang TEXT, extracted_at TEXT
+CREATE TABLE fulltext (             -- schema v4（0004_fulltext_asset.sql）后的形态
+  paper_id TEXT PRIMARY KEY REFERENCES paper,   -- 1─1 基数不变；asset 级的是**幂等键**
+  extractor TEXT, extractor_ver TEXT,           -- 'pypdf' | 'grobid' | 'noop'（P1 占位）
+  text_path TEXT,                   -- fulltext/{venue}/{year}/{ulid}.txt|.tei.xml（**相对 data_dir，无 `data/` 前缀**）
+  char_count INTEGER, lang TEXT, extracted_at TEXT,
+  -- v4 增列（Phase 7 T7 / D-033；纯附加、方言中性）
+  asset_id TEXT REFERENCES asset,   -- 产物出自哪个 asset（legacy 行 NULL）
+  source_sha256 TEXT,               -- 抽取时源 PDF 的 sha256（陈旧判据 = stale_fulltext）
+  text_sha256 TEXT,                 -- 落盘产物 sha256（verify 的 hash_mismatch 依据）
+  state TEXT,                       -- extracted | extract_failed | noop
+  note TEXT                         -- 失败 token：encrypted|image_only|corrupt|empty_text
 );
+-- 幂等键 = (asset_id, source_sha256, extractor, extractor_ver)；取代规则 = 全序取 max
+-- (rank, ver_key, char_count, asset_id)，rank：grobid 2 > pypdf 1 > extract_failed 0 > noop −1
+-- > 陈旧/产物失效 −2 —— 终态是输入集合的函数、与注入顺序无关（D-031 纪律）。失败态**不进**
+-- paper.ingest_state 四值阶梯（那是单调前进的进度轴），由 state 列承载。详见 design/12 §5/§6。
+-- ⚠ `text_path` **不含 `data/` 前缀**：verify._resolve 把相对路径挂在 Config.data_dir 下，而
+-- data_dir 本身即指向 …/data，带前缀会解析成 …/data/data/fulltext/… 使全库每行都报 missing_file。
+-- （0001_init.sql 的旧列注释含该前缀，是既成事实的文档缺陷，不改一个字节；以此处为准。）
 
 CREATE TABLE subscription (         -- design/09
   name TEXT PRIMARY KEY,
@@ -199,12 +212,13 @@ Phase 6，Phase 6 关账时未兑现（该 Phase 的搜索面全部落在订阅 
 data/
 ├── pdf/{venue_id}/{year}/{paper_ulid}.pdf        # 主全文
 ├── si/{venue_id}/{year}/{paper_ulid}/...         # 补充材料（保持原名）
-├── fulltext/{venue_id}/{year}/{paper_ulid}.txt   # 抽取文本（或 .tei.xml）
+├── fulltext/{venue_id}/{year}/{paper_ulid}.txt   # 抽取文本（GROBID 路径为 .tei.xml）
 ├── export/                                        # bibtex/csv 导出产物
 └── tmp/*.part                                     # 下载中转（启动清理）
 ```
 
 - 文件名用内部 ULID（跨源稳定、无非法字符问题）；人类可读性靠 `crawler export` 生成 `AuthorYearTitle` 别名清单/软链接，不改动库内文件名。
+- **落库形态（Phase 7 T7 / D-033）**：`fulltext.text_path` 存**相对 `data_dir` 的路径**（`fulltext/{venue}/{year}/{ulid}{suffix}`，**不含 `data/` 前缀**——`data_dir` 本身即指向 `…/data`）。选相对形态的理由：config-home 可整体迁移（D-032），绝对路径迁移后全库失效；且 `verify._resolve` 已支持相对形态。`pdf/{v}/{y}/{ulid}.pdf` 与 `fulltext/{v}/{y}/{ulid}.txt` 恒**同 v/y 对位**，verify 对账与人肉查阅都依赖它。**如实入档的债务**：`asset.file_path` 现存**绝对**形态，与本列不一致（改动会使存量库路径全失效、需数据迁移），`verify` 的双形态兼容已覆盖两者——登记 P8 清账候选。
 - `verify` 对账规则见 design/05 §5。
 
 ## 5. 与聚合源的字段映射（enumerate 的落库口径）
