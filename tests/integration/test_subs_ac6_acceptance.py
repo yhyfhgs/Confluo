@@ -140,12 +140,19 @@ def _stub(
 
 
 class _StubFetcher:
-    """可控语料的 `SourceFetcher`：按源给定固定 stub 列表。"""
+    """可控语料的 `SourceFetcher`：按**源**给定固定 stub 列表，并记录收到的请求。
+
+    "按源"而非"按请求"：fan-out 的源（arxiv 多分类 / crossref 多 issn / nber 多 program）
+    会拿到同一份语料若干遍——那正是批内去重要挡住的形状，故此处不按请求裁语料。
+    `requests` 供请求面断言（同 `test_subs_watch_e2e._StubFetcher` 先例）。
+    """
 
     def __init__(self, corpus: dict[str, list[PaperStub]]) -> None:
         self.corpus = corpus
+        self.requests: list[SourceRequest] = []
 
     def fetch(self, request: SourceRequest) -> list[PaperStub]:
+        self.requests.append(request)
         return list(self.corpus.get(request.source, []))
 
 
@@ -373,8 +380,19 @@ def test_ac6_1_scenario_arxiv_openalex_same_paper_dedup_via_real_llm_agents_pres
 
     summary = run_watch(env.context(fetcher=fetcher), subscription, now=DAY)
 
-    assert summary.seen_count == 2
-    assert summary.new_count == 1  # 同 DOI 批内去重折叠为 1 篇
+    # arxiv 自 `fix/arxiv-category-fanout` 起按分类逐条 fan-out：该预置声明 4 个分类 →
+    # 4 条独立请求，`_StubFetcher` 按**源**给语料（不按请求）故同一份 stub 被吐 4 遍。
+    # 判定强度不变、只是如实反映新的请求面——净新增/去重/入库三项断言逐字保留。
+    arxiv_selector = subscription.selector_for("arxiv")
+    assert arxiv_selector is not None
+    assert arxiv_selector.categories == ("cs.AI", "cs.LG", "cs.CL", "cs.MA")  # 真实预置
+    arxiv_requests = [r for r in fetcher.requests if r.source == "arxiv"]
+    assert len(arxiv_requests) == len(arxiv_selector.categories)  # 一分类一请求
+    assert [r.params[0] for r in arxiv_requests] == [
+        ("arxiv_category", category) for category in arxiv_selector.categories
+    ]
+    assert summary.seen_count == len(arxiv_selector.categories) + 1  # 4 份 arxiv + 1 份 openalex
+    assert summary.new_count == 1  # 同 DOI 批内去重折叠为 1 篇（含 fan-out 的同源重复）
     assert summary.ingested_count == 1
     (survivor,) = summary.entries
     assert survivor.source == "arxiv"  # 声明序（arxiv 先于 openalex）在前者胜
