@@ -394,6 +394,19 @@ def test_challenge_cooldown_active_reads_runner_json(tmp_path: Path) -> None:
     assert challenge_cooldown_active(tmp_path, "broken") is False  # 畸形不致命（判定退回未冷却）
 
 
+def test_challenge_cooldown_delegates_to_pipeline_cooldown_module(tmp_path: Path) -> None:
+    """委派 `pipeline/cooldown.py`（T3 公用模块）：写侧函数写的键，读侧原样判得到；
+    **非法键**（路径穿越）继承其白名单加固 → 响亮 `CrawlerError(CONFIG)`，不静默判"未冷却"。"""
+    from paper_crawler.pipeline import cooldown
+
+    cooldown.write(tmp_path, "papers.example.test", datetime.now(UTC) + timedelta(hours=1))
+    assert challenge_cooldown_active(tmp_path, "papers.example.test") is True
+
+    with pytest.raises(CrawlerError) as excinfo:
+        challenge_cooldown_active(tmp_path, "../../etc/passwd")
+    assert excinfo.value.error_class is ErrorClass.CONFIG
+
+
 # ---------------------------------------------------------------------------
 # T-8 一次性目录清理（异常路径亦清）
 # ---------------------------------------------------------------------------

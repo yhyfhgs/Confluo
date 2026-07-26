@@ -38,13 +38,16 @@ D-006 人在回路）；批量/并发（并发恒 1）；挑战求解/重试/UA 
    他人凭证），但 T11 接入前必须先裁 open_access 的凭证注入通道，否则接入即恒 BLOCKED。
 2. **下载触发的第二次导航不再过判定器** → 归 T11 按站点实况复核：`goto` 判定 OK 后，
    `download_via(trigger=…)` 内的导航结果不重新分类（与 §4.2 设计伪码同形）。若站点在第二跳
-   才发质询，表现为下载失败（魔数/INTEGRITY）而非 challenge——**不是绕过**，但会掩盖真因。
+   才发质询，本次表现为**下载未发生 → 归 `TRANSIENT`**（审查实测；非 CrawlerError 的下载
+   异常统一映射 TRANSIENT）——**不是绕过**，但会**进重试表**（4 次尝试 / 2·8·30s 退避），
+   即对刚发过质询的域再敲三次。T11 接入真实站点时须复核是否把第二跳失败也喂判定器。
 3. **AC-BF.4② 时序载体不足** → 归 T18（AC-BF 转正时定审计载体）：obslog 每次调用只记
    `rate_wait_ms` 汇总，无请求发起时刻序列，"相邻两次请求间隔 ≥ 域声明下限"只能间接推算；
    限速的真实约束在 `RateLimiter` 桶上，不在日志上。
-4. **直调 `fetch_one` 时冷却读侧只认域键** → 归 T3（抽 `pipeline/cooldown.py` 后改委派）：
-   `challenge_cooldown_active` 不读旧 `<adapter_id>.json` 兼容键（键集在 runner 的
-   `_cooldown_keys`）。经 pipeline 走时由 runner 的 pre-stage 冷却门先拦，不受影响。
+4. **直调 `fetch_one` 时冷却读侧只认域键**：`challenge_cooldown_active` 已委派
+   `pipeline/cooldown.read_until`（T3），但仍只查**单个域键**，不遍历 `resolve_keys` 给出的
+   `<adapter_id>` 旧兼容键——本通道手上只有 URL（无 venue→adapter 路由），域键是它能如实
+   主张的全部。经 pipeline 走时由 runner 的 pre-stage 冷却门（读全键集）先拦，不受影响。
 """
 
 from __future__ import annotations
@@ -183,21 +186,22 @@ class BudgetGate:
 def challenge_cooldown_active(home: Path, key: str, *, now: datetime | None = None) -> bool:
     """读侧：`<config-home>/state/cooldown/<key>.json` 是否仍在冷却期内（§5.6/§8.4）。
 
-    **写侧权威在 `pipeline/runner.py::_enter_challenge_cooldown`**（E-1/D-030 裁决③已落地），
-    本函数只按同一格式（`{"until": <ISO8601>}`）做只读判定，且**不清理过期文件**（清理是
-    runner 的既有职责，避免两处并发删同一文件）。缺失/畸形/过期一律 False——判定失败退回
-    "未冷却"是安全的：真正的判罚会在下一次请求时由 `ChallengeDetector` 如实命中并重新写冷却。
+    **委派 `pipeline/cooldown.py`**（T3 卡的公用模块；本函数原先自建的路径/格式知识已删除
+    ——单一实现，杜绝两处漂移）。写侧权威仍是 `runner.py::_enter_challenge_cooldown`
+    （E-1/D-030 裁决③），本函数**只读、不清理过期文件**（清理归 runner/`cooldown.clear`，
+    避免两处并发删同一文件）——委派后该行为逐字不变（`read_until` 亦只读不删）。
 
-    ⚠ 登记：T3 卡把冷却读写抽为 `pipeline/cooldown.py` 公用模块后，本函数应改为委派该模块
-    （届时删除此处的路径/格式知识，保持单一实现）。
+    缺失/内容损坏/已过期一律 False：判定失败退回"未冷却"是安全的——真正的判罚会在下一次
+    请求时由 `ChallengeDetector` 如实命中并重新写冷却。**键本身非法**（路径穿越等）由
+    `cooldown.cooldown_path` 响亮抛 `CrawlerError(CONFIG)`（T3 的键白名单加固）——那是调用方
+    给错键，与"磁盘数据坏了"是两类问题，不该被静默吞成"未冷却"。
     """
-    path = home / "state" / "cooldown" / f"{key}.json"
-    if not path.is_file():
-        return False
-    try:
-        data = json.loads(path.read_text(encoding="utf-8"))
-        until = datetime.fromisoformat(str(data["until"]))
-    except (OSError, ValueError, KeyError, TypeError):
+    # 函数内 import：`paper_crawler.pipeline.__init__` 会 eager-import `stages`，而 stages
+    # 又 import 本模块——顶层 import 会成环。冷却判定每次取回只跑一次，代价可忽略。
+    from paper_crawler.pipeline import cooldown
+
+    until = cooldown.read_until(home, key)
+    if until is None:
         return False
     return (now or datetime.now(UTC)) < until
 

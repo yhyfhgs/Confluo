@@ -71,7 +71,7 @@
 | # | 边界 | 对本 runbook 的影响 | 闭合归属 |
 |---|---|---|---|
 | 1 | **open_access 消费方无凭证注入面**：`storage_state` 只来自 runner 的 auth 健康门，而该门对 `family != "auth_gated"` 早返回 ⇒ **ssrn / aea 恒以干净上下文启动**（拿不到你已登录的 session） | 需登录才能取的 ssrn 模式 B / aea 订阅刊，当前**必然** BLOCKED；只有无需登录的 gold OA 面可演练 | **T11 前置设计项**——接入前须先裁 open_access 的凭证注入通道，否则接入即恒 BLOCKED |
-| 2 | 下载触发的第二次导航不再过判定器（与设计伪码同形） | 若站点在第二跳才发质询，表现为下载失败（魔数/INTEGRITY）而非 challenge——**不是绕过**，但请在记录里如实区分 | T11 按站点实况复核 |
+| 2 | 下载触发的第二次导航不再过判定器（与设计伪码同形） | 若站点在第二跳才发质询，本次归 **`TRANSIENT`**（下载未发生）而非 challenge——**不是绕过**，但**会进重试表**（4 次 / 2·8·30s），即对刚发过质询的域再敲三次。请在记录里如实区分，并留意 obslog 里同域连续 TRANSIENT | T11 按站点实况复核（是否把第二跳也喂判定器） |
 | 3 | AC-BF.4② 的"相邻请求间隔"在 obslog 里只有 `rate_wait_ms` 汇总，无请求时刻序列 | 限速合规需靠 `RateLimiter` 桶配置 + 人工计时佐证，日志不能单独作为时序证据 | T18（AC-BF 转正时定审计载体） |
 | 4 | 直调 `fetch_one` 时冷却读侧只认**域**键，不读旧 `<adapter_id>.json` 兼容键 | 经 `crawler grab` 走时由 runner 的 pre-stage 冷却门先拦，不受影响 | T3（抽 `pipeline/cooldown.py` 后改委派） |
 
