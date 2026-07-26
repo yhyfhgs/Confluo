@@ -30,7 +30,15 @@ from paper_crawler.adapters.ssrn.adapter import SsrnAdapter
 from paper_crawler.adapters.unpaywall.adapter import UnpaywallAdapter
 from paper_crawler.errors import CrawlerError, ErrorClass
 from paper_crawler.http import HttpClient
-from paper_crawler.types import IssueRef, PaperStub, VenueSpec
+from paper_crawler.types import (
+    AssetKind,
+    AuthLevel,
+    Capability,
+    IssueRef,
+    PaperStub,
+    UrlStrategy,
+    VenueSpec,
+)
 
 _UA = "PaperCrawler/test (personal research; mailto:test@example.com)"
 _CLOCK_2026 = lambda: datetime(2026, 7, 24, tzinfo=UTC)  # noqa: E731 (fixed test clock)
@@ -216,13 +224,14 @@ def test_enumerate_empty_window_yields_nothing() -> None:
     assert stubs == []
 
 
-# --- RESOLVE（landing-only 零网络，§4.4）----------------------------------------------------
+# --- RESOLVE（零网络：landing 观测 + 模式 B RENDER_PAGE 计划，§4.4/T11）----------------------
 
 
-def test_resolve_landing_only_returns_empty_and_logs_landing(
+def test_resolve_returns_render_page_plan_and_logs_landing(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """landing-only：返 [] （不产 PDF asset）+ 落 landing 观测（纯串，不请求）。"""
+    """模式 B：产一个 `RENDER_PAGE` `AssetPlan`（url=landing 引用，非 volatile Delivery.cfm）
+    + 落 landing 观测（纯串，不请求，§4.4 持久化纪律）。"""
     events: list[dict[str, object]] = []
     monkeypatch.setattr(
         "paper_crawler.adapters.ssrn.adapter.log_event",
@@ -232,19 +241,27 @@ def test_resolve_landing_only_returns_empty_and_logs_landing(
         title="WP", identifiers=(("doi", "10.2139/ssrn.4056799"), ("ssrn", "4056799"))
     )
     plans = _adapter(_never).resolve_assets(_venue(), paper)
-    assert plans == []  # landing-only：无可下载 asset（PDF 交 OA-fallback）
-    landing_events = [e for e in events if e["msg"].startswith("ssrn landing-only")]
+
+    assert len(plans) == 1
+    plan = plans[0]
+    assert plan.kind is AssetKind.PDF
+    assert plan.url == "https://papers.ssrn.com/sol3/papers.cfm?abstract_id=4056799"
+    assert plan.url_strategy is UrlStrategy.RENDER_PAGE
+    assert plan.auth_needed is AuthLevel.FREE_ACCOUNT
+    assert plan.expected_type == "application/pdf"
+
+    landing_events = [e for e in events if e["msg"].startswith("ssrn render_page plan")]
     assert len(landing_events) == 1
     assert landing_events[0]["abstract_id"] == "4056799"
-    assert landing_events[0]["ssrn_landing_url"] == (
-        "https://papers.ssrn.com/sol3/papers.cfm?abstract_id=4056799"
-    )
+    assert landing_events[0]["ssrn_landing_url"] == plan.url
 
 
 def test_resolve_derives_abstract_id_from_doi_when_no_ssrn_id() -> None:
-    """外部直接 resolve（只带 DOI，无 (ssrn) id）→ 由 DOI 抽取 abstract_id（不抛，返 []）。"""
+    """外部直接 resolve（只带 DOI，无 (ssrn) id）→ 由 DOI 抽取 abstract_id 构造计划（不抛）。"""
     paper = PaperStub(title="WP", identifiers=(("doi", "10.2139/ssrn.7654321"),))
-    assert _adapter(_never).resolve_assets(_venue(), paper) == []
+    plans = _adapter(_never).resolve_assets(_venue(), paper)
+    assert len(plans) == 1
+    assert plans[0].url == "https://papers.ssrn.com/sol3/papers.cfm?abstract_id=7654321"
 
 
 def test_resolve_missing_ssrn_identity_raises_config() -> None:
@@ -253,6 +270,29 @@ def test_resolve_missing_ssrn_identity_raises_config() -> None:
     with pytest.raises(CrawlerError) as exc:
         _adapter(_never).resolve_assets(_venue(), paper)
     assert exc.value.error_class is ErrorClass.CONFIG
+
+
+def test_resolve_plan_is_produced_regardless_of_any_config() -> None:
+    """adapter 侧不做任何 browser-fetch 开关判定（D-029 案 A"能力面恰好等于合规面"）——
+    门控(`[browserfetch].enabled` + `--browser`)全在 stages 层；本层恒产计划，交 stages
+    的既有三级门在 config 关闭时拦为 `skipped`（fixture 层面只需锁"计划恒存在"）。
+    """
+    paper = PaperStub(
+        title="WP", identifiers=(("doi", "10.2139/ssrn.4056799"), ("ssrn", "4056799"))
+    )
+    plans = _adapter(_never).resolve_assets(_venue(), paper)
+    assert len(plans) == 1
+    assert plans[0].url_strategy is UrlStrategy.RENDER_PAGE
+
+
+def test_capabilities_include_fetch_for_mode_b() -> None:
+    """D-030/design/11 §12 裁决①：FETCH 随模式 B 点亮（经 browser-fetch 横切件执行）。"""
+    adapter = _adapter(_never)
+    assert Capability.FETCH in adapter.capabilities
+    assert Capability.DISCOVER in adapter.capabilities
+    assert Capability.ENUMERATE in adapter.capabilities
+    assert Capability.RESOLVE in adapter.capabilities
+    assert Capability.SEARCH not in adapter.capabilities
 
 
 # --- healthcheck（经 crossref lookup 打 api.crossref.org；非 SSRN 域）-----------------------
@@ -358,9 +398,14 @@ def test_zero_ssrn_contact_across_full_lifecycle() -> None:
     issues = list(adapter.discover_timeline(venue))
     # enumerate（唯一网络出口 = api.crossref.org）
     stubs = list(adapter.enumerate_issue(venue, issues[-1]))
-    # resolve（landing-only，零请求）
+    # resolve（零请求：产模式 B RENDER_PAGE 计划，url 字段是构造的字符串——不是请求；
+    # 红线断言对象是 `hosts`，只由 handler 实际被调用时追加，resolve 从不触发 handler）。
+    requests_before_resolve = len(hosts)
     for stub in stubs:
-        assert adapter.resolve_assets(venue, stub) == []
+        plans = adapter.resolve_assets(venue, stub)
+        assert len(plans) == 1
+        assert plans[0].url.startswith("https://papers.ssrn.com/")  # 纯串，非请求
+    assert len(hosts) == requests_before_resolve, "resolve 不应发起任何请求（landing-only）"
 
     assert hosts, "enumerate 应至少发一次 crossref 请求（否则测试无意义）"
     assert all(host == "api.crossref.org" for host in hosts)  # 唯一接触域

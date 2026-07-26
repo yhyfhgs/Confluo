@@ -11,27 +11,31 @@ enumerate 走 crossref D-005）补 factory——resolve（entitlement 预检）+
 resolve/fetch 契约用 `_RESOLVE_ONLY_SAMPLE_PAPERS` 登记的 QJE DOI 样本 +
 `_CONTRACT_SESSIONS`/`_session_for` 注入的假 session（其余源 session=None，行为逐字
 不变）走通全链（注入 cookie supplier + landing_transport 零真实网络）；discover/enumerate
-两测因缺能力 skip（+2）。**Phase 5 T5**：`aea` 是 RESOLVE-only offline adapter，但
-`resolve_assets` 按设计**从不返回非空 `AssetPlan` 列表**（订阅刊 raise
-`NO_ENTITLEMENT`、OA 刊返回空列表，两分支均不产平台资产计划——见
-`adapters/aea/adapter.py` 模块 docstring 的"结构性诚实边界"论证），与本文件
-`test_resolve_yields_nonempty_asset_plans` 的通用假设（"declared RESOLVE ⟹
-resolve(sample) 产 ≥1 个 AssetPlan"）**结构性不相容**——不为它伪造一个能通过
-断言但实际上不代表真实可执行取回路径的样本，故不登记 factory（不同于 openalex/s2
-"无能力可契"的空集合 case；aea 是"有能力但契约形状不适用"，两者殊途同归都落
-`_contract_case` 的兜底 skip 分支）。aea 自身 resolve_assets 两分支（raise
-no_entitlement / 返回空列表）由 `tests/unit/test_aea_adapter.py` 直接覆盖。**Phase 5
-T6**：`econsoc` 全四位 case 走 TE 全链（open_access，无 auth 门控样本注入），不新增
-skip。**Phase 5 T4**：`ssrn` 登记 DISCOVER|ENUMERATE|RESOLVE（无 FETCH，元数据主路径
-零 SSRN 站点接触，D-029）——resolve 契约特化：`_LANDING_ONLY_RESOLVE` 登记 ssrn，
-`test_resolve_yields_nonempty_asset_plans` 对其断言恒返回空列表（非 skip，是契约对
-"landing-only vs 产 asset"两类 RESOLVE 的正确分层表述，AC-5.1a）；fetch 因无该能力
-skip（+1）。当前契约 skip 合计 **26**：openalex/s2/aea 各 4（无契可契，原因分述如上）+
-crossref/dblp 各 2（无 RESOLVE/FETCH）+ unpaywall 3（仅 RESOLVE）+ elsevier_sd 2 +
-oup_silverchair 2（各自无 DISCOVER/ENUMERATE）+ wiley 2 + ssrn 1（无 FETCH）+ nber 2
-（RESOLVE|FETCH，无 DISCOVER/ENUMERATE→走 crossref prefix，D-005）= 28（实跑
-133 passed / 28 skipped——econsoc 全四位 case 走 TE 全链 +8 passed 无新增 skip，ssrn
-+7 passed / +1 skipped，nber +6 passed / +2 skipped）。
+两测因缺能力 skip（+2）。**Phase 5 T6**：`econsoc` 全四位 case 走 TE 全链（open_access，
+无 auth 门控样本注入），不新增 skip。**Phase 5 T4**：`ssrn` 登记
+DISCOVER|ENUMERATE|RESOLVE。**T11**（design/11 §4.6 ★接缝 A-1；两处更新）：
+
+- `ssrn` **capabilities 追加 FETCH**（模式 B，opt-in）：`resolve_assets` 不再 landing-only
+  空返，改产模式 B `RENDER_PAGE` `AssetPlan`（唯一全文路径，D-029 案 B）——`_LANDING_
+  ONLY_RESOLVE` 分层因此**注销**（当前无 adapter 落此桶）。但该 FETCH **经 browser-fetch
+  横切件执行、不经 `adapter.fetch_asset()`**（`_fetch_via_browser` 派发，非本 adapter
+  自身实现）——故新增 `_RENDER_PAGE_DELEGATED_FETCH` 分层，`test_fetch_via_fake_io_
+  succeeds_and_writes_pdf_magic_bytes` 对 ssrn 仍 skip（原因从"无 FETCH"变为"FETCH 委派
+  browser-fetch"，skip 计数不变）；RENDER_PAGE 派发契约由 `tests/contract/test_browser_
+  fetch_contract.py` 专门覆盖。
+- `aea` **现已登记为契约 case**（此前 Phase 5 T5 "`resolve_assets` 结构性从不返回非空
+  `AssetPlan`" 的排除理由已随 browser-fetch 落地失效——两分支现均产模式 B `RENDER_PAGE`
+  计划，`test_resolve_yields_nonempty_asset_plans` 的通用假设对它已成立）；仍无
+  DISCOVER/ENUMERATE/FETCH（三者各自 skip，`_aea_case` docstring 展开），resolve 分支
+  差异化行为由 `tests/unit/test_aea_adapter.py` 直接覆盖，本契约只证生成 ≥1 个
+  `AssetPlan` 的通用契约。
+
+当前契约 skip 合计 **27**：openalex/s2 各 4（无契可契）+ aea 3（RESOLVE 已登记，仅
+discover/enumerate/fetch 因缺能力 skip，T11）+ crossref/dblp 各 2（无 RESOLVE/FETCH）+
+unpaywall 3（仅 RESOLVE）+ elsevier_sd 2 + oup_silverchair 2（各自无 DISCOVER/ENUMERATE）+
+wiley 2 + ssrn 1（FETCH 已声明但委派 browser-fetch，非"无 FETCH"，T11）+ nber 2
+（RESOLVE|FETCH，无 DISCOVER/ENUMERATE→走 crossref prefix，D-005）= 27（实跑
+134 passed / 27 skipped）。
 
 契约的 enumerate 计数口径按能力分层：声明了权威计数（`IssueRef.paper_count_claimed`）
 的 adapter（mock）严格等值；未声明的（arxiv 月度桶、dblp 会议届——预印本/会议无权威
@@ -91,6 +95,7 @@ from helpers.unpaywall_fixtures import fixture_bytes as unpaywall_fixture_bytes
 from paper_crawler.adapter import AdapterBase, AdapterFamily, SourceAdapter, load_adapters
 from paper_crawler.adapters.aaai_ojs.adapter import AaaiOjsAdapter
 from paper_crawler.adapters.acl_anthology.adapter import AclAnthologyAdapter
+from paper_crawler.adapters.aea.adapter import AeaAdapter
 from paper_crawler.adapters.arxiv.adapter import ArxivAdapter
 from paper_crawler.adapters.crossref.adapter import CrossrefAdapter
 from paper_crawler.adapters.cvf.adapter import CVFAdapter
@@ -382,6 +387,29 @@ def _ssrn_case() -> tuple[SourceAdapter, VenueSpec]:
     return adapter, make_ssrn_venue()
 
 
+def _aea_case() -> tuple[SourceAdapter, VenueSpec]:
+    """aea 契约链（零网络，RESOLVE-only）——**T11 起正式登记**：`resolve_assets` 恒产
+    模式 B `RENDER_PAGE` `AssetPlan`（design/11 §4.6 ★接缝 A-1），Phase 5 T5 "结构性
+    从不返回非空 AssetPlan" 的排除理由已随本卡失效（见 `_CONTRACT_CASES` 模块注释）。
+
+    venue 内联构造（不依赖 `tests/helpers` 共享花名册，同 `tests/unit/test_aea_adapter.py`
+    "本地 venue 工厂"先例，避免与并行任务撞面）：取 OA 刊 jel（`auth.level=none`）——
+    订阅刊/OA 刊两分支的差异化行为已由 `tests/unit/test_aea_adapter.py` 逐分支覆盖，
+    本契约只需证明"declared RESOLVE ⟹ 产 ≥1 个 AssetPlan"的通用契约成立。
+    """
+    venue = VenueSpec(
+        id="jel",
+        kind="journal",
+        names={"full": "Journal of Economic Literature", "aliases": ["JEL"]},
+        field=["econ"],
+        identifiers={"issn": ["0022-0515"]},
+        metadata_source="crossref",
+        fulltext_source="aea",
+        auth={"level": "none", "provider_hint": "aea"},
+    )
+    return AeaAdapter(), venue
+
+
 def _dblp_contract_handler(request: httpx.Request) -> httpx.Response:
     """dblp 契约链的 MockTransport：conf 索引页（discover） → 卷 XML（enumerate）。
 
@@ -507,6 +535,12 @@ _RESOLVE_ONLY_SAMPLE_PAPERS: dict[str, PaperStub] = {
         title="Contract Test Paper (Resolve-Only Adapter)",
         identifiers=(("doi", "10.9999/contract.unpaywall"),),
     ),
+    # aea：无 DISCOVER/ENUMERATE（委 crossref，D-005）——JEL DOI（code=jel，已知路由，
+    # 不触发未知 code WARN），OA 刊分支（auth_needed=NONE，见 `_aea_case` venue）。
+    "aea": PaperStub(
+        title="Contract Test Paper (AEA)",
+        identifiers=(("doi", "10.1257/jel.20200001"),),
+    ),
     # wiley DOI 前缀（10.1111，Journal of Finance 形态）——TDM URL 由 resolve 从此 DOI 构造。
     "wiley": PaperStub(
         title="Contract Test Paper (Wiley TDM Adapter)",
@@ -563,16 +597,17 @@ def _sample_paper_for(adapter_id: str, adapter: SourceAdapter, venue: VenueSpec)
 # adapter_id -> (adapter, venue) 工厂。只有此处登记的 adapter 会跑完整能力链路检查；
 # 其余一律 pytest.skip——见模块顶部 docstring 的 skip 分解。pmlr 无 stub 阶段（不同于
 # arxiv 曾有 T1-T4 的 stub 过渡期）——直接新增一行即完整接入契约套件。
-# **`aea` 刻意不登记**（Phase 5 T5）：不是"缺能力"（它声明了 RESOLVE），而是
-# `resolve_assets` 按设计从不产出非空 `AssetPlan`（模块 docstring 展开）——本契约的
-# `test_resolve_yields_nonempty_asset_plans` 断言对它结构性不适用，登记一个会强行
-# 通过但不代表真实取回路径的 factory 违背"契约反映真实行为"的初衷。
+# **`aea` 现已登记**（T11，design/11 §4.6 ★接缝 A-1）：Phase 5 T5 排除的理由（`resolve_
+# assets` 按设计从不产出非空 `AssetPlan`）已随 browser-fetch 落地失效——两分支（订阅刊/
+# OA 刊）现均产模式 B `RENDER_PAGE` 计划，`test_resolve_yields_nonempty_asset_plans` 的
+# 通用假设对它已成立；无 DISCOVER/ENUMERATE/FETCH 仍各自 skip（+3，`_aea_case` docstring）。
 _CONTRACT_CASES: dict[str, Callable[[], tuple[SourceAdapter, VenueSpec]]] = {
     "mock_platform": _mock_case,
     "arxiv": _arxiv_case,
     "openreview": _openreview_case,
     "pmlr": _pmlr_case,
     "acl_anthology": _acl_anthology_case,
+    "aea": _aea_case,
     "cvf": _cvf_case,
     "aaai_ojs": _aaai_case,
     "neurips_proceedings": _neurips_proceedings_case,
@@ -605,12 +640,10 @@ def _contract_case(adapter_id: str) -> tuple[SourceAdapter, VenueSpec]:
     if factory is None:
         pytest.skip(
             reason=(
-                f"no contract case registered for {adapter_id!r}: either duck-typed "
-                "enrich-only with an empty capability set (openalex/s2, capabilities="
-                "Capability(0), T6 — do not participate in this protocol by design) or "
-                "a declared RESOLVE that structurally never returns a nonempty AssetPlan "
-                "(aea, T5 — see _CONTRACT_CASES module comment); see module docstring for "
-                "the full skip breakdown"
+                f"no contract case registered for {adapter_id!r}: duck-typed enrich-only "
+                "with an empty capability set (openalex/s2, capabilities=Capability(0), "
+                "T6 — do not participate in this protocol by design); see module docstring "
+                "for the full skip breakdown"
             )
         )
     return factory()
@@ -679,11 +712,21 @@ def test_enumerate_first_issue_yields_papers_with_identifiers(adapter_id: str) -
         assert len(paper.identifiers) >= 1
 
 
-# landing-only RESOLVE adapter（声明 RESOLVE 但 resolve 恒**不产可下载 asset**）：ssrn 元数据层
-# 产 landing 引用作观测、PDF 交 pipeline unpaywall OA-fallback（§4.4 净效果 PDF 命中≈0）——与
-# 其余 RESOLVE adapter（产 ≥1 pdf plan）相反，故单列断言 resolve 返 []（landing-only 红线行为，
-# AC-5.1a）。此非放宽契约：是契约对"landing-only vs 产 asset"两类 RESOLVE 的正确分层表述。
-_LANDING_ONLY_RESOLVE: frozenset[str] = frozenset({"ssrn"})
+# **T11 更新**（design/11 §4.6/browser-fetch 横切件）：ssrn 元数据层的 resolve 不再
+# landing-only 空返——现产模式 B `RENDER_PAGE` `AssetPlan`（url=landing 引用，唯一全文
+# 路径，D-029 案 B）；`_LANDING_ONLY_RESOLVE` 分层因此**注销**（不再有 adapter 落此桶，
+# 保留空集合以留分层表述缝，若未来另有 landing-only-无兜底 adapter 可复用）。
+_LANDING_ONLY_RESOLVE: frozenset[str] = frozenset()
+
+# **RENDER_PAGE 委派 FETCH**（design/11 案 A"薄接缝"）：这些 adapter 声明 `Capability.FETCH`，
+# 但其 `resolve_assets` 产的是 `url_strategy=RENDER_PAGE` 的计划——真正的取回执行经
+# `pipeline/stages.py::_fetch_via_browser` + browser-fetch 横切件（`browserfetch.fetch_one`），
+# **不经** `adapter.fetch_asset()`（该方法在此类 adapter 上未实现，沿用 `AdapterBase` 默认
+# `CapabilityNotSupported`）。故 `test_fetch_via_fake_io_succeeds_and_writes_pdf_magic_bytes`
+# 对它们不适用——RENDER_PAGE 派发契约由 `tests/contract/test_browser_fetch_contract.py`
+# 专门覆盖（`test_browser_branch_is_strategy_driven_not_adapter_allowlisted` +
+# `test_adapters_declaring_render_page_are_registered`），本文件对其单列 skip。
+_RENDER_PAGE_DELEGATED_FETCH: frozenset[str] = frozenset({"ssrn"})
 
 
 def test_resolve_yields_nonempty_asset_plans(adapter_id: str) -> None:
@@ -695,7 +738,7 @@ def test_resolve_yields_nonempty_asset_plans(adapter_id: str) -> None:
     plans = adapter.resolve_assets(venue, paper, session=_session_for(adapter_id))
 
     if adapter_id in _LANDING_ONLY_RESOLVE:
-        # landing-only（ssrn §4.4）：resolve 不产可下载 asset（PDF 交 OA-fallback）→ 恒空。
+        # landing-only：resolve 不产可下载 asset → 恒空（当前无 adapter 落此桶，见上）。
         assert plans == []
         return
     assert plans
@@ -706,6 +749,8 @@ def test_fetch_via_fake_io_succeeds_and_writes_pdf_magic_bytes(adapter_id: str) 
     adapter, venue = _contract_case(adapter_id)
     if Capability.FETCH not in adapter.capabilities:
         pytest.skip(reason=f"{adapter_id} lacks FETCH")
+    if adapter_id in _RENDER_PAGE_DELEGATED_FETCH:
+        pytest.skip(reason=f"{adapter_id} 的 FETCH 经 browser-fetch 横切件执行，不经 fetch_asset()")
 
     paper = _sample_paper_for(adapter_id, adapter, venue)
     session = _session_for(adapter_id)

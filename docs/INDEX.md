@@ -93,7 +93,7 @@
 | [catalog/economics-journals.md](catalog/economics-journals.md) | 经济学期刊 | approved | 2026-07-27 |
 | [catalog/finance-journals.md](catalog/finance-journals.md) | 金融学期刊 | approved | 2026-07-20 |
 | [catalog/or-ms-journals.md](catalog/or-ms-journals.md) | OR/MS 期刊 | approved | 2026-07-20 |
-| [catalog/preprint-platforms.md](catalog/preprint-platforms.md) | 预印本/WP 平台与订阅范围 | review | 2026-07-26 |
+| [catalog/preprint-platforms.md](catalog/preprint-platforms.md) | 预印本/WP 平台与订阅范围 | review | 2026-07-27 |
 
 ## testing/ — 测试
 

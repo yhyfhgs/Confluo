@@ -1,13 +1,16 @@
-"""AeaAdapter 主体单测（design/adapters/aea.md §3.3/§3.5/§4；phase5-plan T5 DoD）。
+"""AeaAdapter 主体单测（design/adapters/aea.md §3.3/§3.5/§4；phase5-plan T5 DoD；
+design/11 §4.6 ★接缝 A-1 T11 承接）。
 
 零真实网络（`resolve_assets`/`healthcheck` 本身即全离线，无需 mock transport）。
-覆盖：① 订阅刊 resolve → `NO_ENTITLEMENT`（不计 failures 终态判据的载体；软门
-text/html 挡板→no_entitlement 非 integrity 的离线等价断言，§6 失败模式表）；
-② OA 刊（jel/jep）resolve → 空列表、不 raise；③ 两分支均先记 deferred 全文 URL 的
-DEBUG 观测；④ 未知 DOI code → WARN 观测、不崩；⑤ P&P 形态不误触 WARN；⑥ 缺 DOI /
-非 10.1257 DOI → CONFIG；⑦ healthcheck 恒 NotImplementedError（→ canary SKIP）；
-⑧ 未声明能力（DISCOVER/ENUMERATE/FETCH）→ CapabilityNotSupported；⑨ adapter 元
-数据完备性。
+覆盖：① 订阅刊 resolve → 模式 B `RENDER_PAGE` `AssetPlan`（`auth_needed=INSTITUTIONAL`；
+不再静态猜测 NO_ENTITLEMENT，真实权限判定移交 browser-fetch 横切件）；② OA 刊
+（jel/jep）resolve → `RENDER_PAGE` `AssetPlan`（`auth_needed=NONE`）、不 raise；
+③ 两分支均先记 render_page plan 的 DEBUG 观测；④ 未知 DOI code → WARN 观测、不崩；
+⑤ P&P 形态不误触 WARN；⑥ 缺 DOI / 非 10.1257 DOI → CONFIG；⑦ healthcheck 恒
+NotImplementedError（→ canary SKIP）；⑧ 未声明能力（DISCOVER/ENUMERATE/FETCH）→
+CapabilityNotSupported；⑨ adapter 元数据完备性（`family` 仍 `auth_gated`，`capabilities`
+仍仅 `RESOLVE`——browser-fetch 全文经 stages 层 `_fetch_via_browser` 执行，不经
+`adapter.fetch_asset()`，两者逐字不变）。
 """
 
 from __future__ import annotations
@@ -17,9 +20,11 @@ import pytest
 from paper_crawler.adapters.aea.adapter import AeaAdapter
 from paper_crawler.errors import CapabilityNotSupported, CrawlerError, ErrorClass
 from paper_crawler.types import (
+    AssetKind,
     AuthLevel,
     IssueRef,
     PaperStub,
+    UrlStrategy,
     VenueAuth,
     VenueNames,
     VenueSpec,
@@ -85,40 +90,26 @@ def test_undeclared_capabilities_raise_capability_not_supported() -> None:
         adapter.fetch_asset(plan=None, io=None)  # type: ignore[arg-type]
 
 
-# --- resolve_assets：订阅刊 → NO_ENTITLEMENT ------------------------------------------------
+# --- resolve_assets：订阅刊 → RENDER_PAGE AssetPlan（T11，design/11 §4.6 ★接缝 A-1）----------
 
 
-def test_resolve_assets_subscription_venue_raises_no_entitlement() -> None:
+def test_resolve_assets_subscription_venue_returns_render_page_plan() -> None:
+    """订阅刊不再在 resolve 时静态猜测 NO_ENTITLEMENT——产模式 B `RENDER_PAGE` 计划，
+    真实"有无权限"移交 browser-fetch 横切件在实际 fetch 时判定（design/11 §4.6 裁决）。
+    """
     adapter = AeaAdapter()
     venue = _subscription_venue("aer", "0002-8282")
     paper = _paper_with_doi("10.1257/aer.20230344")
 
-    with pytest.raises(CrawlerError) as excinfo:
-        adapter.resolve_assets(venue, paper)
+    plans = adapter.resolve_assets(venue, paper)
 
-    assert excinfo.value.error_class is ErrorClass.NO_ENTITLEMENT
-    assert excinfo.value.detail == "no_entitlement"
-    assert "10.1257/aer.20230344" in str(excinfo.value)
-
-
-def test_resolve_assets_subscription_paywall_is_never_classified_as_integrity(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    """T5 卡"测试要点"逐字：订阅刊 text/html 挡板→`no_entitlement`（非 `integrity`）。
-
-    `resolve_assets` 本身零网络（`resolve_offline=True`），从不实际发起会真正返回
-    text/html 挡板的请求——本用例断言的是该 html 挡板事实在本 adapter 里的**离线
-    等价物**：订阅刊分类恒落 `NO_ENTITLEMENT`，绝不会误落 `INTEGRITY`（那类错误只可能
-    源自实际 fetch 校验失败，而 aea 本 Phase 从不 fetch，见 `fetch_asset` 未声明能力）。
-    实际 200 text/html 挡板的现场证据见 venues/econ/aer.yaml notes +
-    tests/fixtures/aea/04_landing_citation_meta.html 头注（site-survey §4 附录请求 #7）。
-    """
-    monkeypatch.setattr("paper_crawler.adapters.aea.adapter.log_event", lambda *a, **kw: None)
-    adapter = AeaAdapter()
-    with pytest.raises(CrawlerError) as excinfo:
-        adapter.resolve_assets(_subscription_venue(), _paper_with_doi("10.1257/aer.20230344"))
-    assert excinfo.value.error_class is not ErrorClass.INTEGRITY
-    assert excinfo.value.error_class is ErrorClass.NO_ENTITLEMENT
+    assert len(plans) == 1
+    plan = plans[0]
+    assert plan.kind is AssetKind.PDF
+    assert plan.url == "https://pubs.aeaweb.org/doi/pdfplus/10.1257/aer.20230344"
+    assert plan.url_strategy is UrlStrategy.RENDER_PAGE
+    assert plan.auth_needed is AuthLevel.INSTITUTIONAL
+    assert plan.expected_type == "application/pdf"
 
 
 @pytest.mark.parametrize(
@@ -132,54 +123,62 @@ def test_resolve_assets_subscription_paywall_is_never_classified_as_integrity(
         ("aej_policy", "1945-7731"),
     ],
 )
-def test_resolve_assets_all_6_subscription_venues_raise_no_entitlement(
+def test_resolve_assets_all_6_subscription_venues_return_institutional_render_page_plan(
     venue_id: str, issn: str
 ) -> None:
-    """6 订阅刊（aer/aeri/aej_×4）resolve 均 raise NO_ENTITLEMENT（aea.md §7 表）。"""
+    """6 订阅刊（aer/aeri/aej_×4）resolve 均产 `auth_needed=INSTITUTIONAL` 的 RENDER_PAGE
+    计划（aea.md §7 表；design/11 §4.6 T11 承接）。"""
     adapter = AeaAdapter()
     venue = _subscription_venue(venue_id, issn)
     paper = _paper_with_doi("10.1257/aer.20230344")  # DOI 与 venue.id 是否一致不影响本断言
 
-    with pytest.raises(CrawlerError) as excinfo:
-        adapter.resolve_assets(venue, paper)
-    assert excinfo.value.error_class is ErrorClass.NO_ENTITLEMENT
+    plans = adapter.resolve_assets(venue, paper)
+    assert len(plans) == 1
+    assert plans[0].url_strategy is UrlStrategy.RENDER_PAGE
+    assert plans[0].auth_needed is AuthLevel.INSTITUTIONAL
 
 
-def test_resolve_assets_no_entitlement_does_not_produce_a_partial_asset_plan() -> None:
-    """raise 前不应有任何"部分产出"副作用——resolve_assets 是纯函数式的
-    raise-or-empty-list 契约（模块 docstring："结构性地从不返回非空 AssetPlan"）。
+def test_resolve_assets_subscription_venue_does_not_raise() -> None:
+    """本 adapter 此前"结构性地从不返回非空 AssetPlan"的诚实边界已随 browser-fetch
+    落地失去理由（design/11 §4.6 原文）——订阅刊分支现恒产计划、不抛异常。
     """
     adapter = AeaAdapter()
     venue = _subscription_venue()
     paper = _paper_with_doi("10.1257/aer.20230344")
-    try:
-        adapter.resolve_assets(venue, paper)
-    except CrawlerError:
-        pass
-    else:
-        pytest.fail("expected CrawlerError(NO_ENTITLEMENT)")
+    plans = adapter.resolve_assets(venue, paper)  # 不应抛出任何异常
+    assert len(plans) == 1
 
 
-# --- resolve_assets：OA 刊（jel/jep）→ 空列表，不 raise --------------------------------------
+# --- resolve_assets：OA 刊（jel/jep）→ RENDER_PAGE AssetPlan（auth_needed=NONE）---------------
 
 
-def test_resolve_assets_open_venue_returns_empty_list_not_an_error() -> None:
+def test_resolve_assets_open_venue_returns_render_page_plan() -> None:
     adapter = AeaAdapter()
     venue = _open_venue("jep", "0895-3309")
     paper = _paper_with_doi("10.1257/jep.20251473")
 
     plans = adapter.resolve_assets(venue, paper)
 
-    assert plans == []
+    assert len(plans) == 1
+    plan = plans[0]
+    assert plan.kind is AssetKind.PDF
+    assert plan.url == "https://pubs.aeaweb.org/doi/pdfplus/10.1257/jep.20251473"
+    assert plan.url_strategy is UrlStrategy.RENDER_PAGE
+    assert plan.auth_needed is AuthLevel.NONE
 
 
 @pytest.mark.parametrize(("venue_id", "issn"), [("jel", "0022-0515"), ("jep", "0895-3309")])
-def test_resolve_assets_both_open_venues_return_empty_list(venue_id: str, issn: str) -> None:
+def test_resolve_assets_both_open_venues_return_none_auth_render_page_plan(
+    venue_id: str, issn: str
+) -> None:
     adapter = AeaAdapter()
     venue = _open_venue(venue_id, issn)
     paper = _paper_with_doi("10.1257/jep.20251473")
 
-    assert adapter.resolve_assets(venue, paper) == []
+    plans = adapter.resolve_assets(venue, paper)
+    assert len(plans) == 1
+    assert plans[0].url_strategy is UrlStrategy.RENDER_PAGE
+    assert plans[0].auth_needed is AuthLevel.NONE
 
 
 def test_resolve_assets_open_venue_does_not_raise_no_entitlement() -> None:
@@ -192,10 +191,10 @@ def test_resolve_assets_open_venue_does_not_raise_no_entitlement() -> None:
     adapter.resolve_assets(venue, paper)  # 不应抛出任何异常
 
 
-# --- deferred 全文 URL 的 DEBUG 观测（两分支均记录，§3.3）-----------------------------------
+# --- fulltext render_page 计划的 DEBUG 观测（两分支均记录，§3.3）-----------------------------
 
 
-def test_resolve_assets_subscription_logs_deferred_fulltext_url_before_raising(
+def test_resolve_assets_subscription_logs_render_page_plan(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     events: list[dict[str, object]] = []
@@ -207,18 +206,17 @@ def test_resolve_assets_subscription_logs_deferred_fulltext_url_before_raising(
     venue = _subscription_venue("aer", "0002-8282")
     paper = _paper_with_doi("10.1257/aer.20230344")
 
-    with pytest.raises(CrawlerError):
-        adapter.resolve_assets(venue, paper)
+    adapter.resolve_assets(venue, paper)
 
-    deferred = [e for e in events if "deferred" in str(e["msg"])]
-    assert len(deferred) == 1
-    assert deferred[0]["deferred_url"] == "https://pubs.aeaweb.org/doi/pdfplus/10.1257/aer.20230344"
-    assert deferred[0]["auth_needed"] == "institutional"
-    assert deferred[0]["venue"] == "aer"
-    assert deferred[0]["level"] == "DEBUG"
+    logged = [e for e in events if "render_page plan" in str(e["msg"])]
+    assert len(logged) == 1
+    assert logged[0]["deferred_url"] == "https://pubs.aeaweb.org/doi/pdfplus/10.1257/aer.20230344"
+    assert logged[0]["auth_needed"] == "institutional"
+    assert logged[0]["venue"] == "aer"
+    assert logged[0]["level"] == "DEBUG"
 
 
-def test_resolve_assets_open_venue_logs_deferred_fulltext_url(
+def test_resolve_assets_open_venue_logs_render_page_plan(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     events: list[dict[str, object]] = []
@@ -232,11 +230,11 @@ def test_resolve_assets_open_venue_logs_deferred_fulltext_url(
 
     adapter.resolve_assets(venue, paper)
 
-    deferred = [e for e in events if "deferred" in str(e["msg"])]
-    assert len(deferred) == 1
-    assert deferred[0]["deferred_url"] == "https://pubs.aeaweb.org/doi/pdfplus/10.1257/jep.20251473"
-    assert deferred[0]["auth_needed"] == "none"
-    assert deferred[0]["venue"] == "jep"
+    logged = [e for e in events if "render_page plan" in str(e["msg"])]
+    assert len(logged) == 1
+    assert logged[0]["deferred_url"] == "https://pubs.aeaweb.org/doi/pdfplus/10.1257/jep.20251473"
+    assert logged[0]["auth_needed"] == "none"
+    assert logged[0]["venue"] == "jep"
 
 
 # --- 未知 DOI code → WARN 观测，不崩（§3.2）--------------------------------------------------
@@ -254,7 +252,7 @@ def test_resolve_assets_unknown_code_logs_warning(monkeypatch: pytest.MonkeyPatc
 
     plans = adapter.resolve_assets(venue, paper)
 
-    assert plans == []
+    assert len(plans) == 1  # 未知 code 不阻断计划产出（WARN 观测 + 照常产计划）
     warnings = [e for e in events if e["level"] == "WARNING"]
     assert len(warnings) == 1
     assert warnings[0]["code"] == "newjournal"

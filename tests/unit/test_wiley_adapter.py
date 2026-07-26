@@ -1,10 +1,13 @@
-"""wiley/adapter.py 单测（MockTransport 注入，零真实网络；design/adapters/wiley.md）。
+"""wiley/adapter.py 单测（MockTransport 注入，零真实网络；design/adapters/wiley.md；
+design/11 wiley 节页面兜底 T11）。
 
-覆盖：元数据/能力面 + 协议一致性、token 门控三分支（resolve/fetch→AuthRequired、
-healthcheck→NotImplementedError，无伪 pass）、RESOLVE 零网络 + AssetPlan 字段、
-FETCH（%PDF 落盘 + `Wiley-TDM-Client-Token` 头随请求发出 + 分块）、错误映射三态
-（401→auth_expired / 403→no_entitlement / 429→rate_limited 读 Retry-After）、healthcheck
-有 token 探针（PDF/质询/非 PDF/不可达）、双窗口限速映射（假时钟 acquire 序列 0/0/0/12s）。
+覆盖：元数据/能力面 + 协议一致性、token 门控（fetch→AuthRequired、healthcheck→
+NotImplementedError，无伪 pass；**resolve 自 T11 起不再早退**——无 token 改产页面兜底
+`RENDER_PAGE` 计划，与 TDM `API_CALL` 计划互斥恒一、不双发）、RESOLVE 零网络 +
+AssetPlan 字段（两态：TDM/页面兜底）、FETCH（%PDF 落盘 + `Wiley-TDM-Client-Token` 头
+随请求发出 + 分块）、错误映射三态（401→auth_expired / 403→no_entitlement /
+429→rate_limited 读 Retry-After）、healthcheck 有 token 探针（PDF/质询/非 PDF/不可达）、
+双窗口限速映射（假时钟 acquire 序列 0/0/0/12s）。
 """
 
 from __future__ import annotations
@@ -114,16 +117,9 @@ def test_undeclared_capabilities_raise_capability_not_supported() -> None:
         list(adapter.enumerate_issue(venue, IssueRef(venue_id=venue.id)))
 
 
-# --- token 门控（无 token → 全部诚实 skip/AuthRequired，无伪 pass）----------------------------
-
-
-def test_resolve_no_token_raises_auth_required_with_config_hint() -> None:
-    adapter = _adapter(_never, token=None)
-    with pytest.raises(AuthRequired) as exc:
-        adapter.resolve_assets(make_wiley_venue(), _PAPER)
-    assert exc.value.error_class is ErrorClass.AUTH_EXPIRED
-    assert exc.value.detail == "[auth.wiley] token"
-    assert "[auth.wiley] token" in str(exc.value)
+# --- token 门控（fetch/healthcheck 无 token → 全部诚实 AuthRequired/skip，无伪 pass）---------
+# resolve 的 token 门控自 T11 起收窄：无 token 不再早退，改产页面兜底 RENDER_PAGE 计划
+# （design/11 wiley 节"只在 TDM 不可用时"；见下"RESOLVE 页面兜底"分组）。
 
 
 def test_fetch_no_token_raises_auth_required() -> None:
@@ -140,26 +136,30 @@ def test_healthcheck_no_token_raises_not_implemented() -> None:
         WileyAdapter().healthcheck()
 
 
-def test_never_configured_token_gates_all_three_paths() -> None:
-    """从未 set_token 的全新实例（`_token` 恒 None）同样被门控。"""
+def test_never_configured_token_gates_fetch_and_healthcheck() -> None:
+    """从未 set_token 的全新实例（`_token` 恒 None）：fetch/healthcheck 仍被门控——
+    resolve 改产页面兜底计划（不再门控，见下）。"""
     adapter = WileyAdapter()
+    plan = adapter.resolve_assets(make_wiley_venue(), _PAPER)[0]
+    assert plan.url_strategy is UrlStrategy.RENDER_PAGE
     with pytest.raises(AuthRequired):
-        adapter.resolve_assets(make_wiley_venue(), _PAPER)
+        adapter.fetch_asset(plan, FakeFetchIO())
     with pytest.raises(NotImplementedError):
         adapter.healthcheck()
 
 
 def test_empty_string_token_is_treated_as_unconfigured() -> None:
-    """空白串归一为"未配置"（等价未提供，同全库 token 口径）——门控仍生效。"""
+    """空白串归一为"未配置"（等价未提供，同全库 token 口径）——resolve 产页面兜底计划、
+    healthcheck 门控仍生效。"""
     adapter = WileyAdapter(token="   ")
-    with pytest.raises(AuthRequired):
-        adapter.resolve_assets(make_wiley_venue(), _PAPER)
+    plan = adapter.resolve_assets(make_wiley_venue(), _PAPER)[0]
+    assert plan.url_strategy is UrlStrategy.RENDER_PAGE
     adapter.set_token("")
     with pytest.raises(NotImplementedError):
         adapter.healthcheck()
 
 
-# --- RESOLVE（有 token → 零网络纯 URL 构造）----------------------------------------------------
+# --- RESOLVE（有 token → 零网络纯 URL 构造 TDM 计划）--------------------------------------------
 
 
 def test_resolve_with_token_builds_tdm_asset_plan_without_network() -> None:
@@ -171,6 +171,37 @@ def test_resolve_with_token_builds_tdm_asset_plan_without_network() -> None:
     assert plan.url_strategy is UrlStrategy.API_CALL
     assert plan.auth_needed is AuthLevel.INSTITUTIONAL
     assert plan.expected_type == "application/pdf"
+
+
+# --- RESOLVE 页面兜底（无 token → RENDER_PAGE 计划，design/11 wiley 节，T11）------------------
+
+
+def test_resolve_no_token_returns_render_page_fallback_plan_without_network() -> None:
+    """TDM 结构性不可用（无 token）→ 页面兜底 `AssetPlan`（`RENDER_PAGE`），取代此前的
+    `AuthRequired` 早退（browser-fetch 落地后"不产不可取回的兜底 plan"的诚实边界失去理由）。
+    """
+    adapter = _adapter(_never, token=None)
+    plans = adapter.resolve_assets(make_wiley_venue(), _PAPER)
+
+    assert len(plans) == 1
+    plan = plans[0]
+    assert plan.kind is AssetKind.PDF
+    assert plan.url == "https://onlinelibrary.wiley.com/doi/pdf/10.1111/jofi.13123"
+    assert plan.url_strategy is UrlStrategy.RENDER_PAGE
+    assert plan.auth_needed is AuthLevel.INSTITUTIONAL
+    assert plan.expected_type == "application/pdf"
+
+
+def test_resolve_token_and_no_token_plans_are_mutually_exclusive_never_both() -> None:
+    """design/11 wiley 节"只在 TDM 不可用时,不与 TDM 双发"——同一 DOI，有/无 token 恒
+    产恰好一个计划，且 `url_strategy` 互斥。"""
+    with_token = _adapter(_never, token="tok").resolve_assets(make_wiley_venue(), _PAPER)
+    without_token = _adapter(_never, token=None).resolve_assets(make_wiley_venue(), _PAPER)
+
+    assert len(with_token) == 1 and len(without_token) == 1
+    assert with_token[0].url_strategy is UrlStrategy.API_CALL
+    assert without_token[0].url_strategy is UrlStrategy.RENDER_PAGE
+    assert with_token[0].url_strategy != without_token[0].url_strategy
 
 
 def test_resolve_missing_doi_raises_config() -> None:

@@ -1,13 +1,18 @@
-"""SSRN `SourceAdapter` 主体（design/adapters/ssrn.md §4；聚合元数据主路径）。
+"""SSRN `SourceAdapter` 主体（design/adapters/ssrn.md §4/§11；聚合元数据主路径 + 模式 B）。
 
 把纯逻辑件（`buckets` 零网络年桶 / `parse` 后处理层）与**内部持有的 `CrossrefAdapter`**
-组装成 adapter。能力口径（§4.1）：``DISCOVER | ENUMERATE | RESOLVE``（RESOLVE 为
-landing-only 零网络）——**无 FETCH**（模式 B 浏览器全文 defer Phase 6，D-029 案 B）、
+组装成 adapter。能力口径（§4.1，随 D-030/design/11 §12 裁决①点亮）：
+``DISCOVER | ENUMERATE | RESOLVE | FETCH``（RESOLVE 产 landing 观测 + 模式 B `RENDER_PAGE`
+计划；FETCH 经 browser-fetch 横切件执行，本 adapter 自身不实现 `fetch_asset`）——
 **无 SEARCH**（冻结 `SourceAdapter` 协议无 `search()`）。
 
 **红线：元数据主路径零 `*.ssrn.com` 接触**（AC-5.1a③ / D-029）。本 adapter 的唯一网络
 出口 = `api.crossref.org`（经内部 `CrossrefAdapter`）；`domains=("api.crossref.org",)`——
 `*.ssrn.com` 域**永不注册、永不请求**（站点 Cloudflare + 环境 TLS 双阻断天然免疫）。
+模式 B 的浏览器上下文取回（`papers.ssrn.com`）由 browser-fetch 横切件在 stages 层执行，
+不占本 adapter 的 `domains`/限速声明——限速/配额/挑战冷却/robots 合规全部归横切件
+统一护栏（design/11 §7），本 adapter 不写任何该类代码（D-029 案 B："能力面恰好等于
+合规面"，无可误用富余）。
 
 阶段分工（§4）：
 
@@ -18,9 +23,12 @@ landing-only 零网络）——**无 FETCH**（模式 B 浏览器全文 defer Ph
 - `enumerate_issue`：**委内部 `CrossrefAdapter`**（prefix 10.2139 + created 日期轴，两类型
   全收不加 `type:` 过滤）产 `PaperStub` 流 → **后处理层**（`parse`）抽 abstract_id、增补
   `(ssrn)` identifier；**护栏**：非 `ssrn.` 中缀 DOI → 不增补 + 计 `skipped_non_ssrn` 观测。
-- `resolve_assets`：**landing-only 零网络**（`resolve_offline=True`）——构造 landing 引用作
-  观测、**不产 PDF asset**；全文交 pipeline unpaywall OA-fallback（landing-only 净效果 PDF
-  命中≈0，§4.4）。
+- `resolve_assets`：**landing-only 零网络**（`resolve_offline=True`）——构造 landing 引用
+  （既作观测，也是模式 B `RENDER_PAGE` 计划的 `url`，design/11 §4.4 持久化纪律：volatile
+  `Delivery.cfm` URL 不入库、只活在浏览器上下文单次调用栈上，本 adapter 不构造它）；
+  全文优先交 pipeline unpaywall OA-fallback（landing-only 净效果 PDF 命中≈0，§4.4），
+  模式 B 计划作为**唯一全文路径**并行产出（T11，D-029 案 B），受 `[browserfetch].enabled`
+  三级门控（stages 层，本 adapter 不判——门关时计划仍产出，由 stages 门拦为 `skipped`）。
 - `healthcheck`：`GET api.crossref.org/works/{固定 SSRN DOI}` → title 精确 drift 比对（§9.2；
   真值 [LIVE 2026-07-24] 双源转正——crossref 冒烟 + openalex 第二源一致）——**非 SSRN 域**。
 
@@ -43,6 +51,7 @@ from paper_crawler.errors import CrawlerError, ErrorClass
 from paper_crawler.http import HttpClient
 from paper_crawler.obslog import log_event
 from paper_crawler.types import (
+    AssetKind,
     AssetPlan,
     AuthLevel,
     Capability,
@@ -51,6 +60,7 @@ from paper_crawler.types import (
     PaperStub,
     RatePolicy,
     SessionHandle,
+    UrlStrategy,
     VenueSpec,
 )
 
@@ -72,8 +82,11 @@ class SsrnAdapter(AdapterBase):
 
     adapter_id = "ssrn"
     family: AdapterFamily = "open_access"
-    # §4.1：无 FETCH（模式 B defer Phase 6）/ 无 SEARCH（冻结协议）。RESOLVE=landing-only。
-    capabilities = Capability.DISCOVER | Capability.ENUMERATE | Capability.RESOLVE
+    # §4.1：FETCH 随 D-030/design/11 §12 裁决①点亮（模式 B，经 browser-fetch 横切件执行）；
+    # 无 SEARCH（冻结协议）。RESOLVE 产 landing 观测 + 模式 B RENDER_PAGE 计划。
+    capabilities = (
+        Capability.DISCOVER | Capability.ENUMERATE | Capability.RESOLVE | Capability.FETCH
+    )
     # 元数据主干经 api.crossref.org（内部 CrossrefAdapter）——沿 crossref 既有裁决（polite
     # pool 实测 X-Rate-Limit-Limit:10/1s，保守取上限 5 req/s = 300 req/min，burst=1，§5）。
     default_rate = RatePolicy(
@@ -82,8 +95,8 @@ class SsrnAdapter(AdapterBase):
         source_note=(
             "SSRN 元数据主路径经 api.crossref.org（prefix 10.2139 枚举主干，零 SSRN 接触）："
             "沿 crossref polite pool 裁决（X-Rate-Limit-Limit:10/1s，保守 5 req/s）；"
-            "*.ssrn.com 仅模式 B（浏览器全文，defer Phase 6）触及、元数据层永不接触；"
-            "design/adapters/ssrn.md §5 [LIVE] 2026-07-24"
+            "*.ssrn.com 仅模式 B（浏览器全文，browser-fetch 横切件，T11）触及、元数据层"
+            "永不接触；design/adapters/ssrn.md §5 [LIVE] 2026-07-24"
         ),
     )
     auth_requirement = AuthLevel.NONE
@@ -180,23 +193,51 @@ class SsrnAdapter(AdapterBase):
     def resolve_assets(
         self, venue: VenueSpec, paper: PaperStub, session: SessionHandle | None = None
     ) -> list[AssetPlan]:
-        """**landing-only 零网络**：构造 landing 引用作观测、**不产可下载 asset**（§4.4）。
+        """**零网络**：landing 观测 + 模式 B `RENDER_PAGE` 计划（§4.4、D-029 案 B、design/11）。
 
         由 `(ssrn, abstract_id)` identifier（enumerate 增补）或 DOI 回退构造 landing URL
         `papers.ssrn.com/sol3/papers.cfm?abstract_id={id}` → 落一条 DEBUG 观测（**纯串、不
-        请求**——`*.ssrn.com` 零接触）。**返 `[]`**：SSRN 无第三方 PDF 旁路（勘察 §5 landing-only），
-        全文交 pipeline unpaywall OA-fallback（净效果 PDF 命中≈0，§4.4；同 unpaywall landing-only
-        先例返空）。`venue`/`session` 不读（下载主键来自 paper identifier，跨 venue 中性）。
+        请求**——`*.ssrn.com` 零接触，本函数本身零网络）。
+
+        **模式 B（唯一全文路径）**：返回一个 `AssetPlan(url_strategy=RENDER_PAGE)`，`url`=
+        landing 引用（**不是** volatile `Delivery.cfm` URL——design/11 §4.4 持久化纪律：
+        同批产出的一次性 token 不入库，只活在浏览器上下文单次调用栈上；本 adapter 不构造
+        该 URL，交 browser-fetch 横切件在浏览器上下文内解析）。`auth_needed=FREE_ACCOUNT`
+        （免费账号 session，D-029 修订：opt-in、非元数据前提，无账号时以干净上下文尝试）。
+
+        **AC-0 合规复述**：本方法**不**发起任何 `*.ssrn.com` 请求（红线 4，robots 面零风险
+        ——真正的取回请求会先经浏览器上下文的 `papers.ssrn.com/robots.txt` 前置核验义务
+        与既有 robots/软门禁纪律，§2 红线 4），**不绕过任何付费墙/验证码**——CF 挑战由
+        `ChallengeDetector` 分类后立即停手（AC-0.2），遇挡板即 BLOCKED，绝不求解/重试/
+        换 UA。限速节流（1 req/5s + 抖动）、每日配额、挑战冷却全部由 browser-fetch
+        横切件统一护栏承担（design/11 §7），本 adapter 侧零限速/配额代码。`ctx.
+        browser_fetch`/`Config.browser_fetch_enabled` 三级门在 stages 层（`_fetch_via_
+        browser`）——本层不判，**门关时该计划仍照常产出**，由 stages 门拦截为 `skipped`
+        （不计 failures，D-030 裁决⑤门控表达纪律）。
+
+        `unpaywall` OA-fallback 仍并行可用（pipeline 既有链，净效果 PDF 命中≈0，§4.4）；
+        二者不冲突——本方法只产模式 B 一个计划，OA-fallback 由 pipeline 在 fetch 失败/
+        no_entitlement 时自行派生（既有机制，本层不重复实现）。`venue`/`session` 不读
+        （下载主键来自 paper identifier，跨 venue 中性）。
         """
         abstract_id = _abstract_id_of(paper)
+        landing_url = parse.landing_url(abstract_id)
         log_event(
             "DEBUG",
-            "ssrn landing-only (no platform pdf asset; pdf via unpaywall OA-fallback)",
+            "ssrn render_page plan (mode B, opt-in; landing url only, no volatile token persisted)",
             stage="resolve",
             abstract_id=abstract_id,
-            ssrn_landing_url=parse.landing_url(abstract_id),
+            ssrn_landing_url=landing_url,
         )
-        return []
+        return [
+            AssetPlan(
+                kind=AssetKind.PDF,
+                url=landing_url,
+                expected_type="application/pdf",
+                url_strategy=UrlStrategy.RENDER_PAGE,
+                auth_needed=AuthLevel.FREE_ACCOUNT,
+            )
+        ]
 
     # -- healthcheck（固定 SSRN DOI 经 crossref lookup；非 SSRN 域）--------------------------
 

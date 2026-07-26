@@ -1,7 +1,7 @@
-"""Wiley TDM 路径的零网络纯函数（design/adapters/wiley.md §3；实现级）。
+"""Wiley TDM 路径的零网络纯函数（design/adapters/wiley.md §3；实现级；design/11 wiley 节 T11）。
 
 零网络、零 obslog（沿 s2/unpaywall/crossref parse.py 先例）。只用标准库 + `ids.normalize_doi`。
-本模块承载三件纯逻辑，全部可假数据精确断言：
+本模块承载四件纯逻辑，全部可假数据精确断言：
 
 - `is_wiley_doi`：DOI 前缀路由（`10.1111` / `10.1002`，wiley.md §1）——归一后判前缀。
   **用于 enumerate/routing 层判定"该 DOI 是否 Wiley 平台"**（enumerate 本身走 crossref，
@@ -11,6 +11,10 @@
 - `tdm_article_url`：按 DOI 构造 TDM 端点 URL（`GET api.wiley.com/onlinelibrary/tdm/v1/
   articles/{DOI}`，wiley.md §2 [LIVE 2026-07-23]）。DOI 内的 `/` 是路径分隔符保留
   （`quote(safe="/")`，同 unpaywall `_resolve_url` 先例）。
+- `page_fallback_url`：TDM 无 token 时的浏览器上下文页面兜底 URL（`onlinelibrary.wiley.com/
+  doi/pdf/{DOI}`，design/11 wiley 节"稳定路径"；wiley.md §3.1 fallback 档）——与
+  `tdm_article_url` 同构（归一 DOI + `quote(safe="/")`），供 `resolve_assets` 构造
+  `RENDER_PAGE` 计划（T11）。
 - `looks_like_pdf`：`%PDF-` 魔数轻校验（healthcheck 探针用；FETCH 阶段的**权威** `%PDF`
   校验归 pipeline，冻结分工，见 types.FetchIO docstring 与 arxiv 先例）。
 """
@@ -32,6 +36,10 @@ _WILEY_DOI_PREFIXES: tuple[str, ...] = ("10.1111/", "10.1002/")
 
 # TDM 端点前缀（wiley.md §2；R0 [LIVE 2026-07-23] 端点活验）。
 _TDM_ENDPOINT = "https://api.wiley.com/onlinelibrary/tdm/v1/articles/"
+
+# 页面兜底 URL 前缀（design/11 wiley 节"稳定路径"；wiley.md §3.1 fallback 档，浏览器上下文
+# 经 RENDER_PAGE 取回，非 TDM 直连）。
+_PAGE_FALLBACK_ENDPOINT = "https://onlinelibrary.wiley.com/doi/pdf/"
 
 # PDF 魔数（RFC/ISO 32000：文件以 `%PDF-` 起）。
 _PDF_MAGIC = b"%PDF-"
@@ -59,6 +67,18 @@ def tdm_article_url(doi: str) -> str:
     return f"{_TDM_ENDPOINT}{quote(normalized, safe='/')}"
 
 
+def page_fallback_url(doi: str) -> str:
+    """构造页面兜底 URL：`onlinelibrary.wiley.com/doi/pdf/{DOI}`（design/11 wiley 节
+    "稳定路径"；wiley.md §3.1 fallback 档）。
+
+    TDM 无 token（结构性不可用）时的浏览器上下文兜底路径（`url_strategy=RENDER_PAGE`，
+    T11）——与 `tdm_article_url` 同构：`doi` 先归一（`ids.normalize_doi`），再
+    `quote(safe="/")` 保留 DOI 内的 `/`。
+    """
+    normalized = normalize_doi(doi)
+    return f"{_PAGE_FALLBACK_ENDPOINT}{quote(normalized, safe='/')}"
+
+
 def looks_like_pdf(data: bytes) -> bool:
     """`data` 是否以 `%PDF-` 魔数起（healthcheck 探针轻校验）。
 
@@ -69,4 +89,4 @@ def looks_like_pdf(data: bytes) -> bool:
     return data.startswith(_PDF_MAGIC)
 
 
-__all__ = ["is_wiley_doi", "looks_like_pdf", "tdm_article_url"]
+__all__ = ["is_wiley_doi", "looks_like_pdf", "page_fallback_url", "tdm_article_url"]

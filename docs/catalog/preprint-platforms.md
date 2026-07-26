@@ -2,7 +2,7 @@
 title: 预印本/工作论文平台清单与订阅范围
 status: review
 owner: fable5
-updated: 2026-07-26
+updated: 2026-07-27
 ---
 
 # 预印本 / 工作论文平台
@@ -34,6 +34,7 @@ updated: 2026-07-26
 - URL 形态 [VERIFIED]：network 页 `ssrn.com/index.cfm/en/{fen|ern}/`；eJournal 清单 `.../fen-ejournals/`；JEL 浏览 `papers.ssrn.com/sol3/displayjel.cfm`；单篇 `papers.ssrn.com/sol3/papers.cfm?abstract_id={id}`；
 - auth：`free_account_preferred`；Cloudflare [LIVE-TESTED] → 浏览器上下文 + 1 req/5s + 日配额（详见 [adapter](../design/adapters/ssrn.md)）；
 - 订阅：eJournal 白名单 + 本地关键词过滤（无查询 API，design/09）。
+- **capabilities**：`DISCOVER | ENUMERATE | RESOLVE | FETCH`（FETCH：模式 B，opt-in，Phase 7 T11 落地——经 [browser-fetch 横切件](../design/11-browser-fetch.md) 浏览器上下文取回 `papers.ssrn.com` landing 页；`[browserfetch].enabled` + `--browser` 三级门默认关，非默认能力）。
 
 ## 3. RePEc / IDEAS / EconPapers（`repec` adapter，T1 元数据主干）
 

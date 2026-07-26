@@ -6,10 +6,17 @@ Society 三刊共用、ECMA 过刊改由 econsoc 域名分段路由）。推荐�
 （`GET api.wiley.com/onlinelibrary/tdm/v1/articles/{DOI}` + `Wiley-TDM-Client-Token` 头
 → 全文 PDF，wiley.md §2 [LIVE 2026-07-23]）。
 
-**token 门控 skip（D-024，s2 先例）**：Wiley TDM token 自助可得但 entitlement 受机构订阅
-约束；现状 config/env **无 token**。故：
-- `resolve_assets`/`fetch_asset` 无 token → `raise AuthRequired`（detail 含配置指引
-  `[auth.wiley] token`）→ runner 路由 BLOCKED(auth)，**不发任何真实请求**（离线 fixture 覆盖）。
+**token 门控（D-024，s2 先例；design/11 wiley 节 T11 起收窄为 resolve 层的兜底而非早退）**：
+Wiley TDM token 自助可得但 entitlement 受机构订阅约束；现状 config/env **无 token**。故：
+- `resolve_assets`**有 token** → TDM `AssetPlan`（`API_CALL`，逐字不变）；**无 token**
+  → **不再** `raise AuthRequired`，改产**页面兜底** `AssetPlan`（`RENDER_PAGE`，
+  `onlinelibrary.wiley.com/doi/pdf/{DOI}`）——browser-fetch 横切件落地后，"本层不产
+  不可取回的兜底 plan"的诚实边界已失去理由（同 aea ★接缝 A-1 同一原则，design/11 §4.6）。
+  两态互斥、恒一、不双发（design/11 wiley 节"只在 TDM 不可用时"）。
+- `fetch_asset` 无 token → 仍 `raise AuthRequired`（detail 含配置指引 `[auth.wiley]
+  token`）→ runner 路由 BLOCKED(auth)——该方法**只服务 TDM `API_CALL` 计划**（页面兜底的
+  `RENDER_PAGE` 计划经 `_fetch_via_browser`/browser-fetch 横切件执行，从不经此方法，
+  故直调 `fetch_asset` 时 token 门控逐字不变，离线 fixture 覆盖，不发任何真实请求）。
 - `healthcheck` 无 token → `raise NotImplementedError` → canary SKIP（与 fetch 的
   `AuthRequired`→BLOCKED 二义分离，auth-framework §7 B-M4；复用 s2/canary 既有 SKIP 分支）。
 
@@ -153,22 +160,47 @@ class WileyAdapter(AdapterBase):
     def resolve_assets(
         self, venue: VenueSpec, paper: PaperStub, session: SessionHandle | None = None
     ) -> list[AssetPlan]:
-        """`paper` 的 DOI → 1 个 TDM `AssetPlan`（wiley.md §3.1）。无 token → `AuthRequired`。
+        """`paper` 的 DOI → 1 个 `AssetPlan`（wiley.md §3.1 + design/11 wiley 节页面兜底）。
 
-        `venue` 未被使用（TDM 按 DOI 取回，不读 venue 层配置——同 unpaywall 跨 venue 先例，
-        冻结协议签名要求保留形参）。首选 TDM 主干（`url_strategy=API_CALL`,
-        `auth_needed=INSTITUTIONAL`）；页面兜底档（onlinelibrary 直链 + cookie）随
-        BrowserFetcher 落地（deferred，§3.2），本层不产不可取回的兜底 plan（诚实：不承诺
-        当前无 FETCH 支撑的路径）。
+        `venue` 未被使用（TDM/页面兜底均按 DOI 取回，不读 venue 层配置——同 unpaywall 跨
+        venue 先例，冻结协议签名要求保留形参）。**互斥二选一，恒一，不双发**（design/11
+        wiley 节"只在 TDM 不可用时"）：
+
+        - **有 token**（TDM 主干可用）→ 唯一 TDM `AssetPlan`（`url_strategy=API_CALL`,
+          `auth_needed=INSTITUTIONAL`，逐字不变）。
+        - **无 token**（TDM 结构性不可用——本函数零网络，无法探知逐 DOI entitlement）→
+          **页面兜底** `AssetPlan`（`url_strategy=RENDER_PAGE`，`onlinelibrary.wiley.com/
+          doi/pdf/{DOI}`，design/11 wiley 节"稳定路径"）**取代**此前的 `AuthRequired`
+          早退。browser-fetch 横切件落地（D-030）后，"本层不产不可取回的兜底 plan"的
+          诚实边界已随 aea ★接缝 A-1 同一原则失去理由——现存在真实可执行的浏览器上下文
+          路径，继续 raise 会让一条真实可执行的全文路径对用户不可见。
+
+        **AC-0 合规复述**：页面兜底分支**不**发起任何 `onlinelibrary.wiley.com` 请求、
+        **不绕过任何付费墙/TDM entitlement 检查**——无权限内容遇到的挡板由浏览器上下文
+        实际访问后如实判 `no_entitlement`/`CHALLENGE`（既有链路，AC-0.2 遇挑战即停）。
+        **限速/配额/挑战冷却/robots 合规全部由 browser-fetch 横切件统一护栏承担**
+        （design/11 §7）——本层不写任何该类代码。`ctx.browser_fetch`/`Config.
+        browser_fetch_enabled` 三级门在 stages 层（`_fetch_via_browser`），本层不判：
+        门关时该计划仍产出，由 stages 门拦截为 `skipped`（不计 failures，D-030 裁决⑤
+        门控表达纪律）。
         """
-        self._require_token("resolve_assets")
         doi = _doi_of(paper)
+        if self._has_token():
+            return [
+                AssetPlan(
+                    kind=AssetKind.PDF,
+                    url=parse.tdm_article_url(doi),
+                    expected_type="application/pdf",
+                    url_strategy=UrlStrategy.API_CALL,
+                    auth_needed=AuthLevel.INSTITUTIONAL,
+                )
+            ]
         return [
             AssetPlan(
                 kind=AssetKind.PDF,
-                url=parse.tdm_article_url(doi),
+                url=parse.page_fallback_url(doi),
                 expected_type="application/pdf",
-                url_strategy=UrlStrategy.API_CALL,
+                url_strategy=UrlStrategy.RENDER_PAGE,
                 auth_needed=AuthLevel.INSTITUTIONAL,
             )
         ]
