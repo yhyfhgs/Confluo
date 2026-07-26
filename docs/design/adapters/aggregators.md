@@ -379,6 +379,27 @@ openalex/s2 **不承担枚举**（capabilities 已收回 ENUMERATE，§1；两�
 - 镜像：默认 `www2.nber.org`（探针 4/4 稳），`repec.nber.org` 备（1 次连接层失败，样本=1 不构成判罚）。
   **两域 robots 未核**（原勘察只覆盖 www/back）——**T8 首个动作是补两域 robots 核验**（plan §3 T8-robots
   ≤2 请求），不通过则停手上报。
+- **两域 robots 核验结果 [LIVE 2026-07-27]（T8 首步执行，2/2 请求已记 `T8-robots` 账本行）——判定：
+  ⛔ 未通过（"无从判读"，非 "被 Disallow"）；T8 据此停手上报，实现未开工。** 诚实 UA
+  `PaperCrawler/0.1.0 (personal research)`，`httpx` 直接 GET、跟随重定向：
+
+  | # | 目标 | 结果 |
+  |---|---|---|
+  | 1 | `GET https://www2.nber.org/robots.txt` | **403 Forbidden**（389 B，`text/html`；源站 Apache 签名 `Apache/2.4.66 (FreeBSD) … Server at www2.nber.org Port 80`，非代理拦截）。正文关键行逐字：`<title>403 Forbidden</title>` / `<h1>Forbidden</h1>` / `You don't have permission to access this resource.` ⇒ **该域不提供可判读 robots.txt**，bulk ReDIF 路径既未被 Allow 也未被 Disallow |
+  | 2 | `GET https://repec.nber.org/robots.txt` | **连接层失败**：`httpx.ConnectError: [SSL: UNEXPECTED_EOF_WHILE_READING] EOF occurred in violation of protocol (_ssl.c:1032)`（TLS 握手中断，零 HTTP 响应）⇒ 同样**无 robots.txt 可判读** |
+
+  - 失败性质如实分离：#1 是**站点侧确定事实**（源站 Apache 亲自答 403）；#2 与探针 P3 对同域的 1 次连接层
+    失败、[repec.md 台账 #3/#6](../../research/site-survey/repec.md) 对 `repec.org` 的 2 次 TLS-fail 同类，
+    **环境障碍 vs 站点侧不可区分**（样本仍 =1，不构成判罚）。
+  - **403 是 `/robots.txt` 路径特异、非对本 UA 的全站封禁**：探针 [LIVE 2026-07-26] 对 `www2.nber.org`
+    的 bulk ReDIF 路径 4/4 成功（§6.2）。故"取不到 robots"与"取不到数据"是两件事。
+  - **待裁决的合规取舍（NEEDS_DECISION，尚无 ADR；[D-035](../../plan/decision-log.md) 决策 3 的"镜像"条以
+    "robots 未核、不通过则停手"立论，本结果即其兑现输入）**：RFC 9309
+    §2.3.1.3 把 4xx 归为 "Unavailable status"、明文 *crawler MAY access any resources*（即无可违反的
+    Disallow 规则）；但 AC-0.5「robots+ToS 遵守」要求的是**已核验的放行**，而 403（区别于 404）本身是一条
+    否定性应答。二者取舍不属执行 agent 权限，**须 fable 裁定后 T8 方可续做**——`www.nber.org` 的 robots
+    （[nber.md §1](../../research/site-survey/nber.md)，nginx/Drupal，`/papers/` 放行）**不可外推**到
+    `www2.nber.org`：REP 按 origin 生效，且两域服务器栈不同（nginx vs Apache/FreeBSD）。
 
 **快照落盘契约**（`<config-home>/state/repec/`，经 `config.resolve_home()`，D-032 红线）
 
@@ -554,6 +575,8 @@ openalex/s2 **不承担枚举**（capabilities 已收回 ENUMERATE，§1；两�
 | 14 | 2026-07-26 | **§5.2 回填 dblp 真实枚举卷响应 schema**：在线卷页根元素 `<bht>`（记录嵌 `<dblpcites>/<r>` 两层包装）vs 历史 dump `<dblp>`（`proceedings`/`inproceedings` 为直接子元素）两形态并存，此前仅 `dblp/parse.py` 模块 docstring 与测试 fixture 记录该真实结构，本文档未同步回填（文档滞后修正，非实质设计变更） | Phase 6 F2（[2026-07-24-post-phase5-audit.md §5](../../reports/2026-07-24-post-phase5-audit.md)） |
 | 15 | 2026-07-26 | **§5.5 幻影字段清账（非设计变更）**：删"或 VenueSpec 声明 OA-fallback 优先"——`VenueSpec` schema 从无该字段；实况是 `cli.py::_assemble_auth_seam` 对 OA-fallback 总开关无条件置位。同批订正 [auth-framework.md §8.1](../auth-framework.md)、[ssrn.md §4.4](ssrn.md) 两处同源表述 | P6-T10 收尾盘点发现 |
 | 16 | 2026-07-27 | **新增 §5.7 `repec`（aggregator-enrich）契约级设计**：定位/与 §5.3-§5.4 的本质差异表（零网络 vs 在线批查）/bulk-only 与零 HTML 红线/`state/repec/` 快照落盘契约（布局+manifest+失效语义+网络面移出 src）/`enrich_batch` 映射与未命中三分观测/DOI↔handle 仅 NBER 语法映射边界/可寻址集合如实入档（≈3.6 万 NBER WP，SSRN 结构性为 0）/接入面改动清单/fixture 清单。同批：§1 分工表 +1 行、§6 identifier scheme 表 +1 行、§6 优先级表按 D-035 扩为七位重编号、H1 与 front matter 标题同步。**本节是契约级设计、实现未落地**（`status: implemented` 覆盖的仍是 §5.1–§5.5 五源），显式标注于节首。 | [D-035](../../plan/decision-log.md)（P7-T2 卡产出，独立审查 NEEDS_FIX→修复→fable 落章生效）；[enrich-eval-p6.md §2/§6.2 探针 GO](../../research/enrich-eval-p6.md)；[phase7-implementation-plan §4 T2/T8](../../plan/phase7-implementation-plan.md) |
+
+| 17 | 2026-07-27 | **§5.7 回填两域 robots 核验结果 [LIVE]（T8 首步，2/2 请求已记 `T8-robots` 账本行）——判定"未通过（无从判读）"**：`www2.nber.org/robots.txt` **403 Forbidden**（源站 Apache 亲答，非代理拦截；403 系 `/robots.txt` 路径特异——同域 bulk ReDIF 路径探针 4/4 成功）、`repec.nber.org/robots.txt` **TLS 握手中断**（与探针 P3 及 repec.md 台账 #3/#6 同类，环境 vs 站点不可区分）⇒ **两域皆无可判读 robots.txt，bulk ReDIF 路径既未被 Allow 也未被 Disallow**。原节内"两域 robots 未核…不通过则停手上报"一句**保留不抹**（痕迹），新结果作 [LIVE] 注记追加。**T8 据此停手，实现零开工**；RFC 9309 §2.3.1.3（4xx=Unavailable→MAY access）与 AC-0.5（要求已核验放行）的取舍**交 fable 裁定**（NEEDS_DECISION），`www.nber.org` robots **明示不可外推**（REP 按 origin 生效 + 两域服务器栈不同） | T8 首步在线核验（[online-budget.md](../../process/online-budget.md) 三条纪律；[plan §3 T8-robots](../../plan/phase7-implementation-plan.md)） |
 
 ## 10. 风险与维护
 
