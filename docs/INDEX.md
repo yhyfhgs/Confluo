@@ -34,6 +34,7 @@
 | [plan/phase4-implementation-plan.md](plan/phase4-implementation-plan.md) | Phase 4 实施计划（认证框架 + 出版社 adapters 任务切分） | approved | 2026-07-23 |
 | [plan/phase5-implementation-plan.md](plan/phase5-implementation-plan.md) | Phase 5 实施计划（SSRN 与特殊经济学源 adapters 任务切分） | approved | 2026-07-24 |
 | [plan/phase6-implementation-plan.md](plan/phase6-implementation-plan.md) | Phase 6 实施计划（订阅与搜索：DSL + watch + 护栏 + 日报 任务切分） | approved | 2026-07-26 |
+| [plan/phase7-implementation-plan.md](plan/phase7-implementation-plan.md) | Phase 7 实施计划（全文抽取与库增强：extract/browser-fetch/repec/dedupe 22 卡切分） | approved | 2026-07-27 |
 | [plan/progress.md](plan/progress.md) | 项目进度跟踪 | approved | 2026-07-26 |
 | [plan/decision-log.md](plan/decision-log.md) | 架构决策记录（D-001…D-031） | approved | 2026-07-26 |
 
