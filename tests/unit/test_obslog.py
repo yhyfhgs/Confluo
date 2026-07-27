@@ -321,6 +321,36 @@ def test_insttoken_query_param_redacted() -> None:
     assert redact("?insttoken=SEKRET123456&x=1") == "?insttoken=***&x=1"
 
 
+@pytest.mark.parametrize(
+    ("raw", "expected"),
+    [
+        # browser-fetch volatile URL（design/11 §4.4）：签名段即一次性凭证。
+        (
+            "https://h.test/Delivery.cfm/x.pdf?abstractid=1&signature=SEKRET123456",
+            "https://h.test/Delivery.cfm/x.pdf?abstractid=1&signature=***",
+        ),
+        ("?sig=SEKRET123456&x=1", "?sig=***&x=1"),
+        # S3/CloudFront 预签名形态（`\b` 词边界使 `X-Amz-` 前缀天然覆盖）。
+        ("?X-Amz-Signature=SEKRET123456&X-Amz-Date=1", "?X-Amz-Signature=***&X-Amz-Date=1"),
+        ("?X-Amz-Credential=SEKRET123456", "?X-Amz-Credential=***"),
+        ("?Key-Pair-Id=SEKRET123456&Expires=9", "?Key-Pair-Id=***&Expires=9"),
+        ("Signature: SEKRET123456", "Signature: ***"),
+    ],
+)
+def test_redact_signed_url_credentials(raw: str, expected: str) -> None:
+    """签名/凭据类参数脱敏（T20 审计 R1 F-2）：browser-fetch 同批 volatile URL 带一次性
+    签名 token，落日志/异常/FetchLog 前必须打码（AC-0.4/NFR-8 覆盖日志文本整体）。"""
+    result = redact(raw)
+    assert result == expected
+    assert "SEKRET123456" not in result
+
+
+def test_redact_does_not_overreach_on_lookalike_keys() -> None:
+    """新增键不得误伤形近参数：`\\b` 词边界使 `design=`/`sig_alg=` 等不被吞。"""
+    lookalikes = "?design=layout&sig_alg=rs256&signal=1"
+    assert redact(lookalikes) == lookalikes
+
+
 def test_sensitive_keys_single_source_with_config_guard() -> None:
     """obslog 脱敏键 = `sensitive.REDACT_KEY_PATTERN`（单一权威源，与 config 护栏同源，防漂移）。"""
     from paper_crawler.obslog import _SENSITIVE_KEYS

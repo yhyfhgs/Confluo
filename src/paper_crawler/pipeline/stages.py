@@ -864,7 +864,8 @@ def _fetch_via_browser(
         fetch_log_row=FetchLogRow(
             task_id=task_id,
             domain=domain,
-            url=outcome.url,  # 实际请求的 URL（同批场景=volatile）；repo 落库前经 redact
+            url=outcome.url,  # 实际请求的 URL（同批场景=volatile）；**出栈时已脱敏**（F-2），
+            # repo 落库前再过一次 redact（幂等，两处纵深）
             http_status=None,
             bytes_=outcome.bytes_written,
             elapsed_ms=elapsed_ms,

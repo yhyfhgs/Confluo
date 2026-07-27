@@ -9,7 +9,9 @@
 - **obslog 脱敏**（`REDACT_KEY_PATTERN`）：核心 + `email`（unpaywall `?email=` 查询参数须
   与凭证同等脱敏，aggregators §3 B-B4）+ 具名认证头（`x-els-apikey` / `tdm-token` /
   `wiley-tdm-client-token`——`\btoken` 对 "insttoken"/"APIKey" 内嵌形态漏匹配，显式补以
-  增强自证，auth-framework §5）。脱敏宁滥勿缺。
+  增强自证，auth-framework §5）+ **签名 URL 参数族**（`signature` / `sig` / `credential` /
+  `key-pair-id`——browser-fetch 同批 volatile URL 的签名段即一次性凭证，design/11 §4.4）。
+  脱敏宁滥勿缺。
 - **config 项目级护栏**（`CONFIG_GUARD_KEY_PATTERN`）：核心 + 凭证同义词（`credentials?` /
   `passwd` / `private_key`）——但**不含** `email`（`identity.email` 属合法非凭证配置键）
   与**裸 `key`**（会误伤 `key_ref` 类引用名）。10-config §3.1 复审 §4 采纳（2026-07-23）。
@@ -35,12 +37,21 @@ _CORE_SENSITIVE_KEYS: tuple[str, ...] = (
     "inst[-_]?token",
 )
 
-# obslog 脱敏专属追加（含 email + 具名认证头；见模块 docstring 的受控差异说明）。
+# obslog 脱敏专属追加（含 email + 具名认证头 + 签名 URL 参数；见模块 docstring 的受控差异）。
+# **签名族**（T20 审计 R1 F-2）：browser-fetch 同批 volatile URL（design/11 §4.4）的签名段
+# 就是一次性凭证——`Delivery.cfm?…&signature=…` / S3 `X-Amz-Signature`·`X-Amz-Credential` /
+# CloudFront `Signature`·`Key-Pair-Id`。`\b` 词边界使 `X-Amz-` 类前缀天然覆盖（连字符是词
+# 边界），亦不误伤形近参数（`design=`/`sig_alg=` 的 `sig` 后不是 `=`，不匹配）。
+# 有意**不含** `expires`/`policy`：无签名即不可用，且时刻/策略段是审计可读面。
 _REDACT_EXTRA_KEYS: tuple[str, ...] = (
     "email",
     "x-els-apikey",
     "tdm[-_]?token",
     "wiley-tdm-client-token",
+    "signature",
+    "sig",
+    "credentials?",
+    "key[-_]?pair[-_]?id",
 )
 
 # config 项目级护栏专属追加（凭证同义词；**不含** email / 裸 key，见模块 docstring）。

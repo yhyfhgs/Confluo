@@ -86,6 +86,7 @@ from urllib.parse import urlsplit
 from paper_crawler.auth.browser import _BROWSER_INSTALL_HINT
 from paper_crawler.auth.challenge import ChallengeDetector, ClassifyResult
 from paper_crawler.errors import AuthRequired, Challenged, CrawlerError, ErrorClass
+from paper_crawler.obslog import redact
 from paper_crawler.types import AssetPlan, UrlStrategy
 
 _PROFILE_PREFIX = "pc-bfetch-"
@@ -156,9 +157,15 @@ class BrowserContextResolver(Protocol):
 
 @dataclass(frozen=True)
 class BrowserFetchOutcome:
-    """单次取回结果。`url` = 本次**实际请求**的 URL（同批场景下即 volatile URL）——
-    仅供调用方审计记账（fetch_log/obslog）；**绝不回写 `asset.url`**（§4.4 持久化纪律：
-    asset.url 记 landing 引用，volatile URL 只活在单次调用的栈上）。"""
+    """单次取回结果。`url` = 本次**实际请求**的 URL（同批场景下即 volatile URL），
+    **已过 `redact` 脱敏**——仅供调用方审计记账（fetch_log/obslog）；**绝不回写
+    `asset.url`**（§4.4 持久化纪律：asset.url 记 landing 引用，volatile URL 只活在
+    单次调用的栈上）。
+
+    脱敏落在**构造点**而非各下游 sink（T20 审计 R1 F-2）：volatile URL 的签名段就是
+    一次性凭证，原文出栈等于把它交给每个消费方"各自记得脱敏"——那正是本项目复现过
+    多次的「注册了却没验证」同构面。带签名的原文只在 `fetch_one` 内用于真实导航。
+    """
 
     verdict: ClassifyResult
     url: str
@@ -295,7 +302,9 @@ class _PlaywrightFetchContext:  # pragma: no cover - 真实浏览器路径（§8
     def goto(self, url: str) -> PageResponse:
         response = self._page.goto(url)
         if response is None:
-            raise CrawlerError(ErrorClass.TRANSIENT, f"浏览器导航无响应: {url}")
+            # 异常文本会进 obslog/报告（stages 把 `{exc}` 写进 msg）——URL 先脱敏再入串
+            # （F-2：签名段是一次性凭证；纵深防御，不依赖下游 sink 各自记得脱敏）。
+            raise CrawlerError(ErrorClass.TRANSIENT, f"浏览器导航无响应: {redact(url)}")
         return PageResponse(
             status=int(response.status),
             headers=dict(response.headers),
@@ -434,14 +443,16 @@ def fetch_one(
             response = handle.goto(effective.url)
             verdict = classify_or_raise(response, domain=domain, detector=verdict_detector)
             if verdict is ClassifyResult.NO_ENTITLEMENT:
-                return BrowserFetchOutcome(verdict=verdict, url=effective.url, no_entitlement=True)
+                return BrowserFetchOutcome(
+                    verdict=verdict, url=redact(effective.url), no_entitlement=True
+                )
             # OK：下载触发是**第二次真实请求**，故再过一次域级闸（宁可更慢，不少记一次请求）。
             budget.wait_rate(domain=domain)
             written = handle.download_via(
                 trigger=lambda: _trigger_download(handle, effective.url), dest=dest
             )
             return BrowserFetchOutcome(
-                verdict=verdict, url=effective.url, ok=True, bytes_written=written
+                verdict=verdict, url=redact(effective.url), ok=True, bytes_written=written
             )
         finally:
             handle.close()

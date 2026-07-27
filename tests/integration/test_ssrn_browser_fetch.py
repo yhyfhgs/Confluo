@@ -298,3 +298,27 @@ def test_landing_without_download_link_is_no_entitlement(
         run_stage(env, handle, monkeypatch)
     assert excinfo.value.error_class is ErrorClass.NO_ENTITLEMENT
     assert "download_via" not in handle.calls
+
+
+# ---------------------------------------------------------------------------
+# F-2：签名 volatile URL 的脱敏面（F-1 接线后才真实流动）
+# ---------------------------------------------------------------------------
+
+
+def test_signed_volatile_url_is_masked_in_fetch_log_and_obslog(
+    env: Env, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """volatile URL 的签名参数**不得**以原文进 fetch_log 行 / obslog 事件（AC-0.4/NFR-8）。"""
+    assert run_stage(env, FakeHandle(), monkeypatch) == "done"
+
+    logs = env.repo.fetch_logs()
+    assert len(logs) == 1
+    logged_url = str(logs[0]["url"])
+    assert "SEKRET-SIGNATURE-123" not in logged_url
+    assert "signature=***" in logged_url
+    # 域/主键面照常可读（脱敏只打签名段，不毁审计价值）
+    assert f"abstractid={ABSTRACT_ID}" in logged_url
+
+    dumped = json.dumps(env.log_lines(), ensure_ascii=False)
+    assert "SEKRET-SIGNATURE-123" not in dumped
+    assert "signature=***" in dumped  # obslog 事件确实记了本次实际请求的 URL（已打码）

@@ -337,6 +337,42 @@ def test_t4_resolve_in_context_result_must_stay_render_page(tmp_path: Path) -> N
     assert "download_via" not in handle.calls
 
 
+SIGNED_VOLATILE = f"{VOLATILE}&signature=SEKRET-SIGNATURE-123"
+
+
+def test_signed_volatile_url_never_leaves_the_stack_unmasked(tmp_path: Path) -> None:
+    """签名 volatile URL 的凭证段**在 `fetch_one` 内即打码**（§4.4 "只活在栈上"的兑现）。
+
+    `BrowserFetchOutcome.url` 是**审计字段**（调用方拿去落 fetch_log/obslog）——原文出栈
+    等于把一次性凭证交给下游各自记得脱敏，那是"注册了却没验证"的同构面。
+    """
+    handle = FakeHandle()
+    outcome = run(
+        handle,
+        tmp_path / "a.part",
+        resolve_in_context=lambda h: render_plan(SIGNED_VOLATILE),
+    )
+    assert outcome.ok is True
+    assert handle.gotos[0] == f"goto:{SIGNED_VOLATILE}"  # 真实请求仍用完整签名 URL
+    assert "SEKRET-SIGNATURE-123" not in outcome.url  # 出栈的审计串已打码
+    assert "signature=***" in outcome.url
+    assert "abstractid=1" in outcome.url  # 非凭证参数保留（脱敏不毁审计价值）
+
+
+def test_signed_volatile_url_is_masked_on_the_no_entitlement_return(tmp_path: Path) -> None:
+    """NO_ENTITLEMENT 也从同一构造点出栈——两条返回路径都不得漏脱敏。"""
+    handle = FakeHandle(
+        PageResponse(status=200, headers={}, final_url=SIGNED_VOLATILE, body=b"Get access")
+    )
+    outcome = run(
+        handle,
+        tmp_path / "a.part",
+        resolve_in_context=lambda h: render_plan(SIGNED_VOLATILE),
+    )
+    assert outcome.no_entitlement is True
+    assert "SEKRET-SIGNATURE-123" not in outcome.url
+
+
 # ---------------------------------------------------------------------------
 # §7 预算护栏（三判定 + 优先级）
 # ---------------------------------------------------------------------------
