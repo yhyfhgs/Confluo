@@ -120,6 +120,7 @@ from paper_crawler.storage.repo import (
 from paper_crawler.subs.report import render_daily
 from paper_crawler.subs.types import RunSummary
 from paper_crawler.subs.watch import (
+    SUBSCRIPTION_LEVEL_SOURCE,
     AdapterFetcher,
     NberRssFetcher,
     RoutingFetcher,
@@ -1036,8 +1037,12 @@ def subs_watch(
     不推 watermark、不写运行记录，日报只回显到 stdout 不落盘——但拉取/过滤/护栏判定
     全程照跑，因此该跑出的报错一条都不会被跳过。
 
-    退出码：0 正常（含零新增）/ 1 有源失败 / 2 用法·配置错（缺参数、未知订阅、订阅
-    文件非法）/ 3 无失败但有护栏熔断。
+    退出码：0 正常（含零新增）/ 1 有失败（源级失败，或整条订阅致命失败——如该订阅的
+    水位文档损坏）/ 2 用法·配置错（缺参数、未知订阅、订阅文件非法）/ 3 无失败但有护栏
+    熔断。
+
+    **一条订阅坏掉不影响其余订阅**（`run_watch_all` 的订阅级隔离）：`--all` 下坏订阅
+    记为失败并在 stderr 打一行错误原文，其余订阅照跑、日报照出、退出码 1。
     """
     if name is None and not all_:
         _usage_error("必须指定 NAME 或 --all")
@@ -1069,10 +1074,24 @@ def subs_watch(
         )
         # 时钟只取一次并贯穿全程（日报路径/渲染标题/增量窗同日，避免跨午夜时三者分裂）。
         today = dt.datetime.now(dt.UTC).date()
-        summaries, report_path = run_watch_all(context, targets, dry_run=dry_run, now=today)
+        # 命令边界契约：任何从 watch 子系统逃出来的 `CrawlerError` 都收成"错误: …"一行
+        # + 退出码 1，绝不是裸 traceback（沿本模块 `_echo_error` 的既有样式）。当前
+        # `run_watch_all` 自己做了订阅级隔离，正常路径不会有异常逃出来——但那是**它**的
+        # 实现细节，不是本命令可依赖的不变量（子系统日后在循环外新增一处受控故障就会
+        # 破功）。契约由 `test_cli_subs_watch.py` 的边界用例钉住，不是无人走过的死分支。
+        try:
+            summaries, report_path = run_watch_all(context, targets, dry_run=dry_run, now=today)
+        except CrawlerError as exc:
+            _echo_error(exc)
+            raise typer.Exit(code=1) from exc
 
         for summary in summaries:
             typer.echo(_subs_summary_line(summary))
+            # 订阅级致命故障（水位文档损坏等）：摘要行只写得下"失败源"，错误原文单独
+            # 打一行到 stderr——沿本模块 `_echo_error` 的既有样式，用户不必翻日报。
+            for failure in summary.failures:
+                if failure.source == SUBSCRIPTION_LEVEL_SOURCE:
+                    typer.echo(f"错误: {summary.subscription}: {failure.message}", err=True)
             brief = overload_brief(summary)
             if brief is not None:
                 typer.echo(f"  熔断简报: {brief}")

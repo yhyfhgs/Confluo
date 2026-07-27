@@ -35,6 +35,13 @@
 区分；dry-run 不落（design/09 §6.2"只报数不动库"，plan §4 T5 dry-run 语义），故
 "熔断 + dry-run"同时成立时**以 dry-run 为准**：演习不留任何痕迹。
 
+上表第三行的"整体失败"是 `run_watch` **内部**可收敛的失败（全部源都挂了）。还有一类
+失败发生在 per-step 循环**之前**（最典型：开头那句 `Watermark.parse` 撞上损坏的水位
+文档），`run_watch` 对它**不兜底**——那是"本订阅致命"，且必须 fail-loud（当成首跑会
+静默重刷全窗）。这类失败的隔离粒度是**订阅级**，由 `run_watch_all` 承接：坏订阅装配
+成一条失败占位 `RunSummary`、其余订阅照跑（见该函数 docstring）。两级隔离分工明确：
+源级在 `_run_source`（`failures` 里记一条，其余源照跑）、订阅级在 `run_watch_all`。
+
 **dry-run 仍完整消费各源流**（AC-6.2 判据的前提）：拉取、`new_ids` 差分、本地过滤、
 去重、熔断判定全程照跑，只是最后不落任何持久化。这是刻意的——生成器是惰性的，若
 dry-run 走"早退"捷径，那些只在遍历时才触发的校验（解析异常、未登记谓词、坏日期）
@@ -172,7 +179,7 @@ from typing import Protocol, runtime_checkable
 
 from paper_crawler.adapter import SourceAdapter
 from paper_crawler.adapters.nber import rss
-from paper_crawler.errors import CrawlerError, ErrorClass, WatermarkInvalid
+from paper_crawler.errors import CrawlerError, ErrorClass
 from paper_crawler.http import HttpClient
 from paper_crawler.ids import normalize_identifier
 from paper_crawler.merge import MergeEngine
@@ -211,6 +218,12 @@ from paper_crawler.types import PaperStub, VenueNames, VenueSpec, utcnow_iso
 # 歧义③——该子目录进 `.gitignore`，运行产物不入 git）。相对当前工作目录解析，同
 # `canary.canary_record_path` 先例（预期在仓库根调用）。
 DEFAULT_REPORT_ROOT = Path("docs") / "reports" / "watch"
+
+# 订阅级致命故障在 `FailureEvent.source` 上的占位标记（`run_watch_all` 的隔离产物）。
+# 该字段平时记的是**哪个源**挂了，但订阅级故障（存储侧水位文档损坏等）不归任何一个源
+# ——它发生在 per-step 循环之前，一个源都还没跑。用中文占位而非 `<subscription>`：这个
+# 值会进日报的 markdown 表格单元格，尖括号形态会被渲染器当成 HTML 标签整段吞掉。
+SUBSCRIPTION_LEVEL_SOURCE = "(订阅级)"
 
 # 每个订阅源在 `MergeEngine.ingest(source=…)` 里的来源身份。两套词表不同名是有原因的：
 # `subs.model.SOURCE_FIELDS` 是**订阅 DSL 的源**（用户写什么），`merge.SOURCE_PRIORITY`
@@ -998,41 +1011,38 @@ def _advance_source(
     *,
     day: date,
 ) -> Watermark:
-    """推进**一个源**的水位，并把该源的水位故障隔离在该源内（P0 回归 2026-07-27）。
+    """推进**一个源**的水位，并把本轮的跳过计数落成 WARNING（P0 回归 2026-07-27）。
 
-    两件事，各自独立：
+    `advance_with_report` 报回本轮有多少条日期解析不了（crossref/ssrn 的 partial
+    `'YYYY'`/`'YYYY-MM'` 是**合法**产物，见 `crossref/parse.py::_format_date_parts`）。
+    它们不推进水位——保守侧，但必须看得见，否则"这批没推进水位"无从察觉。
 
-    1. **跳过计数落 WARNING**：`advance_with_report` 报回本轮有多少条日期解析不了
-       （crossref/ssrn 的 partial `'YYYY'`/`'YYYY-MM'` 是**合法**产物，见
-       `crossref/parse.py::_format_date_parts`）。它们不推进水位——保守侧，但必须
-       看得见，否则"这批没推进水位"无从察觉。
-    2. **`WatermarkInvalid` 只降级本源**：该异常仍可能从**存储侧**水位损坏抛出
-       （`DateState` 里存了坏日期 → `_parse_date` fail-loud，那条纪律刻意保留）。
-       此前这行裸调用在 `run_watch` 的 per-step 循环里**没有任何 try/except**，
-       于是一个源的坏游标会掀掉整轮，并且——因为在循环里——把**排在它后面**的源
-       一并跳过。线上正是这个形态：ssrn 烧完 7 页游标后崩，arxiv/nber 一次没跑到。
+    **本调用点结构性抛不出 `WatermarkInvalid`，故不设兜底**（P0 初版曾在此包一层
+    `except WatermarkInvalid`，独立审查坐实那是死代码：整个 revert 掉全树照绿）。
+    三条不变量各自独立成立，任何一条被打破才需要重新评估这个判断：
 
-    降级 = 该源水位停在旧值（下次窗更宽，保守侧），其余源照常。这里**不**把它记进
-    `failures`：拉取本身是成功的（条目已经过滤、即将入库），失败的只是水位推进；
-    记进去会让 `outcome` 变 FAILED、退出码非零，与"这一轮确实收到了东西"不符。
+    1. `strategy_for(source)` 不抛——`source` 出自 `plan.steps`（编译期已按
+       `SOURCE_FIELDS` 校验过），而 `watermark.STRATEGIES` 的键集与 `SOURCE_FIELDS`
+       恒等（`test_subs_watermark.py` 的自断言锁死）；
+    2. `_parse_date(state.date)` 不抛——`watermark` 是 `Watermark.parse` 的产物，
+       `DateState.date` 在 `_parse_date_payload` 里已被 `.isoformat()` 归一，此后只经
+       `with_state` 传递本策略自产的状态，类型与格式都不会漂；
+    3. `seen` 侧不抛——走宽松面 `_try_parse_date`，解析不了只计数跳过（缺陷 A 的修法）。
+
+    真正会抛的是**存储侧**水位损坏，位置在 `run_watch` 开头的 `Watermark.parse`
+    （per-step 循环**之外**）。那是"本订阅致命"，且必须保持 fail-loud——在这里降级成
+    "水位停在旧值"等于把损坏游标当首跑、静默重刷全窗，正是 fail-loud 要防的事故。
+    该异常的隔离在**订阅级**由 `run_watch_all` 承接（坏订阅记为失败，其余订阅照跑）。
     """
-    try:
-        report = advance_with_report(watermark, source, seen, now=day)
-    except WatermarkInvalid as exc:
-        log_event(
-            "WARNING",
-            f"watch[{subscription}]: 源 {source} 水位推进失败，本轮不推进该源"
-            f"（其余源不受影响，下次窗更宽）: {exc}",
-            stage="watch",
-            venue=source,
-            error_class=exc.error_class.value,
-        )
-        return watermark
+    report = advance_with_report(watermark, source, seen, now=day)
     if report.skipped:
+        # 样例 repr 化：partial 日期里混着纯空白/不可见字符时，裸拼会打出一串看不见的
+        # 东西（"样例: ,  , "），repr 后 `'  '` 至少能看出"这条是空白"。
+        samples = ", ".join(repr(sample) for sample in report.samples)
         log_event(
             "WARNING",
             f"watch[{subscription}]: 源 {source} 有 {report.skipped} 条日期无法解析，"
-            f"不参与水位推进（样例: {', '.join(report.samples)}）"
+            f"不参与水位推进（样例: {samples}）"
             "——partial 日期（'YYYY'/'YYYY-MM'）是 crossref 的合法产出，属预期",
             stage="watch",
             venue=source,
@@ -1171,6 +1181,11 @@ def run_watch(
 
     `now` 是**唯一时钟入口**（测试/固定时间线注入）——转手传给 T4 的 `window_params`/
     `advance`，本模块不另外调 `datetime.now`。
+
+    **本函数会抛 `CrawlerError`**，且刻意不在内部吞：最典型的是下面那句
+    `Watermark.parse` 撞上损坏的水位文档（`WatermarkInvalid`，per-step 循环之前）——
+    那是"本订阅致命"，降级成初窗重刷正是 fail-loud 要防的事故。多订阅场景的隔离在
+    `run_watch_all`（坏订阅记失败、其余照跑），CLI 边界另有一层兜底。
     """
     started_at = utcnow_iso()
     day = _today(now)
@@ -1305,20 +1320,77 @@ def run_watch_all(
     dry_run: bool = False,
     now: date | None = None,
 ) -> tuple[list[RunSummary], Path]:
-    """串行跑多个订阅，返回 `(全部 RunSummary, 日报路径)`。
+    """串行跑多个订阅，返回 `(全部 RunSummary, 日报路径)`；**坏订阅不掀翻其余订阅**。
 
     日报路径**先算**（多订阅合并一份 `daily-YYYY-MM-DD.md`，design/09 §6 第 3 条）再
     逐个跑——每条 run 记录的 `report_path` 因此都能填上（`record_run` 是 INSERT-only，
     plan §4 T5 已裁决歧义③）。串行而非并发：护栏与 watermark 都是逐订阅的状态，串行
     让"第 n 个订阅熔断"不影响前 n-1 个已提交的水位，也让日报顺序确定可 golden。
+
+    ## 订阅级故障隔离（P0 独立审查回修 2026-07-27）
+
+    `run_watch` 会在 per-step 循环**之前**抛 `CrawlerError`——最典型的是开头那句
+    `Watermark.parse`（存储侧水位文档损坏，`WatermarkInvalid`，刻意 fail-loud）。此前
+    本函数是一句裸列表推导，于是 `--all` 下**一个**坏订阅会掀掉全部订阅：排在它后面的
+    统统不跑、不落 run 记录、无日报，且异常一路冒到 CLI 变成裸 traceback。
+
+    现在每个订阅各自兜住：坏订阅装配成一条**失败占位 `RunSummary`**
+    （`outcome=FAILED` + 一条 `FailureEvent`，source 记 `SUBSCRIPTION_LEVEL_SOURCE`），
+    其余订阅照跑。承载形态选"占位 summary"而非另起并行结构，是因为下游四个消费面
+    （`_subs_summary_line` / `render_daily` / `write_daily_report` / `exit_code_for`）
+    全部只认 `RunSummary`：失败信息进 `failures` 后，日报的"失败事件"段照渲染、
+    `exit_code_for` 照返回 1（它判的就是 `summary.failures` 的存在），CLI 与报告层
+    **零改动**即拿到完整信息。
+
+    **只兜 `CrawlerError`**：那是本系统"受控故障"的边界（`errors` 模块 docstring）。
+    编程错误（`ValueError`/`KeyError` 等）照旧冒泡——把它们也吞掉会让 bug 变成一行
+    日报表格，正是 fail-loud 纪律要防的。失败的订阅**不落 `subscription_run` 行**：
+    它压根没跑到 `record_run`，凭空补一行"跑过"会污染运维视角的运行史。
     """
     day = _today(now)
     path = daily_report_path(day, root=context.report_root)
-    summaries = [
-        run_watch(context, subscription, dry_run=dry_run, now=now, report_path=str(path))
-        for subscription in subscriptions
-    ]
+    summaries: list[RunSummary] = []
+    for subscription in subscriptions:
+        try:
+            summaries.append(
+                run_watch(context, subscription, dry_run=dry_run, now=now, report_path=str(path))
+            )
+        except CrawlerError as exc:
+            log_event(
+                "ERROR",
+                f"watch[{subscription.name}]: 本订阅失败，跳过并继续跑其余订阅: {exc}",
+                stage="watch",
+                error_class=exc.error_class.value,
+            )
+            summaries.append(_failed_summary(context, subscription.name, exc, dry_run=dry_run))
     return summaries, path
+
+
+def _failed_summary(
+    context: WatchContext, subscription: str, exc: CrawlerError, *, dry_run: bool
+) -> RunSummary:
+    """订阅级致命故障的占位 `RunSummary`（`run_watch_all` 的隔离产物）。
+
+    `report_path` 留 `None`：该值的语义是"这条 run 记录指向哪份日报"，而本订阅没有
+    run 记录（见 `run_watch_all` docstring 末段）。`library_total` 照实查——库是好的，
+    坏的只是这一条订阅的运行；填 0 会让日报的"累计库存"表凭空少一行数。
+    """
+    now = utcnow_iso()
+    return RunSummary(
+        subscription=subscription,
+        started_at=now,
+        finished_at=now,
+        outcome=WatchOutcome.FAILED,
+        dry_run=dry_run,
+        library_total=_library_total(context.db),
+        failures=(
+            FailureEvent(
+                source=SUBSCRIPTION_LEVEL_SOURCE,
+                error_class=exc.error_class.value,
+                message=str(exc),
+            ),
+        ),
+    )
 
 
 def daily_report_path(day: date, *, root: Path | None = None) -> Path:
@@ -1356,6 +1428,7 @@ __all__ = [
     "DEFAULT_REPORT_ROOT",
     "MERGED_SOURCE_RULE_PREFIX",
     "MERGE_SOURCE",
+    "SUBSCRIPTION_LEVEL_SOURCE",
     "SUPPORTED_SOURCES",
     "AdapterFetcher",
     "NberRssFetcher",

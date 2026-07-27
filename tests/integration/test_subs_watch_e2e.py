@@ -31,6 +31,7 @@ from paper_crawler.subs.model import Subscription
 from paper_crawler.subs.types import RunSummary, WatchOutcome
 from paper_crawler.subs.watch import (
     MERGED_SOURCE_RULE_PREFIX,
+    SUBSCRIPTION_LEVEL_SOURCE,
     AdapterFetcher,
     NberRssFetcher,
     SourceRequest,
@@ -671,12 +672,20 @@ def test_all_partial_dates_leave_the_watermark_unadvanced(env: _Env) -> None:
     assert stored["sources"]["crossref"]["date"] == "2026-07-19"  # type: ignore[index]
 
 
-def test_a_bad_date_source_does_not_starve_the_sources_after_it(env: _Env) -> None:
-    """缺陷 B 回归：坏日期只降级**该源**，不得跳过它**之后**的源。
+def test_unparseable_date_in_one_source_does_not_starve_the_later_sources(env: _Env) -> None:
+    """缺陷 A 的**多源**场景：一条解析不了的源侧日期不得让排在其后的源收不到东西。
 
-    线上正是这个形态——`asset-pricing` 预设烧完 7 页 ssrn 游标后崩溃，排在其后的
-    arxiv / nber 两条腿一次都没跑到。`advance()` 在 `run_watch` 的 per-step 循环里
-    （`watch.py`），当时**没有任何 try/except** 兜着。
+    单源场景（`test_partial_pub_dates_do_not_kill_the_run`）只证明"这一个源没崩"；本
+    用例证明的是**跨源**的那一半——`advance` 在 `run_watch` 的 per-step 循环里，旧
+    实现下它一抛就把循环整个掀掉，后面的源一次都跑不到。修法在
+    `watermark._advance_date`：解析不了的日期跳过并计数，压根不抛（见
+    `_try_parse_date` 的宽松面）。
+
+    这里用"真垃圾"（`'昨天'`，非合法 partial）而非 `'YYYY'`，是要覆盖到宽松面的另一
+    半：不只 crossref 那种**预期内**的 partial 走跳过，任意源侧脏数据同样走跳过。
+
+    **注**：本用例不覆盖存储侧水位损坏那条路径（那条仍 fail-loud，隔离粒度是订阅级，
+    回归见 `test_a_broken_stored_watermark_fails_only_its_own_subscription`）。
     """
     ssrn_venue = VenueSpec(
         id="ssrn",
@@ -705,6 +714,69 @@ def test_a_bad_date_source_does_not_starve_the_sources_after_it(env: _Env) -> No
     assert summary.ingested_count == 2
     stored = env.subs_repo.read_watermark(subscription.name)
     assert stored["sources"]["crossref"]["date"] == "2026-07-24"  # type: ignore[index]
+
+
+def test_a_broken_stored_watermark_fails_only_its_own_subscription(env: _Env) -> None:
+    """真·缺陷 B 回归（P0 独立审查回修 2026-07-27）：坏订阅不得掀翻 `--all` 的其余订阅。
+
+    **存储侧**水位文档损坏（这里直写一份 `date: '2026'` 的 partial 游标）在
+    `run_watch` **开头**那句 `Watermark.parse` 就抛 `WatermarkInvalid`——per-step 循环
+    之外，源级隔离（`_run_source` / `_advance_source`）一个都够不着。那条 fail-loud
+    是刻意的（损坏游标当成首跑 = 静默重刷全窗），**不降级**；真正该做的隔离在
+    `run_watch_all`：本订阅记为失败，其余订阅照跑。
+
+    此前 `run_watch_all` 是一句裸列表推导，于是排在坏订阅后面的全部订阅一次都跑不到
+    ——线上 `asset-pricing` 崩掉后 arxiv/nber 两条腿没跑到，正是这个形态的源级同构。
+    """
+    _write_subscription(env.subs_dir, "alpha")
+    _write_subscription(env.subs_dir, "beta")
+    subscriptions = load_subscriptions(env.subs_dir, env.subs_repo)
+    # 预置损坏水位：`date` 是 partial `'2026'`，存储侧 `_parse_date` 必须拒载（fail-loud）。
+    env.subs_repo.write_watermark(
+        "alpha",
+        {"schema_ver": 1, "sources": {"crossref": {"kind": "date_cursor", "date": "2026"}}},
+    )
+
+    summaries, path = run_watch_all(env.context(), subscriptions, now=DAY)
+
+    # ① 坏订阅**可见地**失败：占位 summary 带订阅级失败事件；没跑到 record_run 故无 run 行。
+    assert [summary.subscription for summary in summaries] == ["alpha", "beta"]
+    assert summaries[0].outcome is WatchOutcome.FAILED
+    (failure,) = summaries[0].failures
+    assert failure.source == SUBSCRIPTION_LEVEL_SOURCE
+    assert failure.error_class == "config"
+    assert "无法解析为 ISO 日期" in failure.message
+    assert env.runs("alpha") == []
+    assert env.subs_repo.read_watermark("alpha")["sources"] == {  # type: ignore[index]
+        "crossref": {"kind": "date_cursor", "date": "2026"}
+    }  # 坏水位原样留着等人工处置，绝不被"修好"或清空
+    # ② 次订阅**照跑**：入库、推水位、并落 `subscription_run` 行（旧实现下一次都跑不到）。
+    assert summaries[1].outcome is WatchOutcome.OK
+    assert summaries[1].ingested_count == CORPUS_SIZE
+    assert env.papers() == CORPUS_SIZE
+    (beta_run,) = env.runs("beta")
+    assert beta_run["new_count"] == CORPUS_SIZE
+    assert beta_run["report_path"] == str(path)
+    # ③ 整体结果携带失败信息 → 退出码非零；日报两条订阅都在，失败事件段点名坏订阅。
+    assert exit_code_for(summaries) == 1
+    text = write_daily_report(summaries, path, day=DAY)
+    assert "## alpha" in text and "## beta" in text
+    assert SUBSCRIPTION_LEVEL_SOURCE in text
+
+
+def test_a_broken_watermark_does_not_swallow_programming_errors(env: _Env) -> None:
+    """订阅级隔离**只兜 `CrawlerError`**：编程错误照旧冒泡，不许变成一行日报表格。"""
+
+    class _BoomFetcher:
+        def fetch(self, request: SourceRequest) -> list[PaperStub]:
+            del request
+            raise KeyError("programming error")
+
+    _write_subscription(env.subs_dir, "alpha")
+    subscriptions = load_subscriptions(env.subs_dir, env.subs_repo)
+
+    with pytest.raises(KeyError):
+        run_watch_all(env.context(fetcher=_BoomFetcher()), subscriptions, now=DAY)
 
 
 def test_all_sources_failing_marks_the_run_failed_and_ingests_nothing(env: _Env) -> None:

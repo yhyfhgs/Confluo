@@ -159,7 +159,24 @@ def _today() -> date:
 def _try_parse_date(text: str) -> date | None:
     """ISO 日期文本 → `date`；**解析不了返回 `None`**（不抛）。
 
-    同时接受 `YYYY-MM-DDTHH:MM:SSZ` / 空格分隔 / 紧凑 `YYYYMMDD` 形态（取日期部分）。
+    接受面 = `date.fromisoformat` 对首段（`T`/空格之前）的接受面，逐条如实列出：
+
+    | 形态 | 例 | 结果 |
+    |---|---|---|
+    | 完整 ISO 日 | `'2026-07-24'` | 2026-07-24 |
+    | 带时间戳（取日期部分） | `'2026-07-24T10:00:00Z'` / `'2026-07-24 10:00'` | 2026-07-24 |
+    | 紧凑日 | `'20260724'` | 2026-07-24 |
+    | **ISO 周日期** | `'2026-W30'` / `'2026-W30-1'` | **2026-07-20**（该周周一） |
+    | partial 年 / 年月 | `'2026'` / `'2026-07'` | `None` |
+    | 非日期 | `'昨天'` / `''` | `None` |
+
+    周日期那行是 Python 3.11+ `date.fromisoformat` 扩展接受面的**顺带产物**，不是本
+    模块的设计意图：`'2026-W30'` 会被当成该周周一收下并**参与水位推进**。之所以只在
+    此如实记录而不去拦——上游结构性产不出这种值（crossref 走 `_format_date_parts` 的
+    date-parts 拼接，只可能是 `'YYYY'`/`'YYYY-MM'`/`'YYYY-MM-DD'`；arxiv 走 OAI
+    时间戳），拦它属于给不存在的输入加代码；且真出现了，取周一是**保守侧**（周内更早
+    的一天 → 下轮窗更宽），与本模块的方向性偏好一致。改了会动缺陷 A 的行为面，故不改。
+
     源侧日期字段五花八门（arxiv Atom 给完整时间戳、crossref 给 date-parts 拼出的
     `YYYY-MM-DD`），此处统一收口。
 
@@ -283,9 +300,7 @@ def _require_non_negative(value: int, *, field: str, source: str) -> None:
 _MAX_SKIPPED_SAMPLES = 3
 
 
-def _advance_date(
-    base: date, seen: Sequence[str], *, today: date, path: str
-) -> tuple[date, tuple[str, ...]]:
+def _advance_date(base: date, seen: Sequence[str], *, today: date) -> tuple[date, tuple[str, ...]]:
     """日期水位推进的公共算法（两个日期类策略共用）→ `(新水位, 不可解析样例)`。
 
     `max(base, max(可解析的已见日期 ∩ (-∞, today]))`——四条纪律在这里：取 max 故乱序
@@ -365,9 +380,9 @@ class DateUpperBound:
         self, state: SourceState | None, seen: Sequence[str], *, now: date | None = None
     ) -> DateState:
         """候选新水位（**未提交**）；`seen` = 本次已见条目的提交日期文本。"""
-        return self.advance_report(state, seen, now=now)[0]
+        return self.advance_with_report(state, seen, now=now)[0]
 
-    def advance_report(
+    def advance_with_report(
         self, state: SourceState | None, seen: Sequence[str], *, now: date | None = None
     ) -> tuple[DateState, tuple[str, ...]]:
         """`advance` + 被跳过的不可解析日期样例（`_advance_date` 的可观测面）。"""
@@ -379,7 +394,7 @@ class DateUpperBound:
             if current is None
             else _parse_date(current.date, path=f"{path}.date")
         )
-        advanced, skipped = _advance_date(base, seen, today=today, path=path)
+        advanced, skipped = _advance_date(base, seen, today=today)
         return DateState(advanced.isoformat()), skipped
 
     def to_payload(self, state: SourceState) -> dict[str, object]:
@@ -451,9 +466,9 @@ class DateCursor:
         self, state: SourceState | None, seen: Sequence[str], *, now: date | None = None
     ) -> DateState:
         """候选新游标（**未提交**）；`seen` = 本次已见条目的发表/登记日期文本。"""
-        return self.advance_report(state, seen, now=now)[0]
+        return self.advance_with_report(state, seen, now=now)[0]
 
-    def advance_report(
+    def advance_with_report(
         self, state: SourceState | None, seen: Sequence[str], *, now: date | None = None
     ) -> tuple[DateState, tuple[str, ...]]:
         """`advance` + 被跳过的不可解析日期样例（`_advance_date` 的可观测面）。"""
@@ -465,7 +480,7 @@ class DateCursor:
             if current is None
             else _parse_date(current.date, path=f"{path}.date")
         )
-        advanced, skipped = _advance_date(base, seen, today=today, path=path)
+        advanced, skipped = _advance_date(base, seen, today=today)
         return DateState(advanced.isoformat()), skipped
 
     def to_payload(self, state: SourceState) -> dict[str, object]:
@@ -527,7 +542,7 @@ class IdSetDiff:
         merged = _dedupe([*seen, *(current.ids if current is not None else ())])
         return IdSetState(tuple(merged[: self.max_ids]))
 
-    def advance_report(
+    def advance_with_report(
         self, state: SourceState | None, seen: Sequence[str], *, now: date | None = None
     ) -> tuple[IdSetState, tuple[str, ...]]:
         """与日期类同构的可观测面；id 是任意字符串，**恒无**"解析不了"一说 → 样例恒空。"""
@@ -754,12 +769,16 @@ def advance_with_report(
 ) -> AdvanceReport:
     """`advance` 的可观测版：额外带回被跳过的不可解析日期计数与样例。
 
-    调用方（`watch._run_source` / `run_watch`）据此打 WARNING——"跳过必须可观测"是旧
-    fail-loud 契约的正当关切，本函数就是承接它的地方（P0 2026-07-27 改判：用日志满足
-    该关切，而不是用"炸掉整轮"满足）。
+    调用方（`watch._advance_source`）据此打 WARNING——"跳过必须可观测"是旧 fail-loud
+    契约的正当关切，本函数就是承接它的地方（P0 2026-07-27 改判：用日志满足该关切，
+    而不是用"炸掉整轮"满足）。
+
+    与策略层的同名方法 `WatermarkStrategy.advance_with_report` 是**同一概念的两层**
+    （文档级 vs 单源状态级），故取同名——此前策略层叫 `advance_report`，同概念两个名字
+    （审查 P2 命名统一 2026-07-27）。
     """
     strategy = strategy_for(source)
-    state, skipped = strategy.advance_report(watermark.state_for(source), seen, now=now)
+    state, skipped = strategy.advance_with_report(watermark.state_for(source), seen, now=now)
     return AdvanceReport(
         watermark=watermark.with_state(source, state),
         skipped=len(skipped),

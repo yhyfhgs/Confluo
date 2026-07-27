@@ -267,7 +267,8 @@ def test_unparseable_seen_date_is_skipped_not_fatal() -> None:
 
     - **存储水位文档**（`Watermark.parse` / `DateState.date`）里出现坏日期 = 游标损坏，
       必须 fail-loud（静默当首跑会重刷全窗）——该纪律**原样保留**，见
-      `test_parse_rejects_*` 一族与 `test_stored_watermark_date_is_still_fail_loud`。
+      `test_parse_is_fail_loud`（参数化锁死文档级各类拒载，含日期非 ISO）与
+      `test_stored_watermark_date_is_still_fail_loud`。
     - **本轮 `seen`** 是**上游源侧数据**，坏值是常态而非编程错误：crossref 的
       `_format_date_parts` 就**故意**产出 partial `'YYYY'`/`'YYYY-MM'`
       （其 docstring 明文）。让一条源侧坏日期杀死整轮 watch，等于把"这个源的一条

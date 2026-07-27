@@ -20,6 +20,9 @@ from typer.testing import CliRunner, Result
 from paper_crawler import cli as cli_module
 from paper_crawler.adapters.mock_platform import MockPlatformAdapter
 from paper_crawler.cli import app
+from paper_crawler.errors import WatermarkInvalid
+from paper_crawler.storage.db import Database
+from paper_crawler.storage.repo import SubscriptionRepo
 from paper_crawler.subs.types import FailureEvent, RunSummary
 from paper_crawler.subs.watch import (
     AdapterFetcher,
@@ -250,6 +253,89 @@ def test_truncation_exits_3_and_prints_the_overload_brief(home: Path) -> None:
     # 熔断仍出日报（过载报告段），但零入库。
     text = sorted(_REPORT_DIR.glob("daily-*.md"))[0].read_text(encoding="utf-8")
     assert "### 过载分布" in text
+
+
+# --- 存储侧水位损坏：优雅报错、退出码非零、无裸 traceback -----------------------
+
+
+def _corrupt_watermark(home: Path, name: str) -> None:
+    """把某条订阅的水位文档直改成 partial `'2026'`（存储侧 `_parse_date` 必拒载）。
+
+    经真实 `SubscriptionRepo` 写，不裸拼 SQL——写入口的 JSON 序列化口径与生产同一份。
+    """
+    database = Database(home / "catalog.sqlite")
+    try:
+        SubscriptionRepo(database).write_watermark(
+            name,
+            {"schema_ver": 1, "sources": {"crossref": {"kind": "date_cursor", "date": "2026"}}},
+        )
+    finally:
+        database.close()
+
+
+def test_broken_watermark_exits_1_with_a_graceful_error(home: Path) -> None:
+    """单订阅路径：水位损坏 → "错误: …" 一行 + 退出码 1，**不是**裸 traceback。
+
+    线上 P0 的用户可见面正是这一条：异常一路冒到 typer 之外，用户看到的是一屏 Python
+    调用栈。修法两层——`run_watch_all` 的订阅级隔离把它收进 `RunSummary.failures`，
+    CLI 再把消息打成一行（`_echo_error` 既有样式）。
+    """
+    _write_subscription(home / "subscriptions", "mock-watch")
+    _invoke(home, "mock-watch")  # 先跑一次，把订阅行与库建出来
+    _corrupt_watermark(home, "mock-watch")
+
+    result = _invoke(home, "mock-watch")
+
+    assert result.exit_code == 1
+    assert "错误: mock-watch: " in result.output
+    assert "无法解析为 ISO 日期" in result.output
+    assert "状态 failed" in result.output
+    # 优雅 = 命令自己收场：CliRunner 拿到的是 typer 的正常退出，不是逃逸的异常。
+    assert result.exception is None or isinstance(result.exception, SystemExit)
+    assert "Traceback" not in result.output
+
+
+def test_broken_watermark_in_one_subscription_lets_the_others_run(home: Path) -> None:
+    """`--all` 路径：坏订阅记失败，**其余订阅照跑照入库**，日报照落盘，退出码 1。"""
+    _write_subscription(home / "subscriptions", "alpha")
+    _write_subscription(home / "subscriptions", "beta")
+    _invoke(home, "--all")  # 建库 + 两条订阅行；这一轮 alpha 把语料全入了库
+    _corrupt_watermark(home, "alpha")
+
+    result = _invoke(home, "--all")
+
+    assert result.exit_code == 1
+    assert "错误: alpha: " in result.output
+    assert "beta: 状态 ok" in result.output  # 坏订阅之后的订阅照跑
+    assert "日报已落盘" in result.output
+    text = sorted(_REPORT_DIR.glob("daily-*.md"))[0].read_text(encoding="utf-8")
+    assert "## alpha" in text and "## beta" in text
+    assert "### 失败事件" in text
+
+
+def test_a_crawler_error_escaping_the_watch_subsystem_stays_graceful(
+    home: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """命令边界契约：从 watch 子系统逃出来的 `CrawlerError` 一律"错误: …" + 退出码 1。
+
+    `run_watch_all` 现在自己做订阅级隔离，正常路径不会有异常逃到这里——但那是**它**的
+    实现细节，不是本命令可以依赖的不变量（子系统日后在循环外新增一处受控故障就会破功，
+    用户又得看一屏 traceback）。故命令边界保留 catch，并用本用例把它钉成活代码而非
+    无人走过的死分支（同 `_fetcher_seam` 的模块属性注入手法）。
+    """
+    _write_subscription(home / "subscriptions", "mock-watch")
+
+    def _boom(*args: object, **kwargs: object) -> object:
+        raise WatermarkInvalid("watermark:sources.crossref.date —— 边界契约用例", detail="x")
+
+    monkeypatch.setattr(cli_module, "run_watch_all", _boom)
+
+    result = _invoke(home, "mock-watch")
+
+    assert result.exit_code == 1
+    assert "错误: watermark:sources.crossref.date" in result.output
+    assert "Traceback" not in result.output
+    assert result.exception is None or isinstance(result.exception, SystemExit)
 
 
 def test_watch_help_lists_the_subcommand(home: Path) -> None:
