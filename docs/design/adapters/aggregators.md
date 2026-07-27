@@ -352,9 +352,11 @@ openalex/s2 **不承担枚举**（capabilities 已收回 ENUMERATE，§1；两�
 > 权威决策 [D-035](../../plan/decision-log.md)（本节起源为其契约级设计稿，历史见 §9 修订 #16）；评估与
 > 探针实据见 [research/enrich-eval-p6.md §2/§6.2](../../research/enrich-eval-p6.md)（approved）与
 > [repec.md](../../research/site-survey/repec.md)（[LIVE] 2026-07-24）。
-> **仍未落地的只有"取真实快照"这一步**（`T8-bulk` ≤4 请求归 T19 在线批）：故 ReDIF 上游文件命名与
-> `t` 系列 series 段仍标 **[未实测]**，实现按判读构造并在查无时如实记"覆盖缺口"，T19 实测后
-> **按实测收窄**（见下方各 [未实测] 注记与 §9 修订 #19）。
+> **仍未落地的只有"取真实快照"这一步**（`T8-bulk` ≤4 请求归 T19 在线批）：故 ReDIF 上游文件命名仍标
+> **[未实测]**，实现按判读构造并在查无时如实记"覆盖缺口"，T19 实测后**按实测收窄**（见下方各 [未实测]
+> 注记与 §9 修订 #19）。**`t` 系列 series 段亦仍 [未实测]，但其映射已由 [D-036](../../plan/decision-log.md)
+> 按正确性论证提前收窄为"不映射"**（w/t 塌进同一 handle 是确定错误，与 `t` 真实落在哪一段无关）——故
+> `t` 今日的处置是"结构性不可寻址"，**不再是"查无记覆盖缺口"**（§9 修订 #21）。
 
 **定位**：`family = "aggregator"`，分工档位＝"aggregator-enrich"（同 openalex/s2 一档，D-027；**该措辞是档位
 描述、非字段**，见 §1 表下注）。capabilities **恒为空集**，不进 pull 六阶段；驱动路径＝`crawler enrich --source repec`。**独家增值＝JEL 分类 + wp↔published 版本关联**
@@ -451,25 +453,34 @@ openalex/s2 **不承担枚举**（capabilities 已收回 ENUMERATE，§1；两�
 
 | PaperStub 面 | 来源（ReDIF 字段） | 说明 |
 |---|---|---|
-| identifier(doi) | 入参 DOI | `10.3386/w{n}`／`t{n}` |
+| identifier(doi) | 入参 DOI | `10.3386/w{n}`（**只 `w`**——`t` 等 NBER 旁系不映射，[D-036](../../plan/decision-log.md)） |
 | identifier(repec) | `RePEc:nbr:nberwo:{n}` | **非跨源合并锚点**（跨源锚仍是 DOI）；入库后天然是 *RePEc 内部* 幂等锚点，须在 adapter 注释写清防误读 |
 | meta.jel | `Classification-JEL` | 覆盖率 [LIVE]：1989=0% / 2000=87.4% / **2010 起=100%** |
 | meta.published_in | `Publication-Status` | 原串直落，供 T10 `preprint_of` 建边消费（本节不建边） |
 | title/authors/year/abstract | 同名 ReDIF 字段 | 照常产出——`SOURCE_PRIORITY` 最低位（`repec 1`）天然只补空，**无须实现特殊"只补不覆盖"逻辑** |
 
-- **DOI↔handle 映射边界**：`10.3386/w{n}`／`t{n}` → `RePEc:nbr:nberwo:{n}` 的**纯语法映射**，复用
-  `adapters/nber/parse.py` 既有 series 号归一（零模糊匹配、零启发式）。`t` 系列落哪个 series 段、期刊条目
-  怎么 join **均未核实**（[推断] 不作依据）——T8 若实测 `t` 不落 `nberwo`，按实测**收窄**而非按推断扩张。
+- **DOI↔handle 映射边界（[D-036](../../plan/decision-log.md) 收窄为 w-only；下段原文保留作痕迹）**：
+  `10.3386/w{n}` → `RePEc:nbr:nberwo:{n}` 的**纯语法映射**，复用 `adapters/nber/parse.py` 既有 series 号
+  归一（零模糊匹配、零启发式）。**`t`（技术工作论文）及其余非 `w` 前缀一律不映射**（`handle_from_doi`
+  返回 None ⇒ 计"结构性不可寻址"）——原实现取 `series_id[1:]` 去首字母，令 `w9001` 与 `t9001` **塌进同一
+  handle**：两篇不相交的论文共用一个 `(repec, handle)` 锚点 ⇒ `t` 的元数据静默污染 `w` 记录 + 落一条高
+  置信假 `candidate_duplicate`。收窄由该**正确性论证**驱动（塌缝在 w/t 混合库必然发生），不等 T19 实测。
+  - **原文（T8 期表述，保留不抹）**：「`t` 系列落哪个 series 段、期刊条目怎么 join **均未核实**（[推断]
+    不作依据）——T8 若实测 `t` 不落 `nberwo`，按实测**收窄**而非按推断扩张。」`t` 的归属至今仍 [未实测]；
+    D-036 的收窄不是"实测证伪"路径的兑现，而是在该路径之外提前落闸，故经 ADR 明文 supersede。
   - **handle 大小写归一（T8 落地）**：archive/series 段小写化后作 join 键（`canonical_handle`），DOI 侧与
     快照侧**同源归一**——RePEc handle 的这两段惯例大小写不敏感，两侧各自归一或不归一都会漂移，一次上游
     大小写变动就能让全库 join 静默塌成"覆盖缺口"。
   - **id 段前导零的非对称性 [未实测]（T8 落地期发现，如实入档）**：`10.3386/w42` → `…:42`，而
-    `10.3386/t0042` → `…:0042`——**DOI 侧写几位零，handle 侧就是几位零**。上游 handle 是否统一去零
+    `10.3386/w0042` → `…:0042`——**DOI 侧写几位零，handle 侧就是几位零**（示例随 D-036 改用 `w` 例；
+    原文举的 `t0042` 在 w-only 收窄后已不映射，不能再作前导零的示例）。上游 handle 是否统一去零
     **未核实**，故实现**原样保留、不做去零归一**：去零是未经证实的改写，若上游确实带零则全部带零条目
-    join 失败。真实后果由"覆盖缺口"计数如实暴露，T19 实测后按实测处置（与 `t` 系列同一处置原则）。
-- **未命中三分观测（不静默丢弃）**：(a) DOI 非 `10.3386` 前缀＝结构性不可寻址；(b) 前缀符但快照无该
-  handle＝覆盖缺口；(c) handle 命中但无 JEL＝增值为空。**三类各有计数并进摘要行**——openalex/s2 的"未命中"
-  只有一种含义，此三分是 repec 专有的契约要求（审计 S1 原则）。
+    join 失败。真实后果由"覆盖缺口"计数如实暴露，T19 实测后按实测处置。
+- **未命中三分观测（不静默丢弃）**：(a) **非 NBER 工作论文 DOI**＝结构性不可寻址——既含"非 `10.3386`
+  前缀"，也含 `10.3386/t{n}` 这类**合法 NBER 但非 `w` 的旁系**（D-036 收窄的连带面：旁系不再映射，故
+  归入 (a) 而非 (b)；成因字母另记 DEBUG，`parse.uncovered_series_letter`，不入摘要行契约）；(b) 前缀符
+  **且属 `w`** 但快照无该 handle＝覆盖缺口；(c) handle 命中但无 JEL＝增值为空。**三类各有计数并进摘要行**
+  ——openalex/s2 的"未命中"只有一种含义，此三分是 repec 专有的契约要求（审计 S1 原则）。
 - **可寻址集合如实入档**：≈**3.6 万篇 NBER WP**；**SSRN 结构性为 0**（[LIVE]：442KB archives 全表无 "ssrn"
   串——SSRN 是 Elsevier 商业源、不在 RePEc）。即本通道覆盖面比同库 ssrn 语料（141 万 DOI）**小两个数量级**，
   这是接受该通道时已定价的事实。
@@ -609,6 +620,7 @@ openalex/s2 **不承担枚举**（capabilities 已收回 ENUMERATE，§1；两�
 | 18 | 2026-07-27 | **§5.7 追记 fable 对上条 NEEDS_DECISION 的裁决：附条件放行、离线部分立即开工**。依据＝①RFC 9309 §2.3.1.3 4xx 归 "Unavailable"、标准明文 MAY access（Google 现行实现同解），403 是对 `/robots.txt` 资源本身的应答而非对爬取行为的 Disallow ⇒ **不存在可违反的规则**；②ReDIF/RePEc 是为机器批量交换设计的公开元数据分发网络、NBER 主动发布 bulk 文件＝分发意图明示（区别于"爬网站"）；③路径特异事实支持"robots 不可得 ≠ 数据不可取"。三项**附加条件**（T19 硬约束）逐条入档：a) 真实拉取前重试 `repec.nber.org` robots 一次，可判读则以其为准（Disallow 即停）；b) 仍不可判读则 ≤4 请求 + 间隔 ≥10s + 诚实 UA；c) **数据端点遇 403/429 等任何拒绝信号立即停止并把 repec 通道出列回报**（本裁决不覆盖"数据端点明确拒绝"）——由 `scripts/repec_snapshot.py` 承载。上条"未通过"表述据此改为"无从判读（已附条件放行）"，**核验事实原文不抹** | fable 裁决 2026-07-27（T8 NEEDS_DECISION 回执） |
 | 19 | 2026-07-27 | **§5.7 由契约级设计转为实现落地**（T8）：`adapters/repec/{__init__,adapter,parse}.py` + `scripts/repec_snapshot.py` + 接入面清单全项。实现期判读三点**逐条标 [未实测] 与 [LIVE] 分离**（**按实测收窄而非按推断扩张**，§5.7 原文授权；唯一 [LIVE] 依据是探针实测的字段名与 `D1; J13; J15` 值形态）：①**记录边界＝`Template-Type:` 行**（规范定义的记录起始标记），**空行既不切记录也不终止续行**——摘要内空行是段落分隔，用空行作边界会把记录腰斩、丢掉后半截字段；字段名大小写不敏感，续行空格折叠。②`t` 系列 handle 段**未实测**：`10.3386/t{n}` 暂走与 `w{n}` 同一 `nberwo` 段，但该推断**不被固化为事实**——快照查无该 handle 时计入"覆盖缺口"而非静默丢弃，T19 实测若证伪则改为只映射 `w`。③快照文件命名不预设：`manifest.files[].name` 记实际名，加载器按 manifest 遍历。fixture 为**自造合成样本**（`tests/fixtures/repec/README.md` 逐条标注出处），真实快照拉取归 T19 | T8 实现（[plan §4 T8](../../plan/phase7-implementation-plan.md)；[D-035](../../plan/decision-log.md)） |
 | 20 | 2026-07-27 | **在线预算如实入档：`T8-robots` 行超线 1（3/2）**。第 3 次请求发生在 T8 实现期对 `scripts/repec_snapshot.py` 跑 `--dry-run` 冒烟时——该脚本的 `--dry-run` 按裁决条件 (a) **仍执行 robots 重试**（只跳过数据请求），故冒烟意外触网 1 次 `www2.nber.org/robots.txt`（403 复现，与首次核验一致，无新信息）。已按 [online-budget.md §2 纪律 2](../../process/online-budget.md) 即时记账（`--batch` 注明成因）、按纪律 3 于此入档。**性质**：协调可见性问题，非 AC-0 红线触碰（robots 请求本身是合规动作）。**教训**：涉网脚本的"干跑"须先确认其干跑边界——本脚本的 `--dry-run` 语义是"零**数据**请求"而非"零请求"，该语义已写入其模块 docstring 与 `--dry-run` 帮助文案 | T8 实现期自查（[plan §3](../../plan/phase7-implementation-plan.md) `T8-robots` ≤2） |
+| 21 | 2026-07-27 | **§5.7 DOI↔handle 映射按 [D-036](../../plan/decision-log.md) 收窄为 w-only（实质契约变更，非文档滞后修正）**：①`enrich_batch` 映射表 `identifier(doi)` 行由 `w{n}／t{n}` 改为**只 `w{n}`**；②"DOI↔handle 映射边界"段改写为 w-only 并写明塌缝根因（`series_id[1:]` 去首字母令 `w9001`/`t9001` 同 handle ⇒ 静默污染 + 假 `candidate_duplicate`），**T8 期"[推断] 不作依据、按实测收窄"原文保留作痕迹**（`t` 归属至今 [未实测]，本次收窄走的是**正确性论证**而非实测证伪路径，故经 ADR supersede 而非静默改）；③前导零示例由 `t0042` 改 `w0042`（`t` 已不映射，不能再作示例）；④未命中三分 **(a) 定义扩为"非 NBER 工作论文 DOI"**（含非 `10.3386` 与 `t` 等非 `w` 旁系），(b) 收窄为"属 `w` 但快照无该 handle"。**上条 #19 的 ②（`t` 暂走 `nberwo`）由本条取代，原行不改写**。摘要行三分计数契约本身不变（旁系成因字母只进 DEBUG） | [D-036](../../plan/decision-log.md)（T20 审计 R2 修复批，代码已落 `fix/p7-r2-data-layer`；独立审查 P1-1 判"推翻 approved 契约却零记录"回派补账） |
 
 ## 10. 风险与维护
 

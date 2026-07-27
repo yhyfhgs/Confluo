@@ -277,7 +277,9 @@ class RepecAdapter(AdapterBase):
         matched = unaddressable = missing_handle = no_jel = 0
         # `unaddressable` 内的成因细分（仅 DEBUG，不入 `SnapshotStats`/摘要行契约）：`t` 等
         # **合法 NBER 旁系但本通道不覆盖**——与"根本不是 NBER"混作一个哑数字会掩盖"刻意不覆盖"。
-        # 按**字母**分桶而非只记总数：日后冒出别的旁系字母，DEBUG 里直接看得出是哪一类。
+        # **当前上游正则只认 `w`/`t`（`nber.parse._SERIES_RE`），故本桶实际是单值 `{t}`**：别的
+        # 字母（如 `10.3386/p9001`）在 `series_id_from_doi` 即返 None、落进裸 `unaddressable`，
+        # 本桶看不见它。要覆盖新 series 必须**同步放宽该正则**——分桶不会自己长出新键。
         uncovered_series: Counter[str] = Counter()
 
         for doi in unique:
