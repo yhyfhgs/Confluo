@@ -19,10 +19,15 @@ updated: 2026-07-27
 > **代码基线**：`test/p7-t19-online-acceptance` @ `3d6ee12`（main，Phase 7 全部 20 卡已合并）。
 > T18 骨架期未合并的 T13/T14/T16 三卡**均已合并**，AC-7.3/7.4 两行的"无载体"状态自此解除。
 >
+> **重跑基线**：`test/p7-ac7-rerun` @ `c04c8c4`（main）——§2.7(b) 的 `asset-pricing` 三源端到端
+> 重跑批，含 P0 修复两次提交（`75b33f2` 缺陷 A + `c04c8c4` 独立审查回修）。
+>
 > **AC-0 红线执行情况（全程）**：诚实 UA `PaperCrawler/0.1.0 (personal research)`（D-014；
 > `[identity].email` 未配置 → 按设计省 mailto 段并逐次 WARNING）；限速走既有闸；
 > **21 次请求全程零 403/429/5xx 落在数据端点**（唯一 403 是 `www2.nber.org/robots.txt`
 > 本身，属既有在档事实、非数据端点拒绝）；无付费墙绕过、无 CAPTCHA、无盗版源、无再分发。
+> **重跑批（2026-07-27，§2.7(b) 重跑段）另计 12 次请求，同样全部 200、零 403/429/5xx、
+> 无任何绕过**，AC-0 口径与上同。
 
 ## 1. 四条判据/载体/执行结果/日期
 
@@ -152,7 +157,9 @@ uv run crawler subs watch nber-ap-isolation
   4 条标题确实不含该词族），非 proxy year 失效。
 - 落 `subscription_run` 行 + `docs/reports/watch/daily-2026-07-27.md` 日报，编排链路完整。
 
-**(b) `asset-pricing` preset 三源端到端 —— 未完成（崩溃，见 §4 缺口 3 的 P0）。**
+**(b) `asset-pricing` preset 三源端到端 —— 首跑崩溃（原始记录留痕）；P0 修复后重跑「完成、PASS」。**
+
+**首跑 [LIVE 2026-07-27 08:00 前后]（崩溃，原始记录原样留痕）**
 
 ```
 uv run crawler subs watch asset-pricing
@@ -168,6 +175,71 @@ uv run crawler subs watch asset-pricing
   4 个 q-fin 类目 ⇒ **arxiv 腿是 4 请求不是 1**。真实需求 = 7+4+1 = **12 > 9**。本卡跑前已用
   1 次 count-only 定量把该缺口测出来（记 `机动`），未盲跑超支。
 
+**重跑 [LIVE 2026-07-27 13:47–13:48 UTC]（P0 修复后；基线 `test/p7-ac7-rerun` @ `c04c8c4`）**
+
+```
+uv run crawler subs watch asset-pricing
+→ asset-pricing: 状态 ok 候选 5696 新增 52 入库 52 派生取回 0 累计库存 179
+  日报已落盘：docs/reports/watch/daily-2026-07-27.md
+EXIT=0
+```
+
+**三腿逐腿请求数实测 = 7 + 4 + 1 = 12**（逐条经项目日志
+`.paper-crawler/logs/crawler-20260727.jsonl` 的 `http exchange` 事件对账），与跑前定量
+**精确吻合**，未触硬顶 13：
+
+| 腿 | 端点（实测 URL 形态） | 请求数 | 状态码 |
+|---|---|---|---|
+| ssrn | `api.crossref.org/prefixes/10.2139/works?filter=from-created-date:2026-07-20,until-created-date:2026-07-27&rows=1000&cursor=…` | **7**（首页 `cursor=*` + 6 页续游标） | 7×**200** |
+| arxiv | `oaipmh.arxiv.org/oai?verb=ListRecords&metadataPrefix=arXiv&set=q-fin&from=2026-07-01&until=2026-07-27` | **4**（4 个 q-fin 类目逐分类 fan-out：同 set 同窗 4 次，客户端按 `primary_category` 分流；无 `resumptionToken` 续页） | 4×**200** |
+| nber | `back.nber.org/rss/newap.xml` | **1** | **200** |
+
+**原崩溃现象逐条反转**：
+
+- **三条腿全部执行**——首跑时 arxiv/nber 两腿一次没发出，本次三腿俱全、请求数与预估逐腿相符。
+- **落 `subscription_run` 行**：`01KYHXAVF3K59HJB668F4TT2DZ | asset-pricing |
+  2026-07-27T13:47:56Z | new_count=52 | fetched_count=0 | truncated=0 |
+  report_path=docs/reports/watch/daily-2026-07-27.md`。
+- **落当日日报**：`docs/reports/watch/daily-2026-07-27.md`（14,013 B；总览/新增清单/累计库存三段
+  齐全），`subscription_run.report_path` 同值。该目录在 `.gitignore:27` 在册，属运行产物**不入
+  git**（plan §4 T5 裁决③）。⚠ 该路径是 **CWD 相对**（`watch.py:220`
+  `DEFAULT_REPORT_ROOT = Path("docs")/"reports"/"watch"`，不随 config-home 走），本次从
+  worktree 调用故日报物理落在 worktree 根下、与真实库（主仓库根 `.paper-crawler/`）分家——
+  见 §4 缺口 7。
+- **入库 52 篇**（`paper` 127 → **179**）：按新增清单链接面分流 = ssrn 49（`doi.org/10.2139/ssrn.*`）
+  + arxiv 2 + nber 1（`w35513`）；`identifier` 表同步 `arxiv 127→129 / ssrn 0→49 / doi 0→50`
+  （50 = 49 篇 SSRN + 1 篇 NBER 各一个 DOI）——**三源均有真实产出入库**，非某一腿空转。
+- **无 traceback、无 `WatermarkInvalid`**：stderr 仅 3 条 WARNING（缺 mailto 段、
+  `ssrn.topic_filter` enrich 信号未接线、下方 partial 跳过），零异常栈。
+
+**水位推进语义（三源三策略各验一次）**：
+
+| 源 | 策略 | 跑后水位 | 判读 |
+|---|---|---|---|
+| arxiv | `date_upper_bound` | `2026-07-24` | **完整日期正常推进**——由本轮完整 ISO `pub_date` 顶上去 |
+| nber | `id_set` | 6 个 `doi:10.3386/w35507 … w35528` | id 差分正常落集合（§2.7(a) 隔离跑时是 4 个，本次 feed 当期 6 条） |
+| ssrn | `date_cursor` | `2026-07-20` | 首跑基线 = 今天−7 天初窗下界；本轮**可解析**的 `published` 日期均 ≤ 该值，`max(base, …)` 恒等返回。**partial 日期按 P0 修复口径剔除、不推进**（下条）——方向为保守侧（下轮窗更宽），不是回退 |
+
+**P0 修复语义在真实数据上验证（本次重跑价值最高的一条）**：
+
+```
+[WARNING] stage=watch venue=ssrn
+watch[asset-pricing]: 源 ssrn 有 5670 条日期无法解析，不参与水位推进（样例: '2026', '2026', '2026'）
+——partial 日期（'YYYY'/'YYYY-MM'）是 crossref 的合法产出，属预期
+```
+
+- **跳过 5670 条**、**WARNING 可观测**（`stage=watch`/`venue=ssrn`，样例经 repr 化打成 `'2026'`）、
+  **整轮未受影响**（EXIT=0、三腿全跑、run 行 + 日报 + 三源水位俱全）。
+- **规模印证 P0 的严重性判读**：本轮 ssrn 腿窗内**绝大多数**条目（5670 条，占全订阅候选 5696 的
+  99.5%）携的就是 partial `'2026'`。首跑那条 `sources.ssrn.seen[0]` 不是边角坏数据，而是 SSRN 在
+  crossref 上的**常态**形态——修复前"一条坏日期杀整轮"意味着 SSRN 这条腿在**任何**真实窗上都跑不完。
+- 修复选定的语义 = §4 缺口 3 NEEDS_DECISION 的 **(b) 从 `watermark_seen` 剔除并计观测**
+  （main `75b33f2` 缺陷 A；`c04c8c4` 为其独立审查回修）。**本次是该语义的首次真实数据验证。**
+
+**AC-0（重跑批）**：诚实 UA（既有，`[identity].email` 未配置 → 省 mailto 段并 WARNING）、走既有
+限速闸、**12 次请求全部 200**、零 403/429/5xx、无任何绕过。另设跑前投影守卫（逐请求读项目日志，
+一旦投影总数将破硬顶 13 即 SIGTERM 中断），**全程未触发**。
+
 ## 3. 在线预算消耗总表（`scripts/budget_ledger.py`，plan §3 逐行对账）
 
 | 预算行 | 上限 | 本卡实耗 | 行累计 | 状态 | 明细 |
@@ -177,10 +249,31 @@ uv run crawler subs watch asset-pricing
 | `T19-bf` | ≤10 | 0 | **0/10** | ⚪ 未执行 | playwright 未装（§2.2），整行未动 |
 | `机动` | ≤10 | 9 | **9/10** | ✅ 在线 | ssrn count-only 1 + arxiv 2017 四月桶 enumerate 4 + 当月桶 watch 1 + PDF fetch 3 |
 | `T8-robots` | ≤2 | **2** | **5/2** | ⚠ **超线**（见 §4 缺口 2） | `repec_snapshot.py` 每次调用**强制**重核 robots（裁决条件 a，无开关可绕）×2 |
+| **`T19-rerun`**（调剂批，无独立额度行） | 12（硬顶 13） | **12** | **12/12** | ✅ 在线 | P0 修复后 `asset-pricing` 三源端到端重跑：ssrn 7 + arxiv 4 + nber 1（§2.7(b) 重跑段）。**额度来源 = controller 裁决的三行调剂**：`T19-bf` **10**（该行因 playwright 未装整行未动，全额调剂）+ `T19-nber` 余 **1** + `机动` 余 **1** |
+
+> ⚠ 表内前五行的"行累计"是 **T19 本卡跑完时的口径**，原样留痕。重跑批的三行调剂之后
+> （`T19-bf` 0→10、`T19-nber` 8→9、`机动` 9→10）以下方"重跑后账本终态"为准。
 
 **本卡请求合计 21**，账面复核一致：项目 `HttpClient` 落日志 16 次（`.paper-crawler/logs/
 crawler-20260727.jsonl` 的 `http exchange` 事件）+ count-only 探针 1（未经 `setup_logging`、不落文件日志）
 + `repec_snapshot.py` 自带 httpx 4（robots 2 + 数据 2）= 21 = 四行账本之和。
+
+**重跑批请求合计 12**，账面复核一致：项目日志同一份文件在 13:47–13:48 窗内新增
+`http exchange` 事件 **12** 条（`api.crossref.org` 7 + `oaipmh.arxiv.org` 4 + `back.nber.org` 1），
+无第二条链路旁路发请求。**本记录在线请求总计 = 21 + 12 = 33。**
+
+**重跑后账本终态**（`uv run python scripts/budget_ledger.py status`，2026-07-27T13:51Z）：
+
+```
+T19-bf     10   （0 → 10；本次调剂全额用完）
+T19-nber    9   （8 → 9）
+机动        10   （9 → 10）
+T8-bulk     2   （未动）
+T8-robots   5   （未动；超线为 §4 缺口 2 的既有事实，本次重跑未再触该行）
+```
+
+三条被调剂的行**恰好各自见底**（10/10、9/9、10/10），**无新增超线**；`T19-rerun` 三笔均以
+`--session T19-rerun` 落账，`--batch` 内逐笔写明调剂来源，可追溯。
 
 ## 4. 已知缺口与异常事件（如实列）
 
@@ -197,6 +290,12 @@ crawler-20260727.jsonl` 的 `http exchange` 事件）+ count-only 探针 1（未
    ②允许脚本在同一天/同一镜像内缓存 robots 判定（**不建议**——与条款 a 的"不缓存、不跨域外推"
    明文冲突），或 ③维持现状并在计划表里把该行改为"随 `T8-bulk` 联动"。
 3. **P0（本卡最重要的在线发现）：`crawler subs watch` 遇 crossref 偏日期即整轮崩溃。**
+   - **[状态 2026-07-27，本缺口已闭合]**：修法已按下方 **(b)（从 `watermark_seen` 剔除并计观测）**
+     落地并合入 main——`75b33f2`（缺陷 A：`_parse_date` 保持 fail-loud 供存储侧，新增宽松面
+     `_try_parse_date` 供 `seen` 侧；跳过计数经 `advance_with_report` → WARNING）+ `c04c8c4`
+     （独立审查回修：删死兜底、订阅级真隔离、CLI 优雅面）。**§2.7(b) 的重跑段是该修复的首次
+     真实数据验证**：ssrn 腿 5670 条 partial 被剔除、WARNING 可观测、整轮 EXIT=0 三腿全跑、
+     run 行 + 日报 + 三源水位俱全。以下原始诊断原样留痕。
    - 现象：`WatermarkInvalid: watermark:sources.ssrn.seen[0] —— 无法解析为 ISO 日期: '2026'`，
      未捕获异常直接冒泡出 `run_subscription`。
    - 根因＝**跨模块契约不相容**：`adapters/crossref/parse.py::_format_date_parts` 的 docstring
@@ -235,15 +334,33 @@ crawler-20260727.jsonl` 的 `http exchange` 事件）+ count-only 探针 1（未
    违规**。已即刻停止、**未使用、未外传、未落入任何产出物**（本记录与提交内容均不含其值）。
    如实记录以备追溯；建议后续把凭证与非敏感配置分离（或在 runbook 里显式点名该文件为禁读项）。
 
+7. **日报落盘根是 CWD 相对而非 config-home 相对（重跑批实测发现，如实登记）**：
+   `subs/watch.py:220` 的 `DEFAULT_REPORT_ROOT = Path("docs")/"reports"/"watch"` 是相对路径，
+   而库/state/日志走 `PAPER_CRAWLER_HOME`（D-032，本次指向主仓库根 `.paper-crawler/`）。二者
+   基准不同 ⇒ **从 worktree 调用时日报落在 worktree 根下、真实库在主仓库根**，同一次 run 的
+   两半产物分家；`subscription_run.report_path` 存的又是相对串，事后按主仓库根解析会指向不存在
+   的文件。本次重跑即如此（日报在 `…/worktrees/agent-…/docs/reports/watch/`）。**不属本卡范围、
+   不擅改**：日报是"仓库内可读文档"还是"运行产物随 home 走"是设计取向问题（design/05 §7 现文
+   字面写的是 `docs/reports/watch/`）。登记供 controller 追踪，建议后续卡明确该根的解析基准。
+
 ## 5. 移交与签署
 
 - **T19（本卡，2026-07-27）**：四行"执行结果/日期"全数回填；AC-7.1/7.4 判 **PASS**（真实数据支撑），
   AC-7.3 判 **条件 PASS**（离线载体齐备 + 在线空态如实标注），AC-7.2 离线 **PASS**、在线
   **条件项未执行（环境未就绪）**。预算四行对账见 §3，超线一行（`T8-robots`）已按纪律 3 入档。
-- **待 fable 裁决**：§4 缺口 2（`T8-robots` 额度/条款）与缺口 3（P0 修法）两处 NEEDS_DECISION。
+- **待 fable 裁决**：~~§4 缺口 2（`T8-robots` 额度/条款）与缺口 3（P0 修法）两处 NEEDS_DECISION。~~
+  **[更新 2026-07-27]** 缺口 3（P0 修法）的 NEEDS_DECISION 已按 (b) 落地并合入 main
+  （`75b33f2` + `c04c8c4`），§4 该条已标闭合并附真实数据验证；**余 §4 缺口 2
+  （`T8-robots` 额度/条款）一处待裁**——本次重跑未再触该行。
 - **建议后续卡顺手回填**（均非本卡职责，登记供 controller 追踪）：`presets/asset-pricing.yaml`
   的 `AP=[DOC]` → `[LIVE 2026-07-27]`；`scripts/repec_snapshot.py` 的 `DEFAULT_PATH`
   （`nberwo.rdf` 实测 404 → 应改 `nberwo{YYYY}.rdf` 形态并去掉 [未实测] 标）；
   `aggregators.md §5.7` 的文件命名/记录边界两项 [未实测] 按 §2.6 实测收窄。
-- **fable 亲验**：全表最终签署，转 `status: approved`。**`asset-pricing` 三源端到端在缺口 3 的
-  P0 修复前无法完成**，该项须随修复卡重跑（重跑预算需按 §2.7(b) 的 12 请求重估）。
+- **fable 亲验**：全表最终签署，转 `status: approved`。~~**`asset-pricing` 三源端到端在缺口 3 的
+  P0 修复前无法完成**，该项须随修复卡重跑（重跑预算需按 §2.7(b) 的 12 请求重估）。~~
+  **[完成注记 2026-07-27，卡 D 重跑批]**：P0 已修复并合入 main（`75b33f2` + `c04c8c4`），该重跑
+  已在 `test/p7-ac7-rerun` 分支**执行完毕**——**12 请求（ssrn 7 + arxiv 4 + nber 1，全部 200）、
+  EXIT=0、三腿全跑、`subscription_run` 行 + 当日日报 + 三源水位三件套俱全、partial 跳过 5670 条
+  经 WARNING 可观测、无 traceback 无 `WatermarkInvalid`**。预估 12 与实测 12 精确吻合，未触硬顶 13。
+  详见 §2.7(b)"重跑 [LIVE 2026-07-27 13:47–13:48 UTC]"段、§3 `T19-rerun` 行、§4 缺口 3 状态注。
+  **本项不再悬置**；fable 签署时该项已具备真实在线证据。
