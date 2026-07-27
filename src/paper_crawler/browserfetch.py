@@ -437,9 +437,14 @@ def fetch_one(
     try:
         handle = launch_fn(profile_dir, storage_state)
         try:
-            budget.wait_rate(domain=domain)  # 判定导航前过域级闸（含抖动）
             effective = plan if resolve_in_context is None else resolve_in_context(handle)
             _require_render_page(effective, origin="resolve_in_context")
+            # 域级闸（含抖动）**紧贴**判定导航：`resolve_in_context` 自己也会发一次真实
+            # 请求（同批解析导航，其闸由调用方在闭包内过）——闸若留在 resolve 之前，两次
+            # wait 会连发、两次导航随即背靠背，请求**次数**仍对但**间隔**没了（ssrn
+            # crawl-delay:5 的"有效 5–10s"退化成 2 请求突发，落 AC-0.5 面）。
+            # `resolve_in_context is None` 时本闸相对 `goto` 的位置逐字不变。
+            budget.wait_rate(domain=domain)
             response = handle.goto(effective.url)
             verdict = classify_or_raise(response, domain=domain, detector=verdict_detector)
             if verdict is ClassifyResult.NO_ENTITLEMENT:

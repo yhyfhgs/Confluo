@@ -693,6 +693,11 @@ def _browser_resolver(
     闭包外壳在解析导航前**再过一次域级闸**：同批解析是一次**真实请求**（landing 导航），
     与既有"下载触发是第二次真实请求，故再过一次闸"同一条纪律（宁可更慢，不少记一次请求）。
     限速知识因此全留在横切件/装配层，adapter 侧仍零限速代码（design/11 §7 分工）。
+
+    **闸与导航严格交错**（R1 审查 P1）：本闸紧贴解析导航，`fetch_one` 的闸紧贴判定导航
+    ⇒ 三跳序列为 wait→landing→wait→volatile→wait→download，而非"两闸连发 + 两导航
+    背靠背"。次数对不等于间隔对——`tests/integration/test_ssrn_browser_fetch.py` 以
+    交错序断言锁死该形态。
     """
     if not isinstance(source, BrowserContextResolver):
         return None

@@ -72,10 +72,12 @@ class FakeHandle:
         pages: dict[str, PageResponse] | None = None,
         *,
         payload: bytes = PDF_BYTES,
+        events: list[str] | None = None,
     ) -> None:
         self.pages = pages if pages is not None else default_pages()
         self.payload = payload
-        self.calls: list[str] = []
+        # `events` 可与限速埋点共用同一条序列 → 可断言"闸与导航的交错序"（AC-0.5）。
+        self.calls: list[str] = events if events is not None else []
 
     def goto(self, url: str) -> PageResponse:
         self.calls.append(f"goto:{url}")
@@ -257,6 +259,37 @@ def test_volatile_url_is_resolved_in_the_same_context(
     assert VOLATILE in handle.gotos  # 判定/下载走的是同批解析出的 volatile URL
     assert handle.gotos.count(LANDING) == 1  # landing 只解析一次（不重复导航）
     assert "download_via" in handle.calls
+
+
+def test_rate_gate_interleaves_between_the_two_hops(
+    env: Env, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """限速闸与导航必须**交错**：wait→landing→wait→volatile→wait→download（AC-0.5）。
+
+    R1 独立审查 P1：两次 `wait_rate` 连发、两次导航背靠背 ⇒ ssrn `crawl-delay:5` 的"有效
+    5–10s"退化成 2 请求突发。次数对不代表间隔对——本测锁的是**序**，不是计数。
+    """
+    events: list[str] = []
+    real_wait = stages_mod._browser_wait
+
+    def spy(ctx: StageContext, domain: str) -> float:
+        events.append(f"wait:{domain}")
+        return real_wait(ctx, domain)
+
+    monkeypatch.setattr(stages_mod, "_browser_wait", spy)
+    handle = FakeHandle(events=events)
+    assert run_stage(env, handle, monkeypatch) == "done"
+
+    assert events == [
+        f"wait:{DOMAIN}",
+        f"goto:{LANDING}",  # 同批解析导航
+        f"wait:{DOMAIN}",
+        f"goto:{VOLATILE}",  # 判定导航
+        f"wait:{DOMAIN}",
+        "download_via",
+        f"goto:{VOLATILE}",  # 下载触发（trigger 在 download_via 内执行）
+        "close",
+    ]
 
 
 def test_asset_url_keeps_landing_reference_not_volatile(

@@ -337,6 +337,71 @@ def test_t4_resolve_in_context_result_must_stay_render_page(tmp_path: Path) -> N
     assert "download_via" not in handle.calls
 
 
+def test_rate_gate_sits_between_the_resolve_and_the_judging_navigation(tmp_path: Path) -> None:
+    """同批路径的闸位：`wait_rate` 必须落在 resolve **之后**、判定导航**之前**（AC-0.5）。
+
+    R1 独立审查 P1：闸若留在 resolve 之前，本函数的 wait 与调用方为解析导航过的闸会
+    连发，随后两次导航背靠背——次数仍对，**间隔却没了**。故本测断言的是交错序。
+    """
+    handle = FakeHandle()
+    events = handle.calls  # 闸与导航共用一条序列
+    budget = BudgetGate(
+        daily_cap=50,
+        count_today=lambda venue, domain: 0,
+        cooldown_active=lambda domain: False,
+        consecutive_failures=lambda domain: 0,
+        wait=lambda domain: (events.append("wait"), 0.0)[1],
+    )
+
+    def resolve_in_context(h: BrowserFetchHandle) -> AssetPlan:
+        h.goto(LANDING)  # 闭包自己的解析导航（真实链路里由 stages 外壳先过闸）
+        return render_plan(VOLATILE)
+
+    _, launch = launcher(handle)
+    fetch_one(
+        plan=render_plan(),
+        venue_id="mock_journal",
+        dest=tmp_path / "a.part",
+        storage_state=None,
+        budget=budget,
+        resolve_in_context=resolve_in_context,
+        launch=launch,  # type: ignore[arg-type]
+    )
+
+    assert events == [
+        f"goto:{LANDING}",
+        "wait",
+        f"goto:{VOLATILE}",
+        "wait",
+        "download_via",
+        f"goto:{VOLATILE}",
+        "close",
+    ]
+
+
+def test_rate_gate_position_is_unchanged_on_the_single_hop_path(tmp_path: Path) -> None:
+    """无闭包时闸相对 goto 的位置**逐字不变**（aea/wiley 两消费方零影响的回归锁）。"""
+    handle = FakeHandle()
+    events = handle.calls
+    budget = BudgetGate(
+        daily_cap=50,
+        count_today=lambda venue, domain: 0,
+        cooldown_active=lambda domain: False,
+        consecutive_failures=lambda domain: 0,
+        wait=lambda domain: (events.append("wait"), 0.0)[1],
+    )
+    _, launch = launcher(handle)
+    fetch_one(
+        plan=render_plan(),
+        venue_id="mock_journal",
+        dest=tmp_path / "a.part",
+        storage_state=None,
+        budget=budget,
+        launch=launch,  # type: ignore[arg-type]
+    )
+    assert events == ["wait", f"goto:{LANDING}", "wait", "download_via", f"goto:{LANDING}", "close"]
+
+
 SIGNED_VOLATILE = f"{VOLATILE}&signature=SEKRET-SIGNATURE-123"
 
 
