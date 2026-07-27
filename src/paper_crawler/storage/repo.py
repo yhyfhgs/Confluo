@@ -454,6 +454,33 @@ _RELATION_PAIR_SQL = (
 _SAME_AS_CONFIDENCE = 1.0
 # 批量 IN 查询的参数分块上限（SQLite 默认 999 变量上限的保守分片）。
 _SQL_PARAM_CHUNK = 400
+# 展示层结果行里"这行是哪篇 paper"的列名候选（按优先序）。两条展示查询的列名天生不同：
+# `list_papers` 是 `SELECT p.*` ⇒ `id`；`search_papers` 是 FTS join ⇒ `paper_id`
+# （D-034 明文返回列契约）。见 `display_row_paper_id`。
+_PAPER_ID_COLUMNS: tuple[str, ...] = ("id", "paper_id")
+
+
+def display_row_paper_id(row: sqlite3.Row) -> str:
+    """展示层结果行 → paper id：**折叠路径取 id 的唯一口径**（T13 聚合语义 6 的入口面）。
+
+    `fold_merged` 原先内联写死 `row["id"]`，于是它只服务 `list_papers` 那一种列形状——
+    `search_papers` 的行（列名 `paper_id`）一进来就 `IndexError: No item with that key`，
+    "同一个折叠对两条展示路径给出两种结果（一条折、一条炸）"即由此而来。列名口径收进
+    本函数后，两条路径共用同一个 `fold_merged`，日后再加展示查询也只改这一处；**两侧
+    SQL 的列名各自保持不变**（`p.*` 与 D-034 的 `paper_id` 契约都不为聚合改写）。
+
+    两列皆无 ⇒ `CrawlerError(INTEGRITY)` 响亮拒绝：静默当作"不属于任何合并类"会让折叠
+    对该行永远失效，而这是调用方传错行形状的编程错误，不该被折叠悄悄吞掉。
+    """
+    keys = row.keys()
+    for column in _PAPER_ID_COLUMNS:
+        if column in keys:
+            return str(row[column])
+    raise CrawlerError(
+        ErrorClass.INTEGRITY,
+        f"结果行缺少 paper 标识列（需 {' 或 '.join(_PAPER_ID_COLUMNS)} 之一，实得 {list(keys)}）"
+        "——展示层折叠 `fold_merged` 无法定位该行属于哪篇 paper",
+    )
 
 
 @dataclass(frozen=True)
@@ -1689,23 +1716,29 @@ class Repo:
         代表 = 结果集内该类成员按 `(-identifier 数, paper_id)` 的最小者——类主行在集内时
         它自然就是代表；主行不在集内（如属于另一 venue/issue）时退化为集内最佳者，
         **绝不整类丢弃**。无任何已裁决合并时是恒等函数（零开销路径）。
+
+        入参行**只需能标识 paper**，列名口径统一收在 `display_row_paper_id`（见其
+        docstring）——`list_papers`（`id`）与 `search_papers`（`paper_id`）两条展示路径
+        由同一个折叠实现服务，不各写一份。**恒等路径不看列**（库内无任何已裁决合并时
+        直接原样返回）：此时行形状错误不会被发现，如实记——为一条永不折叠的路径去逐行
+        取 id 是纯开销，而该错误在库里一有合并边就会立刻响亮暴露。
         """
         groups, counts = self._merged_index()
         if not groups:
             return list(rows)
         group_of = {pid: index for index, group in enumerate(groups) for pid in group.members}
+        ids = [display_row_paper_id(row) for row in rows]
         present: dict[int, list[str]] = {}
-        for row in rows:
-            index = group_of.get(str(row["id"]))
+        for paper_id in ids:
+            index = group_of.get(paper_id)
             if index is not None:
-                present.setdefault(index, []).append(str(row["id"]))
+                present.setdefault(index, []).append(paper_id)
         representative = {
             index: min(members, key=lambda pid: (-counts.get(pid, 0), pid))
             for index, members in present.items()
         }
         out: list[sqlite3.Row] = []
-        for row in rows:
-            paper_id = str(row["id"])
+        for row, paper_id in zip(rows, ids, strict=True):
             index = group_of.get(paper_id)
             if index is None or representative[index] == paper_id:
                 out.append(row)

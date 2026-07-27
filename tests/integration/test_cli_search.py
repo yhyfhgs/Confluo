@@ -8,6 +8,7 @@
 
 from __future__ import annotations
 
+import json
 from pathlib import Path
 
 import yaml
@@ -105,6 +106,89 @@ def test_search_matches_abstract(tmp_path: Path) -> None:
 
     assert result.exit_code == 0, result.output
     assert "Paper One" in result.output
+
+
+# --- 聚合显示：与 `list` 同名同义同默认（R2-F4）------------------------------------------------
+
+
+def _seed_merged_pair(home: Path) -> tuple[str, str]:
+    """两篇同题 paper + 一条已裁决 `same_as(merged)`（经 `dedupe decide merge` 同一入口）。"""
+    db = Database(home / "catalog.sqlite")
+    db.migrate()
+    repo = Repo(db)
+    repo.upsert_venue(_venue_spec("mock_journal"))
+    ids = [
+        repo.upsert_paper(
+            "mock_journal",
+            None,
+            PaperStub(title=title, identifiers=(("doi", doi),), year=year),
+        )
+        for doi, title, year in (
+            ("10.9999/a", "Deep Learning for Asset Pricing", 2023),
+            ("10.9999/b", "Deep learning for asset pricing", 2024),
+        )
+    ]
+    db.execute(
+        "INSERT INTO paper_relation "
+        "(from_paper, to_paper, kind, confidence, evidence_json, decided) VALUES (?,?,?,?,?,?)",
+        (ids[0], ids[1], "candidate_duplicate", 0.5, json.dumps({"reason": "weak"}), None),
+    )
+    repo.decide_candidate(ids[0], ids[1], "merge")
+    db.close()
+    return ids[0], ids[1]
+
+
+def test_search_folds_merged_rows_by_default_like_list(tmp_path: Path) -> None:
+    """R2-F4：同一个库、同一批人工裁决，`search` 与 `list` 必须给出同一个聚合答案——
+    修复前 `list` 折叠而 `search` 恒不折叠，"库里到底有几篇"取决于用了哪条命令。"""
+    home = _make_home(tmp_path)
+    a, b = _seed_merged_pair(home)
+
+    result = runner.invoke(app, ["search", "pricing", "--home", str(home)])
+
+    assert result.exit_code == 0, result.output
+    assert result.output.count("Asset Pricing") + result.output.count("asset pricing") == 1
+    assert min(a, b) in result.output and max(a, b) not in result.output  # 只留类代表
+    assert "已按 same_as(merged) 折叠 1 行" in result.output
+    assert "--no-aggregate" in result.output  # 注记给出展开方法
+
+
+def test_search_no_aggregate_expands_merged_rows(tmp_path: Path) -> None:
+    home = _make_home(tmp_path)
+    a, b = _seed_merged_pair(home)
+
+    result = runner.invoke(app, ["search", "pricing", "--no-aggregate", "--home", str(home)])
+
+    assert result.exit_code == 0, result.output
+    assert a in result.output and b in result.output
+    assert "已按 same_as(merged) 折叠" not in result.output
+
+
+def test_search_result_rows_survive_the_fold_path_columns_intact(tmp_path: Path) -> None:
+    """列对齐回归：检索行（`paper_id`/`title`/`year`/`venue_id`）走完折叠仍照常渲染——
+    修复前 search 行进折叠即 `IndexError: No item with that key`（列名 `id` vs `paper_id`）。"""
+    home = _make_home(tmp_path)
+    a, b = _seed_merged_pair(home)
+
+    result = runner.invoke(app, ["search", "pricing", "--home", str(home)])
+
+    assert result.exit_code == 0, result.output
+    assert "IndexError" not in result.output
+    header, _, first = result.output.splitlines()[:3]
+    assert header.split() == ["paper_id", "title", "year", "venue_id"]
+    assert first.startswith(min(a, b))  # 首行首列仍是类代表的 paper_id
+    assert "mock_journal" in first and "2023" in first  # venue_id/year 列未错位
+
+
+def test_search_no_fold_note_when_nothing_was_folded(tmp_path: Path) -> None:
+    """没折掉任何行就不出注记——恒挂一句"折叠 0 行"是纯噪声。"""
+    home = _make_home(tmp_path)
+    _seed_papers(home, {"mock_journal": [("10.0/a", "Pricing Paper", None)]})
+
+    result = runner.invoke(app, ["search", "pricing", "--home", str(home)])
+
+    assert result.exit_code == 0, result.output
+    assert "已按 same_as(merged) 折叠" not in result.output
 
 
 # --- 零命中 -------------------------------------------------------------------------------------

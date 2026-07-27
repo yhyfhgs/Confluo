@@ -465,6 +465,36 @@ def _print_paper_table(papers: list[sqlite3.Row]) -> None:
     typer.echo(_render_table(["title", "year"], rows))
 
 
+# 只读展示命令共用的聚合开关文案（`list` 与 `search` **同名同义同默认**——同一个库、同一批
+# 人工裁决，两条命令给出"折/不折"两种答案是自相矛盾，用户无从知道哪个才是这个库的实情）。
+AGGREGATE_OPTION_HELP = "按人工裁决的 same_as(merged) 折叠重复行显示（默认开）"
+
+
+def _fold_for_display(
+    repo: Repo, rows: list[sqlite3.Row], *, aggregate: bool
+) -> tuple[list[sqlite3.Row], str | None]:
+    """展示层折叠 + 折叠注记文案（`list`/`search` 唯一入口，T13 聚合语义 6）。
+
+    折叠**只在最终展示的结果集内**做（冻结件）：调用方须在拿到"就是要显示的这批行"之后
+    才调本函数——不得把聚合下推成查询过滤器（`Repo.list_papers(aggregate=…)` 默认 False
+    保护 pull 级联；`search_papers` 同理不带聚合参数）。被折掉的行**仍在库中**，注记里
+    给出展开与查看的具体命令，避免"少了几行"变成无法解释的现象。
+
+    返回 `(展示行, 注记或 None)` 而非直接打印：注记跟在各命令自己的表格**之后**输出，
+    打印时机归调用方，折叠语义与文案归本函数。
+    """
+    if not aggregate:
+        return rows, None
+    shown = repo.fold_merged(rows)
+    if len(shown) == len(rows):
+        return shown, None
+    note = (
+        f"（已按 same_as(merged) 折叠 {len(rows) - len(shown)} 行重复显示；"
+        "行仍在库中，`crawler dedupe groups` 查看、`--no-aggregate` 展开）"
+    )
+    return shown, note
+
+
 def _require_known_venue(env: CliEnv, venue_id: str) -> None:
     """`timeline`/`list` 的显式 fail-fast：二者经 `run_single_stage`/手工 enqueue
     驱动，未知 venue 不会像 `PipelineRunner.pull` 那样抛出——discover handler 内部
@@ -580,11 +610,7 @@ def list_cmd(
     issue: Annotated[str | None, typer.Option("--issue")] = None,
     year: Annotated[int | None, typer.Option("--year")] = None,
     aggregate: Annotated[
-        bool,
-        typer.Option(
-            "--aggregate/--no-aggregate",
-            help="按人工裁决的 same_as(merged) 折叠重复行显示（默认开）",
-        ),
+        bool, typer.Option("--aggregate/--no-aggregate", help=AGGREGATE_OPTION_HELP)
     ] = True,
     home: HomeOpt = None,
     verbose: VerboseOpt = False,
@@ -598,6 +624,7 @@ def list_cmd(
     未删除，`crawler dedupe groups` 可逐类查看，`crawler dedupe revert` 可回滚）。折叠只
     发生在**本命令的展示层**：`pull` 级联仍对全部行派生 resolve/fetch 任务（`Repo.list_papers`
     的 `aggregate` 默认 False），故"折叠"不会让任何一侧漏下载。`--no-aggregate` 关闭。
+    **`search` 同名同义同默认**（两条只读展示命令的聚合语义统一，见 `_fold_for_display`）。
     """
     if volume is not None and year is not None:
         _usage_error("--volume 与 --year 不能同时指定")
@@ -620,13 +647,10 @@ def list_cmd(
         # **跨 issue 汇总之后**折，而不是让 `_papers_in_scope` 改走 `list_papers(aggregate=True)`
         # 逐 issue 折——同一著作的两行若分属不同 issue，逐 issue 折时各自都是"类内唯一在场
         # 者"、谁也折不掉，汇总后又双双出现。
-        shown = env.ctx.repo.fold_merged(papers) if aggregate else papers
+        shown, fold_note = _fold_for_display(env.ctx.repo, papers, aggregate=aggregate)
         _print_paper_table(shown)
-        if len(shown) < len(papers):
-            typer.echo(
-                f"（已按 same_as(merged) 折叠 {len(papers) - len(shown)} 行重复显示；"
-                "行仍在库中，`crawler dedupe groups` 查看、`--no-aggregate` 展开）"
-            )
+        if fold_note is not None:
+            typer.echo(fold_note)
         totals = _fold_reports(reports)
         typer.echo(
             f"成功 {totals.succeeded} 失败 {totals.failed} "
@@ -1432,6 +1456,11 @@ def verify(home: HomeOpt = None, verbose: VerboseOpt = False) -> None:
 # 独立顶层命令（D-034 决策 5，否决 `search --rebuild` 读写混一形态）；均经
 # `repo.search_papers()`/`repo.check_fts_consistency()`/`repo.reindex_fts()` 单点封装，
 # 本节只做 CLI 接线（渲染 + 退出码），不得让 `MATCH` 语法散入本层。
+#
+# **聚合语义与 `list` 共用**（R2-F4）：`search` 的展示层折叠走与 `list` 同一个
+# `_fold_for_display`（同名 `--aggregate/--no-aggregate`、同默认开）。检索 SQL 本身
+# 不带聚合参数——折叠是展示层语义，`search_papers` 的返回列契约（`paper_id` 等，
+# D-034）也不为聚合改名，两侧列名差异统一收在 `repo.display_row_paper_id`。
 
 
 def _print_search_results(rows: list[sqlite3.Row]) -> None:
@@ -1452,12 +1481,25 @@ def search(
     query: Annotated[str, typer.Argument(help="FTS5 MATCH 查询表达式（检索 title+abstract）")],
     limit: Annotated[int, typer.Option("--limit", help="返回条数上限")] = SEARCH_DEFAULT_LIMIT,
     venue: Annotated[str | None, typer.Option("--venue", help="仅在该 venue 内检索")] = None,
+    aggregate: Annotated[
+        bool, typer.Option("--aggregate/--no-aggregate", help=AGGREGATE_OPTION_HELP)
+    ] = True,
     home: HomeOpt = None,
     verbose: VerboseOpt = False,
 ) -> None:
     """FTS5 全文检索（D-034）：仅覆盖 `title`+`abstract` 二字段（正文/向量索引 defer），
     经 `repo.search_papers()` 单一查询入口。`query` 是完整 FTS5 `MATCH` 语法（含
     `NEAR/`、列限定 `title:`、前缀 `*`），原样传递、不做额外校验。
+
+    **聚合显示与 `list` 同名同义同默认**（T13 聚合语义 6；`--no-aggregate` 展开）：同一个
+    库、同一批人工 `dedupe decide … merge`，两条只读展示命令必须给出同一个答案——否则
+    "这个库里到底有几篇"取决于用了哪条命令。折叠在**本次结果集内**做（`_fold_for_display`），
+    `search_papers` 本身不带聚合参数、SQL 不变。
+
+    **`--limit` 与折叠的先后（如实记）**：`--limit` 由 SQL 施加在**折叠之前**，故折叠后
+    实际显示行数可能少于 `--limit`。这是"折叠只在结果集内做"（冻结件）的直接后果——
+    要在折叠后补齐到 `--limit` 就得让聚合下推进查询、反过来污染 `search_papers` 的
+    单一查询入口契约。需要看全部原始命中时用 `--no-aggregate`。
 
     退出码：0=成功（含零命中）；2=未知 `--venue`、`query` 语法错误（FTS5 拒绝解析）、
     或 `paper_fts` 表整体缺失（`CrawlerError(CONFIG)`，T12 独立审查 P2-3——正常路径
@@ -1476,7 +1518,10 @@ def search(
         if not rows:
             typer.echo("无匹配结果。")
             raise typer.Exit(code=0)
-        _print_search_results(rows)
+        shown, fold_note = _fold_for_display(env.ctx.repo, rows, aggregate=aggregate)
+        _print_search_results(shown)
+        if fold_note is not None:
+            typer.echo(fold_note)
     raise typer.Exit(code=0)
 
 

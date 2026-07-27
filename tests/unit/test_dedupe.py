@@ -604,6 +604,37 @@ def test_list_papers_aggregate_within_issue_scope(repo: Repo) -> None:
     assert [str(r["id"]) for r in rows] == [min(a, b)]
 
 
+def test_fold_merged_accepts_search_result_rows(repo: Repo) -> None:
+    """R2-F4 根因锁：`search_papers` 的行（列名 `paper_id`）与 `list_papers` 的行（`id`）
+    共用同一个折叠——修复前 `fold_merged` 内联写死 `row["id"]`，search 行一进来就
+    `IndexError: No item with that key`，两条展示命令因此无法给出同一个聚合答案。
+    """
+    a = _paper(repo, doi="10.9999/s1", title="Deep Learning for Asset Pricing")
+    b = _paper(repo, doi="10.9999/s2", title="Deep learning for asset pricing")
+    _merge_pair(repo, a, b)
+
+    rows = repo.search_papers("pricing")
+    folded = repo.fold_merged(rows)
+
+    assert {str(r["paper_id"]) for r in rows} == {a, b}  # 检索本身仍命中两行
+    assert [str(r["paper_id"]) for r in folded] == [min(a, b)]  # 折叠后只剩类代表
+
+
+def test_fold_merged_rejects_rows_without_any_paper_id_column(repo: Repo) -> None:
+    """两种列名都没有 ⇒ 响亮 INTEGRITY，不静默当作"不属于任何合并类"——那会让折叠对
+    该行永远失效，而这是调用方传错行形状的编程错误。"""
+    a = _paper(repo, doi="10.9999/n1", title="AAA")
+    b = _paper(repo, doi="10.9999/n2", title="BBB")
+    _merge_pair(repo, a, b)
+
+    rows = repo.db.query("SELECT title, year FROM paper ORDER BY title", ())
+
+    with pytest.raises(CrawlerError) as excinfo:
+        repo.fold_merged(rows)
+    assert excinfo.value.error_class is ErrorClass.INTEGRITY
+    assert "paper 标识列" in str(excinfo.value)
+
+
 def test_fold_merged_is_identity_without_merged_edges(repo: Repo) -> None:
     a = _paper(repo, doi="10.9999/id1", title="AAA")
     b = _paper(repo, doi="10.9999/id2", title="BBB")
