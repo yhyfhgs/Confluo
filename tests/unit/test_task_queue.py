@@ -312,6 +312,40 @@ def test_fail_transient_retries_three_then_failed(queue: TaskQueue) -> None:
     assert row["last_error"] == "5xx"
 
 
+def test_fail_redacts_credentials_before_persisting(queue: TaskQueue) -> None:
+    """`last_error` 是**持久化 + 直印**面（`crawler status --failed`）：凭证形态先脱敏。
+
+    R1 审查 P2-2（第四 sink）：异常串会内联 URL（如浏览器导航失败），F-1 接线后那条
+    URL 可能带一次性签名 token；`runner._route_error(str(exc))` → 本方法 → `task.last_error`
+    → CLI 明文直印。脱敏落在**持久化边界**（同 `repo.add_fetch_log` 款式）。
+    """
+    queue.enqueue("fetch", "jfe", {"n": 1})
+    task_id = _claim(queue)
+    queue.fail(
+        task_id,
+        ErrorClass.TRANSIENT,
+        "浏览器导航无响应: https://h.test/Delivery.cfm/x.pdf?abstractid=1&signature=SEKRET123456",
+    )
+    row = queue.get(task_id)
+    assert row is not None
+    last_error = str(row["last_error"])
+    assert "SEKRET123456" not in last_error
+    assert "signature=***" in last_error
+    assert "abstractid=1" in last_error  # 非凭证段保留（脱敏不毁可诊断性）
+
+
+def test_block_redacts_credentials_before_persisting(queue: TaskQueue) -> None:
+    """`blocked_reason` 同为持久化 + 直印面（`crawler status --blocked`）。"""
+    queue.enqueue("fetch", "jfe", {"n": 1})
+    task_id = _claim(queue)
+    queue.block(task_id, "browser-fetch 停手: 导航 https://h.test/x.pdf?access_token=SEKRET123456")
+    row = queue.get(task_id)
+    assert row is not None
+    reason = str(row["blocked_reason"])
+    assert "SEKRET123456" not in reason
+    assert "access_token=***" in reason
+
+
 def test_fail_rate_limited_never_counts_attempts(queue: TaskQueue) -> None:
     """RATE_LIMITED 不计 attempts：多次失败仍 PENDING，attempts 恒为 0。"""
     queue.enqueue("fetch", "jfe", {"n": 1})

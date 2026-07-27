@@ -266,6 +266,13 @@ class SsrnAdapter(AdapterBase):
         域级闸——本 adapter 侧仍**零限速/配额代码**）；遇挑战即停手，绝不求解/绕过/换 UA。
         """
         response = handle.goto(plan.url)
+        # 判定器口径（R1 审查 P2-7）：此处恒新建 `ChallengeDetector()`（`classify_or_raise`
+        # 的默认），与 `fetch_one` 主路径**不是同一个实例**。当前判定器无状态（`classify`
+        # 是纯函数式分类，特征表为模块级常量）⇒ 行为等价，两实例无差别。但
+        # `fetch_one(detector=…)` 的注入面**只覆盖主路径**、不穿到本闭包：一旦判定器变成
+        # 有状态（如跨调用累计质询计数、动态特征表），同一次取回会出现"两跳两判定器"的
+        # 割裂——届时须把 detector 穿进 resolve 接缝（`BrowserContextResolver` 加形参），
+        # 而不是在此各自新建。本卡不动接缝签名，只登记该前提。
         verdict = classify_or_raise(response, domain=host_of(plan.url))
         if verdict is ClassifyResult.NO_ENTITLEMENT:
             raise CrawlerError(

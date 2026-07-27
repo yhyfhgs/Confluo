@@ -25,8 +25,9 @@
   现可覆盖三消费方真实站点（仍受 §5 清账表第 2 行"第二跳导航不过判定器"等已知边界约束）。
 - **ssrn 模式 B 的同批解析已接线**（T20 审计 R1 F-1 修复）：取回时先在同一浏览器上下文打开
   landing 页 → 判定 → 读出 `Delivery.cfm` 下载链接 → 立即用它下载。故 ssrn 演练的
-  `goto` 序列是 **landing → volatile**（两跳），域级闸相应多计一次请求；landing 页 HTML
-  形态**未核验**，匹配失败的表现见 §5 清账表第 6 行。
+  `goto` 序列是 **landing → volatile → 下载触发**（三跳，闸与导航严格交错：
+  wait→landing→wait→volatile→wait→download），域级闸相应多计一次请求；landing 页 HTML
+  形态**未核验**，匹配失败的表现见 §5 清账表第 6 行，签名脱敏的未核验面见第 7 行。
 - 真实浏览器依赖未装（可选 extra）：`pip install paper-crawler[auth-browser] && playwright install chromium`。
 - 在线预算：本演练计入 Phase 7 §3 `T19-bf` 行（三消费方各至多 3 请求，合计 ≤10）——**消费前先查
   `state/budget.json` 账本，消费后即记**。
@@ -77,11 +78,12 @@
 | # | 边界 | 对本 runbook 的影响 | 闭合归属 |
 |---|---|---|---|
 | 1 | ~~open_access 消费方无凭证注入面~~ **已闭合**（T11 controller 前置裁决）：`storage_state` 只来自 runner 的 auth 健康门，该门对 `family != "auth_gated"` 早返回 ⇒ ssrn/aea（`open_access` family）恒以干净上下文启动——**这是设计，非缺陷**：browser-fetch 对二者的语义=公开内容的浏览器渲染取回（非"需要登录"）；Cloudflare 拦截由既有 S-c 头级判定 + 域级冷却处置 | ssrn 模式 B、aea gold OA（jel/jep）可正常演练（干净上下文即预期姿态）；aea 订阅刊（aer/aeri/aej_\*）遇 CF/付费墙页按 challenge/no_entitlement 既有链处置——非阻塞性缺口，如实记录即可 | **已闭合**——见 design/11 controller 裁决 + `browserfetch.py` 模块 docstring 清账 #1 + `pipeline/stages.py::_browser_storage_state` docstring |
-| 2 | 下载触发的第二次导航不再过判定器（与设计伪码同形） | 若站点在第二跳才发质询，本次归 **`TRANSIENT`**（下载未发生）而非 challenge——**不是绕过**，但**会进重试表**（4 次 / 2·8·30s），即对刚发过质询的域再敲三次。请在记录里如实区分，并留意 obslog 里同域连续 TRANSIENT | T11 已复核，提案：改判 `CHALLENGE`（需 `BrowserFetchHandle.download_via` 失败路径暴露响应快照，属接口面扩张）。**fable 裁决（本 Phase 不动）**：现状"过度重试"方向安全、design/11 §4.2 伪代码同形属设计既定——提案原文登记于此，标 **P8/T18（AC-BF 转正时评估）** |
+| 2 | **下载触发那一跳**不再过判定器（与设计伪码同形）——序数随路径而异：aea/wiley 单跳路径上它是**第二跳**，ssrn 同批路径上（landing→volatile→下载）是**第三跳** | 若站点在该跳才发质询，本次归 **`TRANSIENT`**（下载未发生）而非 challenge——**不是绕过**，但**会进重试表**（4 次 / 2·8·30s），即对刚发过质询的域再敲三次。请在记录里如实区分，并留意 obslog 里同域连续 TRANSIENT | T11 已复核，提案：改判 `CHALLENGE`（需 `BrowserFetchHandle.download_via` 失败路径暴露响应快照，属接口面扩张）。**fable 裁决（本 Phase 不动）**：现状"过度重试"方向安全、design/11 §4.2 伪代码同形属设计既定——提案原文登记于此，标 **P8/T18（AC-BF 转正时评估）** |
 | 3 | AC-BF.4② 的"相邻请求间隔"在 obslog 里只有 `rate_wait_ms` 汇总，无请求时刻序列 | 限速合规需靠 `RateLimiter` 桶配置 + 人工计时佐证，日志不能单独作为时序证据 | T18（AC-BF 转正时定审计载体） |
 | 4 | 直调 `fetch_one` 时冷却读侧只认**域**键，不读旧 `<adapter_id>.json` 兼容键 | 经 `crawler grab` 走时由 runner 的 pre-stage 冷却门先拦，不受影响 | T3（抽 `pipeline/cooldown.py` 后改委派） |
 | 5 | **aea browser-fetch 通道可达性缺口**（T11 NEEDS_DECISION，fable 已裁）：`AeaAdapter.family` 仍 `auth_gated`；激活前提=配置 aea profile（机构订阅用户，首登人工，D-006 语义）——无 profile 时 runner 的 auth 健康门在**到达 stages 分支之前**即 `CONFIG`-BLOCK（与 `browser_fetch` 开关无关） | OA 刊（jel/jep）全文由既有 unpaywall OA-fallback（D-024）承载，可正常演练；订阅刊（aer/aeri/aej_\*）在未配置 aea profile 前**如实 BLOCKED**——非 browser-fetch 缺陷，是 D-006 aea 认证未落地的已知外部依赖（同构 elsevier T7b dormant 语义） | **已登记为已知缺口**（不改 `family`、不注册 no-op provider，OA 面有替代路径，伤害面可控）；"auth 门 family 级→plan 级细化"挂 **P8 评估候选**（属 runner 行为变更，影响四个 auth_gated adapter，非本 Phase 债） |
-| 6 | **ssrn landing 页 HTML 形态未核验**（T20 R1 F-1 修复引入的新解析面）：`Delivery.cfm` 下载链接经 `adapters/ssrn/parse.delivery_url_from_landing` 从 landing HTML 的 `href` 读出（同源护栏 + HTML 实体还原）；该 href 形态取自 ssrn.md §2 [PRIOR-LIVE 2026-07-20] 的 URL 记载，**站点实际标记结构从未取样**（本机 TLS 阻断） | 匹配失败 ≠ 无副本：表现为 `no_entitlement` + detail **`ssrn_no_delivery_link`**（区别于判定器判的 `ssrn_landing_no_entitlement`）。演练时若见前者，请**连同 landing 页 HTML 的下载按钮片段一并如实记录**（脱敏后）——那是修正正则的唯一证据；**不要**改成凭 abstract_id 拼 URL（红线 4 软门禁止依赖） | 首次真实演练回填（同 §6 开放问题⑤，二者同一次取证即可闭合） |
+| 6 | **ssrn landing 页 HTML 形态未核验**（T20 R1 F-1 修复引入的新解析面）：`Delivery.cfm` 下载链接经 `adapters/ssrn/parse.delivery_url_from_landing` 从 landing HTML 的 `href` 读出（真同源护栏：https + 同 host + 默认端口 + 拒 userinfo；属性名须恰好是 `href`；HTML 实体还原）；该 href 形态取自 ssrn.md §2 [PRIOR-LIVE 2026-07-20] 的 URL 记载，**站点实际标记结构从未取样**（本机 TLS 阻断） | 匹配失败 ≠ 无副本。**看异常消息正文分辨**（`CrawlerError.detail` 全库无打印 sink，演练者看不到；能看到的是 `crawler status --blocked/--failed` 与 obslog 里的消息串）：<br>· "**ssrn landing 页无 Delivery.cfm 下载链接**（无免费副本，或站点标记形态已变）" = 解析未命中；<br>· "**ssrn landing 判定无免费全文权限**（→ OA-fallback 既有链）" = 判定器判无权限。<br>若见前者，请**连同 landing 页 HTML 的下载按钮片段一并如实记录**（脱敏后）——那是修正正则的唯一证据；**不要**改成凭 abstract_id 拼 URL（红线 4 软门禁止依赖） | 首次真实演练回填（同 §6 开放问题⑤，二者同一次取证即可闭合） |
+| 7 | **F-2 的签名脱敏对真实 ssrn 形态未核验**：脱敏按**查询参数键名**打码（`signature`/`sig`/`credential`/`key-pair-id`/`access_token`/…），而 [PRIOR-LIVE 2026-07-20] 记载的 `Delivery.cfm/{name}.pdf?abstractid={id}&mirid=1` **没有签名类查询参数**——一次性 token 可能落在**路径段**（`{name}` 内）或**cookie** 上 | 若真实 volatile URL 的 token 在路径段，当前脱敏对它**零覆盖**：fetch_log 行 / obslog 事件 / `task.last_error` 会留下可复用（虽已失效）的一次性凭证。演练时**先看一眼实际 volatile URL 的形态**（勿整串抄进记录，只记结构：token 在 query 还是 path），据此判定是否要把脱敏从"按键名"扩到"按路径段模式" | 首次真实演练回填；扩展形态若需要，立卡再做（当前无证据，不预先泛化） |
 
 ## 6. 开放问题回填（design/11 §11，本 runbook 是其唯一取证途径）
 

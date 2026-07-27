@@ -126,6 +126,51 @@ def test_delivery_url_cross_host_href_is_rejected() -> None:
     assert parse.delivery_url_from_landing(body, base_url=_LANDING) is None
 
 
+def test_delivery_url_scheme_downgrade_is_rejected() -> None:
+    """**真同源**（R1 审查 P2-3）：scheme 降级 http 不采——明文跳转会外泄 cookie/token。"""
+    body = b"<a href='http://papers.ssrn.com/sol3/Delivery.cfm/x.pdf?abstractid=1'>x</a>"
+    assert parse.delivery_url_from_landing(body, base_url=_LANDING) is None
+
+
+def test_delivery_url_odd_port_is_rejected() -> None:
+    """同 host 异端口不是同源（`https://h:8443` ≠ `https://h`）。"""
+    body = b"<a href='https://papers.ssrn.com:8443/sol3/Delivery.cfm/x.pdf?abstractid=1'>x</a>"
+    assert parse.delivery_url_from_landing(body, base_url=_LANDING) is None
+
+
+def test_delivery_url_with_userinfo_is_rejected() -> None:
+    """带 userinfo 的 URL 一律不采：`https://evil:pass@papers.ssrn.com/…` 既是凭证形态，
+    也是经典的 host 误读诱饵（不同解析器对 `@` 前后的归属不一致）。"""
+    body = b"<a href='https://evil:pass@papers.ssrn.com/sol3/Delivery.cfm/x.pdf?abstractid=1'>x</a>"
+    assert parse.delivery_url_from_landing(body, base_url=_LANDING) is None
+
+
+def test_delivery_url_explicit_default_port_is_accepted() -> None:
+    """显式 `:443` 与缺省等价（同源，采）。"""
+    body = b"<a href='https://papers.ssrn.com:443/sol3/Delivery.cfm/x.pdf?abstractid=1'>x</a>"
+    result = parse.delivery_url_from_landing(body, base_url=_LANDING)
+    assert result == "https://papers.ssrn.com:443/sol3/Delivery.cfm/x.pdf?abstractid=1"
+
+
+def test_delivery_url_ignores_non_href_attributes() -> None:
+    """左边界（R1 审查 P2-4）：`data-href=`/`xlink:href=` 等以 href 收尾的属性名不当 href。"""
+    body = (
+        b"<div data-href='Delivery.cfm/decoy.pdf?abstractid=1'></div>"
+        b"<use xlink:href='Delivery.cfm/decoy2.pdf?abstractid=1'/>"
+    )
+    assert parse.delivery_url_from_landing(body, base_url=_LANDING) is None
+
+
+def test_delivery_url_still_matches_real_href_after_decoys() -> None:
+    """诱饵属性不遮蔽其后的真 `href`（左边界护栏不得误杀正例）。"""
+    body = (
+        b"<div data-href='Delivery.cfm/decoy.pdf?abstractid=1'></div>"
+        b"<a href='Delivery.cfm/real.pdf?abstractid=1'>PDF</a>"
+    )
+    result = parse.delivery_url_from_landing(body, base_url=_LANDING)
+    assert result is not None and result.endswith("real.pdf?abstractid=1")
+
+
 def test_delivery_url_takes_the_first_match() -> None:
     body = (
         b"<a href='Delivery.cfm/first.pdf?abstractid=1'>a</a>"

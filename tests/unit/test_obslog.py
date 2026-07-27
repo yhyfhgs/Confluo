@@ -335,6 +335,11 @@ def test_insttoken_query_param_redacted() -> None:
         ("?X-Amz-Credential=SEKRET123456", "?X-Amz-Credential=***"),
         ("?Key-Pair-Id=SEKRET123456&Expires=9", "?Key-Pair-Id=***&Expires=9"),
         ("Signature: SEKRET123456", "Signature: ***"),
+        # 下划线/短横前缀的 token 变体（`\btoken` 对其无词边界，同 insttoken 之弊）。
+        ("?access_token=SEKRET123456&x=1", "?access_token=***&x=1"),
+        ("?access-token=SEKRET123456", "?access-token=***"),
+        ("?auth_token=SEKRET123456", "?auth_token=***"),
+        ("X-Auth-Token: SEKRET123456", "X-Auth-Token: ***"),
     ],
 )
 def test_redact_signed_url_credentials(raw: str, expected: str) -> None:

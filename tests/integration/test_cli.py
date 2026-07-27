@@ -35,8 +35,10 @@ from helpers.fulltext_schema import write_fulltext_row
 from integration.test_pipeline_e2e import DEFAULT_QUIRKS, VENUE
 from paper_crawler import cli as cli_module
 from paper_crawler.cli import app
+from paper_crawler.errors import ErrorClass
 from paper_crawler.storage.db import Database
 from paper_crawler.storage.repo import Repo
+from paper_crawler.tasks import TaskQueue
 from paper_crawler.types import IssueRef, PaperStub, VenueSpec
 from paper_crawler.verify import VerifyIssue
 
@@ -277,6 +279,41 @@ def test_status_failed_shows_error_class_and_last_error(tmp_path: Path) -> None:
 
     assert result.exit_code == 0
     assert "parse" in result.output
+
+
+def test_status_never_prints_credentials_from_task_error_columns(tmp_path: Path) -> None:
+    """`status --blocked/--failed` 是 `blocked_reason`/`last_error` 的**直印面**。
+
+    R1 审查 P2-2（第四 sink）：browser-fetch 的异常串会内联 URL，而同批 volatile URL
+    带一次性签名 token ⇒ `runner._route_error(str(exc))` → `queue.fail/block` → 本命令
+    明文直印。脱敏落在队列的持久化边界，故本测从**用户看得见的那一面**验收。
+    """
+    home = _make_home(tmp_path)
+    db = Database(home / "catalog.sqlite")
+    db.migrate()
+    queue = TaskQueue(db)
+    signed = "https://h.test/Delivery.cfm/x.pdf?abstractid=7&signature=SEKRET123456"
+
+    blocked_id = str(queue.enqueue("fetch", VENUE, {"asset": "a"}).task_id)
+    assert queue.claim_next() is not None
+    queue.block(blocked_id, f"browser-fetch 停手: 命中风控 {signed}")
+
+    failed_id = str(queue.enqueue("fetch", VENUE, {"asset": "b"}).task_id)
+    assert queue.claim_next() is not None
+    for _ in range(4):  # TRANSIENT RetrySpec(4)：跑满预算落 FAILED
+        queue.fail(failed_id, ErrorClass.TRANSIENT, f"浏览器导航无响应: {signed}")
+        if queue.claim_next() is None:
+            break
+    db.close()
+
+    blocked_out = runner.invoke(app, ["status", "--blocked", "--home", str(home)]).output
+    failed_out = runner.invoke(app, ["status", "--failed", "--home", str(home)]).output
+
+    assert "SEKRET123456" not in blocked_out
+    assert "SEKRET123456" not in failed_out
+    assert "signature=***" in blocked_out
+    assert "signature=***" in failed_out
+    assert "abstractid=7" in blocked_out  # 可诊断性保留
 
 
 def test_status_blocked_empty_says_none(tmp_path: Path) -> None:

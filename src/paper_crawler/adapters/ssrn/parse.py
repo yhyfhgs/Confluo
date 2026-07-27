@@ -36,10 +36,16 @@ _SSRN_DOI_RE = re.compile(r"^10\.2139/ssrn\.(\d+)$")
 # landing 页下载按钮的 `href`（模式 B 同批解析；design/11 §4.4）——只认 `Delivery.cfm`
 # 字面，值取到闭合引号为止。**不含**任何 token 构造知识：本正则是"读出站点给的链接"，
 # 不是"拼一个链接"（红线 4 软门禁止依赖）。
+# 左侧负向后顾（R1 审查 P2-4）：属性名必须**恰好**是 `href`——`data-href=` / `xlink:href=`
+# 等以 href 收尾者不采（构造这类诱饵属性即可诱导导航到攻击者选定的 URL）。
 _DELIVERY_HREF_RE = re.compile(
-    r"href\s*=\s*(['\"])([^'\"]*Delivery\.cfm[^'\"]*)\1",
+    r"(?<![\w:-])href\s*=\s*(['\"])([^'\"]*Delivery\.cfm[^'\"]*)\1",
     re.IGNORECASE,
 )
+
+# 下载链接必须与 landing **同源**的判据（scheme+host+port 三元组，且拒 userinfo）。
+_REQUIRED_SCHEME = "https"
+_DEFAULT_HTTPS_PORT = 443
 
 # econ/fin 主题近似过滤集（OpenAlex 顶层 field 规范名，ssrn.md §3）。SSRN 已多学科化
 # （勘察：Engineering 22 万 / Medicine 7 万，非纯经济金融站）——本集 opt-in 收窄到 econ/fin
@@ -116,11 +122,15 @@ def delivery_url_from_landing(body: bytes, *, base_url: str) -> str | None:
     等于绕开站点自己的下载入口，是明令禁止的形态。
 
     规则：
-    - 匹配 `href="…Delivery.cfm…"`（大小写不敏感；单/双引号皆可），取**首个**命中；
+    - 匹配 `href="…Delivery.cfm…"`（大小写不敏感；单/双引号皆可），取**首个**命中。
+      属性名须**恰好**是 `href`——`data-href=`/`xlink:href=` 一类不采（诱饵属性面）；
     - 相对路径经 `urljoin(base_url, href)` 绝对化（`base_url` = landing 的 `final_url`）；
-    - **同源护栏**：绝对化后 host 必须与 `base_url` 同 host，跨站链接一律不采（页面若被
-      改写/注入，绝不把下载导航送去任意第三方）；
-    - 无命中 → `None`（调用方按 ssrn.md §6.2"无免费副本"映射 `no_entitlement`，不重试）。
+    - **同源护栏**（`_same_origin`，逐条判而非只比 host）：scheme 必须 `https`（拒明文降级
+      ——明文跳转会外泄 cookie/token）、hostname 与 `base_url` 精确相等、端口缺省或 `443`、
+      **拒任何 userinfo**（`https://evil:pass@papers.ssrn.com/…` 既是凭证形态，也是经典的
+      host 误读诱饵）。页面若被改写/注入，绝不把下载导航送去任意第三方；
+    - 无命中 / 不同源 → `None`（调用方按 ssrn.md §6.2"无免费副本"映射 `no_entitlement`，
+      不重试）。
 
     ⚠ **HTML 形态未核验**（design/11 §11 开放问题①/⑤；本机对 CF 前置域 TLS 阻断，
     [LIVE 2026-07-24]）：`Delivery.cfm` 的 href 形态取自 ssrn.md §2 [PRIOR-LIVE 2026-07-20]
@@ -132,9 +142,27 @@ def delivery_url_from_landing(body: bytes, *, base_url: str) -> str | None:
     if match is None:
         return None
     absolute = urljoin(base_url, unescape(match.group(2)))
-    if urlsplit(absolute).hostname != urlsplit(base_url).hostname:
-        return None
-    return absolute
+    return absolute if _same_origin(absolute, base_url) else None
+
+
+def _same_origin(candidate: str, base_url: str) -> bool:
+    """`candidate` 与 `base_url` 是否同源（https + 同 host + 默认端口 + 无 userinfo）。
+
+    非法 URL（如端口非数字）由 `urlsplit(...).port` 抛 `ValueError` → 判不同源：解析不出
+    来的东西一律不导航（对不可信 HTML 的保守姿态）。
+    """
+    try:
+        target = urlsplit(candidate)
+        base = urlsplit(base_url)
+        if target.scheme != _REQUIRED_SCHEME:
+            return False
+        if target.username is not None or target.password is not None:
+            return False
+        if target.hostname is None or target.hostname != base.hostname:
+            return False
+        return target.port in (None, _DEFAULT_HTTPS_PORT)
+    except ValueError:
+        return False
 
 
 def topic_field_matches(field_value: str | None, allowed: frozenset[str] = ECON_FIN_FIELDS) -> bool:

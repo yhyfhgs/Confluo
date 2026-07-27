@@ -52,6 +52,10 @@ _REDACT_EXTRA_KEYS: tuple[str, ...] = (
     "sig",
     "credentials?",
     "key[-_]?pair[-_]?id",
+    # 下划线/短横前缀的 token 变体：与 `insttoken` 同构——`\btoken` 对 `access_token`
+    # （`_` 是词字符，无词边界）漏匹配，故显式补齐（OAuth/签名 URL 的最常见形态）。
+    "access[-_]?token",
+    "auth[-_]?token",
 )
 
 # config 项目级护栏专属追加（凭证同义词；**不含** email / 裸 key，见模块 docstring）。

@@ -21,6 +21,7 @@ from datetime import UTC, datetime, timedelta
 from typing import Literal
 
 from paper_crawler.errors import RETRY_TABLE, ErrorClass, IllegalTransition, RetrySpec
+from paper_crawler.obslog import redact
 from paper_crawler.storage.db import Database
 from paper_crawler.types import new_ulid
 
@@ -227,6 +228,11 @@ class TaskQueue:
         `RATE_LIMITED` 不计入 attempts（design/05 §4"不计失败"）；attempts+1 后仍 <
         max_attempts → 回 PENDING，否则 FAILED 并落 error_class/last_error。退避 sleep 属
         runner 层职责，不在队列层。仅 RUNNING 任务可 fail。
+
+        `msg` **落库前经 `redact`**（AC-0.4/NFR-8；同 `repo.add_fetch_log` 款式）：入参恒是
+        `str(exc)`（`runner._route_error`），异常文本常内联 URL——browser-fetch 同批
+        volatile URL 带一次性签名 token ⇒ 不脱敏即明文入 `task.last_error`，再经
+        `crawler status --failed` 直印。脱敏落在**持久化边界**：无论谁构造异常串都兜住。
         """
         row = self._require(task_id)
         current = str(row["state"])
@@ -239,17 +245,21 @@ class TaskQueue:
         self.db.execute(
             "UPDATE task SET state = ?, attempts = ?, error_class = ?, last_error = ?, "
             "updated_at = ? WHERE id = ?",
-            (target, attempts, error_class.value, msg, self._now_iso(), task_id),
+            (target, attempts, error_class.value, redact(msg), self._now_iso(), task_id),
         )
         return target
 
     def block(self, task_id: str, reason: str) -> None:
-        """RUNNING → BLOCKED（唯一合法源 RUNNING）；不动 attempts（design/05 §2）。"""
+        """RUNNING → BLOCKED（唯一合法源 RUNNING）；不动 attempts（design/05 §2）。
+
+        `reason` 落库前经 `redact`——与 `fail` 同理（见其 docstring）：`blocked_reason`
+        是持久化 + `crawler status --blocked` 直印面。
+        """
         row = self._require(task_id)
         validate_transition(str(row["state"]), "BLOCKED")
         self.db.execute(
             "UPDATE task SET state = 'BLOCKED', blocked_reason = ?, updated_at = ? WHERE id = ?",
-            (reason, self._now_iso(), task_id),
+            (redact(reason), self._now_iso(), task_id),
         )
 
     def resume(self, task_id: str | None = None, *, all_blocked: bool = False) -> int:
