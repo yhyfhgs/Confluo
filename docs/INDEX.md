@@ -111,7 +111,7 @@
 | [testing/records/2026-07-24-ac3-acceptance.md](testing/records/2026-07-24-ac3-acceptance.md) | AC-3.1~3.4 独立汇总验收记录（数据模型与合并引擎，Phase 3 判据补记收口） | approved | 2026-07-24 |
 | [testing/records/2026-07-24-ac5-acceptance.md](testing/records/2026-07-24-ac5-acceptance.md) | AC-5 离线端到端汇总验收记录（AC-5.1a/5.2/5.3/5.4 离线 DoD 达成，T7 draft；AC-5.1b defer Phase 6） | approved | 2026-07-24 |
 | [testing/records/2026-07-26-ac6-acceptance.md](testing/records/2026-07-26-ac6-acceptance.md) | AC-6 离线端到端验收 + 在线冒烟记录（订阅与搜索，AC-6.1~6.4 离线 DoD 四条 PASS，fable 亲验签署"达成"；§4 已知限制 #1 arxiv 恒失败 / #2 ssrn 整年枚举经 F7 修复并在线复验，§4.1a 台账；F7 期新发现 #6 arxiv search_query 无本地补偿——上半边 fan-out 已修复，下半边参数化谓词已由 Phase 7 T9 闭合，追记见该条） | approved | 2026-07-27 |
-| [testing/records/2026-07-27-ac7-acceptance.md](testing/records/2026-07-27-ac7-acceptance.md) | AC-7 验收记录骨架（全文抽取与库增强，Phase 7 T18 产出；AC-7.1/7.2 离线载体已引用 T7 既有测试并 PASS，在线半区 pending 归 T19；AC-7.3/7.4 因 T13/T14/T16 未合并如实标 pending） | draft | 2026-07-27 |
+| [testing/records/2026-07-27-ac7-acceptance.md](testing/records/2026-07-27-ac7-acceptance.md) | AC-7 验收记录（全文抽取与库增强，Phase 7；T18 骨架 + T19 在线批回填：AC-7.1/7.4 真实数据 PASS、AC-7.3 条件 PASS（在线空态）、AC-7.2 在线为条件项（本机无 GROBID）；含在线预算四行对账与 P0/超线两处 NEEDS_DECISION） | draft | 2026-07-27 |
 | [testing/records/canary/README.md](testing/records/canary/README.md) | Canary 健康矩阵记录目录（`crawler canary --record` 落盘，按日覆盖；+周跑 launchd/cron 模板说明） | approved | 2026-07-26 |
 
 ## process/ — 流程规范
