@@ -2,7 +2,7 @@
 title: 开发计划（Phase 0–7）
 status: approved
 owner: fable5
-updated: 2026-07-23
+updated: 2026-07-27
 ---
 
 # 开发计划
@@ -92,6 +92,13 @@ updated: 2026-07-23
 **范围**：GROBID 可选集成、全文倒排/向量索引（可选）、candidate_duplicate 审核 CLI、preprint↔published 关联报告。
 
 **DoD**：AC-7.x；全库一致性校验工具（文件↔DB 对账）通过。
+
+**状态（2026-07-27）**：**done**，`tag phase-7` 待 controller 终审后打。22 卡 5 波次全交付（含 T20
+终态独立审计抓出 4 处跨卡缝缺陷 + P0/R1/R2 三条修复批闭环 + 在线重跑），门禁 3832→4617 passed /
+31 skipped / 覆盖 98.98% / EXIT=0。AC-7 达成口径：AC-7.1/7.4 真实数据 **PASS**、AC-7.3 **条件
+PASS**（离线三件套齐备 + 在线空态如实标注，真实候选需跨源重叠语料）、AC-7.2 离线 **PASS** / 在线
+为**条件项**（本机无 GROBID，环境未就绪）；详见 [phase7-report](../reports/2026-07-27-phase7-report.md)
+与 [AC-7 记录](../testing/records/2026-07-27-ac7-acceptance.md)（判定列待 fable 终审签署）。
 
 ## 里程碑与节奏
 

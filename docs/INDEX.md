@@ -1,7 +1,7 @@
 # 文档索引（唯一权威清单）
 
 > 本表是全仓库文档的单一事实来源（D-008）。任何新增/改名/废弃文档必须同一提交内更新本表（AGENTS.md §4）。
-> status 取值与流转见 [process/status-workflow.md](process/status-workflow.md)。最后盘点：2026-07-27（Phase 7 W0：T2 卡 D-034 FTS5 + D-035 repec 双 ADR + 06/aggregators 增补；T18 卡 AC-BF 编号转正 + AC-5.1b 承接指针 + AC-7 验收记录骨架）。
+> status 取值与流转见 [process/status-workflow.md](process/status-workflow.md)。最后盘点：2026-07-27（Phase 7「全文抽取与库增强」22 卡 5 波次全交付，T20 终态独立审计抓出 4 处跨卡缝缺陷（R1 ssrn/browser-fetch 二项 + R2 repec/search 二项）+ T19 在线批自发现 P0（watch partial 日期崩溃）——三条修复批全部经"执行→独立审查→回修→复核→controller 合并"闭环收口并在线重跑验证；门禁 3832→4617 passed / 31 skipped / 覆盖 98.98% / EXIT=0；详见 [phase7-report](reports/2026-07-27-phase7-report.md)）。
 
 ## 按意图导航（先于逐目录清单）
 
@@ -36,7 +36,7 @@
 | [plan/phase6-implementation-plan.md](plan/phase6-implementation-plan.md) | Phase 6 实施计划（订阅与搜索：DSL + watch + 护栏 + 日报 任务切分） | approved | 2026-07-26 |
 | [plan/phase7-implementation-plan.md](plan/phase7-implementation-plan.md) | Phase 7 实施计划（全文抽取与库增强：extract/browser-fetch/repec/dedupe 22 卡切分） | approved | 2026-07-27 |
 | [plan/progress.md](plan/progress.md) | 项目进度跟踪 | approved | 2026-07-26 |
-| [plan/decision-log.md](plan/decision-log.md) | 架构决策记录（D-001…D-035） | approved | 2026-07-27 |
+| [plan/decision-log.md](plan/decision-log.md) | 架构决策记录（D-001…D-036） | approved | 2026-07-27 |
 
 ## design/ — 核心设计（00–12）
 
@@ -111,7 +111,7 @@
 | [testing/records/2026-07-24-ac3-acceptance.md](testing/records/2026-07-24-ac3-acceptance.md) | AC-3.1~3.4 独立汇总验收记录（数据模型与合并引擎，Phase 3 判据补记收口） | approved | 2026-07-24 |
 | [testing/records/2026-07-24-ac5-acceptance.md](testing/records/2026-07-24-ac5-acceptance.md) | AC-5 离线端到端汇总验收记录（AC-5.1a/5.2/5.3/5.4 离线 DoD 达成，T7 draft；AC-5.1b defer Phase 6） | approved | 2026-07-24 |
 | [testing/records/2026-07-26-ac6-acceptance.md](testing/records/2026-07-26-ac6-acceptance.md) | AC-6 离线端到端验收 + 在线冒烟记录（订阅与搜索，AC-6.1~6.4 离线 DoD 四条 PASS，fable 亲验签署"达成"；§4 已知限制 #1 arxiv 恒失败 / #2 ssrn 整年枚举经 F7 修复并在线复验，§4.1a 台账；F7 期新发现 #6 arxiv search_query 无本地补偿——上半边 fan-out 已修复，下半边参数化谓词已由 Phase 7 T9 闭合，追记见该条） | approved | 2026-07-27 |
-| [testing/records/2026-07-27-ac7-acceptance.md](testing/records/2026-07-27-ac7-acceptance.md) | AC-7 验收记录（全文抽取与库增强，Phase 7；T18 骨架 + T19 在线批回填：AC-7.1/7.4 真实数据 PASS、AC-7.3 条件 PASS（在线空态）、AC-7.2 在线为条件项（本机无 GROBID）；含在线预算四行对账与 P0/超线两处 NEEDS_DECISION） | draft | 2026-07-27 |
+| [testing/records/2026-07-27-ac7-acceptance.md](testing/records/2026-07-27-ac7-acceptance.md) | AC-7 验收记录（全文抽取与库增强，Phase 7；T18 骨架 + T19 在线批回填：AC-7.1/7.4 真实数据 PASS、AC-7.3 条件 PASS（在线空态）、AC-7.2 在线为条件项（本机无 GROBID）；P0 修复后 §2.7(b) `asset-pricing` 三源端到端重跑 **PASS**（12 请求，partial 日期剔除可观测、整轮不受影响）；`T8-robots`/P0 两处 NEEDS_DECISION 均已裁决落档，转待 fable 终审签署） | draft | 2026-07-27 |
 | [testing/records/canary/README.md](testing/records/canary/README.md) | Canary 健康矩阵记录目录（`crawler canary --record` 落盘，按日覆盖；+周跑 launchd/cron 模板说明） | approved | 2026-07-26 |
 
 ## process/ — 流程规范
@@ -178,3 +178,4 @@
 | [reports/2026-07-24-post-phase5-audit.md](reports/2026-07-24-post-phase5-audit.md) | Phase 5 终审后独立全库审计报告（8 subagent：4 Opus 深审+4 Sonnet 面审；八域附条件达标、零 P0；P1×3/P2×12 台账 + AC-0 复核全 PASS + Phase 6 处置建议） |
 | [reports/2026-07-26-phase6-report.md](reports/2026-07-26-phase6-report.md) | Phase 6 阶段报告（订阅与搜索：21 卡——主线 T1+T1b/T2–T10 + 修复批 F1–F7 + 设计批 R1/R2 + 在线批 M1 交付清单 + D-030/D-031 + 事件教训 + Phase 7 开工检查单；opus 终审"放行附条件"，六项文档修正条件已闭合，`tag phase-6` 待 controller） |
 | [reports/2026-07-27-db-construction-audit.md](reports/2026-07-27-db-construction-audit.md) | Phase 7 T17 全库 `Database` 构造审计（检查单 #10 收口；88 处/43 文件四分类甄别——A 已兜底 52 处/33 文件不动，B 无兜底 36 处/10 文件已修（`closing()`/`request.addfinalizer`），C/D 各零命中；含 76→82→88 口径演进说明） |
+| [reports/2026-07-27-phase7-report.md](reports/2026-07-27-phase7-report.md) | Phase 7 阶段报告（全文抽取与库增强：22 卡 5 波次——T1–T19 主线交付 + T20 独立审计（Opus 深审×2+Sonnet 面审×1，抓出 R1/R2 共 4 处跨卡缝缺陷）+ P0/R1/R2 三条修复批闭环 + 在线重跑卡 D；D-033/034/035/036 四条 ADR；AC-7 四条终态 + 在线预算总账；门禁 3832→4617/31/98.98%；判定列待 controller 终审，`tag phase-7` 待打） |
