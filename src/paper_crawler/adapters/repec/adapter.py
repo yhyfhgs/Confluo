@@ -40,6 +40,7 @@ openalex 当初收紧 healthcheck 是**怕 canary 高频调用悄悄消耗 credi
 from __future__ import annotations
 
 import hashlib
+from collections import Counter
 from collections.abc import Sequence
 from dataclasses import dataclass, replace
 from datetime import UTC, datetime
@@ -258,25 +259,34 @@ class RepecAdapter(AdapterBase):
     # -- enrich_batch（duck-typed EnrichmentSource；**零网络**）-------------------------------
 
     def enrich_batch(self, dois: Sequence[str]) -> list[PaperStub]:
-        """快照本地 join：`10.3386/w|t{n}` → handle → 记录 → `PaperStub`。**全程零网络**。
+        """快照本地 join：`10.3386/w{n}` → handle → 记录 → `PaperStub`。**全程零网络**。
 
         对固定快照是 `(dois, snapshot)` 的**纯函数**（可重放、可用于回归锁定）——与在线源
         "受上游变动影响"的幂等性相反。去重保序、跳过空串（同 s2/openalex 既有口径）。
 
         未命中不静默丢弃，按 `parse.MissKind` 三分累加到 `stats`（摘要行可见）：
-        (a) 非 `10.3386` 前缀 → `unaddressable`；(b) 前缀符但快照无该 handle →
-        `missing_handle`；(c) 命中但无 JEL → `no_jel`（**仍产 stub**——title/authors/year/
-        abstract 照常回注，靠 `SOURCE_PRIORITY` 最低位天然只补空）。
+        (a) 非 NBER 工作论文 DOI（非 `10.3386`，或 `t` 等非 `w` 旁系）→ `unaddressable`
+        （`t` 等 NBER 旁系的成因字母另记 DEBUG，见 `parse.uncovered_series_letter`）；
+        (b) 前缀符但快照无该 handle → `missing_handle`；(c) 命中但无 JEL → `no_jel`
+        （**仍产 stub**——title/authors/year/abstract 照常回注，靠 `SOURCE_PRIORITY` 最低位
+        天然只补空）。
         """
         records = self._load_snapshot()
         unique = [doi for doi in dict.fromkeys(dois) if doi]
         stubs: list[PaperStub] = []
         matched = unaddressable = missing_handle = no_jel = 0
+        # `unaddressable` 内的成因细分（仅 DEBUG，不入 `SnapshotStats`/摘要行契约）：`t` 等
+        # **合法 NBER 旁系但本通道不覆盖**——与"根本不是 NBER"混作一个哑数字会掩盖"刻意不覆盖"。
+        # 按**字母**分桶而非只记总数：日后冒出别的旁系字母，DEBUG 里直接看得出是哪一类。
+        uncovered_series: Counter[str] = Counter()
 
         for doi in unique:
             handle = parse.handle_from_doi(doi)
             if handle is None:
                 unaddressable += 1
+                letter = parse.uncovered_series_letter(doi)
+                if letter is not None:
+                    uncovered_series[letter] += 1
                 continue
             record = records.get(handle)
             if record is None:
@@ -300,6 +310,9 @@ class RepecAdapter(AdapterBase):
                 "repec enrich_batch misses",
                 stage="enrich",
                 unaddressable=unaddressable,
+                # `unaddressable` 内 `t` 等非 `w` 旁系的成因细分（`{字母: 条数}`）；一条都没有
+                # 时传 None ⇒ `log_event` 省略该键，不给 jsonl 塞恒空字典。
+                uncovered_nber_series=dict(sorted(uncovered_series.items())) or None,
                 missing_handle=missing_handle,
                 no_jel=no_jel,
             )

@@ -160,6 +160,61 @@ def test_enrich_batch_counts_three_miss_kinds_separately(tmp_path: Path) -> None
     assert stats.unaddressable == 2
 
 
+def test_t_series_doi_is_unaddressable_and_never_joins_the_w_record(tmp_path: Path) -> None:
+    """P1-R2：`t{n}` 不再借 `w{n}` 的 handle 取到记录——不产 stub，计入"不可寻址"。
+
+    修复前 `series_id[1:]` 去首字母，`10.3386/t35506` 会 join 到 `RePEc:nbr:nberwo:35506`
+    （= w35506 的记录）并产出一个**冠着 t 的 DOI、装着 w 的书目**的 stub。
+    """
+    adapter = RepecAdapter(_write_snapshot(tmp_path))
+    stubs = adapter.enrich_batch(["10.3386/w35506", "10.3386/t35506"])
+    assert [dict(s.identifiers)["doi"] for s in stubs] == ["10.3386/w35506"]
+    assert adapter.stats.matched == 1
+    assert adapter.stats.unaddressable == 1
+    assert adapter.stats.missing_handle == 0  # t 不是"快照没这条"，是结构性不可寻址
+
+
+def test_debug_miss_event_breaks_unaddressable_down_by_series_letter(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """`unaddressable` 内"合法 NBER 旁系"与"根本不是 NBER"在 DEBUG 上可辨（按字母分桶）。
+
+    摘要行契约（三分计数）不变——细分只进 DEBUG 事件，不入 `SnapshotStats`。
+    """
+    events: list[dict[str, object]] = []
+    monkeypatch.setattr(
+        "paper_crawler.adapters.repec.adapter.log_event",
+        lambda level, msg, **kw: events.append({"level": level, "msg": msg, **kw}),
+    )
+    adapter = RepecAdapter(_write_snapshot(tmp_path))
+    adapter.enrich_batch(
+        [
+            "10.3386/t9001",  # 合法 NBER 旁系（t）——刻意不覆盖
+            "10.3386/t9002",  # 同上，同字母累加
+            "10.2139/ssrn.1234567",  # 根本不是 NBER
+        ]
+    )
+    (event,) = [e for e in events if e["msg"] == "repec enrich_batch misses"]
+    assert event["level"] == "DEBUG"
+    assert event["unaddressable"] == 3
+    assert event["uncovered_nber_series"] == {"t": 2}  # ssrn 那条不在细分里
+
+
+def test_debug_miss_event_omits_series_breakdown_when_all_misses_are_non_nber(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """无旁系未命中时**不塞恒空字典**——空细分键会让 jsonl 每行都背一个无信息量的 `{}`。"""
+    events: list[dict[str, object]] = []
+    monkeypatch.setattr(
+        "paper_crawler.adapters.repec.adapter.log_event",
+        lambda level, msg, **kw: events.append({"level": level, "msg": msg, **kw}),
+    )
+    adapter = RepecAdapter(_write_snapshot(tmp_path))
+    adapter.enrich_batch(["10.2139/ssrn.1234567"])
+    (event,) = [e for e in events if e["msg"] == "repec enrich_batch misses"]
+    assert event["uncovered_nber_series"] is None
+
+
 def test_enrich_batch_still_emits_stub_when_jel_is_empty(tmp_path: Path) -> None:
     """(c) 增值为空**仍产 stub**：title/authors/year/abstract 照常回注，靠优先级最低位只补空。"""
     adapter = RepecAdapter(_write_snapshot(tmp_path))

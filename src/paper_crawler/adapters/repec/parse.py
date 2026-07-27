@@ -19,17 +19,22 @@ r"""RePEc 零网络纯逻辑（design/adapters/aggregators.md §5.7；D-035 决�
 - **可重复字段**：`Author-Name` 逐条累积成有序元组；其余字段取**首次出现**（后续同名视为
   重复声明，不覆盖——保守，避免上游重复块把首条正确值挤掉）。
 
-## DOI↔handle 映射边界（唯一可靠面＝NBER 语法映射）
+## DOI↔handle 映射边界（唯一可靠面＝NBER **工作论文（w）** 语法映射）
 
-`10.3386/w{n}` / `10.3386/t{n}` → `RePEc:nbr:nberwo:{n}`，**零模糊匹配、零启发式**，series
-号归一复用 `adapters/nber/parse.py::series_id_from_doi`（单一权威源，不复制正则）。
+`10.3386/w{n}` → `RePEc:nbr:nberwo:{n}`，**只映射 `w`（工作论文）**、**零模糊匹配、零启发式**，
+series 号归一复用 `adapters/nber/parse.py::series_id_from_doi`（单一权威源，不复制正则）。
 
-**`t` 系列落哪个 series 段 [未实测]**（D-035 决策 4 / R2 §2.2-2 标 [推断]，明文"不作依据"）：
-本模块按 `w`/`t` 同落 `nberwo` 构造，但**不把该推断固化为事实**——快照内查无该 handle 时
-计入"覆盖缺口"(b) 而非静默丢弃（见 `MissKind`）。T19 实测若证伪，**按实测收窄**（改为只映射
-`w`），不按推断扩张。
+**只认 `w`，`t`（技术工作论文）及其余非 `w` 前缀不映射**（P1-R2 收窄，替代原"w/t 同落
+`nberwo`"推断）：原实现取 `series_id[1:]` 去掉首字母，令 `10.3386/w9001` 与 `10.3386/t9001`
+**塌进同一 handle** `RePEc:nbr:nberwo:9001`——两篇不相交的 NBER 论文被判成同一条，`t` 的
+abstract/authors/jel 静默污染 `w` 记录，并落一条高置信 `candidate_duplicate` 把两篇真实不同的
+论文判成疑似重复（cli 全库 DOI + `ORDER BY value` 下 `t` 恒撞 `w`，必触发）。快照面（`nberwo`）
+本就只含工作论文，`t` 落哪个 series 段亦 [未实测]，故按 D-035 授权的"按实测收窄而非按推断扩张"
+**只认 `w`**。`t` 与其余 NBER 旁系 → `handle_from_doi` 返回 None → 调用方计
+`MissKind.UNADDRESSABLE`（结构性不可寻址；`uncovered_series_letter` 记 DEBUG 成因字母），
+既不污染 `w` 记录、也不落假 candidate。
 
-**id 段前导零的非对称性 [未实测]**：`10.3386/w42` → `…:42`，而 `10.3386/t0042` → `…:0042`
+**id 段前导零的非对称性 [未实测]**：`10.3386/w42` → `…:42`，而 `10.3386/w0042` → `…:0042`
 ——DOI 侧写几位零，handle 侧就是几位零。上游 handle 是否统一去零**未核实**，故本模块
 **原样保留、不做去零归一**：去零是一个未经证实的改写，一旦上游确实带零就会让全部带零条目
 join 失败。真实后果被 `MissKind.MISSING_HANDLE`（覆盖缺口）如实记录，T19 实测后按实测处置。
@@ -74,7 +79,8 @@ _NO_FOLD_FIELDS = frozenset({"handle", "template-type"})
 # 整体大小写不敏感（含 `RePEc:` 前缀本身）：归一后统一写回规范形，见 `canonical_handle`。
 _HANDLE_RE = re.compile(r"^RePEc:([A-Za-z0-9]+):([A-Za-z0-9]+):(\S+)$", re.IGNORECASE)
 
-# NBER archive/series 段。`t` 系列同落 `nberwo` 属 [未实测] 推断——见模块 docstring。
+# NBER archive/series 段。**只承载 `w` 工作论文**（`t` 等旁系落哪个 series 段 [未实测]，
+# 本通道不映射——见模块 docstring 的"只认 `w`"收窄）。
 _ARCHIVE = "nbr"
 _SERIES = "nberwo"
 _HANDLE_PREFIX = f"RePEc:{_ARCHIVE}:{_SERIES}:"
@@ -87,7 +93,8 @@ class MissKind(StrEnum):
     ——三类**各有计数并进摘要行**，不静默合并为一个"没查到"。
     """
 
-    UNADDRESSABLE = "unaddressable"  # (a) DOI 非 10.3386 前缀 ⇒ 结构性不可寻址（非缺陷）
+    # (a) 非 NBER 工作论文 DOI（非 10.3386，或 t 等非 w 旁系）⇒ 结构性不可寻址（非缺陷）
+    UNADDRESSABLE = "unaddressable"
     MISSING_HANDLE = "missing_handle"  # (b) 前缀符但快照内无该 handle ⇒ 覆盖缺口
     NO_JEL = "no_jel"  # (c) handle 命中但无 Classification-JEL ⇒ 增值为空
 
@@ -309,20 +316,41 @@ def parse_redif(data: bytes | str) -> tuple[RedifRecord, ...]:
 
 
 def handle_from_doi(doi: str) -> str | None:
-    """`10.3386/w{n}` / `10.3386/t{n}` → `RePEc:nbr:nberwo:{n}`；非此形态 → None。
+    """`10.3386/w{n}` → `RePEc:nbr:nberwo:{n}`（**只映射 `w` 工作论文**）；其余一律 None。
 
     series 号归一**复用** `nber.parse.series_id_from_doi`（单一权威源，不复制正则）：大小写
     不敏感、非 NBER 前缀/book chapter/畸形 DOI 一律 None ⇒ 调用方计 `MissKind.UNADDRESSABLE`
-    （结构性不可寻址，非缺陷）。`t` 系列同落 `nberwo` 属 [未实测] 推断，见模块 docstring。
+    （结构性不可寻址，非缺陷）。
+
+    **`t`（技术工作论文）及其余非 `w` 前缀同样返回 None**（P1-R2 收窄）：原实现 `series_id[1:]`
+    去首字母，会把 `w{n}` 与 `t{n}` 塌进同一 handle（假重复 + 静默污染根因，见模块 docstring）。
+    快照面只含 `nberwo` 工作论文、`t` 的 series 段亦 [未实测]，故只认 `w`；`t` 与旁系的成因由
+    `uncovered_series_letter` 供 DEBUG 记录，与"非 NBER 前缀"同归 `unaddressable` 但可辨。
 
     产出经 `canonical_handle` 同款归一（archive/series 段小写），与快照侧的键口径**同源**
-    ——两侧各自归一就会漂移。**前导零原样保留**（`10.3386/t0042` → `…:0042`）：上游是否
+    ——两侧各自归一就会漂移。**前导零原样保留**（`10.3386/w0042` → `…:0042`）：上游是否
     去零 [未实测]，去零是未经证实的改写（见模块 docstring 的前导零注记）。
+    """
+    series_id = nber_parse.series_id_from_doi(doi)
+    if series_id is None or nber_parse.series_letter(series_id) != "w":
+        return None
+    return f"{_HANDLE_PREFIX}{series_id[1:]}"
+
+
+def uncovered_series_letter(doi: str) -> str | None:
+    """合法 NBER series DOI 但**非 `w` 工作论文**时返回其 series 首字母（如 `t`）；否则 None。
+
+    `handle_from_doi` 只映射 `w`——`t`（技术工作论文）等其余 NBER series 虽是合法 `10.3386`
+    DOI，本通道刻意不覆盖（`nberwo` 快照只含工作论文面，且 `t` 落哪个 series 段 [未实测]）。
+    这类**与"非 NBER 前缀"同计入 `unaddressable`**（都属结构性不可寻址），但成因不同：本函数
+    供调用方在 DEBUG **记下具体成因字母**，使"刻意不覆盖的 NBER 旁系"与"根本不是 NBER"在观测
+    上可辨，而非混为一个哑数字。`w` 本身是被覆盖面（非"未覆盖旁系"）→ None。
     """
     series_id = nber_parse.series_id_from_doi(doi)
     if series_id is None:
         return None
-    return f"{_HANDLE_PREFIX}{series_id[1:]}"
+    letter = nber_parse.series_letter(series_id)
+    return letter if letter != "w" else None
 
 
 def stub_from_record(record: RedifRecord, doi: str) -> PaperStub:
@@ -430,4 +458,5 @@ __all__ = [
     "parse_year",
     "staleness_days",
     "stub_from_record",
+    "uncovered_series_letter",
 ]

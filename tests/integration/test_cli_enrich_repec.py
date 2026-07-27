@@ -114,6 +114,14 @@ def _paper_count(home: Path) -> int:
     return int(rows[0]["n"])
 
 
+def _candidate_count(home: Path) -> int:
+    with closing(Database(home / "catalog.sqlite")) as db:
+        rows = db.query(
+            "SELECT COUNT(*) AS n FROM paper_relation WHERE kind = 'candidate_duplicate'", ()
+        )
+    return int(rows[0]["n"])
+
+
 # --- DoD①：JEL 落 meta + 对 crossref 既有字段零覆盖 -------------------------------------------
 
 
@@ -182,6 +190,43 @@ def test_repec_enrich_is_idempotent_across_runs(tmp_path: Path) -> None:
         ("doi", _W35506),
         ("repec", "RePEc:nbr:nberwo:35506"),
     }
+
+
+# --- P1-R2 对抗：w/t 混合快照——t 不污染 w、不落假 candidate、计不可寻址 ----------------------
+
+
+def test_t_series_doi_does_not_pollute_w_or_flag_false_duplicate(tmp_path: Path) -> None:
+    """P1-R2 端到端对抗：`w{n}` 与 `t{n}` 同号不再塌进同一 handle（假重复 + 静默污染根因）。
+
+    修复前：`10.3386/t9001` 映射到 `RePEc:nbr:nberwo:9001`（= 快照内 w9001 记录的 handle）→
+    enrich 给 t9001 的 paper 补上 w9001 的数据 + 同一 `(repec, handle)` 全局唯一锚点 → 两 paper
+    共享一个锚点 → 落一条高置信 `candidate_duplicate`（假重复）、t9001 记录被 w9001 数据静默污染。
+    修复后：t9001 → 不可寻址（不产 stub）→ 零污染、零假 candidate、计入"不可寻址"。
+    快照复用 `01_nberwo_multi.rdf`（内含 `RePEc:nbr:nberwo:9001` 记录）。
+    """
+    home = tmp_path / "home"
+    home.mkdir()
+    _write_snapshot(home)
+    _seed_crossref_paper(home, "10.3386/w9001", title="真 · 工作论文 9001", abstract=None)
+    _seed_crossref_paper(home, "10.3386/t9001", title="另一篇 · 技术工作论文 9001", abstract=None)
+
+    result = runner.invoke(app, ["enrich", "--source", "repec", "--home", str(home)])
+    assert result.exit_code == 0, result.output
+
+    # ① t9001 的 paper 绝不获得 w9001 的 repec handle，标题/摘要零污染
+    t_row = _paper_row(home, "10.3386/t9001")
+    assert ("repec", "RePEc:nbr:nberwo:9001") not in _identifiers(home, t_row["id"])
+    assert t_row["title"] == "另一篇 · 技术工作论文 9001"
+    assert t_row["abstract"] is None  # w9001 的 abstract 没漏进来
+    # ② w9001 正常获得 handle（w 通道未被收窄误伤）
+    w_row = _paper_row(home, "10.3386/w9001")
+    assert ("repec", "RePEc:nbr:nberwo:9001") in _identifiers(home, w_row["id"])
+    # ③ 零假 candidate_duplicate（修复前此处 ≥1）
+    assert _candidate_count(home) == 0
+    # ④ t9001 计入"不可寻址"（w9001 命中）
+    assert "命中 1" in result.output
+    assert "不可寻址 1" in result.output
+    assert _paper_count(home) == 2  # 两篇独立论文，绝不被合并
 
 
 # --- 摘要行：新鲜度 + 未命中三分（D-035 决策 4）-----------------------------------------------

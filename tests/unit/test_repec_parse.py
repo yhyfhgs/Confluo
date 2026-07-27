@@ -301,7 +301,9 @@ def test_parse_year_matrix(raw: str, expected: int | None) -> None:
         ("10.3386/w1", "RePEc:nbr:nberwo:1"),  # 下界低号
         ("10.3386/W3210", "RePEc:nbr:nberwo:3210"),  # 大小写不敏感
         ("  10.3386/w3210  ", "RePEc:nbr:nberwo:3210"),  # 首尾空白
-        ("10.3386/t0042", "RePEc:nbr:nberwo:0042"),  # t 系列（[未实测] 推断，见 parse docstring）
+        ("10.3386/w0042", "RePEc:nbr:nberwo:0042"),  # w 前导零原样保留
+        ("10.3386/t0042", None),  # t 系列（技术工作论文）不映射——只认 w（P1-R2 收窄）
+        ("10.3386/t9001", None),  # t 与 w 同号也不再塌进同一 handle（假重复根因）
         ("10.3386/c12345", None),  # 非 w/t 后缀（book chapter）
         ("10.3386/w35506v2", None),  # 尾部杂串 → 不模糊匹配
         ("10.1257/aer.20210001", None),  # 非 NBER 前缀（AEA）
@@ -320,6 +322,32 @@ def test_handle_from_doi_reuses_nber_series_normalization() -> None:
 
     assert nber_parse.series_id_from_doi("10.3386/W3210") == "w3210"
     assert parse.handle_from_doi("10.3386/W3210") == "RePEc:nbr:nberwo:3210"
+
+
+def test_t_series_does_not_collapse_into_w_handle() -> None:
+    """P1-R2 根因锁：`w{n}` 与 `t{n}` 同号绝不映射到同一 handle。
+
+    修复前 `series_id[1:]` 去首字母使两者塌进 `RePEc:nbr:nberwo:9001`——`t` 的数据静默污染
+    `w` 记录、并落一条假 `candidate_duplicate`。修复后只认 `w`，`t` → None（不可寻址）。
+    """
+    assert parse.handle_from_doi("10.3386/w9001") == "RePEc:nbr:nberwo:9001"
+    assert parse.handle_from_doi("10.3386/t9001") is None
+
+
+def test_uncovered_series_letter_distinguishes_t_from_non_nber() -> None:
+    """`unaddressable` 成因可辨（供 DEBUG 记原因）：`t` 是"合法 NBER 旁系但不覆盖"、
+    非 NBER 前缀是"根本不是 NBER"、`w` 是被覆盖面。三者在 DEBUG 上不混作一个哑数字。"""
+    assert parse.uncovered_series_letter("10.3386/t9001") == "t"  # NBER 旁系，成因＝字母 t
+    assert parse.uncovered_series_letter("10.3386/T0042") == "t"  # 大小写不敏感、归一小写
+    assert parse.uncovered_series_letter("10.1257/aer.20210001") is None  # 非 NBER，无 series 字母
+    assert parse.uncovered_series_letter("10.3386/w9001") is None  # w 是被覆盖面，非"未覆盖旁系"
+    assert parse.uncovered_series_letter("10.3386/c123") is None  # 非 w/t 后缀（book chapter）
+    # 畸形态：解析不出 series 号者一律 None——成因细分只认"确实是合法 NBER 旁系"，
+    # 决不把畸形串猜成某个字母（猜错会让 DEBUG 里凭空多出一类不存在的 series）。
+    assert parse.uncovered_series_letter("10.3386/t35506v2") is None  # 尾部杂串
+    assert parse.uncovered_series_letter("10.3386/") is None  # 空 suffix
+    assert parse.uncovered_series_letter("not-a-doi") is None
+    assert parse.uncovered_series_letter("") is None
 
 
 # --- stub 映射 --------------------------------------------------------------------------------
