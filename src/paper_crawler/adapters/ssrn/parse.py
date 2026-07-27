@@ -19,6 +19,8 @@ from __future__ import annotations
 import re
 from collections.abc import Iterable
 from dataclasses import replace
+from html import unescape
+from urllib.parse import urljoin, urlsplit
 
 from paper_crawler.ids import normalize_doi
 from paper_crawler.types import PaperStub
@@ -30,6 +32,14 @@ SSRN_SCHEME = "ssrn"
 # `normalize_doi` 已剥 doi.org 前缀 + 小写化（§7 大小写/前缀矩阵）→ 中缀恒 `ssrn`、
 # 前缀恒 `10.2139`。前缀 10.2139 下不匹配此形态者 = 潜在非-SSRN，返 None（护栏信号）。
 _SSRN_DOI_RE = re.compile(r"^10\.2139/ssrn\.(\d+)$")
+
+# landing 页下载按钮的 `href`（模式 B 同批解析；design/11 §4.4）——只认 `Delivery.cfm`
+# 字面，值取到闭合引号为止。**不含**任何 token 构造知识：本正则是"读出站点给的链接"，
+# 不是"拼一个链接"（红线 4 软门禁止依赖）。
+_DELIVERY_HREF_RE = re.compile(
+    r"href\s*=\s*(['\"])([^'\"]*Delivery\.cfm[^'\"]*)\1",
+    re.IGNORECASE,
+)
 
 # econ/fin 主题近似过滤集（OpenAlex 顶层 field 规范名，ssrn.md §3）。SSRN 已多学科化
 # （勘察：Engineering 22 万 / Medicine 7 万，非纯经济金融站）——本集 opt-in 收窄到 econ/fin
@@ -97,6 +107,36 @@ def landing_url(abstract_id: str) -> str:
     return f"https://papers.ssrn.com/sol3/papers.cfm?abstract_id={abstract_id}"
 
 
+def delivery_url_from_landing(body: bytes, *, base_url: str) -> str | None:
+    """从 landing 页 HTML 抽 `Delivery.cfm` 下载链接（**纯函数，零网络**；design/11 §4.4）。
+
+    模式 B 同批约束的解析核：landing 页必须**在浏览器上下文内**打开一次，其下载按钮的
+    `href` 就是携一次性 token 的 volatile URL。本函数只做"从已取回的 HTML 里读出该 href"，
+    **不构造、不猜测** URL——按红线 4（软门禁止依赖），凭 abstract_id 拼 `Delivery.cfm`
+    等于绕开站点自己的下载入口，是明令禁止的形态。
+
+    规则：
+    - 匹配 `href="…Delivery.cfm…"`（大小写不敏感；单/双引号皆可），取**首个**命中；
+    - 相对路径经 `urljoin(base_url, href)` 绝对化（`base_url` = landing 的 `final_url`）；
+    - **同源护栏**：绝对化后 host 必须与 `base_url` 同 host，跨站链接一律不采（页面若被
+      改写/注入，绝不把下载导航送去任意第三方）；
+    - 无命中 → `None`（调用方按 ssrn.md §6.2"无免费副本"映射 `no_entitlement`，不重试）。
+
+    ⚠ **HTML 形态未核验**（design/11 §11 开放问题①/⑤；本机对 CF 前置域 TLS 阻断，
+    [LIVE 2026-07-24]）：`Delivery.cfm` 的 href 形态取自 ssrn.md §2 [PRIOR-LIVE 2026-07-20]
+    的 URL 记载，站点实际标记结构未取样。匹配失败是**如实的 `None`**（→ no_entitlement +
+    可读 detail），不是静默兜底。
+    """
+    text = body.decode("utf-8", errors="replace")
+    match = _DELIVERY_HREF_RE.search(text)
+    if match is None:
+        return None
+    absolute = urljoin(base_url, unescape(match.group(2)))
+    if urlsplit(absolute).hostname != urlsplit(base_url).hostname:
+        return None
+    return absolute
+
+
 def topic_field_matches(field_value: str | None, allowed: frozenset[str] = ECON_FIN_FIELDS) -> bool:
     """确定性 econ/fin 主题谓词（AC-5.1a②）：field ∈ allowed → True；否则 False。
 
@@ -132,6 +172,7 @@ __all__ = [
     "TOPIC_FIELD_META_KEY",
     "abstract_id_from_doi",
     "augment_with_ssrn_id",
+    "delivery_url_from_landing",
     "doi_of_stub",
     "filter_stubs_by_topic",
     "landing_url",

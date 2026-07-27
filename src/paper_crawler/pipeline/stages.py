@@ -57,7 +57,10 @@ from urllib.parse import urlsplit
 
 from paper_crawler.auth.store import CredentialStore
 from paper_crawler.browserfetch import (
+    BrowserContextResolver,
+    BrowserFetchHandle,
     BudgetGate,
+    ResolveInContext,
     challenge_cooldown_active,
     fetch_one,
     host_of,
@@ -561,7 +564,7 @@ def _stage_fetch(ctx: StageContext, task: sqlite3.Row, report: RunReport) -> Sta
     # 计划逐字走下方既有路径（零改动）。放在 refresh 之后：asset.url 落的是 adapter 给的
     # landing/稳定引用，同批 volatile URL 只活在 `fetch_one` 的栈上（§4.4 持久化纪律）。
     if plan.url_strategy is UrlStrategy.RENDER_PAGE:
-        return _fetch_via_browser(ctx, task, asset, paper, venue_id, plan)
+        return _fetch_via_browser(ctx, task, asset, paper, venue_id, plan, adapter)
 
     wait = acquire_and_wait(ctx, domain)
     rate_wait_ms = round(wait * 1000)
@@ -676,6 +679,32 @@ def _browser_budget_gate(ctx: StageContext, waits: list[float]) -> BudgetGate:
     )
 
 
+def _browser_resolver(
+    source: object, plan: AssetPlan, gate: BudgetGate, domain: str
+) -> ResolveInContext | None:
+    """同批约束闭包的**生产端**接线（11-browser-fetch §4.4；T20 R1 F-1 修复）。
+
+    `fetch_one(resolve_in_context=…)` 是消费端（T6 已落），产出该闭包的一侧是 adapter：
+    实现 `BrowserContextResolver`（鸭型可选协议）即声明"我的 `RENDER_PAGE` 计划带同批
+    约束"。**按能力发现、不建 adapter 名单**——沿 `bind_http_client` 的 `isinstance`
+    先例，派发仍是策略驱动（contract 的"无 allowlist"护栏逐字成立）。未实现者返 None
+    ⇒ `fetch_one` 逐字走既有单跳路径（aea/wiley 两消费方行为零变化）。
+
+    闭包外壳在解析导航前**再过一次域级闸**：同批解析是一次**真实请求**（landing 导航），
+    与既有"下载触发是第二次真实请求，故再过一次闸"同一条纪律（宁可更慢，不少记一次请求）。
+    限速知识因此全留在横切件/装配层，adapter 侧仍零限速代码（design/11 §7 分工）。
+    """
+    if not isinstance(source, BrowserContextResolver):
+        return None
+    resolver = source
+
+    def _resolve(handle: BrowserFetchHandle) -> AssetPlan:
+        gate.wait_rate(domain=domain)
+        return resolver.resolve_in_browser_context(plan, handle)
+
+    return _resolve
+
+
 def _browser_storage_state(ctx: StageContext, venue_id: str) -> bytes | None:
     """取本 venue 的 `storage_state` 明文字节（§4.3 复用链；**只在内存**，不落明文临时文件）。
 
@@ -709,6 +738,7 @@ def _fetch_via_browser(
     paper: sqlite3.Row,
     venue_id: str,
     plan: AssetPlan,
+    source: object = None,
 ) -> StageOutcome:
     """`RENDER_PAGE` 计划的浏览器上下文取回（11-browser-fetch §1.3 接线点 + §4.5 落盘纪律）。
 
@@ -723,6 +753,9 @@ def _fetch_via_browser(
 
     `no_entitlement` 判定**转 `CrawlerError(NO_ENTITLEMENT)` 上抛**，接既有 runner 链
     （asset 标 no_entitlement、不计 failures、派生 OA-fallback；AC-BF.5 = AC-4.3 既有形态）。
+
+    `source` = 产计划的 adapter（`_stage_fetch` 已解析的 `route.fulltext_adapter`）：只用于
+    §4.4 同批闭包的生产端发现（`_browser_resolver`，鸭型按能力判，不按身份分流）。
     """
     task_id = str(task["id"])
     asset_id = str(asset["id"])
@@ -768,6 +801,7 @@ def _fetch_via_browser(
             dest=io.part_path,
             storage_state=storage_state,
             budget=gate,
+            resolve_in_context=_browser_resolver(source, plan, gate, domain),
             launch=playwright_launcher(identity_header=build_user_agent(ctx.config.identity_email)),
         )
         if outcome.no_entitlement:

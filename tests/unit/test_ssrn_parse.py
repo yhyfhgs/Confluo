@@ -84,6 +84,57 @@ def test_landing_url_shape() -> None:
     )
 
 
+# --- landing → Delivery.cfm 抽取（模式 B 同批解析核；design/11 §4.4）------------------------
+
+_LANDING = "https://papers.ssrn.com/sol3/papers.cfm?abstract_id=4056799"
+
+
+def test_delivery_url_relative_href_is_absolutized() -> None:
+    """相对 href 经 landing 的 `final_url` 绝对化（站点实际给的就是相对形态）。"""
+    body = b"<a href='Delivery.cfm/SSRN_ID4056799_code1.pdf?abstractid=4056799&mirid=1'>PDF</a>"
+    assert parse.delivery_url_from_landing(body, base_url=_LANDING) == (
+        "https://papers.ssrn.com/sol3/Delivery.cfm/SSRN_ID4056799_code1.pdf"
+        "?abstractid=4056799&mirid=1"
+    )
+
+
+def test_delivery_url_absolute_href_and_entity_unescaped() -> None:
+    """绝对 href 原样采用；HTML 实体（`&amp;`）还原——否则 query 会被站点看成一个参数。"""
+    body = (
+        b'<a href="https://papers.ssrn.com/sol3/Delivery.cfm/x.pdf?abstractid=1&amp;mirid=1">x</a>'
+    )
+    assert parse.delivery_url_from_landing(body, base_url=_LANDING) == (
+        "https://papers.ssrn.com/sol3/Delivery.cfm/x.pdf?abstractid=1&mirid=1"
+    )
+
+
+def test_delivery_url_is_case_insensitive_on_the_marker() -> None:
+    body = b'<A HREF="delivery.CFM/x.pdf?abstractid=1">x</A>'
+    result = parse.delivery_url_from_landing(body, base_url=_LANDING)
+    assert result == "https://papers.ssrn.com/sol3/delivery.CFM/x.pdf?abstractid=1"
+
+
+def test_delivery_url_absent_returns_none() -> None:
+    """无下载链接 → None（调用方映射 `no_entitlement`；**不猜、不拼** URL，红线 4）。"""
+    body = b"<html><h1>WP</h1><a href='/sol3/cf_dev/AbsByAuth.cfm?per_id=1'>author</a></html>"
+    assert parse.delivery_url_from_landing(body, base_url=_LANDING) is None
+
+
+def test_delivery_url_cross_host_href_is_rejected() -> None:
+    """同源护栏：跨站 `Delivery.cfm` 链接一律不采（页面被改写/注入时不外送导航）。"""
+    body = b"<a href='https://evil.example.test/Delivery.cfm/x.pdf?abstractid=1'>x</a>"
+    assert parse.delivery_url_from_landing(body, base_url=_LANDING) is None
+
+
+def test_delivery_url_takes_the_first_match() -> None:
+    body = (
+        b"<a href='Delivery.cfm/first.pdf?abstractid=1'>a</a>"
+        b"<a href='Delivery.cfm/second.pdf?abstractid=1'>b</a>"
+    )
+    result = parse.delivery_url_from_landing(body, base_url=_LANDING)
+    assert result is not None and result.endswith("first.pdf?abstractid=1")
+
+
 # --- econ/fin 主题近似过滤谓词（AC-5.1a② 确定性）-------------------------------------------
 
 

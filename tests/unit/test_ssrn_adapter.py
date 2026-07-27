@@ -28,10 +28,12 @@ from paper_crawler.adapters.crossref.adapter import CrossrefAdapter
 from paper_crawler.adapters.ssrn import parse
 from paper_crawler.adapters.ssrn.adapter import SsrnAdapter
 from paper_crawler.adapters.unpaywall.adapter import UnpaywallAdapter
-from paper_crawler.errors import CrawlerError, ErrorClass
+from paper_crawler.browserfetch import BrowserContextResolver, PageResponse
+from paper_crawler.errors import Challenged, CrawlerError, ErrorClass
 from paper_crawler.http import HttpClient
 from paper_crawler.types import (
     AssetKind,
+    AssetPlan,
     AuthLevel,
     Capability,
     IssueRef,
@@ -293,6 +295,94 @@ def test_capabilities_include_fetch_for_mode_b() -> None:
     assert Capability.ENUMERATE in adapter.capabilities
     assert Capability.RESOLVE in adapter.capabilities
     assert Capability.SEARCH not in adapter.capabilities
+
+
+# --- 模式 B 同批解析（design/11 §4.4 生产端；假 handle，零浏览器零网络）---------------------
+
+
+class _FakeHandle:
+    """假 `BrowserFetchHandle`：按 URL 返响应 + 记调用序列（同批/停手判据载体）。"""
+
+    def __init__(self, response: PageResponse) -> None:
+        self.response = response
+        self.calls: list[str] = []
+
+    def goto(self, url: str) -> PageResponse:
+        self.calls.append(f"goto:{url}")
+        return self.response
+
+    def download_via(self, trigger: object, dest: object) -> int:  # pragma: no cover - 不该被调
+        raise AssertionError("resolve 闭包不得触发下载")
+
+    def close(self) -> None:  # pragma: no cover - 生命周期归 fetch_one
+        raise AssertionError("resolve 闭包不得关闭上下文")
+
+
+_LANDING_URL = "https://papers.ssrn.com/sol3/papers.cfm?abstract_id=4056799"
+_DELIVERY_HREF = "Delivery.cfm/SSRN_ID4056799_code1.pdf?abstractid=4056799&mirid=1"
+
+
+def _landing_page(body: bytes, *, status: int = 200, headers: dict[str, str] | None = None):  # type: ignore[no-untyped-def]
+    return PageResponse(
+        status=status,
+        headers=headers if headers is not None else {"content-type": "text/html"},
+        final_url=_LANDING_URL,
+        body=body,
+    )
+
+
+def _landing_plan() -> AssetPlan:
+    return AssetPlan(
+        kind=AssetKind.PDF,
+        url=_LANDING_URL,
+        url_strategy=UrlStrategy.RENDER_PAGE,
+        auth_needed=AuthLevel.FREE_ACCOUNT,
+    )
+
+
+def test_resolve_in_browser_context_returns_volatile_plan() -> None:
+    """同 handle 打开 landing → 读出 `Delivery.cfm` href → 产 volatile 计划（其余字段不变）。"""
+    handle = _FakeHandle(_landing_page(f"<a href='{_DELIVERY_HREF}'>Download</a>".encode()))
+    plan = _landing_plan()
+
+    volatile = _adapter(_never).resolve_in_browser_context(plan, handle)  # type: ignore[arg-type]
+
+    assert handle.calls == [f"goto:{_LANDING_URL}"]  # 恰好一跳，且在同一 handle 上
+    assert volatile.url == f"https://papers.ssrn.com/sol3/{_DELIVERY_HREF}"
+    assert volatile.url_strategy is UrlStrategy.RENDER_PAGE  # fetch_one 会再校一次
+    assert volatile.auth_needed is AuthLevel.FREE_ACCOUNT
+    assert plan.url == _LANDING_URL  # 入参计划不被就地改（volatile 只活在返回值/栈上）
+
+
+def test_resolve_in_browser_context_challenge_stops_immediately() -> None:
+    """landing 命中风控 → `Challenged` 停手（**判定不能少一跳**，否则 challenge 被静默降级）。"""
+    handle = _FakeHandle(_landing_page(b"403", status=403, headers={"cf-mitigated": "challenge"}))
+    with pytest.raises(Challenged):
+        _adapter(_never).resolve_in_browser_context(_landing_plan(), handle)  # type: ignore[arg-type]
+    assert handle.calls == [f"goto:{_LANDING_URL}"]
+
+
+def test_resolve_in_browser_context_no_entitlement_verdict_maps_to_error() -> None:
+    """判定器判无权限 → `CrawlerError(NO_ENTITLEMENT)`（闭包返回类型无法表达"无权限"）。"""
+    handle = _FakeHandle(_landing_page(b"<html>Get access to this paper</html>"))
+    with pytest.raises(CrawlerError) as exc:
+        _adapter(_never).resolve_in_browser_context(_landing_plan(), handle)  # type: ignore[arg-type]
+    assert exc.value.error_class is ErrorClass.NO_ENTITLEMENT
+    assert exc.value.detail == "ssrn_landing_no_entitlement"
+
+
+def test_resolve_in_browser_context_without_delivery_link_is_no_entitlement() -> None:
+    """页面正常但无下载链接 → `no_entitlement` + 可读 detail（**不猜 URL**，红线 4）。"""
+    handle = _FakeHandle(_landing_page(b"<html><h1>WP</h1><p>abstract only</p></html>"))
+    with pytest.raises(CrawlerError) as exc:
+        _adapter(_never).resolve_in_browser_context(_landing_plan(), handle)  # type: ignore[arg-type]
+    assert exc.value.error_class is ErrorClass.NO_ENTITLEMENT
+    assert exc.value.detail == "ssrn_no_delivery_link"
+
+
+def test_adapter_satisfies_browser_context_resolver_protocol() -> None:
+    """生产端按**能力鸭型**被发现（stages 用 isinstance 判，不建 adapter 名单）。"""
+    assert isinstance(_adapter(_never), BrowserContextResolver)
 
 
 # --- healthcheck（经 crossref lookup 打 api.crossref.org；非 SSRN 域）-----------------------

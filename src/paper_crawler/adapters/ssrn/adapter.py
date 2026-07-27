@@ -42,11 +42,14 @@ enumerate 的网络经内部 `CrossrefAdapter` 的共享 `HttpClient` 走 pipeli
 from __future__ import annotations
 
 from collections.abc import Callable, Iterable, Iterator
+from dataclasses import replace
 from datetime import UTC, datetime
 
 from paper_crawler.adapter import AdapterBase, AdapterFamily
 from paper_crawler.adapters.crossref.adapter import CrossrefAdapter
 from paper_crawler.adapters.ssrn import buckets, parse
+from paper_crawler.auth.challenge import ClassifyResult
+from paper_crawler.browserfetch import BrowserFetchHandle, classify_or_raise, host_of
 from paper_crawler.errors import CrawlerError, ErrorClass
 from paper_crawler.http import HttpClient
 from paper_crawler.obslog import log_event
@@ -238,6 +241,46 @@ class SsrnAdapter(AdapterBase):
                 auth_needed=AuthLevel.FREE_ACCOUNT,
             )
         ]
+
+    # -- 模式 B 同批解析（design/11 §4.4 生产端；`BrowserContextResolver` 鸭型）-------------
+
+    def resolve_in_browser_context(self, plan: AssetPlan, handle: BrowserFetchHandle) -> AssetPlan:
+        """在**同一浏览器上下文内**把 landing 计划解析成 volatile `Delivery.cfm` 计划。
+
+        design/11 §4.4 同批约束的生产端：`Delivery.cfm` 的下载 token 一次性、必须同一上下文
+        即时使用，故解析不能发生在 `resolve_assets`（零网络、跨批持久化）里——只能由本方法
+        在 browser-fetch 已建立的 `handle` 上完成，产物**只活在 `fetch_one` 的栈上**
+        （`asset.url` 仍是 `resolve_assets` 落的 landing 引用，§4.4 持久化纪律）。
+
+        两跳纪律：
+        1. `handle.goto(landing)` → 响应过 `classify_or_raise`（**每一次导航都判定**，红线
+           §2-1/§2-2：CHALLENGE→`Challenged` 停手、LOGIN_REDIRECT→`AuthRequired`；
+           NO_ENTITLEMENT→ 本方法转 `CrawlerError(NO_ENTITLEMENT)`，接既有 OA-fallback 链
+           ——闭包的返回类型是 `AssetPlan`，无法表达"无权限"，只能以错误类如实上报）；
+        2. 从 HTML 读出下载 `href`（`parse.delivery_url_from_landing`，纯函数、同源护栏）
+           → 无命中即 `no_entitlement`（ssrn.md §6.2"付费/无免费副本"行），**不重试、不猜
+           URL**（红线 4：不得凭 abstract_id 拼 `Delivery.cfm` 绕开站点下载入口）。
+
+        **AC-0 合规复述**：本方法只在用户显式发起（三级门全开）的单篇取回中被调用，零批量、
+        零并发；限速/配额/冷却由横切件统一护栏承担（stages 的闭包外壳在解析导航前再过一次
+        域级闸——本 adapter 侧仍**零限速/配额代码**）；遇挑战即停手，绝不求解/绕过/换 UA。
+        """
+        response = handle.goto(plan.url)
+        verdict = classify_or_raise(response, domain=host_of(plan.url))
+        if verdict is ClassifyResult.NO_ENTITLEMENT:
+            raise CrawlerError(
+                ErrorClass.NO_ENTITLEMENT,
+                "ssrn landing 判定无免费全文权限（→ OA-fallback 既有链）",
+                detail="ssrn_landing_no_entitlement",
+            )
+        delivery = parse.delivery_url_from_landing(response.body, base_url=response.final_url)
+        if delivery is None:
+            raise CrawlerError(
+                ErrorClass.NO_ENTITLEMENT,
+                "ssrn landing 页无 Delivery.cfm 下载链接（无免费副本，或站点标记形态已变）",
+                detail="ssrn_no_delivery_link",
+            )
+        return replace(plan, url=delivery)
 
     # -- healthcheck（固定 SSRN DOI 经 crossref lookup；非 SSRN 域）--------------------------
 

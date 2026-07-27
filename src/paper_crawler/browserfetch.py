@@ -78,7 +78,7 @@ from collections.abc import Callable, Mapping
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
-from typing import Any, Protocol
+from typing import Any, Protocol, runtime_checkable
 from urllib.parse import urlsplit
 
 # 安装指引常量单一源：design/11 §4.1 明令 `auth/browser.py` **零改动**，故消费其模块私有
@@ -130,6 +130,28 @@ LaunchFetchFn = Callable[[str, bytes | None], BrowserFetchHandle]
 
 ResolveInContext = Callable[[BrowserFetchHandle], AssetPlan]
 """同批约束载体（§4.4）：在**同一上下文内**解析出 volatile 计划，立即用于本次下载。"""
+
+
+@runtime_checkable
+class BrowserContextResolver(Protocol):
+    """同批约束的**生产端**可选协议（§4.4；沿 `adapter.HttpClientConsumer` 鸭型先例）。
+
+    `ResolveInContext` 是消费端的形态（`fetch_one` 的形参）；产出该闭包的一侧是 adapter：
+    实现本方法即声明"我的 `RENDER_PAGE` 计划带同批约束"，`pipeline/stages.py` 据此把
+    `adapter.resolve_in_browser_context` 包成闭包传进 `fetch_one`。**按能力鸭型发现，
+    不建 adapter 名单**（派发仍是策略驱动，contract 反模式护栏逐字不变）。
+
+    实现约定（design/11 §4.4 + §2 红线 2）：
+    - 入参 `plan` = adapter 自己 resolve 产的 landing 计划（`url` 是可入库的稳定引用）；
+    - 在**同一 `handle`**（同 context）内完成站内解析，返回携 volatile URL 的新计划；
+    - 解析过程中的**每一次导航都必须过判定器**（用 `classify_or_raise`）——否则风控页会
+      退化成"解析不出链接"，把 CHALLENGE 静默降级；
+    - 返回计划的 `url_strategy` 仍须是 `RENDER_PAGE`（`fetch_one` 会再校一次）。
+    """
+
+    def resolve_in_browser_context(
+        self, plan: AssetPlan, handle: BrowserFetchHandle
+    ) -> AssetPlan: ...
 
 
 @dataclass(frozen=True)
@@ -332,6 +354,41 @@ def _require_render_page(plan: AssetPlan, *, origin: str) -> None:
         )
 
 
+def classify_or_raise(
+    response: PageResponse, *, domain: str, detector: ChallengeDetector | None = None
+) -> ClassifyResult:
+    """四态判定 + 两个停手态的统一抛法（§5.1；本模块**唯一**的判定出口）。
+
+    抽出为模块级函数是为了让**同批解析闭包**（§4.4 生产端，见 `BrowserContextResolver`）
+    与 `fetch_one` 主路径共用**同一份**语义：浏览器通道里的每一次导航都必须过判定器，
+    任何"少判一跳"都是把风控页静默降级成别的终态（正是 S-c 收口的那类缺口）。
+
+    - CHALLENGE → `Challenged`（红线：唯一合法动作是分类并停手，零重试零绕过零求解）；
+    - LOGIN_REDIRECT → `AuthRequired`（storage_state 失效，提示重登）；
+    - NO_ENTITLEMENT / OK → **原样返回**，由调用方按自己的语境处置（`fetch_one` 返
+      `Outcome(no_entitlement=True)`；解析闭包无法返回"无权限计划"，故转 CrawlerError）。
+    """
+    verdict = (detector if detector is not None else ChallengeDetector()).classify(
+        status=response.status,
+        headers=response.headers,
+        final_url=response.final_url,
+        body=response.body,
+    )
+    if verdict is ClassifyResult.CHALLENGE:
+        # 红线：**唯一合法动作**是分类为 CHALLENGE 并停手（零重试、零绕过、零求解）。
+        raise Challenged(
+            f"浏览器上下文命中风控/挑战页（domain={domain}）——已停手，"
+            "请在**你自己的浏览器**中正常访问并完成站点验证后 `crawler resume --all`",
+            detail="browser_challenge",
+        )
+    if verdict is ClassifyResult.LOGIN_REDIRECT:
+        raise AuthRequired(
+            f"浏览器上下文被导向登录页（domain={domain}）",
+            detail="storage_state 已失效——重登：crawler auth login <provider>",
+        )
+    return verdict
+
+
 def fetch_one(
     *,
     plan: AssetPlan,
@@ -375,24 +432,7 @@ def fetch_one(
             effective = plan if resolve_in_context is None else resolve_in_context(handle)
             _require_render_page(effective, origin="resolve_in_context")
             response = handle.goto(effective.url)
-            verdict = verdict_detector.classify(
-                status=response.status,
-                headers=response.headers,
-                final_url=response.final_url,
-                body=response.body,
-            )
-            if verdict is ClassifyResult.CHALLENGE:
-                # 红线：**唯一合法动作**是分类为 CHALLENGE 并停手（零重试、零绕过、零求解）。
-                raise Challenged(
-                    f"浏览器上下文命中风控/挑战页（domain={domain}）——已停手，"
-                    "请在**你自己的浏览器**中正常访问并完成站点验证后 `crawler resume --all`",
-                    detail="browser_challenge",
-                )
-            if verdict is ClassifyResult.LOGIN_REDIRECT:
-                raise AuthRequired(
-                    f"浏览器上下文被导向登录页（domain={domain}）",
-                    detail="storage_state 已失效——重登：crawler auth login <provider>",
-                )
+            verdict = classify_or_raise(response, domain=domain, detector=verdict_detector)
             if verdict is ClassifyResult.NO_ENTITLEMENT:
                 return BrowserFetchOutcome(verdict=verdict, url=effective.url, no_entitlement=True)
             # OK：下载触发是**第二次真实请求**，故再过一次域级闸（宁可更慢，不少记一次请求）。
@@ -416,6 +456,7 @@ def _trigger_download(handle: BrowserFetchHandle, url: str) -> None:
 
 
 __all__ = [
+    "BrowserContextResolver",
     "BrowserFetchHandle",
     "BrowserFetchOutcome",
     "BudgetGate",
@@ -423,6 +464,7 @@ __all__ = [
     "PageResponse",
     "ResolveInContext",
     "challenge_cooldown_active",
+    "classify_or_raise",
     "fetch_one",
     "host_of",
     "playwright_launcher",
