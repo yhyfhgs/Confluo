@@ -40,8 +40,13 @@ NBER 主动发布 bulk 文件＝分发意图明示）。三项条件由本脚本
 只取 ReDIF bulk 文件；**绝不请求或解析** `ideas.repec.org` / `econpapers.repec.org` 的 HTML
 条目页（哪怕其 robots 允许）——RePEc 官方明文强烈不建议爬 HTML 并设隐私红线（"Email
 addresses are released under no circumstances"）。本脚本也**不抓目录索引页**：ReDIF 文件的
-实际命名 **[未实测]**，须由执行者从 NBER 的 archive 模板读出后经 `--url` 显式给出，
-默认值只是按 RePEc 惯例的候选、**不是实测事实**。
+实际命名**已实测 [LIVE 2026-07-27]**（T19 在线批，见 `docs/testing/records/
+2026-07-27-ac7-acceptance.md` §2.6）——**按年切分，`nberwo{YYYY}.rdf`**（如
+`nberwo2026.rdf`，实测 200）；下方 `DEFAULT_PATH` 的无年份猜测值（`nberwo.rdf`）实测
+**404**，该猜测已证伪。执行者仍须经 `--url` 显式给出目标年份的真实地址（见模块末尾用法
+示例）；`DEFAULT_PATH` 常量本身**未随本次实测改动**（其值被运行时消费，改值即改变无
+`--url` 时的默认请求目标，属行为变更而非文档订正，故本次只更新本段注记，不动该常量，
+见其上方注释）。
 
 ## `--dry-run` 的边界（**"零数据请求"≠"零请求"**，务必先读）
 
@@ -55,9 +60,10 @@ addresses are released under no circumstances"）。本脚本也**不抓目录�
     # 干跑：robots 核验（**发 1 次真实请求**）+ 计划打印；零数据请求
     uv run python scripts/repec_snapshot.py --dry-run
 
-    # 真实取快照（T19 在线批；完成后须记 T8-bulk 账本行）
+    # 真实取快照（T19 在线批；完成后须记 T8-bulk 账本行）——URL 须按年份显式给出，
+    # 见上方"零 HTML 硬红线"一节 [LIVE 2026-07-27] 实测命名（示例年份非固定值）
     uv run python scripts/repec_snapshot.py --home <config-home> \\
-        --url https://www2.nber.org/RePEc/nbr/nberwo/nberwo.rdf
+        --url https://www2.nber.org/RePEc/nbr/nberwo/nberwo2026.rdf
 
     uv run python scripts/budget_ledger.py record --row T8-bulk --session t19 \\
         --batch "repec 快照首拉" --count <实际数>
@@ -87,8 +93,10 @@ from paper_crawler.useragent import build_user_agent
 DEFAULT_MIRROR = "www2.nber.org"
 BACKUP_MIRROR = "repec.nber.org"
 
-# **[未实测]** ReDIF 文件的真实命名与切分（单大文件 vs 逐条文件）——RePEc 惯例候选，
-# T19 执行者须从 NBER archive 模板读出实际地址后经 `--url` 覆盖（见模块 docstring）。
+# 真实命名与切分**已实测 [LIVE 2026-07-27]**（T19 在线批，AC-7 记录 §2.6）：按年切分，
+# `nberwo{YYYY}.rdf`。本常量的无年份猜测值实测 **404**——该猜测已证伪，但常量原样保留
+# （值被运行时消费，改值即改变无 `--url` 时的默认请求目标，超出本次纯注释订正的范围）；
+# 调用者**必须**经 `--url` 显式给出目标年份的真实地址（见模块 docstring 用法示例）。
 DEFAULT_PATH = "/RePEc/nbr/nberwo/nberwo.rdf"
 
 # 条件 (b)：间隔下限 10s、请求数上限 4（plan §3 `T8-bulk` ≤4）。二者是**下/上限而非默认建议**

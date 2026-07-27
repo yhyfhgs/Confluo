@@ -20,9 +20,11 @@ sources:
   arxiv:
     categories: [q-fin.PR, q-fin.PM, q-fin.ST, q-fin.MF]   # 官方分类（核对：docs/research/site-survey/arxiv.md 分类体系表）
   nber:
-    # NBER Asset Pricing program。证据等级 [DOC]：docs/research/site-survey/{nber,econ-fin-preprints}.md
-    # 命名列表标注"Asset Pricing=newap"，但未见对 newap.xml 的独立 HTTP 实测记录——
-    # 弱于 corporate-finance.yaml 的 CF=[LIVE]（nber.md 明确记录 newcf.xml 实测 200）。
+    # NBER Asset Pricing program。AP=newap 映射证据等级 [LIVE 2026-07-27]（原 [DOC]，见
+    # docs/research/site-survey/{nber,econ-fin-preprints}.md 命名列表）——T19 在线验收批
+    # 隔离订阅 nber-ap-isolation 对 https://back.nber.org/rss/newap.xml 独立 HTTP 实测：
+    # 200，正常解析出 4 条候选（docs/testing/records/2026-07-27-ac7-acceptance.md §2.7(a)）。
+    # 现与 corporate-finance.yaml 的 CF=[LIVE]（nber.md 记录 newcf.xml 实测 200）同证据等级。
     programs: [AP]
 filters:
   title_regex_any:

@@ -352,11 +352,13 @@ openalex/s2 **不承担枚举**（capabilities 已收回 ENUMERATE，§1；两�
 > 权威决策 [D-035](../../plan/decision-log.md)（本节起源为其契约级设计稿，历史见 §9 修订 #16）；评估与
 > 探针实据见 [research/enrich-eval-p6.md §2/§6.2](../../research/enrich-eval-p6.md)（approved）与
 > [repec.md](../../research/site-survey/repec.md)（[LIVE] 2026-07-24）。
-> **仍未落地的只有"取真实快照"这一步**（`T8-bulk` ≤4 请求归 T19 在线批）：故 ReDIF 上游文件命名仍标
-> **[未实测]**，实现按判读构造并在查无时如实记"覆盖缺口"，T19 实测后**按实测收窄**（见下方各 [未实测]
-> 注记与 §9 修订 #19）。**`t` 系列 series 段亦仍 [未实测]，但其映射已由 [D-036](../../plan/decision-log.md)
+> **"取真实快照"这一步已由 T19 在线验收批完成**（`T8-bulk` 账本 2/4 请求，[AC-7 记录
+> §2.6](../../testing/records/2026-07-27-ac7-acceptance.md)）：ReDIF **上游文件命名与记录边界**
+> 两项 [未实测] 经实测收窄为 **[LIVE 2026-07-27]**（见下方"快照落盘契约"一节与 §9 修订 #22）。
+> **`t` 系列 series 段仍 [未实测]，但其映射已由 [D-036](../../plan/decision-log.md)
 > 按正确性论证提前收窄为"不映射"**（w/t 塌进同一 handle 是确定错误，与 `t` 真实落在哪一段无关）——故
-> `t` 今日的处置是"结构性不可寻址"，**不再是"查无记覆盖缺口"**（§9 修订 #21）。
+> `t` 今日的处置是"结构性不可寻址"，**不再是"查无记覆盖缺口"**（§9 修订 #21）。**id 段前导零对称性
+> 仍 [未实测]**（AC-7 §2.6 留缺口，需再取一个 series 的快照才能核验，本次未触）。
 
 **定位**：`family = "aggregator"`，分工档位＝"aggregator-enrich"（同 openalex/s2 一档，D-027；**该措辞是档位
 描述、非字段**，见 §1 表下注）。capabilities **恒为空集**，不进 pull 六阶段；驱动路径＝`crawler enrich --source repec`。**独家增值＝JEL 分类 + wp↔published 版本关联**
@@ -432,11 +434,24 @@ openalex/s2 **不承担枚举**（capabilities 已收回 ENUMERATE，§1；两�
 ├── manifest.json        # {"schema":1,"archive":"nbr","series":["nberwo"],"mirror":…,
 │                        #  "source_urls":[…],"fetched_at":"<UTC ISO8601>",
 │                        #  "files":[{"name":…,"bytes":…,"sha256":…}],"record_count":N}
-└── nbr/nberwo/…         # ReDIF 原样字节（上游文件命名与切分待 T8 实测，本契约不预设）
+└── nbr/nberwo/…         # ReDIF 原样字节；真实命名 nberwo{YYYY}.rdf（按年切分），
+                          #  [LIVE 2026-07-27]，见下方两条实测收窄
 ```
 
 - **原样字节 + sha256 落盘**：ReDIF 是上游权威格式，本地解析口径可能随实现修正，保留原文才能不重新联网
   即可重解析。
+- **上游文件命名与记录边界 [LIVE 2026-07-27]（T19 在线批实测，[AC-7 记录
+  §2.6](../../testing/records/2026-07-27-ac7-acceptance.md)），两项 [未实测] 收窄**：
+  ①**文件按年切分，命名 `nberwo{YYYY}.rdf`**（非单一大文件）——脚本 `DEFAULT_PATH` 原猜测的
+  无年份 `https://www2.nber.org/RePEc/nbr/nberwo/nberwo.rdf` 实测 **HTTP 404**，该猜测已证伪；
+  真实地址 `nberwo2026.rdf` 实测 **200**，1,772,485 B 落盘。判读依据（实测前）＝
+  enrich-eval-p6 §6.2 探针给出的逐年覆盖率（1989=0% / 2000=87.4% / 2010 起=100%）只有按年文件
+  才可能以 6 请求测得，实测坐实。②**记录边界＝`Template-Type:` 行**（规范定义的记录起始标记，
+  空行只是段落分隔、不切记录/不终止续行）——真实文件 `nberwo2026.rdf` 的 `grep -c
+  "^Template-Type:"` = **896**，与解析器产出的 `record_count=896` **逐条吻合**，
+  `SnapshotStats(malformed_records=0, stray_lines=0)` 印证零解析残渣。**`t` 系列 series 段归属
+  与 id 段前导零对称性仍 [未实测]**（AC-7 §2.6 留缺口；`t` 的映射已由 D-036 按正确性论证提前
+  收窄为不映射，与此实测路径无关，见节首引言）。
 - **取快照的网络面在 `src/` 之外**：`scripts/repec_snapshot.py`（不入包、不占门禁覆盖，沿 `scripts/` 先例）。
   唯一网络动作在 scripts 侧 ⇒ src 侧 `enrich_batch` 的"零网络"是**可被 socket 猴补机械证明的结构事实**。
   代价如实记：该脚本的镜像回退/校验逻辑无自动化测试，靠 T19 在线批人工核验。
@@ -621,6 +636,7 @@ openalex/s2 **不承担枚举**（capabilities 已收回 ENUMERATE，§1；两�
 | 19 | 2026-07-27 | **§5.7 由契约级设计转为实现落地**（T8）：`adapters/repec/{__init__,adapter,parse}.py` + `scripts/repec_snapshot.py` + 接入面清单全项。实现期判读三点**逐条标 [未实测] 与 [LIVE] 分离**（**按实测收窄而非按推断扩张**，§5.7 原文授权；唯一 [LIVE] 依据是探针实测的字段名与 `D1; J13; J15` 值形态）：①**记录边界＝`Template-Type:` 行**（规范定义的记录起始标记），**空行既不切记录也不终止续行**——摘要内空行是段落分隔，用空行作边界会把记录腰斩、丢掉后半截字段；字段名大小写不敏感，续行空格折叠。②`t` 系列 handle 段**未实测**：`10.3386/t{n}` 暂走与 `w{n}` 同一 `nberwo` 段，但该推断**不被固化为事实**——快照查无该 handle 时计入"覆盖缺口"而非静默丢弃，T19 实测若证伪则改为只映射 `w`。③快照文件命名不预设：`manifest.files[].name` 记实际名，加载器按 manifest 遍历。fixture 为**自造合成样本**（`tests/fixtures/repec/README.md` 逐条标注出处），真实快照拉取归 T19 | T8 实现（[plan §4 T8](../../plan/phase7-implementation-plan.md)；[D-035](../../plan/decision-log.md)） |
 | 20 | 2026-07-27 | **在线预算如实入档：`T8-robots` 行超线 1（3/2）**。第 3 次请求发生在 T8 实现期对 `scripts/repec_snapshot.py` 跑 `--dry-run` 冒烟时——该脚本的 `--dry-run` 按裁决条件 (a) **仍执行 robots 重试**（只跳过数据请求），故冒烟意外触网 1 次 `www2.nber.org/robots.txt`（403 复现，与首次核验一致，无新信息）。已按 [online-budget.md §2 纪律 2](../../process/online-budget.md) 即时记账（`--batch` 注明成因）、按纪律 3 于此入档。**性质**：协调可见性问题，非 AC-0 红线触碰（robots 请求本身是合规动作）。**教训**：涉网脚本的"干跑"须先确认其干跑边界——本脚本的 `--dry-run` 语义是"零**数据**请求"而非"零请求"，该语义已写入其模块 docstring 与 `--dry-run` 帮助文案 | T8 实现期自查（[plan §3](../../plan/phase7-implementation-plan.md) `T8-robots` ≤2） |
 | 21 | 2026-07-27 | **§5.7 DOI↔handle 映射按 [D-036](../../plan/decision-log.md) 收窄为 w-only（实质契约变更，非文档滞后修正）**：①`enrich_batch` 映射表 `identifier(doi)` 行由 `w{n}／t{n}` 改为**只 `w{n}`**；②"DOI↔handle 映射边界"段改写为 w-only 并写明塌缝根因（`series_id[1:]` 去首字母令 `w9001`/`t9001` 同 handle ⇒ 静默污染 + 假 `candidate_duplicate`），**T8 期"[推断] 不作依据、按实测收窄"原文保留作痕迹**（`t` 归属至今 [未实测]，本次收窄走的是**正确性论证**而非实测证伪路径，故经 ADR supersede 而非静默改）；③前导零示例由 `t0042` 改 `w0042`（`t` 已不映射，不能再作示例）；④未命中三分 **(a) 定义扩为"非 NBER 工作论文 DOI"**（含非 `10.3386` 与 `t` 等非 `w` 旁系），(b) 收窄为"属 `w` 但快照无该 handle"。**上条 #19 的 ②（`t` 暂走 `nberwo`）由本条取代，原行不改写**。摘要行三分计数契约本身不变（旁系成因字母只进 DEBUG） | [D-036](../../plan/decision-log.md)（T20 审计 R2 修复批，代码已落 `fix/p7-r2-data-layer`；独立审查 P1-1 判"推翻 approved 契约却零记录"回派补账） |
+| 22 | 2026-07-27 | **§5.7 两项 [未实测] 按 T19 在线批实测收窄为 [LIVE]（节首引言 + 快照落盘契约一节）**：①**上游文件命名**——`nberwo.rdf`（无年份，脚本 `DEFAULT_PATH` 猜测值）实测 **404**，真实命名 **`nberwo{YYYY}.rdf`**（按年切分）实测 **200**（`nberwo2026.rdf`，1,772,485 B）；②**记录边界**（#19 之①的判读，原标 [未实测]）经实测证实——`grep -c "^Template-Type:"` = 896，与解析器 `record_count=896` 逐条吻合，`malformed_records=0/stray_lines=0`。**`t` 系列 series 段归属与 id 段前导零对称性仍 [未实测]**（本批未触，`t` 的映射已由 D-036 走正确性论证路径提前收窄，与本条实测路径无关，不重复#21 的内容） | [AC-7 记录 §2.6](../../testing/records/2026-07-27-ac7-acceptance.md)（T19 在线验收批，`T8-bulk` 账本 2/4 请求） |
 
 ## 10. 风险与维护
 
