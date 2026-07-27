@@ -841,26 +841,25 @@ def test_v2_to_v3_backfills_weak_keys_from_existing_papers(
     键不全的行（无 `_first_author` / 无 title_norm）本就不参与旧实现的弱信号匹配，故不回填
     ——升级后覆盖面零倒退、零扩张。
     """
-    database = _seed_v1(tmp_path, monkeypatch)
-    _add_0002(tmp_path)
-    assert database.migrate() == 2
-    database.execute(
-        "INSERT INTO paper (id, title, title_norm, meta_json, ingest_state) VALUES (?,?,?,?,?)",
-        ("p1", "Some Paper", "some paper", '{"_first_author": "smith"}', "metadata_only"),
-    )
-    database.execute(  # 无 _first_author（pull 路径所建）→ 不回填
-        "INSERT INTO paper (id, title, title_norm, meta_json, ingest_state) VALUES (?,?,?,?,?)",
-        ("p2", "Other Paper", "other paper", '{"pages": "1-2"}', "metadata_only"),
-    )
+    with closing(_seed_v1(tmp_path, monkeypatch)) as database:
+        _add_0002(tmp_path)
+        assert database.migrate() == 2
+        database.execute(
+            "INSERT INTO paper (id, title, title_norm, meta_json, ingest_state) VALUES (?,?,?,?,?)",
+            ("p1", "Some Paper", "some paper", '{"_first_author": "smith"}', "metadata_only"),
+        )
+        database.execute(  # 无 _first_author（pull 路径所建）→ 不回填
+            "INSERT INTO paper (id, title, title_norm, meta_json, ingest_state) VALUES (?,?,?,?,?)",
+            ("p2", "Other Paper", "other paper", '{"pages": "1-2"}', "metadata_only"),
+        )
 
-    _add_0003(tmp_path)
-    assert database.migrate() == 3
+        _add_0003(tmp_path)
+        assert database.migrate() == 3
 
-    rows = database.query("SELECT paper_id, title_norm, first_author FROM paper_weak_key")
-    assert [(r["paper_id"], r["title_norm"], r["first_author"]) for r in rows] == [
-        ("p1", "some paper", "smith")
-    ]
-    database.close()
+        rows = database.query("SELECT paper_id, title_norm, first_author FROM paper_weak_key")
+        assert [(r["paper_id"], r["title_norm"], r["first_author"]) for r in rows] == [
+            ("p1", "some paper", "smith")
+        ]
 
 
 # -- schema v4（0004_fulltext_asset.sql；Phase 7 T7 / D-033）---------------------------------
@@ -878,30 +877,29 @@ def test_v4_adds_five_columns_and_backfills_noop_state(
 ) -> None:
     """v3 库（含 Phase 1 noop 行）→ v4：五列存在、noop 行回填 `state='noop'`、
     `ingest_state` **不回滚**（「只前进不回退」不破坏；design/12 §5.1）。"""
-    database = _seed_v1(tmp_path, monkeypatch)
-    _add_0002(tmp_path)
-    _add_0003(tmp_path)
-    assert database.migrate() == 3
-    database.execute(
-        "INSERT INTO paper (id, title, ingest_state) VALUES (?,?,?)",
-        ("p1", "Legacy Paper", "extracted"),
-    )
-    database.execute(
-        "INSERT INTO fulltext (paper_id, extractor, extractor_ver, text_path, char_count, "
-        "lang, extracted_at) VALUES (?,?,?,?,?,?,?)",
-        ("p1", "noop", "1", None, 0, None, "2026-01-01T00:00:00Z"),
-    )
+    with closing(_seed_v1(tmp_path, monkeypatch)) as database:
+        _add_0002(tmp_path)
+        _add_0003(tmp_path)
+        assert database.migrate() == 3
+        database.execute(
+            "INSERT INTO paper (id, title, ingest_state) VALUES (?,?,?)",
+            ("p1", "Legacy Paper", "extracted"),
+        )
+        database.execute(
+            "INSERT INTO fulltext (paper_id, extractor, extractor_ver, text_path, char_count, "
+            "lang, extracted_at) VALUES (?,?,?,?,?,?,?)",
+            ("p1", "noop", "1", None, 0, None, "2026-01-01T00:00:00Z"),
+        )
 
-    _add_0004(tmp_path)
-    assert database.migrate() == 4
+        _add_0004(tmp_path)
+        assert database.migrate() == 4
 
-    columns = {r["name"] for r in database.query("PRAGMA table_info(fulltext)")}
-    assert _FULLTEXT_V4_COLUMNS <= columns
-    row = database.query("SELECT * FROM fulltext WHERE paper_id = 'p1'")[0]
-    assert row["state"] == "noop"
-    assert row["asset_id"] is None and row["text_sha256"] is None  # legacy 行归一为 NULL
-    assert database.query("SELECT ingest_state FROM paper WHERE id = 'p1'")[0][0] == "extracted"
-    database.close()
+        columns = {r["name"] for r in database.query("PRAGMA table_info(fulltext)")}
+        assert _FULLTEXT_V4_COLUMNS <= columns
+        row = database.query("SELECT * FROM fulltext WHERE paper_id = 'p1'")[0]
+        assert row["state"] == "noop"
+        assert row["asset_id"] is None and row["text_sha256"] is None  # legacy 行归一为 NULL
+        assert database.query("SELECT ingest_state FROM paper WHERE id = 'p1'")[0][0] == "extracted"
 
 
 def test_v4_keeps_fulltext_primary_key_on_paper_id(db: Database) -> None:
@@ -924,13 +922,12 @@ def test_v4_is_dialect_neutral() -> None:
 
 def test_v4_backfill_is_idempotent(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     """迁移幂等重跑：已 v4 的库再 migrate 不改版本、不改行。"""
-    database = _seed_v1(tmp_path, monkeypatch)
-    _add_0002(tmp_path)
-    _add_0003(tmp_path)
-    _add_0004(tmp_path)
-    assert database.migrate() == 4
-    assert database.migrate() == 4
-    database.close()
+    with closing(_seed_v1(tmp_path, monkeypatch)) as database:
+        _add_0002(tmp_path)
+        _add_0003(tmp_path)
+        _add_0004(tmp_path)
+        assert database.migrate() == 4
+        assert database.migrate() == 4
 
 
 def test_v4_column_comment_uses_the_prefix_free_relative_form() -> None:
@@ -965,45 +962,43 @@ def test_v1_through_v5_realistic_upgrade_chain(
     v5 测试为隔离验证 0005 自身机制而采用的"跳过 0004"简化路径），确认两个独立卡
     （T7/T12）的迁移文件在真实合流顺序下能顺利叠加、互不干扰。
     """
-    database = _seed_v1(tmp_path, monkeypatch)
-    _add_0002(tmp_path)
-    assert database.migrate() == 2
-    _add_0003(tmp_path)
-    assert database.migrate() == 3
-    _add_0004(tmp_path)
-    assert database.migrate() == 4
-    _add_0005(tmp_path)
-    assert database.migrate() == 5
+    with closing(_seed_v1(tmp_path, monkeypatch)) as database:
+        _add_0002(tmp_path)
+        assert database.migrate() == 2
+        _add_0003(tmp_path)
+        assert database.migrate() == 3
+        _add_0004(tmp_path)
+        assert database.migrate() == 4
+        _add_0005(tmp_path)
+        assert database.migrate() == 5
 
-    assert "paper_fts" in _table_names(database)
-    fulltext_columns = {r["name"] for r in database.query("PRAGMA table_info(fulltext)")}
-    assert _FULLTEXT_V4_COLUMNS <= fulltext_columns
-    database.close()
+        assert "paper_fts" in _table_names(database)
+        fulltext_columns = {r["name"] for r in database.query("PRAGMA table_info(fulltext)")}
+        assert _FULLTEXT_V4_COLUMNS <= fulltext_columns
 
 
 def test_v3_to_v5_creates_paper_fts_table_and_three_triggers(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """0005 建虚表 + 三触发器（ai/au/ad），一次迁移到位，无需 Python 后置步。"""
-    database = _seed_v1(tmp_path, monkeypatch)
-    _add_0002(tmp_path)
-    assert database.migrate() == 2
-    _add_0003(tmp_path)
-    assert database.migrate() == 3
+    with closing(_seed_v1(tmp_path, monkeypatch)) as database:
+        _add_0002(tmp_path)
+        assert database.migrate() == 2
+        _add_0003(tmp_path)
+        assert database.migrate() == 3
 
-    _add_0005(tmp_path)
-    assert database.migrate() == 5
+        _add_0005(tmp_path)
+        assert database.migrate() == 5
 
-    assert "paper_fts" in _table_names(database)
-    trigger_rows = database.query(
-        "SELECT name FROM sqlite_master WHERE type='trigger' ORDER BY name"
-    )
-    assert [r["name"] for r in trigger_rows] == [
-        "paper_fts_ad",
-        "paper_fts_ai",
-        "paper_fts_au",
-    ]
-    database.close()
+        assert "paper_fts" in _table_names(database)
+        trigger_rows = database.query(
+            "SELECT name FROM sqlite_master WHERE type='trigger' ORDER BY name"
+        )
+        assert [r["name"] for r in trigger_rows] == [
+            "paper_fts_ad",
+            "paper_fts_ai",
+            "paper_fts_au",
+        ]
 
 
 def test_v3_to_v5_backfills_existing_papers_into_fts(
@@ -1012,50 +1007,48 @@ def test_v3_to_v5_backfills_existing_papers_into_fts(
     """存量 paper 行（升级前已存在）由 0005 的纯 SQL 回填一次性灌入 paper_fts；
     NULL abstract 回填为空串（`COALESCE(abstract, '')`，与 schema 未来写路径一致）。
     """
-    database = _seed_v1(tmp_path, monkeypatch)
-    _add_0002(tmp_path)
-    assert database.migrate() == 2
-    _add_0003(tmp_path)
-    assert database.migrate() == 3
-    database.execute(
-        "INSERT INTO paper (id, title, abstract, ingest_state) VALUES (?,?,?,?)",
-        ("p1", "Deep Learning", "About neural nets", "metadata_only"),
-    )
-    database.execute(
-        "INSERT INTO paper (id, title, abstract, ingest_state) VALUES (?,?,?,?)",
-        ("p2", "No Abstract Paper", None, "metadata_only"),
-    )
+    with closing(_seed_v1(tmp_path, monkeypatch)) as database:
+        _add_0002(tmp_path)
+        assert database.migrate() == 2
+        _add_0003(tmp_path)
+        assert database.migrate() == 3
+        database.execute(
+            "INSERT INTO paper (id, title, abstract, ingest_state) VALUES (?,?,?,?)",
+            ("p1", "Deep Learning", "About neural nets", "metadata_only"),
+        )
+        database.execute(
+            "INSERT INTO paper (id, title, abstract, ingest_state) VALUES (?,?,?,?)",
+            ("p2", "No Abstract Paper", None, "metadata_only"),
+        )
 
-    _add_0005(tmp_path)
-    assert database.migrate() == 5
+        _add_0005(tmp_path)
+        assert database.migrate() == 5
 
-    rows = database.query("SELECT paper_id, title, abstract FROM paper_fts ORDER BY paper_id")
-    assert [(r["paper_id"], r["title"], r["abstract"]) for r in rows] == [
-        ("p1", "Deep Learning", "About neural nets"),
-        ("p2", "No Abstract Paper", ""),
-    ]
-    database.close()
+        rows = database.query("SELECT paper_id, title, abstract FROM paper_fts ORDER BY paper_id")
+        assert [(r["paper_id"], r["title"], r["abstract"]) for r in rows] == [
+            ("p1", "Deep Learning", "About neural nets"),
+            ("p2", "No Abstract Paper", ""),
+        ]
 
 
 def test_paper_fts_match_query_finds_backfilled_rows(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """冒烟：回填后的虚表真的可查（MATCH 命中），非仅建表/建索引行。"""
-    database = _seed_v1(tmp_path, monkeypatch)
-    _add_0002(tmp_path)
-    assert database.migrate() == 2
-    _add_0003(tmp_path)
-    assert database.migrate() == 3
-    database.execute(
-        "INSERT INTO paper (id, title, abstract, ingest_state) VALUES (?,?,?,?)",
-        ("p1", "Asset Pricing Models", "Finance theory content", "metadata_only"),
-    )
-    _add_0005(tmp_path)
-    assert database.migrate() == 5
+    with closing(_seed_v1(tmp_path, monkeypatch)) as database:
+        _add_0002(tmp_path)
+        assert database.migrate() == 2
+        _add_0003(tmp_path)
+        assert database.migrate() == 3
+        database.execute(
+            "INSERT INTO paper (id, title, abstract, ingest_state) VALUES (?,?,?,?)",
+            ("p1", "Asset Pricing Models", "Finance theory content", "metadata_only"),
+        )
+        _add_0005(tmp_path)
+        assert database.migrate() == 5
 
-    rows = database.query("SELECT paper_id FROM paper_fts WHERE paper_fts MATCH 'pricing'")
-    assert [r["paper_id"] for r in rows] == ["p1"]
-    database.close()
+        rows = database.query("SELECT paper_id FROM paper_fts WHERE paper_fts MATCH 'pricing'")
+        assert [r["paper_id"] for r in rows] == ["p1"]
 
 
 def test_paper_insert_syncs_into_fts_via_trigger(db: Database) -> None:
