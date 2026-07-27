@@ -23,6 +23,10 @@
   引用的 `RENDER_PAGE` 计划）、aea pubs 全文（订阅刊/OA 刊两分支均产 `RENDER_PAGE` 计划）、
   wiley 页面兜底（TDM 无 token 时产 `RENDER_PAGE` 计划，与 TDM 互斥不双发）——本 runbook
   现可覆盖三消费方真实站点（仍受 §5 清账表第 2 行"第二跳导航不过判定器"等已知边界约束）。
+- **ssrn 模式 B 的同批解析已接线**（T20 审计 R1 F-1 修复）：取回时先在同一浏览器上下文打开
+  landing 页 → 判定 → 读出 `Delivery.cfm` 下载链接 → 立即用它下载。故 ssrn 演练的
+  `goto` 序列是 **landing → volatile**（两跳），域级闸相应多计一次请求；landing 页 HTML
+  形态**未核验**，匹配失败的表现见 §5 清账表第 6 行。
 - 真实浏览器依赖未装（可选 extra）：`pip install paper-crawler[auth-browser] && playwright install chromium`。
 - 在线预算：本演练计入 Phase 7 §3 `T19-bf` 行（三消费方各至多 3 请求，合计 ≤10）——**消费前先查
   `state/budget.json` 账本，消费后即记**。
@@ -77,6 +81,7 @@
 | 3 | AC-BF.4② 的"相邻请求间隔"在 obslog 里只有 `rate_wait_ms` 汇总，无请求时刻序列 | 限速合规需靠 `RateLimiter` 桶配置 + 人工计时佐证，日志不能单独作为时序证据 | T18（AC-BF 转正时定审计载体） |
 | 4 | 直调 `fetch_one` 时冷却读侧只认**域**键，不读旧 `<adapter_id>.json` 兼容键 | 经 `crawler grab` 走时由 runner 的 pre-stage 冷却门先拦，不受影响 | T3（抽 `pipeline/cooldown.py` 后改委派） |
 | 5 | **aea browser-fetch 通道可达性缺口**（T11 NEEDS_DECISION，fable 已裁）：`AeaAdapter.family` 仍 `auth_gated`；激活前提=配置 aea profile（机构订阅用户，首登人工，D-006 语义）——无 profile 时 runner 的 auth 健康门在**到达 stages 分支之前**即 `CONFIG`-BLOCK（与 `browser_fetch` 开关无关） | OA 刊（jel/jep）全文由既有 unpaywall OA-fallback（D-024）承载，可正常演练；订阅刊（aer/aeri/aej_\*）在未配置 aea profile 前**如实 BLOCKED**——非 browser-fetch 缺陷，是 D-006 aea 认证未落地的已知外部依赖（同构 elsevier T7b dormant 语义） | **已登记为已知缺口**（不改 `family`、不注册 no-op provider，OA 面有替代路径，伤害面可控）；"auth 门 family 级→plan 级细化"挂 **P8 评估候选**（属 runner 行为变更，影响四个 auth_gated adapter，非本 Phase 债） |
+| 6 | **ssrn landing 页 HTML 形态未核验**（T20 R1 F-1 修复引入的新解析面）：`Delivery.cfm` 下载链接经 `adapters/ssrn/parse.delivery_url_from_landing` 从 landing HTML 的 `href` 读出（同源护栏 + HTML 实体还原）；该 href 形态取自 ssrn.md §2 [PRIOR-LIVE 2026-07-20] 的 URL 记载，**站点实际标记结构从未取样**（本机 TLS 阻断） | 匹配失败 ≠ 无副本：表现为 `no_entitlement` + detail **`ssrn_no_delivery_link`**（区别于判定器判的 `ssrn_landing_no_entitlement`）。演练时若见前者，请**连同 landing 页 HTML 的下载按钮片段一并如实记录**（脱敏后）——那是修正正则的唯一证据；**不要**改成凭 abstract_id 拼 URL（红线 4 软门禁止依赖） | 首次真实演练回填（同 §6 开放问题⑤，二者同一次取证即可闭合） |
 
 ## 6. 开放问题回填（design/11 §11，本 runbook 是其唯一取证途径）
 
