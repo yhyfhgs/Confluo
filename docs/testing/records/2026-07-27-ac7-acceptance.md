@@ -289,6 +289,18 @@ T8-robots   5   （未动；超线为 §4 缺口 2 的既有事实，本次重�
    **NEEDS_DECISION**：①是否为 `T8-robots` 行追加额度（建议按"每次快照拉取 +1"计），或
    ②允许脚本在同一天/同一镜像内缓存 robots 判定（**不建议**——与条款 a 的"不缓存、不跨域外推"
    明文冲突），或 ③维持现状并在计划表里把该行改为"随 `T8-bulk` 联动"。
+   - **裁决注记（T21 收尾追记，2026-07-27，controller 裁定）**：采纳①（吸收③的联动精神）——
+     `T8-robots` 行**语义修正为"随每次真实快照拉取联动 +1"**（非维持一次性 `≤2` 静态硬顶）。
+     理由：脚本对目标镜像的强制 robots 重核（条件 a）是**有意的合规设计**而非可绕过的自由裁量
+     消费，"跑一次真实快照"与"不再消耗 `T8-robots`"在当前实现下结构性互斥，故预算表的静态额度
+     本身与该设计不匹配，应按调用次数联动而非一次性硬顶计。②维持**不采纳**（与条款 a"不缓存、
+     不跨域外推"明文冲突）。历史超线 **5/2**（本记录 §3 台账 2 次 + [aggregators.md §9 修订
+     #20](../../design/adapters/aggregators.md) 记载 Phase 7 T8 实现期 `--dry-run` 冒烟意外触网
+     1 次）**如实留档、不追溯改写**，定性维持"协调可见性问题"、非"AC-0 红线触碰"（历次动作本身
+     都是"取数前先问许可"的合规动作）。[phase7-implementation-plan.md §3](../../plan/phase7-implementation-plan.md)
+     该行"≤2"字面**不因本注记改写**（该文件 `status: approved`，改动须走仲裁，非本条单方可改）——
+     该行语义的更新由本注记 + [phase7-report §4](../../reports/2026-07-27-phase7-report.md)
+     对账表承载，供 Phase 8 预算表制定时参照。
 3. **P0（本卡最重要的在线发现）：`crawler subs watch` 遇 crossref 偏日期即整轮崩溃。**
    - **[状态 2026-07-27，本缺口已闭合]**：修法已按下方 **(b)（从 `watermark_seen` 剔除并计观测）**
      落地并合入 main——`75b33f2`（缺陷 A：`_parse_date` 保持 fail-loud 供存储侧，新增宽松面
@@ -304,6 +316,17 @@ T8-robots   5   （未动；超线为 §4 缺口 2 的既有事实，本次重�
      `subs/watch.py::_run_source`（~972 行）构造 `watermark_seen` 时只滤掉 `None`/空串
      （其注释原话只设想了 None/空串），偏日期照样喂进去。`WatermarkInvalid` **不是** `CrawlerError`，
      逃过 `_run_source` 的 `except CrawlerError` per-source 兜底。
+   - **[T20 后审查订正 2026-07-27]** 上一条"根因"段落的**两处技术断言经独立审查订正，原文保留
+     不改**：①`WatermarkInvalid` **是** `CrawlerError` 的子类（`src/paper_crawler/errors.py:100`
+     `class WatermarkInvalid(CrawlerError)`，MRO 实证）——"`WatermarkInvalid` 不是 `CrawlerError`"
+     一句系诊断误判；②`advance()` 的调用点**不在** `_run_source` 内部，而在 `run_watch` 的
+     per-step 循环里（二者是同层级的兄弟调用，不存在包含关系）——"逃过 `_run_source` 的
+     `except CrawlerError` per-source 兜底"一句是**范畴错误**：不是"该兜底没接住"，而是"该
+     兜底的作用域压根不覆盖这行代码"。正确定性以 main 提交 `75b33f2` 的 commit message 原文为准：
+     "原报告称其逃逸 `_run_source` 的 `except CrawlerError` 有误——`WatermarkInvalid` 本就是
+     `CrawlerError` 子类，而 `advance()` 根本不在 `_run_source` 内"。此订正**不改变** P0 缺陷本身
+     的定性或已落地修法（缺陷 A 语义拆分 + 缺陷 B 结构隔离两者独立、均已合入 main），只订正上方
+     诊断叙述里的这两处技术表述。
    - 影响面：**任何** crossref 系日期类源（ssrn / crossref）只要窗内出现一条偏日期条目，整轮
      watch 崩溃、请求已花而成果全丢。对 SSRN 不是边角情形——**首次真实运行即触发**。
    - 离线可复现（3 行，零网络）：
@@ -352,10 +375,19 @@ T8-robots   5   （未动；超线为 §4 缺口 2 的既有事实，本次重�
   **[更新 2026-07-27]** 缺口 3（P0 修法）的 NEEDS_DECISION 已按 (b) 落地并合入 main
   （`75b33f2` + `c04c8c4`），§4 该条已标闭合并附真实数据验证；**余 §4 缺口 2
   （`T8-robots` 额度/条款）一处待裁**——本次重跑未再触该行。
+  **[二次更新 2026-07-27，T21 收尾]** 缺口 2（`T8-robots` 额度/条款）**已裁决**（见 §4 缺口 2
+  项下新增裁决注记：采纳"随每次快照拉取联动 +1"）。至此 §4 两处 NEEDS_DECISION（缺口 2 + 缺口
+  3）**均已裁决**，本记录再无待裁决的悬置项——**转入待 fable 终审签署阶段**（`status` 仍
+  `draft`，签署权限归 fable，本次收尾不代行签署）。
 - **建议后续卡顺手回填**（均非本卡职责，登记供 controller 追踪）：`presets/asset-pricing.yaml`
   的 `AP=[DOC]` → `[LIVE 2026-07-27]`；`scripts/repec_snapshot.py` 的 `DEFAULT_PATH`
   （`nberwo.rdf` 实测 404 → 应改 `nberwo{YYYY}.rdf` 形态并去掉 [未实测] 标）；
   `aggregators.md §5.7` 的文件命名/记录边界两项 [未实测] 按 §2.6 实测收窄。
+  **[已回填 2026-07-27，T21]**：三项均已处理——`aggregators.md` §5.7 两项 [未实测]（文件命名/
+  记录边界）按本记录 §2.6 实测收窄为 [LIVE]（§9 修订 #22）；`asset-pricing.yaml:23-25` 的 AP
+  注记升级为 [LIVE 2026-07-27]；`scripts/repec_snapshot.py` 的 `DEFAULT_PATH`**注释**已登记实测
+  404 事实与真实命名模式，**常量值本身未改**（该值被运行时消费，改值属行为变更而非文档订正，
+  超出本卡"纯文档卡"边界，如实说明此项选择，不动该常量）。
 - **fable 亲验**：全表最终签署，转 `status: approved`。~~**`asset-pricing` 三源端到端在缺口 3 的
   P0 修复前无法完成**，该项须随修复卡重跑（重跑预算需按 §2.7(b) 的 12 请求重估）。~~
   **[完成注记 2026-07-27，卡 D 重跑批]**：P0 已修复并合入 main（`75b33f2` + `c04c8c4`），该重跑
