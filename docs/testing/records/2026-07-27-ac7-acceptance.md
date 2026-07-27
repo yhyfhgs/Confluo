@@ -1,6 +1,6 @@
 ---
 title: AC-7 验收记录 — 全文抽取与库增强（Phase 7，T18 骨架 + T19 在线批回填）
-status: draft
+status: approved
 owner: t19
 updated: 2026-07-27
 ---
@@ -396,3 +396,11 @@ T8-robots   5   （未动；超线为 §4 缺口 2 的既有事实，本次重�
   经 WARNING 可观测、无 traceback 无 `WatermarkInvalid`**。预估 12 与实测 12 精确吻合，未触硬顶 13。
   详见 §2.7(b)"重跑 [LIVE 2026-07-27 13:47–13:48 UTC]"段、§3 `T19-rerun` 行、§4 缺口 3 状态注。
   **本项不再悬置**；fable 签署时该项已具备真实在线证据。
+- **fable 终审签署（2026-07-27，T22）**：全表复核，**签署"达成"**——AC-7.1/7.4 **PASS**（真实
+  数据支撑），AC-7.3 **条件 PASS**（离线三件套齐备；在线真实候选需跨源重叠语料，归 Phase 8
+  开工检查单），AC-7.2 离线 **PASS**／在线**条件项**（本机无 GROBID，D-018 分层先例，与 key 类
+  外部依赖同款沿账）；§2.7(b) 重跑 **PASS** 具备真实在线证据（P0 修复的 5670 条 partial 剔除
+  实证）；§4 两处 NEEDS_DECISION 均已裁决落档；§4.6 凭证误读偏离如实留痕，其"凭证与非敏感配置
+  分离"建议已采纳入 Phase 8 开工检查单。终审门禁于 T21 收尾后终态树 main @ `a9d0d68` 亲跑复现：
+  **4617 passed / 31 skipped / coverage 98.98% / EXIT=0**；`crawler venues lint` 58/58 全过
+  （签署提交本身为 docs-only 增量，不影响门禁面）。`status: draft → approved`。
