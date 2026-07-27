@@ -172,7 +172,7 @@ from typing import Protocol, runtime_checkable
 
 from paper_crawler.adapter import SourceAdapter
 from paper_crawler.adapters.nber import rss
-from paper_crawler.errors import CrawlerError, ErrorClass
+from paper_crawler.errors import CrawlerError, ErrorClass, WatermarkInvalid
 from paper_crawler.http import HttpClient
 from paper_crawler.ids import normalize_identifier
 from paper_crawler.merge import MergeEngine
@@ -197,7 +197,13 @@ from paper_crawler.subs.types import (
     WatchOutcome,
     is_source_scoped_predicate,
 )
-from paper_crawler.subs.watermark import IdSetDiff, Watermark, advance, strategy_for, window_params
+from paper_crawler.subs.watermark import (
+    IdSetDiff,
+    Watermark,
+    advance_with_report,
+    strategy_for,
+    window_params,
+)
 from paper_crawler.tasks import TaskQueue
 from paper_crawler.types import PaperStub, VenueNames, VenueSpec, utcnow_iso
 
@@ -967,8 +973,10 @@ def _run_source(
         stubs = [stub for stub in stubs if _watch_id(stub) in fresh]
         outcome.watermark_seen = seen_ids  # 传**全部** id（含重叠），非差分结果
     else:
-        # 日期类源：只喂**确实带日期**的条目——把 None/空串塞给 `_parse_date` 会
-        # `WatermarkInvalid` 炸掉整轮；缺日期时不推进（下次窗更宽）是保守侧。
+        # 日期类源：只喂**确实带日期**的条目；缺日期时不推进（下次窗更宽）是保守侧。
+        # 解析不了的日期（crossref 合法 partial `'YYYY'`/`'YYYY-MM'`，或真垃圾）由
+        # `watermark._advance_date` 跳过并计数，不再炸整轮——见 `_advance_source`
+        # 与该处的 P0 注记（2026-07-27）。此处仍先滤空，省掉一趟无谓的计数噪音。
         outcome.watermark_seen = [stub.pub_date for stub in stubs if stub.pub_date]
 
     if subscription.filters.min_year is not None:
@@ -980,6 +988,56 @@ def _run_source(
         predicate_params=dict(step.predicate_params),
     )
     return outcome
+
+
+def _advance_source(
+    watermark: Watermark,
+    subscription: str,
+    source: str,
+    seen: Sequence[str],
+    *,
+    day: date,
+) -> Watermark:
+    """推进**一个源**的水位，并把该源的水位故障隔离在该源内（P0 回归 2026-07-27）。
+
+    两件事，各自独立：
+
+    1. **跳过计数落 WARNING**：`advance_with_report` 报回本轮有多少条日期解析不了
+       （crossref/ssrn 的 partial `'YYYY'`/`'YYYY-MM'` 是**合法**产物，见
+       `crossref/parse.py::_format_date_parts`）。它们不推进水位——保守侧，但必须
+       看得见，否则"这批没推进水位"无从察觉。
+    2. **`WatermarkInvalid` 只降级本源**：该异常仍可能从**存储侧**水位损坏抛出
+       （`DateState` 里存了坏日期 → `_parse_date` fail-loud，那条纪律刻意保留）。
+       此前这行裸调用在 `run_watch` 的 per-step 循环里**没有任何 try/except**，
+       于是一个源的坏游标会掀掉整轮，并且——因为在循环里——把**排在它后面**的源
+       一并跳过。线上正是这个形态：ssrn 烧完 7 页游标后崩，arxiv/nber 一次没跑到。
+
+    降级 = 该源水位停在旧值（下次窗更宽，保守侧），其余源照常。这里**不**把它记进
+    `failures`：拉取本身是成功的（条目已经过滤、即将入库），失败的只是水位推进；
+    记进去会让 `outcome` 变 FAILED、退出码非零，与"这一轮确实收到了东西"不符。
+    """
+    try:
+        report = advance_with_report(watermark, source, seen, now=day)
+    except WatermarkInvalid as exc:
+        log_event(
+            "WARNING",
+            f"watch[{subscription}]: 源 {source} 水位推进失败，本轮不推进该源"
+            f"（其余源不受影响，下次窗更宽）: {exc}",
+            stage="watch",
+            venue=source,
+            error_class=exc.error_class.value,
+        )
+        return watermark
+    if report.skipped:
+        log_event(
+            "WARNING",
+            f"watch[{subscription}]: 源 {source} 有 {report.skipped} 条日期无法解析，"
+            f"不参与水位推进（样例: {', '.join(report.samples)}）"
+            "——partial 日期（'YYYY'/'YYYY-MM'）是 crossref 的合法产出，属预期",
+            stage="watch",
+            venue=source,
+        )
+    return report.watermark
 
 
 def _dedupe_keeping_rules(kept: Sequence[FilteredPaper], db: Database) -> list[FilteredPaper]:
@@ -1135,7 +1193,9 @@ def run_watch(
         succeeded_sources += 1
         seen_count += outcome.seen
         candidates.extend(_Candidate(source=step.source, paper=item) for item in outcome.kept)
-        advanced = advance(advanced, step.source, outcome.watermark_seen, now=day)
+        advanced = _advance_source(
+            advanced, subscription.name, step.source, outcome.watermark_seen, day=day
+        )
 
     # ① 批内去重（同一 run 内多源/多请求撞同一 identifier）——必须先于对库去重，
     #    否则批内重复会虚高 `new_count`（凭空触发熔断）并让日报列出重复条目。

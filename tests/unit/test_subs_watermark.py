@@ -44,6 +44,7 @@ from paper_crawler.subs.watermark import (
     IdSetState,
     Watermark,
     advance,
+    advance_with_report,
     strategy_for,
     window_params,
 )
@@ -258,12 +259,68 @@ def test_arxiv_advance_uses_max_seen_not_today() -> None:
     assert after.state_for("arxiv") == DateState("2026-07-21")
 
 
-def test_unparseable_seen_date_is_fail_loud() -> None:
-    """已见日期解析不了 → 响亮报错（静默跳过会让"这批没推进水位"无从察觉）。"""
+def test_unparseable_seen_date_is_skipped_not_fatal() -> None:
+    """已见日期解析不了 → **跳过该条**并计数，不炸整轮（P0 改判 2026-07-27）。
+
+    **本用例是对旧契约的显式改判**，旧断言是"`advance` 抛 `WatermarkInvalid`"。改判
+    理由是那条契约把两个不同的面混成了一个：
+
+    - **存储水位文档**（`Watermark.parse` / `DateState.date`）里出现坏日期 = 游标损坏，
+      必须 fail-loud（静默当首跑会重刷全窗）——该纪律**原样保留**，见
+      `test_parse_rejects_*` 一族与 `test_stored_watermark_date_is_still_fail_loud`。
+    - **本轮 `seen`** 是**上游源侧数据**，坏值是常态而非编程错误：crossref 的
+      `_format_date_parts` 就**故意**产出 partial `'YYYY'`/`'YYYY-MM'`
+      （其 docstring 明文）。让一条源侧坏日期杀死整轮 watch，等于把"这个源的一条
+      元数据不全"升级成"全部源都不用跑了"。
+
+    跳过后水位停在旧值 = 下次窗更宽 = 保守侧，与本模块"缺日期时不推进"同口径。
+    """
+    after = advance(Watermark(), "arxiv", ["2026-07-21", "昨天"], now=TODAY)
+    assert after.state_for("arxiv") == DateState("2026-07-21")  # 好日期照常推进
+
+
+def test_partial_dates_do_not_advance_but_do_not_crash() -> None:
+    """crossref/ssrn 的 partial `'YYYY'`/`'YYYY-MM'`：不推进水位，也不炸（P0 主场景）。
+
+    这是 2026-07-27 线上 P0 的最小复现：ssrn 首个真实 run 即触发。partial 日期"拿不准
+    具体是哪天"，而本模块对"拿不准"的一贯答案是**不推进、下轮重扫**（保守侧），故
+    水位停在旧值。
+    """
+    before = _date_state("ssrn", "2026-07-20")
+    after = advance(before, "ssrn", ["2026", "2026-07"], now=TODAY)
+    assert after.state_for("ssrn") == DateState("2026-07-20")  # 原地不动，不回退也不前进
+
+
+def test_partial_dates_mixed_with_full_dates_still_advance_on_the_full_ones() -> None:
+    """混排时完整日期照常推进——坏条目只丢自己，不连累同批的好条目。"""
+    after = advance(
+        _date_state("crossref", "2026-07-20"),
+        "crossref",
+        ["2026", "2026-07-24", "2026-07", "banana"],
+        now=TODAY,
+    )
+    assert after.state_for("crossref") == DateState("2026-07-24")
+
+
+def test_unparseable_seen_dates_are_counted_for_observability() -> None:
+    """跳过必须**可观测**——否则"这批没推进水位"确实会无从察觉（旧契约的正当关切）。
+
+    计数经 `advance_with_report` 暴露；`advance` 本身保持原签名（调用方众多）。
+    """
+    report = advance_with_report(
+        _date_state("ssrn", "2026-07-20"), "ssrn", ["2026", "2026-07-24", "昨天"], now=TODAY
+    )
+    assert report.watermark.state_for("ssrn") == DateState("2026-07-24")
+    assert report.skipped == 2
+    assert report.samples == ("2026", "昨天")  # 样例供日志定位，不必全量
+
+
+def test_stored_watermark_date_is_still_fail_loud() -> None:
+    """**存储侧**水位坏值仍必须响亮拒载——本次放宽只针对本轮 `seen`，不动这条纪律。"""
     with pytest.raises(WatermarkInvalid) as excinfo:
-        advance(Watermark(), "arxiv", ["2026-07-21", "昨天"], now=TODAY)
+        advance(_date_state("arxiv", "2026"), "arxiv", ["2026-07-21"], now=TODAY)
     assert "无法解析为 ISO 日期" in str(excinfo.value)
-    assert excinfo.value.detail == "sources.arxiv.seen[1]"
+    assert excinfo.value.detail == "sources.arxiv.date"
 
 
 # ---------------------------------------------------------------------------

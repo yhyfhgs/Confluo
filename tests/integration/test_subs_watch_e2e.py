@@ -451,10 +451,16 @@ def _stub(
     doi: str,
     *,
     year: int | None = 2026,
+    pub_date: str | None = None,
     meta: tuple[tuple[str, str], ...] = (),
 ) -> PaperStub:
     return PaperStub(
-        title=title, identifiers=(("doi", doi),), year=year, authors=("Ada Lovelace",), meta=meta
+        title=title,
+        identifiers=(("doi", doi),),
+        year=year,
+        pub_date=pub_date,
+        authors=("Ada Lovelace",),
+        meta=meta,
     )
 
 
@@ -609,6 +615,96 @@ def test_partial_source_failure_keeps_the_other_source_and_exits_one(env: _Env) 
     assert set(env.subs_repo.read_watermark(subscription.name)["sources"]) == {  # type: ignore[arg-type]
         "crossref"
     }
+
+
+def test_partial_pub_dates_do_not_kill_the_run(env: _Env) -> None:
+    """P0 回归（2026-07-27 线上）：crossref 系源的 partial `pub_date` 不得炸掉整轮。
+
+    `crossref/parse.py::_format_date_parts` **故意**产出 `'YYYY'`/`'YYYY-MM'`（其
+    docstring 明文"partial 容 'YYYY'/'YYYY-MM'"），而 `watermark._parse_date` 曾只认
+    完整 ISO —— ssrn 的**首个真实 run** 即触发 `WatermarkInvalid`，整轮在网络请求已经
+    花掉之后崩掉：不推水位、不落 run 记录、无日报、非优雅 traceback。
+
+    断言面 = 报告要求的三条：run 跑完、写 run 记录、水位按"跳过"语义推进。
+    """
+    fetcher = _StubFetcher(
+        {
+            "crossref": [
+                _stub("Year only", "10.1/p1", pub_date="2026"),
+                _stub("Year and month", "10.1/p2", pub_date="2026-07"),
+                _stub("Full date", "10.1/p3", pub_date="2026-07-24"),
+            ]
+        }
+    )
+    subscription = _load_one(env)
+    path = daily_report_path(DAY, root=env.report_root)
+
+    summary = run_watch(env.context(fetcher=fetcher), subscription, now=DAY, report_path=str(path))
+
+    # ① 整轮跑完，三条都正常入库（partial 只影响水位，不影响收录）。
+    assert summary.outcome is WatchOutcome.OK
+    assert summary.ingested_count == 3
+    assert env.papers() == 3
+    assert summary.failures == ()
+    # ② run 记录落库（旧行为下这行根本不会执行到）。
+    (run_row,) = env.runs(subscription.name)
+    assert run_row["new_count"] == 3
+    # ③ 水位只被**完整**日期推进；两条 partial 跳过（保守侧：下轮窗更宽）。
+    stored = env.subs_repo.read_watermark(subscription.name)
+    assert stored["sources"]["crossref"]["date"] == "2026-07-24"  # type: ignore[index]
+
+
+def test_all_partial_dates_leave_the_watermark_unadvanced(env: _Env) -> None:
+    """整窗全是 partial → 水位不推进（停在首跑初窗），但 run 照样成功落地。
+
+    "不推进"在本模块是**保守侧**（下次窗更宽、重扫），不是失败——故 outcome 仍是 OK。
+    """
+    fetcher = _StubFetcher({"crossref": [_stub("Only year", "10.1/q1", pub_date="2026")]})
+    subscription = _load_one(env)
+
+    summary = run_watch(env.context(fetcher=fetcher), subscription, now=DAY)
+
+    assert summary.outcome is WatchOutcome.OK
+    assert summary.ingested_count == 1
+    stored = env.subs_repo.read_watermark(subscription.name)
+    # 首跑初窗下界 = DAY − 7；没有任何可解析日期能把它推起来。
+    assert stored["sources"]["crossref"]["date"] == "2026-07-19"  # type: ignore[index]
+
+
+def test_a_bad_date_source_does_not_starve_the_sources_after_it(env: _Env) -> None:
+    """缺陷 B 回归：坏日期只降级**该源**，不得跳过它**之后**的源。
+
+    线上正是这个形态——`asset-pricing` 预设烧完 7 页 ssrn 游标后崩溃，排在其后的
+    arxiv / nber 两条腿一次都没跑到。`advance()` 在 `run_watch` 的 per-step 循环里
+    （`watch.py`），当时**没有任何 try/except** 兜着。
+    """
+    ssrn_venue = VenueSpec(
+        id="ssrn",
+        kind="preprint_channel",
+        names=VenueNames(full="SSRN"),
+        field=["econ"],
+        fulltext_source="ssrn",
+    )
+    fetcher = _StubFetcher(
+        {
+            # 真垃圾（非合法 partial）也必须只降级本源。
+            "ssrn": [_stub("Broken date", "10.2139/ssrn.9", pub_date="昨天")],
+            "crossref": [_stub("Later source survives", "10.1/z", pub_date="2026-07-24")],
+        }
+    )
+    subscription = _load_one(
+        env, sources={"ssrn": {"networks": ["FEN"]}, "crossref": {"issns": ["0000-0000"]}}
+    )
+    context = env.context(fetcher=fetcher, venues={"ssrn": ssrn_venue, "crossref": _mock_venue()})
+
+    summary = run_watch(context, subscription, now=DAY)
+
+    assert summary.outcome is WatchOutcome.OK
+    # 排在坏源之后的源照跑照入库——这正是旧代码做不到的。
+    assert {entry.source for entry in summary.entries} == {"ssrn", "crossref"}
+    assert summary.ingested_count == 2
+    stored = env.subs_repo.read_watermark(subscription.name)
+    assert stored["sources"]["crossref"]["date"] == "2026-07-24"  # type: ignore[index]
 
 
 def test_all_sources_failing_marks_the_run_failed_and_ingests_nothing(env: _Env) -> None:
