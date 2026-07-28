@@ -14,8 +14,9 @@
 -- content-owning 把 `paper_id` 物化进索引行（UNINDEXED，不参与全文匹配、只做回读），
 -- 检索结果正确性不再依赖 rowid 稳定性；rowid 只用作写路径的 O(log n) 定位键，最坏后果
 -- 是写入当场响亮失败（见下）或可用 `crawler reindex --check` 检出的差集，不是静默错误
--- （详见 D-034 决策 2 的完整论证）。代价：多存一份 title+abstract 副本（估算 ≈13 MB/
--- 万篇，[未实测]，T12 落地后应在验收记录回填实测值）。
+-- （详见 D-034 决策 2 的完整论证）。代价：多存一份 title+abstract 副本（[实测 2026-07，
+-- 审计 C2 合成库（abstract ~840 字符）] 16.48 MB/万篇，占库总体积 ~29%；更长 abstract
+-- （~1500 字符）推算 ~25 MB/万篇）。
 --
 -- **索引范围**：仅 `title` + `abstract` 二字段。全文正文索引与向量索引 **defer**
 -- （phase7-implementation-plan.md §8：正文索引待抽取产物规模实测后于 P8 评估经济性；

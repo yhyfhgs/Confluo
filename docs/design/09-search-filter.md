@@ -2,7 +2,7 @@
 title: 主题订阅与精确搜索
 status: implemented
 owner: fable5
-updated: 2026-07-27
+updated: 2026-07-29
 ---
 
 # 09 · 主题订阅与精确搜索（Topic/Tag DSL）
@@ -72,10 +72,9 @@ guard: {max_new_per_run: 100}
 
 | 源 | 原生能力（勘察依据） | 编译策略 | 本地补偿 |
 |---|---|---|---|
-| arXiv | 字段前缀 ti/abs/cat/au + 布尔 + submittedDate 窗口（research/site-survey/arxiv.md）；但 watch 通道是 OAI-PMH，**无关键词查询能力** | `categories` → `arxiv_category` **逐分类 fan-out**（每条请求成对带派生的 `arxiv_set`，经 venue quirks 进 OAI `set=` + 客户端 primary_category 过滤）；`query` **无下推通道** | 仅 `filters` 三谓词——`query` 的词族靠 `filters.title_regex_any` 手工镜像这条**约定**兜底，不是机制（见 §2 示例一脚注） |
+| arXiv | 字段前缀 ti/abs/cat/au + 布尔 + submittedDate 窗口（research/site-survey/arxiv.md）；但 watch 通道是 OAI-PMH，**无关键词查询能力** | `categories` → `arxiv_category` **逐分类 fan-out**（每条请求成对带派生的 `arxiv_set`，经 venue quirks 进 OAI `set=` + 客户端 primary_category 过滤）；`query` **无下推通道** | `filters` 三谓词 + **`arxiv.query_bool`**（Phase 7 T9 落地的参数化本地补偿谓词，见修订记录 #4）：`query` 字段级布尔式（ti/abs 前缀 + AND/OR/ANDNOT + 引号短语）经 `subs/compile.py::_compile_arxiv` 归一、`subs/types.py::parse_arxiv_query` 解析出语法树、`subs/filter.py::PREDICATE_REGISTRY` 的构造器产生求值闭包，挂 `PlanStep.predicate_params`（非免参谓词通道），在真实 `subs watch` 运行中对标题/摘要实际求值——**不再是**"手工镜像约定"（本行原表述），是机制 |
 | SSRN | 仅分类浏览（network/eJournal）+ 站内搜索（无稳定 API） | 只下推分类，按日期倒序取增量窗口 | **关键词全在本地过滤** |
-| OpenAlex | filter=concepts/ids/type/from_publication_date | 概念+类型+日期下推 | 正则本地 |
-| Semantic Scholar | bulk search venue/year/fieldsOfStudy | 同上 | 正则本地 |
+| OpenAlex / Semantic Scholar | **不可作 watch 源**——`capabilities` 恒为空集，无 `DISCOVER`/`ENUMERATE`（二者是 enrich-only 补充源，design/adapters/aggregators.md §1）。**如实订正（2026-07-29）**：本行原写"filter=concepts/ids/type/from_publication_date"/"bulk search venue/year/fieldsOfStudy"式下推，那是设计期的愿望；2026-07-28 审计修复批 R2b 核实后收窄为实况——watch 通道从未能真正驱动这两源 | 不适用——`subs/model.py::SOURCE_FIELDS`（"watch 真的跑得动的源"白名单）不含 openalex/s2；订阅文件 `sources:` 段声明 `openalex:`/`s2:` 会触发 `ENRICH_ONLY_SOURCES` 专属校验消息（"这个源不支持 watch，请改用 enrich"，区别于泛化的"未知源"报错，R2b/P0-4）；`crawler venues lint` 新增 `registry.py::_lint_capabilities` 同批校验 58 个 venue（R2b 当时；现 62 个）的 `metadata_source`/`fulltext_source` 能力位（须含 `DISCOVER\|ENUMERATE`/`RESOLVE`），零错配 | 不适用——元数据/摘要补充改走 `crawler enrich --source openalex\|s2`（批量补充，非订阅增量 watch），见 design/adapters/aggregators.md |
 | NBER | program 分类 + RSS | 分类下推 | 正则本地 |
 | Crossref（期刊 watch） | ISSN + from-pub-date | 完整下推（无关键词场景） | — |
 
@@ -117,6 +116,7 @@ guard: {max_new_per_run: 100}
 
 | # | 日期 | 修订 | 依据 |
 |---|---|---|---|
+| 5 | 2026-07-29 | **纯记账（非设计变更），消除文档漂移**：①§3 arXiv 行"本地补偿"栏回填 Phase 7 T9 已落地的 `arxiv.query_bool` 参数化谓词机制（此前本栏仍写"手工镜像约定，不是机制"，T9 早已使其成为机制，文档未同步）；②§3 OpenAlex/Semantic Scholar 两行订正为"不可作 watch 源"（`capabilities` 空集、无 DISCOVER/ENUMERATE），原"filter=... 下推"式描述从未在 watch 通道可达，2026-07-28 审计修复批 R2b 已把 `subs/model.py::SOURCE_FIELDS` 收窄至可达四源并加 `ENRICH_ONLY_SOURCES` 专属校验 + `registry.py::_lint_capabilities` 能力位 lint | 源码核实（`subs/filter.py`/`subs/compile.py`/`subs/model.py`/`registry.py`）+ 2026-07-28 审计修复批 R2（`fix(cli,subs,pipeline,auth)` 提交，P0-4/P1-12） |
 | 1 | 2026-07-26 | 滞后修正（status 不降，仍 approved）：§2 示例一（llm-agents）补脚注——`title_regex_any` 需含 `sources.*.concepts`/`query` 声明词的全称对应式，防止照抄该示例时复现"query/concept 有词、title 本地过滤无对应式"的死子句缺陷 | T8（`subs/presets`）审查：用真实经典论文标题实测 9 件预置 topic 包，发现同类 P1 级缺陷 7 处并修复；本条为反哺设计文档源头示例 |
 | 2 | 2026-07-26 | **文档转正**：front matter `status: approved`→`implemented`——T1–T8 主线全部合并（DSL 地基/查询编译器/本地过滤+护栏/watermark 三策略/watch runner+CLI/日报渲染/nber RSS watch 转主/9 preset）；AC-6.1~6.4 离线 DoD 判据 T9 全部建议 PASS、fable 亲验签署"达成"（[2026-07-26-ac6-acceptance.md](../testing/records/2026-07-26-ac6-acceptance.md)） | Phase 6 T10 收尾（[phase6-report](../reports/2026-07-26-phase6-report.md)） |
 | 3 | 2026-07-26 | **§5 补 NBER 增量语义条目**（此前只有 arXiv/SSRN/OpenAlex-S2-Crossref 三条，NBER 缺席）：`IdSetDiff`（id 集合差分）权威归属由 SSRN（D-029 后已改 `DateCursor`）移交 NBER；一并登记口径收窄——19 官方 program 仅 5 个 `[LIVE]` 映射、`PE` 两义未核验排除、扩展前须先补勘察证据 | Phase 6 终审附条件：`subs/watermark.py:425` docstring 引用的"design/09 §5 第二条"实指已删除线的 SSRN 旧文，本条补齐 NBER 权威归属并订正该 docstring 引用 |

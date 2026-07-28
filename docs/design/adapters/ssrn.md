@@ -2,7 +2,7 @@
 title: Adapter 设计 · SSRN（实现级 · 聚合元数据主路径）
 status: implemented
 owner: D1
-updated: 2026-07-26
+updated: 2026-07-29
 ---
 
 # Adapter · `ssrn`(实现级详设)
@@ -18,7 +18,7 @@ updated: 2026-07-26
 - **capabilities（集合论证见 §4.1）**：
   - **元数据层（Phase 5 committed）= `DISCOVER | ENUMERATE`**（前缀 10.2139 虚拟时间桶 + 枚举）。
   - `RESOLVE`：**元数据层仅产 landing 引用**（零网络 URL 构造，`resolve_offline=True`，D-022），全文 PDF 经 pipeline unpaywall OA-fallback（§8.1）——SSRN 侧勘察证实**无第三方 PDF 旁路**（landing-only）。
-  - `FETCH`：**全文层（模式 B）条件能力**，Phase 5 默认**不点亮**（§11 案 B 推荐 defer 至 Phase 6 横切件）。
+  - `FETCH`：**全文层（模式 B）条件能力**。**实况订正（2026-07-29，T11 落地后）**：Phase 5 原按 §11 案 B 推荐 defer；browser-fetch 横切件定稿（D-030）后已于 **Phase 7 T11** 点亮——`capabilities` 现含 `FETCH`，经 `resolve_in_browser_context` 在浏览器上下文内两跳解析（landing → `Delivery.cfm`），执行归 browser-fetch 横切件（本 adapter 自身不实现 `fetch_asset`）。三级门 `[browserfetch].enabled` 关闭时仍产计划、由 stages 门拦截为 `skipped`（不计 failures）；用户显式发起入口＝`crawler grab --browser`（非批量非默认，opt-in，D-029 案 B"低配额 opt-in"定位不变）。详见 §11.5。
   - **无 `SEARCH`**：沿 arxiv.md §1 / aggregators §1 先例（冻结 `SourceAdapter` 协议无 `search()`；订阅命中经 enumerate + 本地 `Selector.filter_expr` 过滤，DSL 下推推迟 Phase 6 / AC-6.4）。
 - **domains**：`api.crossref.org`（枚举主干）、`api.openalex.org`（enrich 交叉核对/补摘要，信用计费 ⚡）；`api.unpaywall.org`（OA-fallback，pipeline 侧）。`*.ssrn.com` / `papers.ssrn.com` **仅模式 B 触及，元数据层永不接触**。
 - **服务 venue**：**单一 `ssrn` venue**（前缀 10.2139 全库）+ econ/fin 子网**近似**过滤（venue 建模裁决见 §3；对照 arxiv category-venue 的差异论证同 §3）。
@@ -64,10 +64,10 @@ updated: 2026-07-26
 | `DISCOVER` | ✅ | 预印本无"期"概念 → 按 created 年生成**虚拟时间桶** Issue（沿 arxiv.md §3 月度桶先例），**零 SSRN 接触**；**纯生成零网络**（`paper_count_claimed=None`，规模锚移交 M1 census——真实 Crossref `facet=created:*` 返 HTTP 400，发现①仲裁令，§4.3）。 |
 | `ENUMERATE` | ✅ | crossref `filter=prefix:10.2139` + created-date 窗 + cursor（§4.2）；产 `identifier(ssrn)` + `identifier(doi)` 的 PaperStub 流。 |
 | `RESOLVE` | ✅（landing-only） | 零网络 landing URL 构造（`resolve_offline=True`）；PDF 交 pipeline unpaywall OA-fallback（§8.1）——SSRN 无第三方 PDF 旁路，默认无可下载 PDF asset（§4.4）。 |
-| `FETCH` | ❌（模式 B 条件能力） | 全文唯一路径 = 浏览器 Delivery.cfm（Cloudflare 门）；Phase 5 默认不声明，§11 案 B 推荐 defer Phase 6 横切件。 |
+| `FETCH` | ✅（模式 B，opt-in） | 全文唯一路径 = 浏览器 Delivery.cfm（Cloudflare 门）。**实况订正（2026-07-29）**：Phase 5 原不声明（§11 案 B 推荐 defer），browser-fetch 横切件定稿（D-030）后已于 Phase 7 T11 点亮——`resolve_assets` 恒产模式 B `RENDER_PAGE` `AssetPlan`（landing URL），`resolve_in_browser_context` 在浏览器上下文内解析出 volatile `Delivery.cfm` URL（不落库，同批即用即弃）；执行、限速/配额/挑战冷却全归 browser-fetch 横切件统一护栏，本 adapter 侧零该类代码。 |
 | `SEARCH` | ❌ | 冻结协议无 `search()`；本地过滤（arxiv/crossref 先例）。 |
 
-- **能力面净结论**：Phase 5 `ssrn.capabilities() = {DISCOVER, ENUMERATE, RESOLVE}`（RESOLVE 为 landing-only 零网络）；`FETCH` 随 §11 终裁点亮。**此集合全程 CI 可判、零 SSRN 接触**（controller 预裁决 #1/#2 兑现）。
+- **能力面净结论（2026-07-29 更新为实况）**：`ssrn.capabilities() = {DISCOVER, ENUMERATE, RESOLVE, FETCH}`（RESOLVE 为 landing-only 零网络；`FETCH` 已随 D-030/design/11 §12 裁决①于 Phase 7 T11 点亮，经 browser-fetch 横切件执行——本行原文写"Phase 5 三项、FETCH 随 §11 终裁点亮"，现更新为落地后事实）。**元数据主路径（DISCOVER/ENUMERATE/RESOLVE）全程 CI 可判、零 SSRN 接触不变**（controller 预裁决 #1/#2 兑现）；`FETCH` 的浏览器上下文取回不占该不变式——其唯一网络出口是用户显式发起时的 `papers.ssrn.com`，opt-in、非默认、非批量（详见 §11.5）。
 
 ### 4.2 `enumerate_issue(venue, issue)`（ENUMERATE，枚举主干）
 
@@ -146,7 +146,7 @@ updated: 2026-07-26
 | 草案 ID | 层 | 场景 | 通过判据 | 验收形态 |
 |---|---|---|---|---|
 | **AC-5.1a** | 元数据（**CI 可判**） | crossref 前缀近 7 天 created 窗增量枚举 | ① T4 回放 7 收割日（含重叠窗口 + created ~1 日延迟注入）→ abstract_id 清单**无重复无遗漏**（沿 D-018 分层，机制正确性）；② econ/fin 主题过滤 = **确定性过滤逻辑单测**（固定 fixture 输入 → 期望过滤输出精确断言，CI 稳定；**废止**原"一致率≥95% vs OpenAlex field 基准"——评审证实过滤信号本取自 OpenAlex field、自比恒 100% 为空判）；③ **全程零 SSRN 接触**（obslog 无 `*.ssrn.com` 请求）；限速审计经 obslog jsonl（元数据层无 FetchLog） | 离线 T4 + 单次在线冒烟（D-018） |
-| **AC-5.1b** | 全文（**opt-in + 环境依赖，非 CI**） | 模式 B 单篇浏览器取回 | 遇 Cloudflare 挑战**正确 BLOCKED(challenge)+冷却 24h**（离线 challenge fixture 可判）；真实取回落盘 = 用户参与 runbook（换非阻断网络）；限速 ≤1 req/5s（仅模式 B 触 `*.ssrn.com` 时，FetchLog 审计） | **案 B 下 defer Phase 6**（§11） |
+| **AC-5.1b** | 全文（**opt-in + 环境依赖，非 CI**） | 模式 B 单篇浏览器取回 | 遇 Cloudflare 挑战**正确 BLOCKED(challenge)+冷却 24h**（离线 challenge fixture 可判）；真实取回落盘 = 用户参与 runbook（换非阻断网络）；限速 ≤1 req/5s（仅模式 B 触 `*.ssrn.com` 时，FetchLog 审计） | **实况订正（2026-07-29）**：§11 案 B 的"defer Phase 6"已由 **Phase 7 T11**（browser-fetch 横切件三消费方接入之一）兑现；离线 seam/challenge 单测覆盖"正确 BLOCKED+冷却"判据，真实穿透 Cloudflare 取回仍是用户参与 runbook（本机环境 TLS 阻断 CF 前置域，§11.3 未撤销）——AC-BF 编号转正与本条承接关系见 [testing/acceptance-criteria.md](../../testing/acceptance-criteria.md) |
 
 - **「按 FEN 子网」修订注记**：精确子网枚举**无合规路径**（§3）→ 判据改「econ/fin 主题**确定性过滤逻辑单测**」（AC-5.1a②），与 development-plan 原 DoD 的"FEN 子网"字面差异如实公开（不静默弱化）。
 - **「遇 Cloudflare 挑战正确 BLOCKED」保留但语境收窄**：仅模式 B；元数据层零 SSRN 接触故**永不触发挑战**——该判据在元数据层退化为"obslog 证零 SSRN 请求"。
@@ -234,6 +234,7 @@ updated: 2026-07-26
 | 4 | 2026-07-24 | **§4.3 DISCOVER 改纯生成零网络年桶**（controller 发现①仲裁令，T4 实现随卡联动）：T1 在线实测真实 Crossref `facet=created:*` 返 **HTTP 400**（`created` 非合法 facet，活体哨兵 XFAIL），原「1 请求 created facet 产年桶」**不可实现** → 纯本地生成 1990..今年（clock 注入上界，`paper_count_claimed=None`，规模锚移交 M1 census）；`enumerate` 的 `from/until-created-date` **filter** 不受影响。§4.1 DISCOVER 行「桶计数」联动改 `None`；联动 nber.md §3.1 facet 限定注记 | T1 [LIVE 2026-07-24] 冒烟实证 + controller 发现①仲裁 |
 | 5 | 2026-07-26 | **Phase 6 M1-d 抽样**：§9.1 追加 OpenAlex 无-DOI works 可枚举性抽样附录——为 R2 候补路径 (a) 评估供数（可枚举量级 primary_location 口径 229,102 / locations 口径 285,262；字段完整度含 `abstract_id` 可经 `landing_page_url` 正则提取；`cursor` 标准分页验证有效）。**只记录数据，不改代码、不动 ENUMERATE 能力声明** | Phase 6 M1-d [LIVE 2026-07-26]，5 请求，独立脚本 |
 | 6 | 2026-07-26 | **§4.4 幻影字段清账（非设计变更）**：删"VenueSpec 声明 `oa_fallback=true`"表述——`VenueSpec` schema 从无该字段；实况是 `cli.py::_assemble_auth_seam` 对 OA-fallback 总开关无条件置位，不按 venue 区分。同批订正 [auth-framework.md §8.1](../auth-framework.md)、[aggregators.md §5.5](aggregators.md) 两处同源表述 | P6-T10 收尾盘点发现 |
+| 7 | 2026-07-29 | **T11 落地实况回填（非设计变更）**：§1/§4.1/§8 的 `FETCH` 能力声明与 AC-5.1b 判据由"Phase 5 不点亮/defer Phase 6"更新为"已于 Phase 7 T11 经 browser-fetch 横切件点亮（opt-in，`crawler grab --browser`）"；新增 §11.5 实况更新小节（不改写 §11.1–§11.4 原评估文字，援引 aea.md §10 同款披露体例）。全文其余设计判断（venue 建模、覆盖率量化、限速表等）不受影响 | [D-030](../../plan/decision-log.md)；Phase 7 T11（`feat(adapters): ssrn/aea/wiley 接入 browser-fetch RENDER_PAGE`）；`src/paper_crawler/adapters/ssrn/adapter.py` 实码核实 |
 
 ## 11. 横切件专章：browser fetch 通道两案评估（评审后 controller 终裁）
 
@@ -269,4 +270,13 @@ updated: 2026-07-26
 5. 案 A 会引入**无法在线验**的 FETCH 面（volatile `Delivery.cfm` / browser context / opt-in flag / 预算护栏），与勘察先行纪律冲突。
 
 **反方（公平呈现）**：案 A 增量成本适中（browser.py 基建已在 Phase 4）、离线 seam 可覆盖逻辑；若未来主力网络非 CF-阻断，案 A 可较快转在线。但**决定性因素 = 本环境在线验收不可行 + 横切件统一论据** → defer。**本 §11 即该横切件的设计种子**（Phase 6 直接承接）。
+
+### 11.5 实况更新（2026-07-29，browser-fetch 横切件 T11 落地后）
+
+> 本节 §11（含以上 §11.1–§11.4）写于 D-030 定稿之前，是该横切件的设计种子——D-030 原文自身如此定性。以下为如实的落地状态更新，**不改写以上评估文字本身**（保留作决策依据的历史记录，照 [aea.md §10](aea.md) 的披露体例）。
+
+- **案 B 的"defer 至 Phase 6"已兑现，落地窗口实为 Phase 7 T11**（D-030 定稿时本就注明"Phase 6 末 stretch 或 Phase 7"两个窗口皆可能，最终落在 Phase 7）：`SsrnAdapter.capabilities` 现含 `FETCH`；`resolve_assets` 恒产模式 B `RENDER_PAGE` `AssetPlan`；新增 `resolve_in_browser_context` 方法在浏览器上下文内两跳解析（导航 landing → `ChallengeDetector` 判定 → 解析 `Delivery.cfm` 链接），执行归 browser-fetch 横切件（`stages.py`/`browserfetch.py`），本 adapter 自身仍不实现 `fetch_asset`——与 §11.1 案 A 设想的模块边界一致。
+- **§11.3 的环境评估未被推翻，只是从"预判"变"仍待验证"**：本机对 Cloudflare 前置域的 TLS 层阻断是否也拦截 Playwright 浏览器上下文，T11 落地时**仍未做在线复测**（详见 `tests/manual/browser_fetch_runbook.md` 留痕）——真实穿透 Cloudflare 取回 PDF 依旧是用户参与 runbook，非 CI。
+- **用户可见入口**：`crawler grab --browser`（需先在 config-home `config.toml` 打开 `[browserfetch].enabled = true`），单篇、显式发起、非批量非默认——与 D-029/D-030 反复重申的 opt-in 定位一致。
+- **代码为准**：本节以上（§11.1–§11.4）关于"是否已落地实现代码"的描述属 T11 之前状态；实现已推进，文字保留作历史依据，`src/paper_crawler/adapters/ssrn/adapter.py` 模块 docstring 与 §1/§4.1 的实况更新以此为准。
 

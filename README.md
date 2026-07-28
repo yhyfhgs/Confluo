@@ -1,7 +1,7 @@
 # Paper Crawler — 可插拔式学术论文获取系统
 
-> 状态：**Phase 1（核心框架）实现中** · Phase 0（设计）已完成 · 仓库含设计文档与 `src/paper_crawler` 核心框架代码（设计先行，代码只依据 `approved` 设计开工）。
-> 最后更新：2026-07-21 · 阶段判定见 [Phase 0 报告](docs/reports/2026-07-20-phase0-report.md)
+> 状态：**Phase 0–7 全部完成**（`tag phase-0`…`phase-6` 已落，`tag phase-7` 待 controller 终审后打）· 仓库含全套设计文档与 `src/paper_crawler` 完整实现（21 个已注册平台 adapter、62 个已注册 venue）· 2026-07 终审审计发现的缺陷正按 R1–R4 修复批次处理中（设计先行的纪律仍在延续：审计修复同样先落 ADR/文档再改代码）。
+> 最后更新：2026-07-29 · 阶段判定见 [Phase 7 报告](docs/reports/2026-07-27-phase7-report.md) · 当前状态见 [progress.md](docs/plan/progress.md)
 
 ## 这是什么
 

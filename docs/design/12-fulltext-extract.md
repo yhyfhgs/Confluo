@@ -2,7 +2,7 @@
 title: 全文抽取（stage 5 extract）实现级详设
 status: approved
 owner: fable5
-updated: 2026-07-27
+updated: 2026-07-29
 ---
 
 > **签署（fable，2026-07-27）**：T1（opus）起草 → 独立审查（opus）NEEDS_FIX（P0×2/P1×5/P2×7）→ r2 修复
@@ -447,8 +447,10 @@ _FieldSpec("extract.grobid_timeout_s", ("extract",), "grobid_timeout_s", "int",
 
 **只两槽**：开/关由 `grobid_url` 是否为空表达（无需第三个 `mode` 槽）；`consolidateHeader` /
 `consolidateCitations` / `consolidateFunders` 三者一律硬编码 0（§2.1 + §7.2 末段）。
-两槽皆非敏感（不进 `config show` 脱敏面）。**CLI 零改动**——extract 已可经 `crawler run extract` 与
-`pull --extract` 驱动，本卡不碰 `cli.py`（该文件在 phase7 §5 已是 T3/T6/T12/T13 四卡的冲突面）。
+两槽皆非敏感（不进 `config show` 脱敏面）。**CLI 零改动**——extract 已可经
+`pull --extract` 驱动（**没有**独立的 `crawler run extract`/`crawler extract` 命令，
+`pull --extract` 是 stage 5 的唯一入口，design/05 §1 如实订正，2026-07-29），
+本卡不碰 `cli.py`（该文件在 phase7 §5 已是 T3/T6/T12/T13 四卡的冲突面）。
 
 **客户端 = 复用 `http.HttpClient`**，构造参数 `rate_limiter=None`、`timeout_s=grobid_timeout_s`、诚实 UA：
 

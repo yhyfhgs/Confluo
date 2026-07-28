@@ -2,7 +2,7 @@
 title: 开发计划（Phase 0–7）
 status: approved
 owner: fable5
-updated: 2026-07-27
+updated: 2026-07-29
 ---
 
 # 开发计划
@@ -19,9 +19,9 @@ updated: 2026-07-27
 | 2 | Open-Access MVP | arXiv + OpenReview + PMLR + CVF + ACL Anthology + NeurIPS + AAAI + ACM adapters | 1 | done |
 | 3 | 聚合元数据层 | Crossref/OpenAlex/DBLP/S2/Unpaywall 客户端与 metadata spine | 1 | **done** |
 | 4 | 认证框架 + 出版社 adapters | AuthProvider 四实现；Elsevier/Wiley/OUP/UChicago/INFORMS/IEEE/ACM/AAAI | 1,3 | **done** |
-| 5 | SSRN 与特殊源 | SSRN、NBER、AEA、Econometric Society、RePEc adapters | 2,4 | planned |
-| 6 | 订阅与搜索 | topic/tag 订阅 DSL、增量 watch、dry-run、日报 | 2,3 | planned |
-| 7 | 全文抽取与库增强 | GROBID 集成、全文索引、preprint↔正式版关联审核工具 | 2–5 | planned |
+| 5 | SSRN 与特殊源 | SSRN、NBER、AEA、Econometric Society、RePEc adapters | 2,4 | **done** |
+| 6 | 订阅与搜索 | topic/tag 订阅 DSL、增量 watch、dry-run、日报 | 2,3 | **done** |
+| 7 | 全文抽取与库增强 | GROBID 集成、全文索引、preprint↔正式版关联审核工具 | 2–5 | **done** |
 
 ## Phase 0 — 设计与文本系统
 
@@ -73,6 +73,8 @@ updated: 2026-07-27
 
 **范围**：AuthProvider（CookieSession/EZProxy/SSOFlow/APIKey）、凭证库、`crawler auth login/status` CLI、session 健康检查；随后按平台推进：`elsevier_sd`（优先官方 API）、`wiley`（优先 TDM API）、`oup_silverchair`、`uchicago`、`informs`、`ieee_xplore`、`acm_dl`、`cambridge`、`springer`、`jstor`。
 
+**实况（2026-07-29，审计修复 R4 批订正，消除本节范围声明与实际交付的落差）**：认证框架四实现 + `elsevier_sd`/`oup_silverchair`/`wiley` 三平台已交付（entry point 注册、离线 DoD 达成）；`wiley` 覆盖的四刊 venue——JF、Mathematical Finance、RAND Journal of Economics、International Economic Review——已于本轮 R4 批补齐 venue 注册（此前 wiley adapter 虽实现但零 venue 引用，属装配缝缺口），ECMA 过刊段仍由 `econsoc` 运行时域名分段路由承接（D-028），不额外注册 wiley venue。`uchicago`/`informs`/`ieee_xplore`/`cambridge`/`springer`/`jstor` 六平台**未交付**——前三者止步于 `design/adapters/` 下的 `review` 状态详设、无 adapter 代码；后三者连详设文档都未曾开笔——沿用 D-024（acm_dl Phase 4 重评维持出列的既有先例：未交付范围须有 ADR 记录理由与再评估条件，而非任其在文档中静默消失）确立的处置纪律，本批新增 D-037（dblp adapter 出列生产链）/D-038（design/08 venue-tracking 整域 defer）/D-039（任务优先级队列 + `backfill` 命令 defer）延续同一纪律于其它未交付范围。acm_dl 不在六平台之列——其出列已由 D-020/D-024 独立记账。
+
 **DoD**：验收场景 AC-4.x（如"保存的机构 session 下载 1 篇 JFE 正式版 PDF；session 过期后被正确检测并提示重登"）；全部认证 adapter 默认限速符合各自文档声明；BLOCKED 人工介入流程演练通过。
 
 ## Phase 5 — SSRN 与特殊源
@@ -99,6 +101,8 @@ updated: 2026-07-27
 PASS**（离线三件套齐备 + 在线空态如实标注，真实候选需跨源重叠语料）、AC-7.2 离线 **PASS** / 在线
 为**条件项**（本机无 GROBID，环境未就绪）；详见 [phase7-report](../reports/2026-07-27-phase7-report.md)
 与 [AC-7 记录](../testing/records/2026-07-27-ac7-acceptance.md)（判定列待 fable 终审签署）。
+
+**已知长期 defer 项（非任何 Phase 排期，D-039，2026-07-29 登记）**：US-7（design/00-requirements.md，"回填某会议全部历史届"，示例 `crawler backfill neurips --from 1987`）与 design/05 §3 提及的任务优先级分层（交互式命令 > watch 增量 > backfill，同优先级 FIFO）均为设计声明，从未落地为实现——`crawler` 命令表无 `backfill` 动词，任务队列 `TaskQueue.claim_next` 是单一 FIFO（无优先级字段）。单用户使用场景下 FIFO 实测已满足既有验收；历史回填可经 `crawler pull <venue> --year Y`/`--volume V` 逐期手工驱动替代。再评估条件见 D-039。
 
 ## 里程碑与节奏
 

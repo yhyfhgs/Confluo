@@ -2,7 +2,7 @@
 title: 六阶段 Pipeline 与任务系统
 status: implemented
 owner: fable5
-updated: 2026-07-27
+updated: 2026-07-29
 ---
 
 # 05 · 六阶段 Pipeline 与任务系统
@@ -22,7 +22,7 @@ updated: 2026-07-27
 | 5 extract | Asset(fetched, pdf) | `Fulltext` 行 / Paper 字段补全 | **(asset_id, source_sha256, extractor, extractor_ver)**（Phase 7 T7 兑现「asset 级键」注记；表 PK 仍 paper_id——asset 级的是**键**不是基数。取代规则＝全序取 max `(rank, ver_key, char_count, asset_id)`，故终态与注入顺序无关。[D-033](../plan/decision-log.md) / [design/12](12-fulltext-extract.md) §5） | —（本地；GROBID 为可选本机服务） |
 | 6 ingest | Paper/Identifier 增量 | 合并关系（same_as/preprint_of/candidate）+ 索引 | 确定性合并规则版本 | —（本地） |
 
-阶段可单独执行（`crawler run enumerate --venue jfe --volume 160`），默认编排器按需级联（`pull` = 1→4，`--extract` 加 5，6 每次运行尾部自动跑）。
+各阶段在实现里彼此独立、可分别重跑（断点续爬的基础，见 §5），但**没有通用的逐阶段 CLI 动词**（如实订正，2026-07-29：本行原写 `crawler run enumerate --venue jfe --volume 160`，该命令不存在，`cli.py` 命令表里没有 `run` 子命令）。用户可见的组合入口是 `crawler list <venue> --volume V [--issue I]`（内部经 `PipelineRunner.run_single_stage` 驱动 discover→enumerate，只产清单不下载资产，§6）与 `crawler pull ...`（默认编排器按需级联：1→4，`--extract` 加 5，6 每次运行尾部自动跑；`pull --extract` 是 stage 5 extract 的**唯一**入口，没有独立的 `run extract`/`crawler extract` 命令）。
 
 ## 2. 任务模型与状态机
 
@@ -44,12 +44,25 @@ Task {
 - **BLOCKED 语义**：不占重试次数、不自动恢复；`crawler status --blocked` 列出并给出人工动作提示（如 `auth login elsevier`）；人工处理后 `crawler resume <task|--all>` 转回 PENDING。
 - **FAILED 语义**：按错误分类决定是否可重试（见 §4）；`crawler retry --class transient` 批量重试。
 
+### 任务 GC（保留窗清理，审计修复批 R3c 新增，2026-07-29 补文档）
+
+- **目的**：`task` 表全库零 `DELETE` 语句，DONE 行随运行单调累积，拖慢 `_fresh_skip`/`claim_next` 等高频查询（审计 C2 合成库定量实测；索引侧的第一道防线见 [design/06 §2](06-data-model.md) 的 `0006_perf_indexes.sql` 说明）。`TaskQueue.gc_done(retention_days=30, limit=1000)`（`tasks.py`）是第二道防线：只删 `state='DONE'` 且 `updated_at` 早于 `now - retention_days` 的行；非 DONE 任何龄一律不动；受 `task.parent_id` 自引用外键保护（每轮只挑当下真无人引用的候选，循环到不动点或耗尽 `limit` 预算才停）；单批以"先 `SELECT id` 定批、再按 id 列表 `DELETE`"两步写法执行（不依赖 SQLite 的 `DELETE...LIMIT` 扩展语法）；幂等，重复调用安全收敛。
+- **接线点**：`PipelineRunner._finalize`（`pipeline/runner.py`）在报告落盘（`report.save()`）之后调用 `_gc_done_tasks()`，是 `TaskQueue.gc_done` 的**唯一**调用点。三条理由缺一不可：①`_finalize` 是五个公开入口（pull/run_single_stage/drain/watch/grab）一律在 `finally` 中调用的单点，覆盖全部路径含异常路径；②`_finalize` 整段落在各入口的进程级排他锁内（见下"进程级互斥"），故 GC 与另一进程的任何 pipeline 会话互斥，避免"先 SELECT 定批、再 DELETE"两步之间被并发插入的删除/新建打乱；③GC 失败被吞成 WARNING 日志、不改变本轮任何语义、不覆盖正在传播的原异常——GC 是"跑完一轮之后顺手做的家务"，不放进 `__init__`（只读命令如 `crawler list`/`timeline` 构造 runner 时不该顺手删别人的历史行）。
+- **`fetch_log.task_id` 悬空口径**：`fetch_log` 表的 `task_id` 列（`0001_init.sql`）是纯 `TEXT`，**没有**外键约束（不像 `asset_id`/`parent_id` 那样声明 `REFERENCES`）——GC 删除超窗 DONE 任务行后，`fetch_log.task_id` 可能指向一个已不存在的任务 id。这是**刻意留白**而非疏漏：`fetch_log` 是限速合规的审计留痕（§7），价值在于"何时对哪个域发了什么请求"，与任务本身是否还存活无关；给它加外键会让 GC 删任务时被迫级联删审计日志（或改 `ON DELETE SET NULL`），徒增复杂度换不到实际收益。消费方若需按 `task_id` 反查任务，须自行容忍该字段可能悬空。
+
 ## 3. 调度与并发
 
 - **单进程异步**（Phase1 起步可纯串行，接口不变）：全局并发闸（默认 4）+ per-domain 闸（默认 1）+ per-domain token bucket（速率来自 adapter 声明 → VenueSpec 覆盖 → CLI 临时覆盖，取**最保守值**）。
-- **优先级**：交互式命令（pull/grab）> watch 增量 > backfill 回填；同优先级 FIFO。
+- **优先级**：交互式命令（pull/grab）> watch 增量 > backfill 回填；同优先级 FIFO。**实况订正（2026-07-29，D-039 defer）**：本条分层从未实现——`TaskQueue.claim_next`（`tasks.py`）是单一 `SELECT ... ORDER BY created_at, id LIMIT 1`，任务表无优先级字段，pull/grab/watch 之间不存在调度层面的优先关系，只有提交顺序的 FIFO。`crawler backfill` 命令本身也未实现（§6 该行为设计声明）。单用户场景下纯 FIFO 实测已足够；再评估条件（回填与在线交互任务互相饥饿的实证场景）见 [D-039](../plan/decision-log.md)。
 - **auth_gated 附加约束**：同一 AuthProfile 全局串行（见 design/04 §5：不并行多 session）；工作时段窗口。
 - **watch 模式**：`crawler watch` 由 cron/launchd 触发一次性运行（无常驻进程）；watermark 持久化在 `Subscription` 表（见 design/09）。
+
+### 进程级互斥（`flock`，审计修复批 R3d 新增，2026-07-29 补文档）
+
+- **问题**：`PipelineRunner.__init__` 的两个启动动作——`cleanup_tmp(data/tmp)`（清理 `*.part` 崩溃残留，§5.2）与 `queue.recover_running()`（孤儿 RUNNING 归还 PENDING）——都是**无进程范围**的破坏性操作。`.part` 文件名恒为 `{asset_id}.part`，若 cron `watch` 与交互式 `pull` 重叠运行，后启动者的这两个动作会删掉前者正在写的 part、抢走前者已 claim 的 RUNNING 任务——落盘字节与 DB `sha256` 可以不符，且只有事后 `crawler verify` 才看得见。
+- **修复**：`fcntl.flock` 排他锁，路径 `<config-home>/state/.pipeline.lock`（`pipeline_lock_path`，`pipeline/runner.py`），覆盖启动动作与**五个公开入口**（pull/run_single_stage/drain/watch/grab）各自的整个会话——从入队到 drain 结束再到 `_finalize` 报告落盘（含上一小节的任务 GC）。锁范围是**会话粒度**（`_exclusive()` 上下文管理器），不是从 `__init__` 一直持到对象析构——持到析构等于把释放时机交给"该对象何时被丢弃"，一次异常回溯就可能把它拖到调用方丢弃 `__traceback__` 为止，届时"同一进程里的下一条命令"会被自己上一条挡住。
+- **语义**：`LOCK_EX | LOCK_NB`（非阻塞）——抢不到锁即**响亮失败**（`CrawlerError(CONFIG)`），不等待、不静默（cron 撞上手动运行时，本轮跳过、下一轮 cron 自然恢复，语义上比互相等待更合适）。崩溃自动释放：`flock` 绑在打开的文件描述符上，进程无论正常退出还是被 SIGKILL/断电，内核回收 fd 时都会释放锁——没有陈旧锁文件问题，不需要 PID 探活/TTL，也不该在启动时删锁文件。互斥域是 **config-home**（一个 `--home` = 一套 DB + 一份 `data/`），正是 cron `watch` 与手动 `pull` 争抢的那一套东西。Windows（无 `fcntl`）降级为无锁，如实标注非跨平台承诺（本仓库 CI/开发/部署目标均为 macOS/Linux）。
+- **`cleanup_tmp`/`recover_running` 的作用范围不变**：二者仍是**无进程范围**的全局清理（分别清 `data/tmp/` 下全部 `*.part`、把全库孤儿 RUNNING 行归还 PENDING）——锁修复的是"两个进程的这类清理与对方的 drain 互相踩踏"，不是把清理范围收窄到"只清本进程自己产生的"。会话之间的空档不构成缺陷窗口：下一个会话开始时若另一进程仍在跑，一样在取锁处响亮失败，不会出现两边同时清理的交错。
 
 ## 4. 错误分类学（贯穿全系统的统一枚举）
 
@@ -80,9 +93,9 @@ crawler venues lint                                    # VenueSpec 校验
 crawler timeline <venue> [--refresh]                   # 时间轴（discover）
 crawler list <venue> --volume V [--issue I] | --year Y # 清单预览（enumerate，不下载）
 crawler pull <venue> (--volume V [--issue I] | --year Y | --doi D...)
-             [--filter EXPR] [--limit N] [--dry-run] [--extract]
+             [--filter EXPR] [--limit N] [--dry-run] [--extract]  # --extract = stage 5 的唯一入口，无独立 run/extract 命令
 crawler grab --doi D | --arxiv ID | --ssrn ID | --url U # 单篇跨 venue 精取（--url 供无标准 id 的 WP/ECCC 类，D-015）
-crawler backfill <venue> --from YEAR [--to YEAR]       # 历史回填（低优先级队列）
+crawler backfill <venue> --from YEAR [--to YEAR]       # 设计声明，命令未实现（低优先级队列同未实现，D-039 defer）；现状用 pull --year/--volume 逐期手工回填
 crawler subs watch <subscription-name> | --all         # 订阅增量（cron 入口；P6-T5 落地时因 crawler watch 已被 preprint venue 增量占用而落子命令组，controller 裁决 2026-07-26）
 crawler auth login <provider> / status / logout        # 认证（design/07）
 crawler status [--blocked] [--failed] / resume / retry # 任务运维
@@ -115,3 +128,4 @@ crawler verify / report [--last-run]                   # 对账与报告
 | # | 日期 | 修订 | 依据 |
 |---|---|---|---|
 | 1 | 2026-07-26 | §4 `challenge` 行"平台冷却 24h"→"**域冷却 24h**"（键 = asset URL host，无 asset 退回 `<adapter_id>`；冷却门先于 OA-fallback 旁路），并补 403+`cf-mitigated` 亦属该类的判据来源 | [D-030](../plan/decision-log.md) 裁决②③ + F6 实现卡（`fix/cf403-cooldown`）+ F6 审查裁决 F6-1 |
+| 2 | 2026-07-29 | 文档订正批（纯记账，代码此前已交付）：①§1 删除虚构的 `crawler run enumerate --venue jfe --volume 160` 叙述，改为如实描述 `crawler list`/`crawler pull --extract` 两条真实入口；②§2 新增"任务 GC"小节（`gc_done` 保留窗、`_finalize` 内锁内执行、`fetch_log.task_id` 悬空口径）；③§3 新增"进程级互斥"小节（五入口 `flock`、`cleanup_tmp`/`recover_running` 作用范围）；④§3 优先级分层行补 defer 标注；⑤§6 CLI 列表 `backfill` 行标注未实现 | 2026-07-28/29 审计修复批 R3c/R3d（`fix(pipeline)` 提交）+ [D-039](../plan/decision-log.md) |

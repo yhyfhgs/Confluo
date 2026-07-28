@@ -2,7 +2,7 @@
 title: 架构决策记录（ADR）
 status: approved
 owner: fable5
-updated: 2026-07-27
+updated: 2026-07-29
 ---
 
 # 架构决策记录（Decision Log / ADR）
@@ -504,3 +504,27 @@ updated: 2026-07-27
 - **不在本决策内（显式出列）**：`t` 系列的真实 series 段归属（仍 [未实测]，归 T19/后续在线批；若日后实测出 `t` 的正确 series 段，**扩张映射须另立 ADR**，不得援引本条）；`nber.parse._SERIES_RE` 的字母集合（不动）；search 的检索面（索引/分词/排序/返回列）与 `reindex`（不动）；`docs/INDEX.md` 行刷新（归后续文档卡）。
 - **影响**：代码面已落 `fix/p7-r2-data-layer` 两 commit（`src/paper_crawler/adapters/repec/{parse,adapter}.py`、`src/paper_crawler/storage/repo.py`、`src/paper_crawler/cli.py` + 四份测试；门禁 ruff/mypy/pytest 全绿）。文档面：[aggregators.md §5.7](../design/adapters/aggregators.md) 四处修订 + §9 变更表 #21（**#19 的 ② `t` 暂走 `nberwo` 由本条取代，原行不改写**）；D-035/D-034 各加一条修订注记指向本条（原文 append-only 不改写）。**零 schema migration、零 AC 新增**（三分观测与 AC-7.3 聚合语义的判据面均未变）。
 - **落款**：T20 审计 R2 修复卡（opus）实现 → **独立审查（opus）判代码面 PASS**（4/4 变异有效、对抗全过、commit message 事实断言全真），唯一阻断项＝**文档账缺失**（推翻 approved/implemented 契约却零记录，违反 AGENTS §3/§5）→ 回派同卡补本条 ADR 与 aggregators.md 修订。**本条即该补账**，代码与测试零改动。
+
+## D-037 dblp adapter 出列生产链（保留代码与测试）
+
+- 状态：accepted · 日期：2026-07-29 · 依据：2026-07 终审审计 C1 发现 + 本次文档复核实测（`src/paper_crawler/adapters/dblp/`、`merge.py::SOURCE_PRIORITY`、`cli.py::_ENRICH_SOURCES` 与 `subs/model.py::ENRICH_ONLY_SOURCES`、`venues/**/*.yaml` 62 个文件全量 grep 核对）
+- 背景：dblp adapter（Phase 3 T4 交付，`DISCOVER|ENUMERATE`，conf 索引页 + 卷 XML）实现完整、entry point 已注册、测试齐备，但审计 C1 发现其在生产装配链上三处零接入：①62 个 venue YAML（`grep metadata_source venues/` 全量核对）无一声明 `metadata_source: dblp`；②enrich 白名单 `_ENRICH_SOURCES = ("openalex", "s2", "repec")`（`cli.py`）不含 dblp；③`merge.py::SOURCE_PRIORITY` 表中 `dblp: 4` 的位阶因此永不参与实际字段收敛判定——没有任何生产路径曾以 `source="dblp"` 产出 `PaperStub`。
+- 决策：保留 dblp adapter 代码、entry point 注册与既有测试，不因零引用而移除或标记 deprecated；现阶段不新增任何 venue 的 `metadata_source: dblp` 声明，也不将 dblp 纳入 enrich 白名单。
+- 理由：CS/AI venue 的元数据主干已由 crossref/openalex/s2 三源覆盖（D-005/D-021 既定优先级表），dblp 人工策展会议卷目录的核心价值目前没有未被满足的消费场景；DBLP 官方对自动化访问限速极严（`Crawl-delay: 4`，D-021 决策 1），接入换不来相称收益。代码本身合规、经审查、有测试覆盖，删除是不必要的破坏性操作，保留供未来复用。
+- 影响：零代码/测试改动。本条 ADR 是"声明位阶（`merge.py` 第 4 位）与实况（结构性不可达）不一致"的正式记录，把该状态从"未解释的悬空"转为"受控 defer"，消解审计 C1 发现。**再评估条件**：出现 dblp 独有需求时重新评估接入（如会议 bibkey 精确匹配、某会议官方历史主干缺失时的补充枚举源）。
+
+## D-038 design/08 venue-tracking 整域 defer（Phase 8 候选）
+
+- 状态：accepted · 日期：2026-07-29 · 依据：[design/08-venue-tracking.md](../design/08-venue-tracking.md) 全文核对 + 源码核实（`VenueEra` 类、`eras` 字段、`track`/`--audit` CLI 均不存在于 `src/paper_crawler/`，`registry.py`/`types.py`/`cli.py` 全量 grep 确认）
+- 背景：design/08（`status: approved`，2026-07-20 定稿，此后从未转 `implemented`）设计了 `VenueEra` 表（会议历年地址漂移）、`crawler track --all`/`track review`（年度追新探测）、`crawler timeline <venue> --audit`（覆盖区间/缺口对账）三项能力，对应 FR-03（会议逐年换址追踪）与 acceptance-criteria.md 的 AC-8.x（标注"跨 Phase，随会议 adapter 验收"）。源码核实：schema 无 `venue_era` 表迁移落地、`types.py`/`registry.py` 均无 `eras`/`VenueEra`、`cli.py` 无 `track`/`--audit` 相关命令——三项设计自 Phase 0 至今零实现。development-plan.md 从未把这域列入任何已排期 Phase 的交付范围，design/08 本身也从未被任何 `phaseN-implementation-plan` 认领为任务来源，其"未实现"状态既不在任何 Phase 的 backlog 里追踪，也没有 ADR 记录为有意 defer——2026-07 终审审计定性为"从受控 defer 滑成悬空"。
+- 决策：以本条 ADR 恢复受控——design/08 全域（`VenueEra` 表、`track`/`track review`、`timeline --audit`）明确 defer，列为 Phase 8 候选（或更晚，视用户排期），FR-03 与 AC-8.x 随之标注"挂起"而非"进行中缺失"。
+- 理由：期刊侧的"追新"需求已由订阅（subs）+ crossref/OAI watch 兑现（design/09、design/05 §3 watch 模式，Phase 6 交付）；会议侧的年度换址目前靠人工维护 `quirks.volume_map`（aaai_ojs 先例）与逐年新增 venue YAML 兑现，规模可控（当前 62 个 venue，年增量个位数），自动化探测的边际收益尚不足以证成实现成本。
+- 影响：design/08 front matter 维持 `status: approved`（设计本身未被推翻，只是实现被推后，不降级，status-workflow §1）；FR-03/AC-8.x 的挂起状态以本条为权威依据；acceptance-criteria.md 若需同步显式挂起标注，留待后续文档卡处理（不在本卡改动范围）。
+
+## D-039 任务优先级队列 + `crawler backfill` 命令 defer
+
+- 状态：accepted · 日期：2026-07-29 · 依据：design/05-pipeline.md §3/§6 + design/00-requirements.md US-7 + 源码核实（`tasks.py::TaskQueue.claim_next` 单一 FIFO、`cli.py` 命令表无 `backfill`）
+- 背景：design/05 §3"调度与并发"写有"优先级：交互式命令（pull/grab）> watch 增量 > backfill 回填；同优先级 FIFO"，§6 CLI 设计列有 `crawler backfill <venue> --from YEAR [--to YEAR]`（对应 design/00-requirements.md US-7"回填某会议全部历史届"）。源码核实：`TaskQueue.claim_next` 是单一 `SELECT ... ORDER BY created_at, id LIMIT 1`（`tasks.py`），任务表无优先级字段，不存在"交互式 > watch > backfill"的分层调度；`cli.py` 的命令定义列表中没有 `backfill` 子命令——US-7 描述的入口从未实现。
+- 决策：design/05 §3 的任务优先级分层与 §6 的 `crawler backfill` 命令、design/00-requirements.md 的 US-7，明确标注 defer；不在当前范围内实现。
+- 理由：本项目当前是单用户使用场景，`claim_next` 的纯 FIFO 调度实测已满足既有 Phase 0–7 的全部验收（AC-1.x 断点续爬、AC-6.x 订阅增量等均未依赖优先级分层）；历史回填目前可经 `crawler pull <venue> --year Y`/`--volume V` 逐期手工驱动（各 adapter 的 `enumerate_issue` 对旧期同样有效），US-7 想要的"专属回填命令 + 低优先级队列"是锦上添花而非缺失能力。
+- 影响：design/05 §3 补 defer 标注引用本条；development-plan.md 的 US-7 标注 defer；design/00-requirements.md 的 US-7 状态不因此改变字面文本（需求文档本身不删条目），但读者应知悉其对应 CLI 入口未实现。**再评估条件**：出现回填与在线交互任务互相饥饿的实证场景（如历史大批量回填长期占用队列导致 watch/pull 响应延迟可观测地劣化）时，重新评估是否需要真实优先级队列与专属 `backfill` 命令。

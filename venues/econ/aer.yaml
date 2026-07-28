@@ -25,8 +25,10 @@ notes: >
   aer.p20151048），其 venue 归属本 Phase 暂缓（catalog A-3 裁决，不入本 8 刊清单）。
   全文平台 aea（pubs.aeaweb.org，Atypon + Cloudflare）：站点勘察 [LIVE] 2026-07-24 实证
   匿名访问 PDF URL 得订阅挡板 HTML（非 integrity）；pubs 域对 stateless 客户端一律
-  cf-mitigated: challenge（D-006 禁对抗）——本 Phase resolve 离线判 no_entitlement，
-  平台 FETCH 待 browser-fetch 通道（D1 详设）+ 机构订阅认证落地。adapter 本期
+  cf-mitigated: challenge（D-006 禁对抗）——T11 后 resolve 零网络产出 RENDER_PAGE 模式 B
+  计划（design/11 §4.6 ★接缝 A-1/D-030，不再离线静态猜测 no_entitlement）；真实有无权限
+  改由 browser-fetch 通道（D1 详设）实际访问后 ChallengeDetector 判定，no_entitlement
+  终态从"resolve 时猜测"移到"fetch 时实测"，同时机构订阅认证落地。adapter 本期
   auth_requirement=none（无认证 FETCH），上方 auth.level=institutional 是刊物真实
   访问级的前瞻声明，二者不矛盾（不触 registry.py:234 lint，仅 venue 低于 adapter
   要求时报错）。

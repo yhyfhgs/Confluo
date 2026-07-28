@@ -12,14 +12,14 @@
 | 设计/实现一个新 adapter | [design/02 框架](design/02-plugin-framework.md) → [adapters/README 模板](design/adapters/README.md) → 同族样例（Atypon 看 [informs](design/adapters/informs.md)，Silverchair 看 [oup](design/adapters/oup-silverchair.md)，OA 看 [pmlr](design/adapters/pmlr.md)）→ [test-plan fixture 规范](testing/test-plan.md) |
 | 理解认证与合规边界 | [design/04](design/04-auth-gated-module.md) → [design/07](design/07-auth-session.md) → [decision-log](plan/decision-log.md) D-006/D-014 → [AC-0 红线](testing/acceptance-criteria.md) |
 | 开始 Phase 1 开发 | [development-plan §Phase 1](plan/development-plan.md) → design/01/02/05/06 → [status-workflow 开工门禁](process/status-workflow.md) |
-| 查"为什么这样设计" | [plan/decision-log.md](plan/decision-log.md)（D-001…D-035） |
+| 查"为什么这样设计" | [plan/decision-log.md](plan/decision-log.md)（D-001…D-039） |
 | 了解某站点的实测事实 | research/site-survey/ 对应勘察（各 adapter 文档 §2 已内联引用） |
 
 ## 根文档
 
 | 路径 | 标题 | status | updated |
 |---|---|---|---|
-| [../README.md](../README.md) | 项目总览 | approved | 2026-07-21 |
+| [../README.md](../README.md) | 项目总览 | approved | 2026-07-29 |
 | [../AGENTS.md](../AGENTS.md) | AI/LLM 协作者工作规范 | approved | 2026-07-21 |
 | [GLOSSARY.md](GLOSSARY.md) | 术语表（全库速查） | review | 2026-07-26 |
 
@@ -27,7 +27,7 @@
 
 | 路径 | 标题 | status | updated |
 |---|---|---|---|
-| [plan/development-plan.md](plan/development-plan.md) | 开发计划（Phase 0–7） | approved | 2026-07-23 |
+| [plan/development-plan.md](plan/development-plan.md) | 开发计划（Phase 0–7） | approved | 2026-07-29 |
 | [plan/phase1-implementation-plan.md](plan/phase1-implementation-plan.md) | Phase 1 实施计划（任务切分+接口冻结） | approved | 2026-07-21 |
 | [plan/phase2-implementation-plan.md](plan/phase2-implementation-plan.md) | Phase 2 实施计划（Stage A 地基+arxiv；Stage B adapter 滚动） | approved | 2026-07-21 |
 | [plan/phase3-implementation-plan.md](plan/phase3-implementation-plan.md) | Phase 3 实施计划（聚合元数据层：五源 adapter + 合并引擎任务切分） | approved | 2026-07-22 |
@@ -35,8 +35,8 @@
 | [plan/phase5-implementation-plan.md](plan/phase5-implementation-plan.md) | Phase 5 实施计划（SSRN 与特殊经济学源 adapters 任务切分） | approved | 2026-07-24 |
 | [plan/phase6-implementation-plan.md](plan/phase6-implementation-plan.md) | Phase 6 实施计划（订阅与搜索：DSL + watch + 护栏 + 日报 任务切分） | approved | 2026-07-26 |
 | [plan/phase7-implementation-plan.md](plan/phase7-implementation-plan.md) | Phase 7 实施计划（全文抽取与库增强：extract/browser-fetch/repec/dedupe 22 卡切分） | approved | 2026-07-27 |
-| [plan/progress.md](plan/progress.md) | 项目进度跟踪 | approved | 2026-07-26 |
-| [plan/decision-log.md](plan/decision-log.md) | 架构决策记录（D-001…D-036） | approved | 2026-07-27 |
+| [plan/progress.md](plan/progress.md) | 项目进度跟踪 | approved | 2026-07-29 |
+| [plan/decision-log.md](plan/decision-log.md) | 架构决策记录（D-001…D-039） | approved | 2026-07-29 |
 
 ## design/ — 核心设计（00–12）
 
@@ -47,15 +47,15 @@
 | [design/02-plugin-framework.md](design/02-plugin-framework.md) | 可插拔框架（Adapter × VenueSpec） | implemented | 2026-07-21 |
 | [design/03-open-access-module.md](design/03-open-access-module.md) | Open-Access 获取模块 | approved | 2026-07-20 |
 | [design/04-auth-gated-module.md](design/04-auth-gated-module.md) | Auth-Gated 获取模块 | implemented | 2026-07-23 |
-| [design/05-pipeline.md](design/05-pipeline.md) | 六阶段 Pipeline 与任务系统 | implemented | 2026-07-27 |
-| [design/06-data-model.md](design/06-data-model.md) | 数据模型与入库设计 | implemented | 2026-07-27 |
+| [design/05-pipeline.md](design/05-pipeline.md) | 六阶段 Pipeline 与任务系统 | implemented | 2026-07-29 |
+| [design/06-data-model.md](design/06-data-model.md) | 数据模型与入库设计 | implemented | 2026-07-29 |
 | [design/07-auth-session.md](design/07-auth-session.md) | 认证与会话管理 | implemented | 2026-07-23 |
 | [design/08-venue-tracking.md](design/08-venue-tracking.md) | Venue 时间轴与年度追踪 | approved | 2026-07-20 |
-| [design/09-search-filter.md](design/09-search-filter.md) | 主题订阅与精确搜索 | implemented | 2026-07-27 |
+| [design/09-search-filter.md](design/09-search-filter.md) | 主题订阅与精确搜索 | implemented | 2026-07-29 |
 | [design/auth-framework.md](design/auth-framework.md) | 认证框架实现级详设（07/04 的实现级扩展：四 Provider + 凭证库 + CLI + pipeline 接缝） | implemented | 2026-07-26 |
 | [design/10-config-layout.md](design/10-config-layout.md) | 配置归集与分层规范（D-025：config/ 文件夹 + 加载链 + 敏感键护栏） | implemented | 2026-07-23 |
 | [design/11-browser-fetch.md](design/11-browser-fetch.md) | Browser-Fetch 横切件详设（三消费方统一浏览器取回通道 + CF-403 冷却缺口方案；D-029 案 B 承接，D-030 定稿；§10 AC-BF 已于 T18 转正，正式落点见 acceptance-criteria.md） | approved | 2026-07-27 |
-| [design/12-fulltext-extract.md](design/12-fulltext-extract.md) | 全文抽取（stage 5 extract）实现级详设（pypdf 基线 + GROBID 可选增强 + asset 级幂等键全序取 max；D-033 承载） | approved | 2026-07-27 |
+| [design/12-fulltext-extract.md](design/12-fulltext-extract.md) | 全文抽取（stage 5 extract）实现级详设（pypdf 基线 + GROBID 可选增强 + asset 级幂等键全序取 max；D-033 承载） | approved | 2026-07-29 |
 
 ## design/adapters/ — 平台 adapter 详设
 
@@ -63,7 +63,7 @@
 |---|---|---|---|
 | [design/adapters/README.md](design/adapters/README.md) | 模板 + 索引 + 勘察清单 | approved | 2026-07-20 |
 | [design/adapters/arxiv.md](design/adapters/arxiv.md) | arXiv | implemented | 2026-07-22 |
-| [design/adapters/ssrn.md](design/adapters/ssrn.md) | Adapter 设计 · SSRN（聚合主路径/browser-fetch defer） | implemented | 2026-07-26 |
+| [design/adapters/ssrn.md](design/adapters/ssrn.md) | Adapter 设计 · SSRN（聚合主路径/browser-fetch 已于 T11 落地） | implemented | 2026-07-29 |
 | [design/adapters/nber.md](design/adapters/nber.md) | Adapter 设计 · NBER Working Papers（crossref prefix 枚举扩展 + www/back 双域 + program RSS watch 主通道） | implemented | 2026-07-26 |
 | [design/adapters/aea.md](design/adapters/aea.md) | Adapter 设计 · AEA（AER+AEJ 四系+Insights+JEL/JEP，crossref ISSN 枚举） | implemented | 2026-07-26 |
 | [design/adapters/econsoc.md](design/adapters/econsoc.md) | Adapter 设计 · Econometric Society（ECMA/TE/QE，OAI-PMH + ECMA 年代分段路由） | implemented | 2026-07-27 |
@@ -72,12 +72,12 @@
 | [design/adapters/cvf.md](design/adapters/cvf.md) | CVF Open Access | implemented | 2026-07-23 |
 | [design/adapters/acl-anthology.md](design/adapters/acl-anthology.md) | ACL Anthology | implemented | 2026-07-26 |
 | [design/adapters/neurips-proceedings.md](design/adapters/neurips-proceedings.md) | NeurIPS Proceedings | implemented | 2026-07-24 |
-| [design/adapters/aaai-ojs.md](design/adapters/aaai-ojs.md) | AAAI OJS | implemented | 2026-07-26 |
+| [design/adapters/aaai-ojs.md](design/adapters/aaai-ojs.md) | AAAI OJS | implemented | 2026-07-29 |
 | [design/adapters/acm-dl.md](design/adapters/acm-dl.md) | ACM Digital Library（D-020：Phase 2 出列；D-024：Phase 4 重评维持出列，全文改道 unpaywall OA-fallback） | review | 2026-07-23 |
 | [design/adapters/ieee-xplore.md](design/adapters/ieee-xplore.md) | IEEE Xplore | review | 2026-07-20 |
 | [design/adapters/aggregators.md](design/adapters/aggregators.md) | 聚合元数据源（7 合册：六源 implemented（含 repec 零网络 enrich）+ core 存档） | implemented | 2026-07-27 |
 | [design/adapters/elsevier-sd.md](design/adapters/elsevier-sd.md) | Elsevier ScienceDirect（实现级，P4-W0/T3） | implemented | 2026-07-23 |
-| [design/adapters/wiley.md](design/adapters/wiley.md) | Wiley Online Library（实现级，P4-W0，D-024 纳入） | implemented | 2026-07-24 |
+| [design/adapters/wiley.md](design/adapters/wiley.md) | Wiley Online Library（实现级，P4-W0，D-024 纳入；四刊 venue 已注册 R4） | implemented | 2026-07-29 |
 | [design/adapters/oup-silverchair.md](design/adapters/oup-silverchair.md) | OUP（Silverchair）（实现级，P4-W0/T4） | implemented | 2026-07-23 |
 | [design/adapters/uchicago.md](design/adapters/uchicago.md) | UChicago Press | review | 2026-07-21 |
 | [design/adapters/informs.md](design/adapters/informs.md) | INFORMS PubsOnline | review | 2026-07-21 |

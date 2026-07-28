@@ -2,7 +2,7 @@
 title: 数据模型与入库设计
 status: implemented
 owner: fable5
-updated: 2026-07-27
+updated: 2026-07-29
 ---
 
 # 06 · 数据模型与入库设计
@@ -256,6 +256,7 @@ data/
 
 | # | 日期 | 修订 | 依据 |
 |---|---|---|---|
+| 6 | 2026-07-29 | **纯记账（非设计变更）**：新增 schema v6（`0006_perf_indexes.sql`，审计修复批 R3c）——三条纯附加、方言中性索引：`idx_identifier_paper ON identifier(paper_id)`（`dedupe review --limit 0` 5272ms→加速 **266x**，代价 476KiB）、`idx_task_fresh ON task(kind, venue_id, params_json, state)`（覆盖 `TaskQueue._fresh_skip`/`_find_active` 高频等值谓词）、`idx_paper_venue ON paper(venue_id)`（`repo.counts()`/`list_papers()` 按 venue 过滤 7.9ms→0.2ms，**40x**）。三索引均由审计 C2 合成库定量基准驱动；表定义/实体语义零变更，故 status 保持 `implemented`。 | [storage/migrations/0006_perf_indexes.sql](../../src/paper_crawler/storage/migrations/0006_perf_indexes.sql) 头注释（审计 C2 实测数字出处）；2026-07-28 审计修复批 R3c（`perf,fix(storage,tasks,pipeline)` 提交） |
 | 5 | 2026-07-27 | **纯号位勘误（非设计变更）**：T12 落地时 T7（`0004_fulltext_asset.sql`，schema v4，独立分支开发）已先占用 `0004` 号位（尚未合并入 T12 工作树，但该号位经 controller 裁决先行保留）——本节 FTS5 小节（第 3 条修订引入）全部"`0004`"/"schema v4"文本引用改为"`0005`"/"schema v5"（`0005_fts_paper.sql`）。表定义/实体语义/触发器 SQL 均无变化，纯迁移文件编号调整，故 status 保持 `implemented`。 | [D-034](../plan/decision-log.md)「T12 执行期号位裁决」附记；Phase 7 T12（FTS5 落地任务卡） |
 | 4 | 2026-07-27 | **纯注记（非设计变更）**：§3 preprint_of 建边段补充"Crossref/OpenAlex 的 preprint 关系字段"与"SSRN→DOI 提示"两类线索的实况核验结果——产出侧（对应 adapter 解析能力）当前未实现，消费通道（`storage/repo.py::_apply_preprint_clues`）已预留、可插拔；产出侧补齐挂 P8 评估。不改动 §3 既有设计文字，只补实况差距如实记录。 | Phase 7 T10（preprint_of 建边引擎实现）独立审查 P2-2；[phase7-implementation-plan.md §4 T10](../plan/phase7-implementation-plan.md) |
 | 3 | 2026-07-27 | **FTS5 索引要点落地化（设计声明→冻结形态）**：§2 索引要点行由一句「`paper(title)` 建 FTS5 虚表（标题+摘要检索）」展开为 FTS5 索引小节——表形态（content-owning `paper_fts`，附 external-content/contentless 的否决理由）、范围（title+abstract，正文与向量索引 defer）、触发器同步、`0004` 方言隔离不变式与 PG 替代方案指针、`crawler reindex` 维护面。**同批如实记债**：原句是 D-017 决策 4 推迟到 Phase 6 而 Phase 6 未兑现的悬空声明。§2 表定义与实体语义零变更（FTS 虚表是 `paper` 的派生索引、不引入新实体），故 status 保持 `implemented`。 | [D-034](../plan/decision-log.md)（T2 卡产出，独立审查 NEEDS_FIX→修复→fable 落章生效）；[phase7-implementation-plan §2/§4 T2/§8](../plan/phase7-implementation-plan.md)；D-017 决策 4 |

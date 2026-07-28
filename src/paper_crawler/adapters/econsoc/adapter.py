@@ -20,13 +20,13 @@
   年份（历史年或当前年）首次在本 adapter 实例内被问到（缓存未命中）都触发**单趟全量
   收割**（无 datestamp 窗——datestamp≠发表日，与 aaai 同理由）→ 目标年即时产出、**全部
   已注册年份（含当前年）**就地按 dc:date 年 partition 缓存；此后同实例内再问到任一已
-  缓存年份 → 零请求命中缓存。**与 aaai_ojs 的关键差异**（controller 裁决②，闭合"当前年
-  首拉漏收窗口外早发论文"缺口）：aaai_ojs 的可缓存集合**排除**当前届（当前届恒走回看窗、
-  永不读写缓存，design/adapters/aaai-ojs.md §4 护栏①）——econsoc **反其道**：当前年纳入
-  可缓存集合，使任一年份的首趟全量收割都顺带把当前年一并纳入缓存，从而**首次收割当前年
-  即完整**，不必像 aaai_ojs 当前届那样只能等滚入历史后才补全（旧回看窗机制已整体由本
-  结构取代，不再保留固定 `from=` 增量路径）。去重由下游 `identifier('doi')` 主键天然
-  保证。ECMA 委 crossref（不经本 adapter）。
+  缓存年份 → 零请求命中缓存。当前年纳入可缓存集合（controller 裁决②，闭合"当前年首拉
+  漏收窗口外早发论文"缺口），使任一年份的首趟全量收割都顺带把当前年一并纳入缓存，从而
+  **首次收割当前年即完整**，不再恒加固定 `from=<今日−回看天数>` 增量窗（旧回看窗机制
+  已整体由本结构取代）。**aaai_ojs 现已同款**（T15 本方案经 R3a 对齐）：当前届同样纳入
+  可缓存集合，只是额外保留每轮回看窗真查以贴合其设计意图；aaai_ojs 早期版本曾排除当前届、
+  恒走固定 `from=` 回看窗（design/adapters/aaai-ojs.md §4 护栏①旧版），该差异已随 R3a
+  消失。去重由下游 `identifier('doi')` 主键天然保证。ECMA 委 crossref（不经本 adapter）。
 - `resolve_assets`（★ 网络绑定，`resolve_offline=False`）：**ECMA 分段前置**（§3.3 方向 a）——
   按 DOI+落地域名判段：过刊段（doi.wiley.com）→ `NO_ENTITLEMENT`/skip（跨 adapter handoff
   defer，D-028）、pre-DOI 段（JSTOR/10.2307）→ 零资产 skip、当前段 → 下述统一路径。**统一
@@ -160,8 +160,8 @@ class EconsocAdapter(AdapterBase):
     def __init__(self, http: HttpClient | None = None) -> None:
         self._http = http
         # 跨年分区缓存（结构移植自 aaai_ojs F3，T15/检查单#6）：单趟全量收割的产物，
-        # key=(venue_id, oai_base)，value=已注册年份（**含当前年**，与 aaai_ojs 排除
-        # 当前届不同，见 `_backfill_pages`/模块 docstring）→ 该年 PaperStub 序列。
+        # key=(venue_id, oai_base)，value=已注册年份（**含当前年**——aaai_ojs 经 R3a
+        # 对齐后现已同款，见 `_backfill_pages`/模块 docstring）→ 该年 PaperStub 序列。
         # **实例内存态、非持久化**：随 adapter 实例（=一次 CLI 进程内的 registry 实例）
         # 生灭，跨进程不复用、不落盘（同 aaai_ojs 先例，design/adapters/aaai-ojs.md §4）。
         self._backfill_key: tuple[str, str] | None = None
@@ -220,11 +220,13 @@ class EconsocAdapter(AdapterBase):
           缓存，供本实例内后续任一年份的查询零请求命中。
 
         **当前年首拉完整性修复**（controller 裁决②，闭合"今年早发论文首拉漏收"缺口）：
-        与 aaai_ojs 相反——aaai_ojs 的可缓存集合**排除**当前届（当前届恒走回看窗、永不
-        读写缓存，design/adapters/aaai-ojs.md §4 护栏①），econsoc 把当前年**纳入**可
-        缓存集合（`_cacheable_years`），使当前年的首次收割也是一次无窗全量收割——不再
-        像旧版那样恒加 `from=<今日−回看天数>` 而首拉必然漏收窗口外的当年早期论文。旧的
-        固定回看窗机制已被本结构整体取代。去重由下游 `identifier('doi')` 主键天然保证。
+        econsoc 把当前年**纳入**可缓存集合（`_cacheable_years`），使当前年的首次收割
+        也是一次无窗全量收割——不再像旧版那样恒加 `from=<今日−回看天数>` 而首拉必然
+        漏收窗口外的当年早期论文，旧的固定回看窗机制已被本结构整体取代。**aaai_ojs
+        现已同款**：T15 本方案经 R3a 对齐后，aaai_ojs 的可缓存集合同样纳入当前届（早期
+        版本曾排除当前届、恒走回看窗，design/adapters/aaai-ojs.md §4 护栏①旧版）；
+        残余差异仅在交付构造——econsoc 缓存命中即返回、不再增量，aaai 当前届每轮仍
+        保留回看窗真查（新鲜度优先）。去重由下游 `identifier('doi')` 主键天然保证。
         """
         year = _issue_year(issue, venue)
         code = _ojs_code(venue)
@@ -365,9 +367,10 @@ class EconsocAdapter(AdapterBase):
     def _cacheable_years(self, venue: VenueSpec) -> frozenset[int]:
         """可进缓存的年份集合 = 已注册年份全集（**含当前年**）。
 
-        与 aaai_ojs 的 `_cacheable_volumes`（排除当前届）刻意不同：econsoc 需要当前年
-        参与缓存共享，才能让"任一年份的首趟全量收割"顺带覆盖当前年，从而首拉当前年
-        即完整（controller 裁决②，见 `enumerate_issue`/模块 docstring）。
+        econsoc 需要当前年参与缓存共享，才能让"任一年份的首趟全量收割"顺带覆盖当前年，
+        从而首拉当前年即完整（controller 裁决②，见 `enumerate_issue`/模块 docstring）。
+        aaai_ojs 的 `_cacheable_volumes` 现已同款纳入当前届（T15 本方案经 R3a 对齐；
+        早期版本曾排除当前届）。
         """
         return frozenset(_volume_map(venue))
 
