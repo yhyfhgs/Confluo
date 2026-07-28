@@ -4,7 +4,17 @@
 #   同一批核心概念（工具变量、倍差法、断点回归）在不同学科用不同的写法出现——
 #   过早收紧类目或关键词会系统性漏掉某一学科的产出。
 # 改造建议：若只关心某一应用领域（如仅经济学），去掉 cs.LG/stat.ML 类目，只留
-#   econ.EM，并把 s2.fields_of_study 收窄到 ["Economics"]。
+#   econ.EM。
+#
+# ⚠ R2b 修复（2026-07-28，P0-4）：删原 openalex 段（concepts=[causal inference] +
+#   from_source_types=[preprint]）与 s2 段（fields_of_study=[Economics, Computer
+#   Science]、venues=[Journal of Causal Inference, Journal of Econometrics, JASA,
+#   Biometrika, Econometrica, American Economic Review]、query="causal inference"）。
+#   两源 capabilities 均为空集（enrich-only，只走 `crawler enrich`），watch 侧无
+#   DISCOVER/ENUMERATE——照原样跑必抛 CapabilityNotSupported。跨学科覆盖现由 arxiv
+#   的四个类目（stat.ME/stat.ML/econ.EM/cs.LG）+ 本地词族承担；期刊侧覆盖如有需要，
+#   可自行加 crossref 段按 ISSN 订阅（那是真跑得动的期刊 watch 通道）。
+#   见 src/paper_crawler/subs/model.py::SOURCE_FIELDS。
 #
 # ⚠ T8 审查修复（2026-07-26）：query 与 title 双侧补 regression discontinuity/
 #   synthetic control/double machine learning 三个该领域公认方法族（原缺失，
@@ -19,19 +29,6 @@ sources:
        OR abs:"difference-in-differences" OR abs:"propensity score"
        OR abs:"regression discontinuity" OR abs:"synthetic control")
       AND NOT ti:"survey"
-  openalex:
-    concepts: ["causal inference"]
-    from_source_types: [preprint]
-  s2:                         # 计量方法类：s2 补跨学科覆盖（design/09 §3 bulk search venue/fieldsOfStudy）
-    fields_of_study: ["Economics", "Computer Science"]   # ⚠ 取值对照 S2 官方 fieldsOfStudy 分类表，实现期核验
-    venues:
-      - "Journal of Causal Inference"
-      - "Journal of Econometrics"
-      - "Journal of the American Statistical Association"   # T8 补：JASA
-      - "Biometrika"                                         # T8 补
-      - "Econometrica"                                       # T8 补
-      - "American Economic Review"                           # T8 补
-    query: causal inference
 filters:
   title_regex_any:
     - "causal"

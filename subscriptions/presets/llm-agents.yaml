@@ -4,14 +4,20 @@
 #   tool-augmented、autonomous agent…新叫法不断出现），源头查询/类目收太紧会漏掉
 #   新术语；宁可多收噪声，靠 filters 本地二次过滤兜底。
 # 改造建议：若发现噪声过多（如经济学/复杂系统里的"agent-based model"混入——已靠
-#   exclude_regex 挡一道，仍有漏网可再加严），把 exclude_regex 加严，或去掉
-#   openalex 段只留 arxiv 精确类目。
+#   exclude_regex 挡一道，仍有漏网可再加严），把 exclude_regex 加严，或把 arxiv
+#   categories 收窄到 cs.AI/cs.CL 两个最贴题的类目。
 #
 # 本预置几乎逐字取自 docs/design/09-search-filter.md §2 示例一（该文档的官方范式）。
-# ⚠ T8 审查修复（2026-07-26）：原 title_regex_any 只有 agent/LLM 两条，openalex
-#   concept 全称 "large language model"、query 的 "tool use" 分支均无本地过滤对应
-#   式——标题写全称不用缩写、或只提"工具"不提"agent"的论文会被漏判为不命中。
+# ⚠ T8 审查修复（2026-07-26）：原 title_regex_any 只有 agent/LLM 两条，
+#   "large language model" 全称与 query 的 "tool use" 分支均无本地过滤对应式——
+#   标题写全称不用缩写、或只提"工具"不提"agent"的论文会被漏判为不命中。
 #   已补齐两条；design/09 §2 同步加脚注防止下次照抄复现（见该文档修订记录）。
+# ⚠ R2b 修复（2026-07-28，P0-4）：删原 openalex 段（"聚合源兜底：收 arXiv 外的 OA
+#   预印本"，concepts=[large language model] + from_source_types=[preprint]）。
+#   openalex 的 capabilities 是空集（enrich-only，只走 `crawler enrich`），watch 侧
+#   无 DISCOVER/ENUMERATE——照原样跑必抛 CapabilityNotSupported。词表侧同步收缩见
+#   src/paper_crawler/subs/model.py::SOURCE_FIELDS。下方 title_regex_any 的
+#   "large language model" 一条**保留**：它本就是标题词族，不随源的去留而失效。
 name: llm-agents
 sources:                       # 只列想要的源，各源有专属段
   arxiv:
@@ -19,14 +25,11 @@ sources:                       # 只列想要的源，各源有专属段
     query: >                   # 编译为本地补偿谓词 arxiv.query_bool 的字段级布尔式（Phase 7 T9）
       (ti:"agent" OR abs:"agentic" OR abs:"tool use")
       AND NOT ti:"survey"
-  openalex:                    # 聚合源兜底（收 arXiv 外的 OA 预印本）
-    concepts: ["large language model"]
-    from_source_types: [preprint]
 filters:                       # 本地二次过滤（对所有源结果统一执行）
   title_regex_any:
     - "\\bagent(s|ic)?\\b"
     - "LLM"
-    - "large language model"   # 对应 openalex concept 全称（T8 修复：原缺失，全称标题会漏判）
+    - "large language model"   # 全称词族（T8 修复：原缺失，全称标题会漏判）
     - "\\btool"                # 对应 query 的 "tool use" 分支（tool use/tool-augmented/Toolformer 等变体）
   exclude_regex: ["quantum", "agent-based model"]   # 后者挡经济学/复杂系统 ABM 论文误伤（T8 修复）
   min_year: 2024

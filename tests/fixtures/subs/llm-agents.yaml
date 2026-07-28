@@ -1,6 +1,12 @@
 # subscriptions/llm-agents.yaml —— 示例
-# ⚠ 本文件是 docs/design/09-search-filter.md §2 示例一的**逐字转录**（测试基准），
+# ⚠ 本文件曾是 docs/design/09-search-filter.md §2 示例一的**逐字转录**（测试基准），
 #   不是仓库根 subscriptions/ 下的真实订阅。改动前先改设计文档。
+# ⚠ R2b（2026-07-28，P0-4）——**与设计文档的已知偏离，待文档侧补齐**：删原 openalex
+#   段（`concepts: ["large language model"]` / `from_source_types: [preprint]`）。
+#   openalex 的 capabilities 是空集（enrich-only，只走 `crawler enrich`），watch 侧
+#   无 DISCOVER/ENUMERATE，照原样跑必抛 CapabilityNotSupported；`model.SOURCE_FIELDS`
+#   已把该源移出白名单，本 fixture 若保留原样则连解析都过不了。design/09 §2 示例一、
+#   §3 能力映射表、§4 预置清单三处仍写着 openalex/s2，需另批同步（R2b 报告已列）。
 name: llm-agents
 sources:                       # 只列想要的源，各源有专属段
   arxiv:
@@ -8,9 +14,6 @@ sources:                       # 只列想要的源，各源有专属段
     query: >                   # 编译为本地补偿谓词 arxiv.query_bool 的字段级布尔式（Phase 7 T9）
       (ti:"agent" OR abs:"agentic" OR abs:"tool use")
       AND NOT ti:"survey"
-  openalex:                    # 聚合源兜底（收 arXiv 外的 OA 预印本）
-    concepts: ["large language model"]
-    from_source_types: [preprint]
 filters:                       # 本地二次过滤（对所有源结果统一执行）
   title_regex_any: ["\\bagent(s|ic)?\\b", "LLM"]
   exclude_regex: ["quantum"]

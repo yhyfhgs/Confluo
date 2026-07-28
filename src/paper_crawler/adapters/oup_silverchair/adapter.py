@@ -31,6 +31,15 @@ domain 限定 cookie jar + follow_redirects），GET 后返回**原始响应视�
 raise），交 `ChallengeDetector` 事后判读（design §5）。详设 §3.2 措辞"专属 HttpClient"
 即此专属 client（同构：UA+Cookie+跟随重定向），实现上因上述②改用裸 httpx。
 
+**联系邮箱 seam**（R2c 修复；同 unpaywall 先例）：`_authed_get` 的 UA 经
+`useragent.build_user_agent` 统一组装，邮箱取 `_resolve_email()`——显式 `set_email`（CLI
+装配期注入 `Config.identity_email`，`adapter.EmailConsumer` 协议）> 环境变量
+`PAPER_CRAWLER_CONTACT_EMAIL` > `.invalid` 占位。修复前本模块恒读 env、CLI 无 seam 可挂，
+oup（唯一订阅站 UA）因此恒匿名占位，违反 useragent.py 的礼貌联系人政策；现与
+arxiv/openreview/unpaywall 等其余真实 adapter 同一套注入纪律。`_authed_get` 同时补一条
+per-request obslog DEBUG 事件（`stage`/`domain`/`url`/`status`，见其 docstring）——
+resolve/fetch/healthcheck 三调用点经此方法唯一收口，一处埋点全覆盖。
+
 **限速**：resolve/fetch 每方法恰 1 个逻辑请求（doi.org→落地页跟随重定向 = 单请求；
 article-pdf 直取 = 单请求），由 pipeline 的 per-stage `acquire_and_wait` 依 `default_rate`
 （1 req/6s，design §4）逐阶段限速——同 cvf 先例（"实际限速由 pipeline，不在本 adapter"）。
@@ -52,6 +61,7 @@ from paper_crawler.adapter import AdapterBase, AdapterFamily
 from paper_crawler.adapters.oup_silverchair import parse
 from paper_crawler.auth.challenge import ChallengeDetector, ClassifyResult
 from paper_crawler.errors import AuthRequired, Challenged, CrawlerError, ErrorClass
+from paper_crawler.obslog import log_event
 from paper_crawler.types import (
     AssetKind,
     AssetPlan,
@@ -82,16 +92,19 @@ _DOI_SCHEME = "doi"
 _OUP_DOI_PREFIX = "10.1093/"
 
 _CONTACT_EMAIL_ENV = "PAPER_CRAWLER_CONTACT_EMAIL"
-# RFC 2606 保留 .invalid：无注入时的占位联系人（先例 cvf/arxiv）。
+# RFC 2606 保留 .invalid：显式注入（`set_email`）与 env 皆缺时的占位联系人（先例
+# cvf/arxiv/unpaywall）。R2c 修复前本模块恒读 env、CLI 无 seam 可挂 `Config.identity_email`
+# ——oup（唯一订阅站 UA）因此恒匿名占位；现比照 unpaywall 补 `set_email`/`_resolve_email`。
 _PLACEHOLDER_EMAIL = "anonymous@paper-crawler.invalid"
 
 # cookie 供给 seam：SessionHandle → cookie name→value 映射（见模块 docstring）。
 CookieSupplier = Callable[[SessionHandle], Mapping[str, str]]
 
 
-def _default_user_agent() -> str:
-    email = os.environ.get(_CONTACT_EMAIL_ENV, "").strip() or _PLACEHOLDER_EMAIL
-    return build_user_agent(email)
+def _default_email() -> str:
+    """env 兜底邮箱：`PAPER_CRAWLER_CONTACT_EMAIL` 非空则用之，否则 `.invalid` 占位
+    （同 unpaywall `_default_email` 先例）。"""
+    return os.environ.get(_CONTACT_EMAIL_ENV, "").strip() or _PLACEHOLDER_EMAIL
 
 
 class _RawResponse:
@@ -138,16 +151,31 @@ class OupSilverchairAdapter(AdapterBase):
         *,
         cookie_supplier: CookieSupplier | None = None,
         transport: httpx.BaseTransport | None = None,
+        email: str | None = None,
     ) -> None:
         # cookie_supplier=None：pipeline（T1b 后）经 set_cookie_supplier 注入真实供给；
-        # transport=None：生产用 httpx 默认传输，测试注入 MockTransport 达成零真实网络。
+        # transport=None：生产用 httpx 默认传输，测试注入 MockTransport 达成零真实网络；
+        # email=None：CLI 装配期经 set_email 注入 Config.identity_email（`adapter.EmailConsumer`
+        # 协议，同 unpaywall 先例，R2c）——未注入时 `_resolve_email` 回退 env
+        # `PAPER_CRAWLER_CONTACT_EMAIL` 再退 `.invalid` 占位（修复前恒读 env、无从被 CLI 覆盖）。
         self._cookie_supplier = cookie_supplier
         self._transport = transport
+        self._email = email
         self._detector = ChallengeDetector()
 
     def set_cookie_supplier(self, supplier: CookieSupplier) -> None:
         """注入 cookie 供给函数（duck-typed seam；T1b 后由 pipeline 装配期调用）。"""
         self._cookie_supplier = supplier
+
+    def set_email(self, email: str | None) -> None:
+        """注入联系邮箱（`adapter.EmailConsumer` 协议；CLI 装配期传入 `Config.identity_email`，
+        同 unpaywall `set_email` 先例，R2c）。"""
+        self._email = email
+
+    def _resolve_email(self) -> str:
+        """当前生效邮箱：显式注入 > 环境变量 `PAPER_CRAWLER_CONTACT_EMAIL` > `.invalid` 占位
+        （同 unpaywall `_resolve_email` 先例）。"""
+        return self._email if self._email else _default_email()
 
     # -- resolve（doi.org→落地页 → ChallengeDetector 分类 → 解析 PDF 链接，design §3.1）-------
 
@@ -174,7 +202,7 @@ class OupSilverchairAdapter(AdapterBase):
         if session is None:
             raise AuthRequired("oup session 未配置", detail="crawler auth login oup@campus")
         doi = self._doi_of(paper)
-        landing = self._authed_get(f"{_DOI_RESOLVER}/{doi}", session)
+        landing = self._authed_get(f"{_DOI_RESOLVER}/{doi}", session, stage="resolve")
         result = self._classify(landing)
 
         if result is ClassifyResult.CHALLENGE:
@@ -250,7 +278,7 @@ class OupSilverchairAdapter(AdapterBase):
         """
         if session is None:
             raise AuthRequired("oup session 未配置", detail="crawler auth login oup@campus")
-        resp = self._authed_get(plan.url, session)
+        resp = self._authed_get(plan.url, session, stage="fetch")
         pdf_expected = plan.expected_type == "application/pdf"
 
         # PDF 主路快路：200 + %PDF 魔数 → 直接写（登录态泄漏防护的正锚，门控 pdf_expected）。
@@ -303,7 +331,7 @@ class OupSilverchairAdapter(AdapterBase):
         """
         if session is None:
             raise NotImplementedError("oup session 未配置")
-        resp = self._authed_get(_PROBE_URL, session)
+        resp = self._authed_get(_PROBE_URL, session, stage="healthcheck")
         result = self._classify(resp)
         if result is ClassifyResult.OK:
             return HealthReport(healthy=True, detail="oup 探针账号页 OK（含账号标识）")
@@ -354,16 +382,30 @@ class OupSilverchairAdapter(AdapterBase):
             jar.set(name, value, domain=_PRIMARY_DOMAIN)
         return jar
 
-    def _authed_get(self, url: str, session: SessionHandle) -> _RawResponse:
+    def _authed_get(self, url: str, session: SessionHandle, *, stage: str) -> _RawResponse:
         """专属 client（UA+主域 cookie+跟随重定向）GET → 原始响应视图（**4xx 不 raise**）。
 
         网络层异常（超时/连接错）→ `CrawlerError(TRANSIENT)`（对齐 HttpClient 冻结映射
         口径，design §6）；HTTP 状态码**不**在此 raise——4xx（含 403 挑战）原样带回交
         `ChallengeDetector` 判读（见模块 docstring 为何不复用共享 HttpClient）。
+
+        **R2c 观测补丁**：`client.get(url)` 内部已 `follow_redirects=True` 跟完全部重定向——
+        成功后落**恰一条** obslog DEBUG 事件，字段（`stage`/`domain`/`url`/`status`）取自
+        **终响应**（`response.url`/`response.status_code`，即跟随重定向后的最终落点；`url`
+        经 `obslog.log_event` 内部 `redact()`）。字段名对齐 `http.py::_emit_event` 的形态，
+        但**不**是 `http.py::_log_exchange` 那种逐重定向跳各记一条的行为——本 adapter 只记
+        终点这一条（独立审查 Minor #5 订正措辞：此前"复用 `_emit_event` 既有事件形态"一句
+        易被读成连跳数也复用，如实澄清为"字段形态对齐、覆盖范围不同"）。这是有意为之而非
+        疏漏：`ChallengeDetector` 判读只关心落点本身（headers/body/final_url），中间跳转
+        对四态分类无独立意义，简报"补一条事件"字面量已满足，不需要额外的首跳/中间跳事件。
+        `resolve_assets`/`fetch_asset`/`healthcheck` 三调用点经本方法唯一收口，一处
+        埋点即全覆盖（V2 订正口径：stage 级 INFO 与 fetch 侧 FetchLog 已有，本卡只补这条
+        缺失的 per-request 事件，FetchLog 落库口径不动）。网络层异常分支不落此事件——同
+        http.py 现状，异常本身已携带足够诊断信息（`CrawlerError.detail`）。
         """
         cookies = self._cookies_for(session)
         client = httpx.Client(
-            headers={"User-Agent": _default_user_agent()},
+            headers={"User-Agent": build_user_agent(self._resolve_email())},
             cookies=cookies,
             transport=self._transport,
             follow_redirects=True,
@@ -378,6 +420,14 @@ class OupSilverchairAdapter(AdapterBase):
                 ErrorClass.TRANSIENT, "oup 连接错误", detail=type(exc).__name__
             ) from exc
         else:
+            log_event(
+                "DEBUG",
+                "oup http exchange",
+                stage=stage,
+                domain=response.url.host or None,
+                url=str(response.url),
+                status=response.status_code,
+            )
             return _RawResponse(
                 status=response.status_code,
                 headers=response.headers,

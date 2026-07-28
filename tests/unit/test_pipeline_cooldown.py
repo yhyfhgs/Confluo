@@ -130,6 +130,136 @@ def test_host_of_none_for_relative_path_without_host() -> None:
 
 
 # ---------------------------------------------------------------------------
+# `normalize_host_key`：host→冷却键规范化（R2e；原审计 P2-f 根因修复的另一半——
+# R1d 只收敛了非法键异常的传播面（不再中止整轮），但尾点 FQDN、IPv6 字面量、IDN
+# 原生形态这三类**合法 host**天然不满足 `_KEY_RE`（首尾须字母数字），根因未除：
+# 任务 resume 后循环 BLOCKED。本组测试锁定规范化后三类 host 均产出合法键。
+# `host_of` 内部委托本函数——端到端验证见下方"`host_of` 规范化落地"分组。
+# ---------------------------------------------------------------------------
+
+
+def test_normalize_host_key_strips_trailing_dot() -> None:
+    """尾点 FQDN root 标记（RFC 1035）：`host.` 与 `host` 是同一域名。"""
+    assert cooldown.normalize_host_key("host.") == "host"
+
+
+def test_normalize_host_key_lowercases_and_strips_trailing_dot() -> None:
+    assert cooldown.normalize_host_key("WWW.Example.COM.") == "www.example.com"
+
+
+def test_normalize_host_key_idn_to_punycode() -> None:
+    assert cooldown.normalize_host_key("bücher.de") == "xn--bcher-kva.de"
+
+
+def test_normalize_host_key_ipv6_bare_form_is_legal_key(tmp_path: Path) -> None:
+    key = cooldown.normalize_host_key("::1")
+    path = cooldown.cooldown_path(tmp_path, key)  # 不抛 CrawlerError = 合法键
+    assert path.name == f"{key}.json"
+
+
+def test_normalize_host_key_ipv6_bracketed_and_bare_forms_agree() -> None:
+    """`::1`（urlsplit 已剥括号的形态）与 `[::1]`（直接传入的裸括号形态）须互相一致——
+    两者是同一地址的两种输入书写，不应各自产出不同键。"""
+    assert cooldown.normalize_host_key("::1") == cooldown.normalize_host_key("[::1]")
+
+
+def test_normalize_host_key_ipv6_compressed_and_expanded_forms_agree() -> None:
+    """`::1` 与其全展开等价形式是同一地址——规范化后应落到同一个键（读写往返的前提）。"""
+    assert cooldown.normalize_host_key("::1") == cooldown.normalize_host_key("0:0:0:0:0:0:0:1")
+
+
+def test_normalize_host_key_different_ipv6_addresses_do_not_collide() -> None:
+    """无碰撞：不同地址规范化后必须仍是不同键（防止两个不相干域被错误连坐同一份冷却记录）。"""
+    assert cooldown.normalize_host_key("::1") != cooldown.normalize_host_key("2001:db8::1")
+
+
+@pytest.mark.parametrize(
+    "raw",
+    [
+        "host.",
+        "WWW.Example.COM.",
+        "bücher.de",
+        "::1",
+        "[::1]",
+        "2001:db8::1",
+        "plain.example.org",
+    ],
+)
+def test_normalize_host_key_is_idempotent(raw: str) -> None:
+    """规范化幂等：对已规范化的键再规范化一次，结果不变（否则读写两侧各调用一次
+    可能产生漂移）。"""
+    once = cooldown.normalize_host_key(raw)
+    twice = cooldown.normalize_host_key(once)
+    assert once == twice
+
+
+def test_normalize_host_key_extreme_input_still_rejected(tmp_path: Path) -> None:
+    """规范化不是万能的——连 IDNA 编码本身都拒绝的极端输入（单标签超长且非 ASCII）
+    原样交回，`_KEY_RE` 仍在 `cooldown_path` 响亮拒绝：不静默放行、不静默截断
+    （与模块一贯"响亮 CONFIG"姿态一致，见模块 docstring"路径穿越防护"段）。"""
+    extreme = "ü" * 70 + ".de"
+    normalized = cooldown.normalize_host_key(extreme)
+
+    with pytest.raises(CrawlerError) as exc_info:
+        cooldown.cooldown_path(tmp_path, normalized)
+    assert exc_info.value.error_class is ErrorClass.CONFIG
+
+
+def test_normalize_host_key_ipv6_zone_id_does_not_crash(tmp_path: Path) -> None:
+    """回归：`ipaddress.IPv6Address("fe80::1%eth0")` 能构造成功，但其 `.exploded`
+    本身会抛 `AddressValueError`（Python 3.13 stdlib 实测 quirk——构造成功不代表
+    格式化也成功）。`normalize_host_key` 必须把这条路也罩在 `try` 内，不能让裸
+    `ValueError` 从函数逃逸；退回按普通 host 处理后，字面量里的 `:`/`%` 仍非法，
+    交由 `cooldown_path` 响亮 CONFIG——而不是一次未分类的崩溃。"""
+    normalized = cooldown.normalize_host_key("fe80::1%eth0")  # 不抛
+
+    with pytest.raises(CrawlerError) as exc_info:
+        cooldown.cooldown_path(tmp_path, normalized)
+    assert exc_info.value.error_class is ErrorClass.CONFIG
+
+
+def test_normalize_host_key_roundtrip_same_record_across_host_forms(tmp_path: Path) -> None:
+    """读写往返：同一 host 的规范化前/规范化后两种书写形式命中同一冷却记录。"""
+    until = datetime(2026, 7, 28, 12, 0, 0, tzinfo=UTC)
+    key_written = cooldown.normalize_host_key("WWW.Example.COM.")
+    cooldown.write(tmp_path, key_written, until)
+
+    key_read = cooldown.normalize_host_key("www.example.com")
+    assert cooldown.read_until(tmp_path, key_read) == until
+
+
+# ---------------------------------------------------------------------------
+# `host_of` 规范化落地：确认规范化确实在 `host_of`（真实调用方 `runner.py` 的入口）
+# 内部生效，而不止 `normalize_host_key` 本身可用。
+# ---------------------------------------------------------------------------
+
+
+def test_host_of_normalizes_trailing_dot_fqdn() -> None:
+    assert cooldown.host_of("https://pubs.example.org./x") == "pubs.example.org"
+
+
+def test_host_of_normalizes_ipv6_literal_url() -> None:
+    assert cooldown.host_of("https://[2001:db8::1]/x") == cooldown.normalize_host_key("2001:db8::1")
+
+
+def test_host_of_normalizes_idn_url() -> None:
+    assert cooldown.host_of("https://bücher.de/x") == "xn--bcher-kva.de"
+
+
+def test_host_of_trailing_dot_and_plain_forms_share_cooldown_record(tmp_path: Path) -> None:
+    """端到端读写往返：同一域名带根点 / 不带根点两种 URL host 命中同一冷却记录
+    （R2e 根因修复前：带根点那侧因非法键 `CrawlerError(CONFIG)`，任务循环 BLOCKED）。"""
+    until = datetime.now(UTC) + timedelta(hours=1)
+    key_from_dotted = cooldown.host_of("https://pubs.example.org./x")
+    assert key_from_dotted is not None
+    cooldown.write(tmp_path, key_from_dotted, until)
+
+    key_from_plain = cooldown.host_of("https://pubs.example.org/y")
+    assert key_from_plain == key_from_dotted
+    assert cooldown.read_until(tmp_path, key_from_plain) == until
+
+
+# ---------------------------------------------------------------------------
 # `resolve_keys`：域级新键在前、adapter_id 旧键在后（去重）——E-1/D-030 裁决③
 # ---------------------------------------------------------------------------
 

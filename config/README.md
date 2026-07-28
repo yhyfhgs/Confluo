@@ -10,6 +10,24 @@
 | `config.example.toml` | config-home `config.toml` 全键注释模板（identity/paths/rate/retry/openalex + `[auth.*]` 全部凭证槽）。复制到 config-home 后填真实值。 |
 | `profiles.example.toml` | AuthProvider profiles 样例（api_key / cookie_session / sso_flow / ezproxy 四 kind 各一，占位 URL/ref，无密钥明文）。复制到 `<config-home>/auth/profiles.toml`。 |
 
+## 此前"查不到就当不存在"的两个键（R2c 补齐登记）
+
+两个键此前完全未登记于 `config/`/`docs/design/10-config-layout.md` 任何一处，但性质不同——
+一个**已收编**进 `_FIELD_SPECS`（`config show` 看得见），另一个**是真游离**（`config show`
+恒看不见，只有专用脚本读）。分列如下，避免混为一谈：
+
+**① 已收编（env 绑定进 `_FIELD_SPECS`，`crawler config show` 可见）**
+
+| 键 | 收编方式 | 说明 |
+|---|---|---|
+| env `PAPER_CRAWLER_CONTACT_EMAIL` | `[identity].email`（`Config.identity_email`）的 `_FieldSpec` 已绑定同名 env（R2c） | `config show` 里以 `identity.email` 一行呈现（来源列 `env`，值部分脱敏）——**同时**，全部真实 adapter 未经 CLI 注入（`set_email`/`bind_http_client`）时的私有兜底也直读这同一个 env 名（如 arxiv/unpaywall/oup_silverchair 等）。二者共用同一个 env 名，配置本 env 即等价配 `[identity].email`，不必两处各配一份；此前的缺口只是"该 env 未接入 `_FIELD_SPECS`"，并非"该 env 本身游离于配置系统"。 |
+
+**② 真游离（不进 `Config`/`_FIELD_SPECS`，`crawler config show` 恒不显示）**
+
+| 键 | 消费方 | 说明 |
+|---|---|---|
+| `[auth.openreview]` 的 `username`/`password` | `scripts/refresh_openreview_token.py`（自动续期 `token` 的运维脚本，直读同一份 config.toml，见 `config.example.toml` 该节注释） | **不进** `Config`/`_FIELD_SPECS`，`crawler config show` 恒不显示、脚本自身也从不打印其值。真正被主程序消费、决定 OpenReview 鉴权是否可用的是同表的 `token`（`_FIELD_SPECS` 键，`config show` 可见且脱敏）——`username`/`password` 只是 `token` 的续期原料，不是主程序的输入。 |
+
 ## 全配置地图（本机实况；D-032 归集后）
 
 | 位置 | 内容 | git |

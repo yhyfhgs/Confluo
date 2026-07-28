@@ -11,6 +11,7 @@ from paper_crawler.errors import CrawlerError, ErrorClass
 # 分层加载引入的全部 PAPER_CRAWLER_* env——每个用例前清空，防宿主环境/跨例泄漏干扰断言。
 _PC_ENV_VARS = (
     "PAPER_CRAWLER_HOME",
+    "PAPER_CRAWLER_CONTACT_EMAIL",
     "PAPER_CRAWLER_OPENREVIEW_TOKEN",
     "PAPER_CRAWLER_OPENALEX_API_KEY",
     "PAPER_CRAWLER_S2_API_KEY",
@@ -170,6 +171,34 @@ def test_identity_email_blank_normalizes_to_none(
     (home / "config.toml").write_text('[identity]\nemail = "   "\n', encoding="utf-8")
     cfg = Config.load(home=home)
     assert cfg.identity_email is None
+
+
+def test_identity_email_env_var_read(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """环境变量 `PAPER_CRAWLER_CONTACT_EMAIL` 提供 email（无 config.toml；R2c）。
+
+    修复前 `identity.email` 的 `_FieldSpec` 无 `env=`——本键只读 config.toml，而 16 个真实
+    adapter 的私有兜底早已各自直读这个同名 env（两条通道各读各的）。本用例在修复前会失败
+    （`cfg.identity_email` 恒 None，因为该字段压根不看这个 env）。
+    """
+    monkeypatch.delenv("PAPER_CRAWLER_HOME", raising=False)
+    monkeypatch.setenv("PAPER_CRAWLER_CONTACT_EMAIL", "env-researcher@example.edu")
+    cfg = Config.load(home=tmp_path / "home")
+    assert cfg.identity_email == "env-researcher@example.edu"
+
+
+def test_identity_email_env_overrides_config_toml(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """env 覆盖 config.toml（12-factor 惯例，同 openreview token 先例）。"""
+    monkeypatch.delenv("PAPER_CRAWLER_HOME", raising=False)
+    monkeypatch.setenv("PAPER_CRAWLER_CONTACT_EMAIL", "env-wins@example.edu")
+    home = tmp_path / "home"
+    home.mkdir()
+    (home / "config.toml").write_text(
+        '[identity]\nemail = "file-loses@example.edu"\n', encoding="utf-8"
+    )
+    cfg = Config.load(home=home)
+    assert cfg.identity_email == "env-wins@example.edu"
 
 
 # -- OpenReview token 通道（openreview.md §3）--------------------------------------------

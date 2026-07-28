@@ -13,6 +13,7 @@ import dataclasses
 
 import pytest
 
+from helpers.parked_sources import assert_covers_dsl_sources
 from paper_crawler.subs.model import SOURCE_FIELDS, LocalFilter
 from paper_crawler.subs.types import (
     ARXIV_QUERY_FIELDS,
@@ -75,8 +76,13 @@ def test_local_predicate_constants_are_never_source_scoped() -> None:
 
 
 def test_date_window_params_cover_exactly_the_dsl_source_set() -> None:
-    """槽位名表与 DSL 源词表同集——表住叶子模块，T2/T4/T5 三方消费同一份。"""
-    assert set(DATE_WINDOW_PARAMS) == set(SOURCE_FIELDS)
+    """槽位名表覆盖 DSL 源词表（+ 停放源）——表住叶子模块，T2/T4/T5 三方消费同一份。
+
+    R2b/P0-4：openalex/s2 退出 DSL 白名单后，本表仍留着它们的槽位名（`subs/types.py`
+    不在本卡授权改动面内，且 R4 若实装两源逐字可用），故判据是"覆盖 + 多出来的恰好是
+    停放源"，两个方向照旧锁死（`helpers/parked_sources.py`）。
+    """
+    assert_covers_dsl_sources(DATE_WINDOW_PARAMS, SOURCE_FIELDS, name="DATE_WINDOW_PARAMS")
 
 
 def test_date_window_params_re_exported_from_compile_is_the_same_object() -> None:

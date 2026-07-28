@@ -726,3 +726,60 @@ def test_ezproxy_rewrite_uppercase_host_normalized(ezproxy: EZProxyProvider) -> 
         "https://www-sciencedirect-com.login-myuniv-edu.ezproxy/science/Article/pii/X"
     )  # host 归一小写；路径大小写保留
     assert ezproxy.rewrite_url(rewritten) == rewritten  # 归一后幂等仍成立
+
+
+# proxy cookie 种在**代理父域**（EZProxy 真实形态）；重写后的 host 是它的子域。
+PROXY_STORAGE_STATE = json.dumps(
+    {
+        "cookies": [
+            {
+                "name": "ezproxy",
+                "value": SECRET_COOKIE,
+                "domain": "login-myuniv-edu.ezproxy",
+                "path": "/",
+                "secure": True,
+            }
+        ],
+        "origins": [],
+    }
+).encode("utf-8")
+
+
+def test_ezproxy_load_cookies_exports_jar(store: CredentialStore) -> None:
+    """P1-11 接线：`load_cookies` 把加密 proxy state 解成 httpx cookie jar（HTTPX_COOKIES
+    后端的兑现——此前该后端声明无导出面，CookieSupplier seam 对 ezproxy 直接 CONFIG 报错）。"""
+    provider = EZProxyProvider(
+        EZPROXY_PROFILE,
+        store,
+        clock=FakeClock(),
+        login_flow=lambda **_kwargs: PROXY_STORAGE_STATE,
+    )
+    handle = provider.ensure_session(interactive=True)
+    jar = provider.load_cookies(handle)
+    assert jar.get("ezproxy", domain="login-myuniv-edu.ezproxy") == SECRET_COOKIE
+
+
+def test_ezproxy_proxy_cookie_matches_rewritten_host(store: CredentialStore) -> None:
+    """cookie 域匹配（本卡关键判据）：代理父域的 cookie 会随**改写后**的请求发出。
+
+    改写把 `www.sciencedirect.com` 变成代理父域的子域，故 jar 的 Netscape 域匹配成立——
+    改写与 cookie 注入两条通路在同一个 host 上闭合，代理请求才真的是"已认证"的。
+    """
+    provider = EZProxyProvider(
+        EZPROXY_PROFILE,
+        store,
+        clock=FakeClock(),
+        login_flow=lambda **_kwargs: PROXY_STORAGE_STATE,
+    )
+    handle = provider.ensure_session(interactive=True)
+    jar = provider.load_cookies(handle)
+
+    proxied = provider.rewrite_url("https://www.sciencedirect.com/science/article/pii/X.pdf")
+    request = httpx.Request("GET", proxied)
+    jar.set_cookie_header(request)
+    assert SECRET_COOKIE in request.headers.get("cookie", "")
+
+    # 对照：未改写的原始 host 不匹配代理域 → 不携带（正是"接线前"的失效形态）
+    direct = httpx.Request("GET", "https://www.sciencedirect.com/science/article/pii/X.pdf")
+    jar.set_cookie_header(direct)
+    assert "cookie" not in direct.headers

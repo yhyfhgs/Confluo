@@ -5,7 +5,8 @@
   端口保留；已重写幂等；无 host（相对路径/mailto:）恒等。fetch 前由 pipeline 统一
   调用——**adapter 不感知代理存在**（07 §3.2：代理是 L2 关注点）。
 - **proxy cookie 维持**：有状态凭证走 `state_ref`（AES-GCM store），首登 headed 打开
-  `proxy_base`（人工完成校方认证，D-006）→ storage_state 加密落盘。
+  `proxy_base`（人工完成校方认证，D-006）→ storage_state 加密落盘；`load_cookies` 是
+  `HTTPX_COOKIES` 后端的导出面（CookieSupplier seam 鸭型消费，与 cookie_session 同签名）。
 - 健康判定轻量（state 存在性）：ezproxy profile 无探针端点（§3.4 schema），真实
   探测归 mock IdP 集成层（§9"mock proxy 302"）与 runbook。`refresh` 恒 None。
 
@@ -14,12 +15,16 @@
 
 from collections.abc import Callable
 from datetime import UTC, datetime, timedelta
+from typing import TYPE_CHECKING
 from urllib.parse import urlsplit, urlunsplit
 
 from paper_crawler.auth.protocol import AuthProviderBase, ProviderKind
 from paper_crawler.auth.store import CredentialStore, ProviderProfile, parse_meta_datetime
 from paper_crawler.errors import AuthRequired, CrawlerError, ErrorClass
 from paper_crawler.types import HealthStatus, SessionBackend, SessionHandle
+
+if TYPE_CHECKING:  # httpx 只在 `load_cookies` 惰性触达（依赖面见模块 docstring）
+    import httpx
 
 Clock = Callable[[], datetime]
 LoginFlow = Callable[..., bytes]
@@ -153,6 +158,25 @@ class EZProxyProvider(AuthProviderBase):
     def refresh(self, session: SessionHandle) -> SessionHandle | None:
         """proxy cookie 无静默续期通道（校方认证人在回路）→ 恒 None。"""
         return None
+
+    def load_cookies(self, session: SessionHandle) -> "httpx.Cookies":
+        """解密 proxy storage_state → httpx cookie jar（`HTTPX_COOKIES` 后端的导出面）。
+
+        与 `CookieSessionProvider.load_cookies` 同签名同语义——CLI 装配的 `CookieSupplier`
+        闭包按 `session.provider_id` 解析 provider 后**鸭型调用本方法**，此前 ezproxy 缺它，
+        cookie 档 venue 一旦映射到 ezproxy profile 就在真实 fetch 时响亮 CONFIG（seam 断在
+        provider 侧）。首登存的就是 Playwright storage_state（`_first_login`），与 cookie_session
+        同格式，故直接复用其转换器。
+
+        **消费方注意**：proxy cookie 的域是**代理父域**，命中的是 `rewrite_url` 改写后的
+        host（其子域）。把 cookie 重新钉到平台主域的消费方（如 `oup_silverchair._cookies_for`
+        的 `domain=_PRIMARY_DOMAIN` 防泄漏收窄）会让它在代理请求上失配——那是消费方侧的
+        待接线点，不是本方法的语义。
+        """
+        # 惰性 import：保持模块依赖面（store + 标准库 URL 处理），httpx 只在本路径触达。
+        from paper_crawler.auth.providers.cookie_session import storage_state_to_cookies
+
+        return storage_state_to_cookies(self._store.read_state(session.payload_ref))
 
     def _delete_payload(self, payload_ref: str) -> None:
         self._store.delete_state(payload_ref)

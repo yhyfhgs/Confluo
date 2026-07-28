@@ -1,22 +1,23 @@
 """VenueSpec YAML 校验规则单测（design/02 §2.2 校验段；AC-1.6）。
 
-七类非法各至少一例，断言 LintIssue.field 与 message 内容：
-未知 adapter / auth 等级不足 / 同目录 id 重复 / journal 缺 issn /
-issn 格式错 / YAML 解析失败 / pydantic 结构错误（含文件名-id 不一致）。
+八类非法各至少一例，断言 LintIssue.field 与 message 内容：
+未知 adapter / **能力位不足**（R2b/P1-12）/ auth 等级不足 / 同目录 id 重复 /
+journal 缺 issn / issn 格式错 / YAML 解析失败 / pydantic 结构错误（含文件名-id 不一致）。
 
 结构性问题（文件读取失败、YAML 解析失败、pydantic 校验失败、同目录 id 冲突、
-文件名-id 不一致）由 `load_dirs()` 直接返回；语义问题（未知 adapter、auth 不兼容、
-issn 规则）需要 `lint()`（在已加载的 venue 上叠加校验）。三份仓库自带 YAML 必须
-全过 lint。
+文件名-id 不一致）由 `load_dirs()` 直接返回；语义问题（未知 adapter、能力位、auth
+不兼容、issn 规则）需要 `lint()`（在已加载的 venue 上叠加校验）。仓库自带的 58 份
+YAML 必须全过 lint。
 """
 
 from pathlib import Path
 
 import pytest
 
-from paper_crawler.adapter import SourceAdapter, load_adapters
+from paper_crawler.adapter import AdapterBase, AdapterFamily, SourceAdapter, load_adapters
 from paper_crawler.errors import CrawlerError, ErrorClass
 from paper_crawler.registry import LintIssue, VenueRegistry
+from paper_crawler.types import AuthLevel, Capability, RatePolicy
 
 REPO_VENUES_DIR = Path(__file__).resolve().parents[2] / "venues"
 
@@ -343,6 +344,189 @@ def test_unknown_fulltext_adapter_reported(
     assert len(hits) == 1
     assert hits[0].venue_id == "unknown_fulltext"
     assert "nope_not_registered" in hits[0].message
+
+
+# -- 1b. 能力位不足（R2b/P1-12：Capability 全枚举此前零消费）-----------------------
+#
+# 缺陷形态：`Capability` 五位枚举在 `lint`/`route`/`stages`/`runner` 里一处都不被读，
+# 于是"venue 指到一个不具备该阶段能力的 adapter"没有任何静态出口——只能在真实 pull
+# 跑到那一阶段时以 `CapabilityNotSupported` 炸出来，违 design/02 §4「启动即校验失败
+# 早报」。下面两个 fixture adapter 各缺一侧能力，验证 lint 现在会当场报出来。
+
+
+class _ResolveOnlyAdapter(AdapterBase):
+    """只有 RESOLVE：当 `fulltext_source` 合法（aea 就是这形态），当 `metadata_source` 不合法。"""
+
+    adapter_id = "resolve_only_probe"
+    # aggregator：让它当 `metadata_source` 时**只**触发能力位这一条，不连带触发 D-005 的
+    # "分离的 metadata_source 须为 aggregator"（两条规则各测各的，断言才读得懂）。
+    family: AdapterFamily = "aggregator"
+    capabilities = Capability.RESOLVE
+    default_rate = RatePolicy(600, source_note="lint test fixture")
+    auth_requirement = AuthLevel.NONE
+    domains: tuple[str, ...] = ("resolve-only.local",)
+
+
+class _DiscoverOnlyAdapter(AdapterBase):
+    """只有 DISCOVER（缺 ENUMERATE、缺 RESOLVE）：两侧都不合法。"""
+
+    adapter_id = "discover_only_probe"
+    family: AdapterFamily = "open_access"
+    capabilities = Capability.DISCOVER
+    default_rate = RatePolicy(600, source_note="lint test fixture")
+    auth_requirement = AuthLevel.NONE
+    domains: tuple[str, ...] = ("discover-only.local",)
+
+
+def _probe_adapters(adapters: dict[str, SourceAdapter]) -> dict[str, SourceAdapter]:
+    return {
+        **adapters,
+        "resolve_only_probe": _ResolveOnlyAdapter(),
+        "discover_only_probe": _DiscoverOnlyAdapter(),
+    }
+
+
+def test_metadata_source_without_discover_and_enumerate_is_reported(
+    adapters: dict[str, SourceAdapter], tmp_path: Path
+) -> None:
+    """timeline/enumerate 两阶段调的就是 `metadata_adapter` 的两个方法——缺位必须报。"""
+    _write(
+        tmp_path / "meta-cap-short.yaml",
+        "\n".join(
+            [
+                "id: meta_cap_short",
+                "kind: conference",
+                "names: {full: Metadata Capability Short}",
+                "field: [cs_ai]",
+                "metadata_source: resolve_only_probe",
+                "fulltext_source: mock_platform",
+            ]
+        ),
+    )
+    reg = VenueRegistry(_probe_adapters(adapters))
+    reg.load_dirs([tmp_path])
+    issues = reg.lint()
+
+    hits = _issues_for_field(issues, "metadata_source")
+    assert len(hits) == 1
+    assert hits[0].venue_id == "meta_cap_short"
+    assert "DISCOVER" in hits[0].message and "ENUMERATE" in hits[0].message
+    assert "resolve_only_probe" in hits[0].message
+    # fulltext 侧（mock_platform 能力全开）不该被连坐。
+    assert _issues_for_field(issues, "fulltext_source") == []
+
+
+def test_fulltext_source_without_resolve_is_reported(
+    adapters: dict[str, SourceAdapter], tmp_path: Path
+) -> None:
+    """resolve 阶段调的就是 `fulltext_adapter.resolve_assets`——缺 RESOLVE 必须报。"""
+    _write(
+        tmp_path / "fulltext-cap-short.yaml",
+        "\n".join(
+            [
+                "id: fulltext_cap_short",
+                "kind: conference",
+                "names: {full: Fulltext Capability Short}",
+                "field: [cs_ai]",
+                "metadata_source: crossref",  # aggregator，避开 D-005 分离规则的连带报错
+                "fulltext_source: discover_only_probe",
+            ]
+        ),
+    )
+    reg = VenueRegistry(_probe_adapters(adapters))
+    reg.load_dirs([tmp_path])
+    issues = reg.lint()
+
+    hits = _issues_for_field(issues, "fulltext_source")
+    assert len(hits) == 1
+    assert hits[0].venue_id == "fulltext_cap_short"
+    assert "RESOLVE" in hits[0].message
+    assert "discover_only_probe" in hits[0].message
+
+
+def test_absent_metadata_source_is_judged_by_the_inherited_fulltext_adapter(
+    adapters: dict[str, SourceAdapter], tmp_path: Path
+) -> None:
+    """`metadata_source` 缺省 = 沿用 `fulltext_source`（D-005 / `route()` 语义）。
+
+    故此时校验的是 fulltext adapter 的枚举能力，但问题报在 `metadata_source` 字段上
+    ——用户要补的正是这一行。aea/elsevier_sd 一类 RESOLVE-only 平台就是这个形态：
+    它们必须显式声明一个 aggregator 做元数据主干，缺省沿用是跑不动的。
+    """
+    _write(
+        tmp_path / "inherited-meta.yaml",
+        "\n".join(
+            [
+                "id: inherited_meta",
+                "kind: conference",
+                "names: {full: Inherited Metadata Venue}",
+                "field: [cs_ai]",
+                "fulltext_source: resolve_only_probe",  # 无 metadata_source
+            ]
+        ),
+    )
+    reg = VenueRegistry(_probe_adapters(adapters))
+    reg.load_dirs([tmp_path])
+    issues = reg.lint()
+
+    hits = _issues_for_field(issues, "metadata_source")
+    assert len(hits) == 1
+    assert "缺省沿用 fulltext_source" in hits[0].message
+    # fulltext 侧只要 RESOLVE，该 adapter 有 → 不报（FETCH 不作门槛）。
+    assert _issues_for_field(issues, "fulltext_source") == []
+
+
+def test_unregistered_adapter_does_not_also_get_a_capability_complaint(
+    adapters: dict[str, SourceAdapter], tmp_path: Path
+) -> None:
+    """未注册的 adapter 只报"未注册"一条——不叠一条"能力不足"把用户往错方向引。"""
+    _write(
+        tmp_path / "double-report.yaml",
+        "\n".join(
+            [
+                "id: double_report",
+                "kind: conference",
+                "names: {full: Double Report Venue}",
+                "field: [cs_ai]",
+                "metadata_source: totally_made_up_adapter",
+                "fulltext_source: also_made_up",
+            ]
+        ),
+    )
+    reg = VenueRegistry(adapters)
+    reg.load_dirs([tmp_path])
+    issues = reg.lint()
+
+    assert len(_issues_for_field(issues, "metadata_source")) == 1
+    assert len(_issues_for_field(issues, "fulltext_source")) == 1
+    assert all("能力位" not in issue.message for issue in issues)
+
+
+def test_fetch_capability_is_not_a_gate_for_browser_delegated_fulltext(
+    adapters: dict[str, SourceAdapter],
+) -> None:
+    """aea（RESOLVE-only、全文经 browser-fetch 横切件）必须干净过 lint。
+
+    取回阶段的分派**只看 `plan.url_strategy`**（`stages._stage_fetch` 见 RENDER_PAGE
+    即转 `_fetch_via_browser`，不读能力位、不调 `adapter.fetch_asset`），所以把 FETCH
+    立成 fulltext 门槛会把这类 venue 整批误判。8 个 aea 刊是这条的真实载体。
+    """
+    assert Capability.FETCH not in adapters["aea"].capabilities
+    assert Capability.RESOLVE in adapters["aea"].capabilities
+
+    reg = VenueRegistry(adapters)
+    assert reg.load_dirs([REPO_VENUES_DIR]) == []
+    aea_venues = [spec.id for spec in reg.all() if spec.fulltext_source == "aea"]
+    assert len(aea_venues) == 8
+    assert [issue for issue in reg.lint() if issue.venue_id in set(aea_venues)] == []
+
+
+def test_capability_rules_pass_on_all_shipped_venues(adapters: dict[str, SourceAdapter]) -> None:
+    """新规则跑过全部 58 个 venue：零既有错配（R2b 卡的"跑过全库"判据）。"""
+    reg = VenueRegistry(adapters)
+    assert reg.load_dirs([REPO_VENUES_DIR]) == []
+    assert len(reg.all()) == 58
+    assert [issue for issue in reg.lint() if "能力位" in issue.message] == []
 
 
 # -- 2. auth 等级不足 -----------------------------------------------------------

@@ -258,7 +258,18 @@ class _FieldSpec:
 
 # 全部配置键的分层解析规格（顺序即 config show 呈现顺序）。
 _FIELD_SPECS: tuple[_FieldSpec, ...] = (
-    _FieldSpec("identity.email", ("identity",), "email", "str", is_email=True),
+    # R2c：此前无 env 键——`Config.identity_email`（UA mailto 正门 + `crawler config show`）
+    # 只读 config.toml，而 16 个真实 adapter 的私有兜底早已各自直读 `PAPER_CRAWLER_CONTACT_
+    # EMAIL`（同一 env 名，两条通道各读各的、互不感知）。绑同一既有 env 名使其贯通正门与
+    # adapter 兜底——不新增第二个 email env 键，避免用户须知道"配哪个"的歧义。
+    _FieldSpec(
+        "identity.email",
+        ("identity",),
+        "email",
+        "str",
+        env="PAPER_CRAWLER_CONTACT_EMAIL",
+        is_email=True,
+    ),
     _FieldSpec(
         "auth.elsevier.api_key",
         ("auth", "elsevier"),

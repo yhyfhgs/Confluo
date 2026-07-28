@@ -7,7 +7,9 @@
   refresh 成功续期 → 继续；
 - §8.3 日配额：auth 平台域当日 fetch 尝试篇次达 cap → BLOCKED(config)；
 - §8.4 challenge → BLOCKED(challenge) + 平台冷却 24h（落盘 + 同批后续连带 BLOCKED）；
-- §8.6 工作时段窗：窗外 auth_gated 批延迟不失败（BLOCKED，可 resume）；窗内放行。
+- §8.6 工作时段窗：窗外 auth_gated 批延迟不失败（BLOCKED，可 resume）；窗内放行；
+- 07 §3.2 EZProxy 接线（P1-11）：fetch 前统一 `rewrite_url`——adapter 收到代理形态 URL、
+  FetchLog 记实发 URL 而归属域/asset.url 保持规范形态；非 ezproxy provider 与 OA 兜底零变化。
 
 本文件自带 mock（不依赖 T6 conftest）：`_AuthGatedMock`（family=auth_gated）、`_FakeProvider`/
 `_FakeAuthManager`（health/refresh/ensure_session）、`_MutableClock`（假时钟）。
@@ -25,6 +27,8 @@ import yaml
 
 from paper_crawler.adapter import AdapterBase, AdapterFamily
 from paper_crawler.adapters.elsevier_sd.adapter import ElsevierScienceDirectAdapter
+from paper_crawler.auth.providers.ezproxy import EZProxyProvider
+from paper_crawler.auth.store import CredentialStore, ProviderProfile
 from paper_crawler.config import Config
 from paper_crawler.errors import CrawlerError, ErrorClass
 from paper_crawler.http import HttpClient
@@ -72,10 +76,15 @@ class _AuthGatedMock(AdapterBase):
     domains: tuple[str, ...] = ("auth.mock.local",)
     resolve_offline = True
 
-    def __init__(self, *, fetch_mode: str = "ok") -> None:
+    def __init__(self, *, fetch_mode: str = "ok", plan_host: str = "auth.mock.local") -> None:
         self.fetch_mode = fetch_mode  # "ok" | "no_entitlement" | "auth_expired" | "challenge"
         self.fetch_calls = 0
         self.auth_fail_calls = 0  # 命中 auth_expired（401 形态）的 fetch 次数
+        # resolve 产计划的 host（默认 = domains[0]；ezproxy 幂等用例注入已代理形态 host）。
+        self.plan_host = plan_host
+        # 真正交到 `fetch_asset` 的 plan.url 序列——EZProxy 接线（07 §3.2）断言口径：
+        # "实际发出的请求 URL"，adapter 侧只看得到 pipeline 给它的那一个。
+        self.fetch_urls: list[str] = []
 
     def resolve_assets(
         self, venue: object, paper: PaperStub, session: SessionHandle | None = None
@@ -84,7 +93,7 @@ class _AuthGatedMock(AdapterBase):
         return [
             AssetPlan(
                 kind=AssetKind.PDF,
-                url=f"https://auth.mock.local/pdf/{doi}",
+                url=f"https://{self.plan_host}/pdf/{doi}",
                 expected_type="application/pdf",
             )
         ]
@@ -93,6 +102,7 @@ class _AuthGatedMock(AdapterBase):
         self, plan: AssetPlan, io: object, session: SessionHandle | None = None
     ) -> FetchResult:
         self.fetch_calls += 1
+        self.fetch_urls.append(plan.url)
         if self.fetch_mode == "auth_expired":
             self.auth_fail_calls += 1
             raise CrawlerError(ErrorClass.AUTH_EXPIRED, "401 unauthorized (mock)")
@@ -140,6 +150,33 @@ class _FakeProvider:
     def refresh(self, session: SessionHandle) -> object:
         self.refresh_calls += 1
         return self._refresh_returns
+
+
+# ezproxy 形态 provider（07 §3.2 / auth-framework §3.4）：重写规则**不在测试里复刻**，
+# 直接委托真实 `EZProxyProvider.rewrite_url`——被接线的是生产实现，而非同名替身。
+_EZ_SUFFIX = ".ezproxy.myuniv.edu"
+_EZ_PROXIED_HOST = f"auth-mock-local{_EZ_SUFFIX}"  # `_DOMAIN` 经 §3.4 泛化规则改写后的形态
+
+_EZ_PROFILE = ProviderProfile(
+    provider_id=_PLATFORM,
+    kind="ezproxy",
+    platform=_PLATFORM,
+    proxy_base="https://login.myuniv.edu/login?url=",
+    rewrite_suffix=_EZ_SUFFIX,
+    state_ref="ez_state",
+)
+
+
+class _EZProxyFakeProvider(_FakeProvider):
+    """ensure_session/health/refresh 沿用 fake 装置；`rewrite_url` 委托真实 EZProxyProvider。"""
+
+    def __init__(self, home: Path) -> None:
+        super().__init__()
+        # `rewrite_url` 是纯字符串变换（只读 profile 的 rewrite_suffix），不触达 store。
+        self._ez = EZProxyProvider(_EZ_PROFILE, CredentialStore(home))
+
+    def rewrite_url(self, url: str) -> str:
+        return self._ez.rewrite_url(url)
 
 
 class _FakeAuthManager:
@@ -919,3 +956,118 @@ def test_oa_direct_fetch_idempotent_skip_when_already_fetched(
     report = _runner(env, provider=_ok_provider(), clock=_OK_CLOCK()).drain()
 
     assert report.skipped == 1 and report.succeeded == 0  # OA 分支幂等跳过
+
+
+# -- P1-11：EZProxy `rewrite_url` 生产接线（07 §3.2「fetch 前统一调用」）---------------------
+
+
+def test_ezproxy_provider_rewrites_url_before_fetch(
+    tmp_path: Path, request: pytest.FixtureRequest
+) -> None:
+    """ezproxy provider 在场 → adapter 收到的 plan.url 已是代理形态（adapter 不感知代理）。
+
+    同时锁死三条口径分离（07 §3.2 + 04 §5/§7）：
+    - FetchLog.url = **实际发出**的代理形态 URL（合理使用自证材料记"我到底请求了什么"）；
+    - FetchLog.domain 仍 = 平台主域（AC-4.4 日配额对账口径不被代理域打散）；
+    - asset.url 落库仍是 adapter 给的规范引用（§4.4 落盘纪律；冷却键读侧同源）。
+    """
+    auth_mock = _AuthGatedMock(fetch_mode="ok")
+    env = _setup(tmp_path, request=request, auth_mock=auth_mock, n_papers=1)
+    _enqueue_fetches(env)
+    report = _runner(
+        env, provider=_EZProxyFakeProvider(tmp_path / "home"), clock=_OK_CLOCK()
+    ).drain()
+
+    proxied = f"https://{_EZ_PROXIED_HOST}/pdf/10.1/auth.0"
+    assert report.succeeded == 1
+    assert auth_mock.fetch_urls == [proxied]  # 实际发出的请求 URL = 代理形态
+    logs = env.repo.fetch_logs(domain=_DOMAIN)
+    assert [str(r["url"]) for r in logs] == [proxied]  # 审计记实发 URL
+    assert all(str(r["domain"]) == _DOMAIN for r in logs)  # 归属域不变（配额对账不打散）
+    asset = env.repo.get_asset(env.asset_ids[0])
+    assert asset is not None
+    assert str(asset["url"]) == f"https://{_DOMAIN}/pdf/10.1/auth.0"  # 落库仍规范 URL
+
+
+def test_ezproxy_failure_path_fetch_log_records_proxied_url(
+    tmp_path: Path, request: pytest.FixtureRequest
+) -> None:
+    """失败路径同口径：`_stage_fetch` 的失败 fetch_log 也记实发（代理形态）URL。"""
+    auth_mock = _AuthGatedMock(fetch_mode="auth_expired")
+    env = _setup(tmp_path, request=request, auth_mock=auth_mock, n_papers=1)
+    _enqueue_fetches(env)
+    report = _runner(
+        env, provider=_EZProxyFakeProvider(tmp_path / "home"), clock=_OK_CLOCK()
+    ).drain()
+
+    assert report.blocked == 1
+    logs = env.repo.fetch_logs(domain=_DOMAIN)
+    assert [str(r["url"]) for r in logs] == [f"https://{_EZ_PROXIED_HOST}/pdf/10.1/auth.0"]
+    assert str(logs[0]["error_class"]) == "auth_expired"
+
+
+def test_ezproxy_rewrite_idempotent_in_fetch_path(
+    tmp_path: Path, request: pytest.FixtureRequest
+) -> None:
+    """adapter 已给出代理形态 URL（用户自己配了代理直链）→ 不二次套代理（幂等，§3.4）。"""
+    auth_mock = _AuthGatedMock(fetch_mode="ok", plan_host=_EZ_PROXIED_HOST)
+    env = _setup(tmp_path, request=request, auth_mock=auth_mock, n_papers=1)
+    _enqueue_fetches(env)
+    report = _runner(
+        env, provider=_EZProxyFakeProvider(tmp_path / "home"), clock=_OK_CLOCK()
+    ).drain()
+
+    assert report.succeeded == 1
+    assert auth_mock.fetch_urls == [f"https://{_EZ_PROXIED_HOST}/pdf/10.1/auth.0"]
+
+
+def test_non_ezproxy_provider_leaves_fetch_url_unchanged(
+    tmp_path: Path, request: pytest.FixtureRequest
+) -> None:
+    """非 ezproxy provider（`AuthProviderBase.rewrite_url` 恒等 / duck-typed 无该方法）
+    → URL 逐字不变（回归锁定：接线对既有三 provider 零影响）。"""
+    auth_mock = _AuthGatedMock(fetch_mode="ok")
+    env = _setup(tmp_path, request=request, auth_mock=auth_mock, n_papers=1)
+    _enqueue_fetches(env)
+    report = _runner(env, provider=_ok_provider(), clock=_OK_CLOCK()).drain()
+
+    assert report.succeeded == 1
+    assert auth_mock.fetch_urls == [f"https://{_DOMAIN}/pdf/10.1/auth.0"]
+
+
+def test_oa_fallback_direct_fetch_not_proxied(
+    tmp_path: Path, request: pytest.FixtureRequest
+) -> None:
+    """边界（不扩大）：OA-fallback 第三方 host 走无凭证 direct 通道，**不过机构代理**。"""
+    seen: list[str] = []
+
+    def handler(req: httpx.Request) -> httpx.Response:
+        seen.append(str(req.url))
+        return httpx.Response(200, content=_PDF)
+
+    auth_mock = _AuthGatedMock(fetch_mode="no_entitlement")
+    ua = _FakeUnpaywall(
+        [
+            AssetPlan(
+                kind=AssetKind.PDF,
+                url="https://oa.example.org/copy.pdf",
+                url_strategy=UrlStrategy.DIRECT,
+                version="publishedVersion",
+            )
+        ]
+    )
+    env = _setup(
+        tmp_path,
+        request=request,
+        auth_mock=auth_mock,
+        unpaywall=ua,
+        http=HttpClient(user_agent="pc-test", transport=httpx.MockTransport(handler)),
+        n_papers=1,
+    )
+    _enqueue_fetches(env)
+    report = _runner(
+        env, provider=_EZProxyFakeProvider(tmp_path / "home"), clock=_OK_CLOCK()
+    ).drain()
+
+    assert report.no_entitlement == 1
+    assert seen == ["https://oa.example.org/copy.pdf"]  # OA 域零改写

@@ -45,6 +45,18 @@ import urllib.error
 import urllib.request
 from pathlib import Path
 
+# launchd bootstrap（R2c 独立审查 Critical #1）：`_install_launchd` 生成的 plist 用**本机
+# conda 解释器**（非本仓库 `.venv`）跑本脚本——该解释器大概率未 `pip install -e .` 过
+# paper-crawler，裸 `import paper_crawler` 会在每小时续期作业里 `ModuleNotFoundError`，
+# 且 launchd 的失败不会主动弹给用户（只进 `--install-launchd` 写的 stderr 日志文件），
+# 等于**静默失效**——直到 token 过期用户才会发现。修法：把 `<repo>/src` 插到 `sys.path`
+# 头部，任何解释器都能找到源码，不依赖该解释器已安装本包（`paper_crawler` 本身及
+# `config.py` 唯一依赖的 `errors`/`sensitive` 两个子模块均只用标准库，无第三方依赖需要
+# 该解释器另外装——已核实 `src/paper_crawler/__init__.py` 不触发任何第三方 import）。
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "src"))
+
+from paper_crawler.config import resolve_home  # noqa: E402 (须在上面 sys.path bootstrap 之后)
+
 LOGIN_URL = "https://api2.openreview.net/login"
 VERIFY_URL = "https://api2.openreview.net/notes?content.venueid=ICLR.cc%2F2024%2FConference&limit=1"
 UA = "PaperCrawler/0.1 (token refresh; personal research)"
@@ -52,10 +64,18 @@ PLIST_LABEL = "com.papercrawler.openreview-token"
 
 
 def _home_dir(cli_home: str | None) -> Path:
-    if cli_home:
-        return Path(cli_home).expanduser()
-    env = os.environ.get("PAPER_CRAWLER_HOME", "").strip()
-    return Path(env).expanduser() if env else Path.home() / ".paper-crawler"
+    """config-home 解析：复用 `paper_crawler.config.resolve_home()`（D-032 红线：禁裸
+    `Path.home()` 硬编码兜底；解析顺序=显式 `--home` > `$PAPER_CRAWLER_HOME` >
+    `~/.paper-crawler`，与 CLI 主程序/`scripts/budget_ledger.py`/`scripts/repec_snapshot.py`
+    逐字段同源——此前本函数手写了一份行为等价但独立维护的复本，R2c 收敛为单一权威源）。
+
+    **实况**：`_install_launchd` 写的 plist 恒显式带 `--home {home}`（见其 `ProgramArguments`），
+    故 launchd 定时触发时 `cli_home` 恒非空、本函数只走"显式"这一支，从不依赖 `$PAPER_CRAWLER_HOME`
+    /默认兜底——这两支只在用户手动交互式跑本脚本（不传 `--home`）时才可能命中，`resolve_home()`
+    的统一收益（单一权威源、D-032 纪律）主要体现在那种场景，而非日常 launchd 定时作业本身。
+    """
+    explicit = Path(cli_home).expanduser() if cli_home else None
+    return resolve_home(explicit)
 
 
 def _load_credentials(cfg_path: Path) -> tuple[str, str]:

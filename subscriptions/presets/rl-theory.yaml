@@ -10,6 +10,10 @@
 #   分支原无 title 对应式（死子句）；"regret bound"过窄漏掉裸"regret"标题；裸
 #   "convergence"过宽收紧为带上下文式；补 bandit/function approximation/PAC 三个
 #   该子领域公认词族。
+# ⚠ R2b 修复（2026-07-28，P0-4）：删原 openalex 段（concepts=[reinforcement learning]
+#   + from_source_types=[preprint]）——openalex capabilities 空集（enrich-only），
+#   watch 侧无 DISCOVER/ENUMERATE，跑必抛 CapabilityNotSupported。见
+#   src/paper_crawler/subs/model.py::SOURCE_FIELDS。
 name: rl-theory
 sources:
   arxiv:
@@ -18,9 +22,6 @@ sources:
       (ti:"regret" OR ti:"sample complexity" OR abs:"provably efficient"
        OR abs:"policy gradient" OR abs:"Markov decision process")
       AND NOT ti:"survey"
-  openalex:
-    concepts: ["reinforcement learning"]
-    from_source_types: [preprint]
 filters:
   title_regex_any:
     - "\\bregret\\b"                            # 原 "regret bound" 过窄，改宽（T8 修复）

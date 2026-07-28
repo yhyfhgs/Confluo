@@ -6,7 +6,7 @@
 
 - AC-6.1：7 天时间线推演骨架（`run_watch(now=...)` 逐日注入 + 单源投毒恢复 + 无遗漏/
   无重复 + 重叠窗回放 + 7 份日报/同日重跑覆盖）；以及三个源组合场景里"用真实 preset
-  DSL 文件驱动"的两个（arxiv+openalex 同篇、nber RSS）——crossref 多 issn fan-out 场景
+  DSL 文件驱动"的两个（arxiv+ssrn 同篇、nber RSS）——crossref 多 issn fan-out 场景
   没有任何一个 9 preset 声明 crossref，故沿用既有 `test_subs_watch_e2e.py::
   test_batch_dedupe_crossref_two_issns_hitting_the_same_doi`（已走真实 DSL 解析器）
   为载体，本文件不重复。
@@ -182,25 +182,27 @@ def _cf_stub(day: date, slot: str) -> PaperStub:
     )
 
 
-def _oa_stub(day: date) -> PaperStub:
+def _ssrn_stub(day: date) -> PaperStub:
     iso = day.isoformat()
     return PaperStub(
-        title=f"OpenAlex Timeline Paper {iso}",
-        identifiers=(("doi", f"10.1/ac6-timeline-oa-{iso}"),),
+        title=f"Ssrn Timeline Paper {iso}",
+        identifiers=(("doi", f"10.2139/ac6-timeline-ssrn-{iso}"),),
         year=day.year,
         pub_date=iso,
     )
 
 
 def _build_timeline_corpus() -> dict[str, list[PaperStub]]:
-    """crossref 每日 2 篇（overlap_days=2）+ openalex 每日 1 篇（overlap_days=0）。
+    """crossref 每日 2 篇（overlap_days=2）+ ssrn 每日 1 篇（overlap_days=1）。
 
-    两源均为 `DateCursor` 策略、`SourceRequest.since` 干净可读（区别于 arxiv——其窗口
-    并入 `search_query` 字符串，`since` 恒 None，不适合本测试直接断言窗口下界）。
+    两源均为 `DateCursor` 策略、`SourceRequest.since` 干净可读。R2b/P0-4：第二源原为
+    openalex（overlap_days=0），随 `SOURCE_FIELDS` 收缩换成 ssrn——被测面（逐日推演、
+    单源投毒恢复、无遗漏/无重复、重叠窗回放）全在 crossref 那一路上，第二源只承担
+    "另一个源没被投毒牵连"的对照，换源不改判定强度。
     """
     return {
         "crossref": [_cf_stub(day, slot) for day in TIMELINE_DAYS for slot in ("a", "b")],
-        "openalex": [_oa_stub(day) for day in TIMELINE_DAYS],
+        "ssrn": [_ssrn_stub(day) for day in TIMELINE_DAYS],
     }
 
 
@@ -250,7 +252,7 @@ def test_ac6_1_seven_day_timeline_no_omission_no_duplication_overlap_replay(env:
     """
     corpus = _build_timeline_corpus()
     expected_dois = {stub.identifiers[0][1] for stubs in corpus.values() for stub in stubs}
-    assert len(expected_dois) == 21  # 14 crossref + 7 openalex，语料去重基数
+    assert len(expected_dois) == 21  # 14 crossref + 7 ssrn，语料去重基数
 
     fetcher = _TimelineFetcher(corpus, poison={"crossref": POISON_DAY}, today=TIMELINE_DAYS[0])
     subscription = _load(
@@ -258,7 +260,7 @@ def test_ac6_1_seven_day_timeline_no_omission_no_duplication_overlap_replay(env:
         "ac6-timeline",
         sources={
             "crossref": {"issns": ["0304-405X"]},
-            "openalex": {"concepts": ["C41008148"], "from_source_types": ["preprint"]},
+            "ssrn": {"networks": ["FEN"]},
         },
     )
     context = env.context(fetcher=fetcher)
@@ -275,7 +277,7 @@ def test_ac6_1_seven_day_timeline_no_omission_no_duplication_overlap_replay(env:
 
     # --- 判据 1：骨架 -------------------------------------------------------
     assert len(summaries) == 7
-    assert {entry.source for s in summaries for entry in s.entries} <= {"crossref", "openalex"}
+    assert {entry.source for s in summaries for entry in s.entries} <= {"crossref", "ssrn"}
 
     # --- 判据 2：无遗漏（含单源投毒恢复）------------------------------------
     all_entries = [entry for s in summaries for entry in s.entries]
@@ -284,12 +286,12 @@ def test_ac6_1_seven_day_timeline_no_omission_no_duplication_overlap_replay(env:
 
     poison_index = TIMELINE_DAYS.index(POISON_DAY)
     poison_summary = summaries[poison_index]
-    assert poison_summary.outcome is WatchOutcome.OK  # openalex 成功 → 不整体判 FAILED
+    assert poison_summary.outcome is WatchOutcome.OK  # ssrn 成功 → 不整体判 FAILED
     assert [failure.source for failure in poison_summary.failures] == ["crossref"]
     poison_day_titles = {entry.title for entry in poison_summary.entries}
     assert f"Crossref Timeline Paper {POISON_DAY.isoformat()}-a" not in poison_day_titles
     assert f"Crossref Timeline Paper {POISON_DAY.isoformat()}-b" not in poison_day_titles
-    assert f"OpenAlex Timeline Paper {POISON_DAY.isoformat()}" in poison_day_titles  # 未受牵连
+    assert f"Ssrn Timeline Paper {POISON_DAY.isoformat()}" in poison_day_titles  # 未受牵连
 
     # 分源提交语义：投毒当日 crossref 水位与前一日一致（未推进，未被"部分成功"污染）。
     assert watermark_dates[poison_index] == watermark_dates[poison_index - 1]
@@ -354,49 +356,57 @@ def test_ac6_1_seven_day_timeline_no_omission_no_duplication_overlap_replay(env:
 # ===========================================================================
 
 
-def test_ac6_1_scenario_arxiv_openalex_same_paper_dedup_via_real_llm_agents_preset(
+def test_ac6_1_scenario_arxiv_ssrn_same_paper_dedup_via_real_market_microstructure_preset(
     env: _Env,
 ) -> None:
-    """判据 5 之一：真实 `subscriptions/presets/llm-agents.yaml`（design/09 §4）驱动
-    arxiv + openalex 同篇（同 DOI）批内去重，两侧标题各自独立满足该预置真实的
+    """判据 5 之一：真实 `subscriptions/presets/market-microstructure.yaml`（design/09 §4）
+    驱动 arxiv + ssrn 同篇（同 DOI）批内去重，两侧标题各自独立满足该预置真实的
     `title_regex_any`/`exclude_regex`/`min_year` 过滤（非绕过过滤的合成捷径）。
+
+    R2b/P0-4 换载体：原用 `llm-agents.yaml` 的 arxiv + openalex 组合，openalex 已退出
+    DSL 源白名单（enrich-only，watch 侧结构性不可达），该预置随之只剩单源、承载不了
+    "跨源同篇去重"。market-microstructure 是收缩后仍具**双真实源**的预置
+    （arxiv q-fin.TR/q-fin.CP + ssrn FEN），被测语义逐字不变。
     """
-    subscription = load_subscription_file(_PRESETS_DIR / "llm-agents.yaml")
-    assert subscription.name == "llm-agents"  # 确认加载的正是真实预置文件
+    subscription = load_subscription_file(_PRESETS_DIR / "market-microstructure.yaml")
+    assert subscription.name == "market-microstructure"  # 确认加载的正是真实预置文件
+    assert subscription.source_names() == ("arxiv", "ssrn")  # 双源载体的前提
     env.subs_repo.upsert(subscription)  # 满足 subscription_run 的 FK 前提
 
-    shared_doi = "10.48550/arxiv.2601.99999"
+    shared_doi = "10.2139/ssrn.2601.99999"
+    # arxiv 侧标题须同时过两道：该预置的 `title_regex_any` **与** 其 arxiv `query`
+    # 编译出的 `arxiv.query_bool` 谓词。stub 无 abstract，故 query 里的 `abs:` 分支
+    # 一概不命中，只能靠 `ti:"market microstructure"` 那一支——标题必须含该短语。
     arxiv_view = PaperStub(
-        title="Large Language Model Agents Learn Tool Use",
+        title="Market Microstructure: Order Flow and Price Impact in Limit Order Books",
         identifiers=(("doi", shared_doi),),
         year=2025,
     )
-    openalex_view = PaperStub(
-        title="Studying Large Language Model Agents That Use External Tools",
+    ssrn_view = PaperStub(
+        title="Liquidity Provision and the Bid-Ask Spread Under Informed Trading",
         identifiers=(("doi", shared_doi),),
         year=2025,
     )
-    fetcher = _StubFetcher({"arxiv": [arxiv_view], "openalex": [openalex_view]})
+    fetcher = _StubFetcher({"arxiv": [arxiv_view], "ssrn": [ssrn_view]})
 
     summary = run_watch(env.context(fetcher=fetcher), subscription, now=DAY)
 
-    # arxiv 自 `fix/arxiv-category-fanout` 起按分类逐条 fan-out：该预置声明 4 个分类 →
-    # 4 条独立请求，`_StubFetcher` 按**源**给语料（不按请求）故同一份 stub 被吐 4 遍。
-    # 判定强度不变、只是如实反映新的请求面——净新增/去重/入库三项断言逐字保留。
+    # arxiv 自 `fix/arxiv-category-fanout` 起按分类逐条 fan-out：该预置声明 2 个分类 →
+    # 2 条独立请求，`_StubFetcher` 按**源**给语料（不按请求）故同一份 stub 被吐 2 遍。
     arxiv_selector = subscription.selector_for("arxiv")
     assert arxiv_selector is not None
-    assert arxiv_selector.categories == ("cs.AI", "cs.LG", "cs.CL", "cs.MA")  # 真实预置
+    assert arxiv_selector.categories == ("q-fin.TR", "q-fin.CP")  # 真实预置
     arxiv_requests = [r for r in fetcher.requests if r.source == "arxiv"]
     assert len(arxiv_requests) == len(arxiv_selector.categories)  # 一分类一请求
     assert [r.params[0] for r in arxiv_requests] == [
         ("arxiv_category", category) for category in arxiv_selector.categories
     ]
-    assert summary.seen_count == len(arxiv_selector.categories) + 1  # 4 份 arxiv + 1 份 openalex
+    assert summary.seen_count == len(arxiv_selector.categories) + 1  # 2 份 arxiv + 1 份 ssrn
     assert summary.new_count == 1  # 同 DOI 批内去重折叠为 1 篇（含 fan-out 的同源重复）
     assert summary.ingested_count == 1
     (survivor,) = summary.entries
-    assert survivor.source == "arxiv"  # 声明序（arxiv 先于 openalex）在前者胜
-    assert "merged_from:openalex" in survivor.matched_rules
+    assert survivor.source == "arxiv"  # 声明序（arxiv 先于 ssrn）在前者胜
+    assert "merged_from:ssrn" in survivor.matched_rules
     assert env.papers() == 1
 
 

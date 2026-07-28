@@ -13,6 +13,13 @@
 #   treatment effect 五个该子领域公认词族；④去掉 stat.AP（Statistics Applications
 #   是横跨全统计学的通用类目，与本预置"高精确"取向冲突——它不专指计量方法，会把
 #   大量无关应用统计学论文引入；宽召回场景可加回，见上方改造建议同类操作）。
+# ⚠ R2b 修复（2026-07-28，P0-4）：删原 openalex 段（concepts=[econometrics] +
+#   from_source_types=[preprint]）与 s2 段（fields_of_study=[Economics]、
+#   venues=[Econometrica, Journal of Econometrics]、query="econometric
+#   identification"）。两源 capabilities 均为空集（enrich-only，只走
+#   `crawler enrich`），watch 侧无 DISCOVER/ENUMERATE——照原样跑必抛
+#   CapabilityNotSupported。经济学期刊侧覆盖如有需要，可自行加 crossref 段按 ISSN
+#   订阅（真跑得动的期刊 watch 通道）。见 src/paper_crawler/subs/model.py::SOURCE_FIELDS。
 name: econometrics-methods
 sources:
   arxiv:
@@ -21,13 +28,6 @@ sources:
       (ti:"identification" OR abs:"generalized method of moments" OR abs:"panel data"
        OR abs:"structural estimation" OR abs:"semiparametric")
       AND NOT ti:"survey"
-  openalex:
-    concepts: ["econometrics"]
-    from_source_types: [preprint]
-  s2:                         # 计量方法类：s2 补经济学期刊侧覆盖
-    fields_of_study: ["Economics"]   # ⚠ 取值对照 S2 官方 fieldsOfStudy 分类表，实现期核验
-    venues: ["Econometrica", "Journal of Econometrics"]
-    query: econometric identification
 filters:
   title_regex_any:
     - "identification (of|in|and)"       # 原裸 "identificat" 过宽收紧（T8 修复）

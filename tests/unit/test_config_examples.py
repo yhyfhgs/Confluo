@@ -39,6 +39,25 @@ def test_config_examples_have_no_credential_shape(name: str) -> None:
     assert hits == [], f"config/{name} 疑似含凭证形态值: {hits}"
 
 
+def test_config_example_documents_stray_keys_as_comments() -> None:
+    """`PAPER_CRAWLER_CONTACT_EMAIL` 与 `[auth.openreview]` `username`/`password` 已登记
+    （R2c；此前"游离"——16 个 adapter 消费/refresh 脚本直读，但 `config.example.toml`/
+    `config/README.md`/`docs/design/10-config-layout.md` 三处键清单均未提及）。
+
+    后两者须保持**注释态**（不解析成活跃 TOML 键）——它们不进 `Config`/`_FIELD_SPECS`，
+    若被误写成活跃键会让用户误以为 `crawler config show` 能看到它们。
+    """
+    text = (_CONFIG_DIR / "config.example.toml").read_text(encoding="utf-8")
+    assert "PAPER_CRAWLER_CONTACT_EMAIL" in text
+    assert "username" in text
+    assert "password" in text
+    with (_CONFIG_DIR / "config.example.toml").open("rb") as handle:
+        doc = tomllib.load(handle)
+    openreview = doc.get("auth", {}).get("openreview", {})
+    assert "username" not in openreview  # 仍是注释，未被 tomllib 解析成活跃键
+    assert "password" not in openreview
+
+
 def test_config_example_credential_slots_are_empty() -> None:
     """config.example.toml 全部 [auth.*] 简单密钥槽为空串（占位；用户填真实值前 = 未配置）。"""
     with (_CONFIG_DIR / "config.example.toml").open("rb") as handle:
@@ -58,6 +77,7 @@ def test_config_example_loads_as_home_config(
     """模板复制到 config-home 后可被 Config.load 消费：空凭证槽归一 None，非凭证键生效。"""
     for var in (
         "PAPER_CRAWLER_HOME",
+        "PAPER_CRAWLER_CONTACT_EMAIL",
         "PAPER_CRAWLER_OPENREVIEW_TOKEN",
         "PAPER_CRAWLER_ELSEVIER_API_KEY",
         "PAPER_CRAWLER_ELSEVIER_INSTTOKEN",

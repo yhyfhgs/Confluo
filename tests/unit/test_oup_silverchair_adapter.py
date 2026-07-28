@@ -20,6 +20,7 @@ from helpers.oup_silverchair_fixtures import (
     oup_fixture,
     static_cookie_supplier,
 )
+from paper_crawler.adapters.oup_silverchair import adapter as adapter_module
 from paper_crawler.adapters.oup_silverchair.adapter import OupSilverchairAdapter
 from paper_crawler.auth.challenge import ChallengeDetector, ClassifyResult
 from paper_crawler.errors import AuthRequired, Challenged, CrawlerError, ErrorClass
@@ -414,6 +415,110 @@ def test_cookies_scoped_to_oup_domain_not_leaked_to_doi_org() -> None:
     assert seen["doi.org"] is None, "cookie 泄漏给了 doi.org（凭证红线违规）"
     assert seen["academic.oup.com"] is not None
     assert "SILVERCHAIR_SESSION" in seen["academic.oup.com"]
+
+
+# ---------------------------------------------------------------------------
+# 联系邮箱注入 + per-request obslog（R2c：P1-17/18 修复）
+# ---------------------------------------------------------------------------
+
+
+def _ua_capturing_transport(sink: list[str], *, body: bytes = MINIMAL_PDF) -> httpx.MockTransport:
+    """记录每次请求的 `User-Agent` 头，回一个 200 PDF 响应（供 fetch 主路快路直接成功）。"""
+
+    def _handler(request: httpx.Request) -> httpx.Response:
+        sink.append(request.headers.get("user-agent", ""))
+        return httpx.Response(200, content=body, headers={"content-type": "application/pdf"})
+
+    return httpx.MockTransport(_handler)
+
+
+def test_set_email_reaches_user_agent_mailto(monkeypatch: pytest.MonkeyPatch) -> None:
+    """`set_email` 注入后，UA 含 `mailto:<email>`（`build_user_agent` 统一组装，D-014 格式）。
+
+    修复前：oup 恒读 env、无 seam 可挂，`set_email` 尚不存在——本用例在修复前会因
+    `AttributeError: 'OupSilverchairAdapter' object has no attribute 'set_email'` 失败。
+    """
+    monkeypatch.delenv("PAPER_CRAWLER_CONTACT_EMAIL", raising=False)
+    seen: list[str] = []
+    adapter = _adapter(_ua_capturing_transport(seen))
+    adapter.set_email("researcher@example.edu")
+
+    adapter.fetch_asset(_pdf_plan(), FakeFetchIO(), session=_session())
+
+    assert seen and "mailto:researcher@example.edu" in seen[0]
+
+
+def test_unset_email_falls_back_to_env(monkeypatch: pytest.MonkeyPatch) -> None:
+    """未注入 email 时回退环境变量 `PAPER_CRAWLER_CONTACT_EMAIL`（修复前恒读的同一条兜底链
+    保持不变——`set_email` 是新增的更高优先级，不破坏既有 env 兜底）。"""
+    monkeypatch.setenv("PAPER_CRAWLER_CONTACT_EMAIL", "env-fallback@example.edu")
+    seen: list[str] = []
+    adapter = _adapter(_ua_capturing_transport(seen))
+
+    adapter.fetch_asset(_pdf_plan(), FakeFetchIO(), session=_session())
+
+    assert seen and "mailto:env-fallback@example.edu" in seen[0]
+
+
+def test_unset_email_and_env_falls_back_to_placeholder(monkeypatch: pytest.MonkeyPatch) -> None:
+    """既无显式注入也无 env → 回退 `.invalid` 占位（回退链末端逐字不变，先例 cvf/arxiv）。"""
+    monkeypatch.delenv("PAPER_CRAWLER_CONTACT_EMAIL", raising=False)
+    seen: list[str] = []
+    adapter = _adapter(_ua_capturing_transport(seen))
+
+    adapter.fetch_asset(_pdf_plan(), FakeFetchIO(), session=_session())
+
+    assert seen and "mailto:anonymous@paper-crawler.invalid" in seen[0]
+
+
+def test_explicit_email_overrides_env(monkeypatch: pytest.MonkeyPatch) -> None:
+    """显式注入优先于 env（同 unpaywall `_resolve_email` 优先级先例）。"""
+    monkeypatch.setenv("PAPER_CRAWLER_CONTACT_EMAIL", "env-loses@example.edu")
+    seen: list[str] = []
+    adapter = _adapter(_ua_capturing_transport(seen))
+    adapter.set_email("explicit-wins@example.edu")
+
+    adapter.fetch_asset(_pdf_plan(), FakeFetchIO(), session=_session())
+
+    assert seen and "mailto:explicit-wins@example.edu" in seen[0]
+    assert "env-loses" not in seen[0]
+
+
+def test_authed_get_emits_obslog_event_for_resolve_fetch_and_healthcheck(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """resolve/fetch/healthcheck 三调用点经 `_authed_get` 唯一收口，各产恰 1 条 DEBUG 事件
+    （`url`/`status`/`stage` 齐全）——V2 订正口径：本卡只补这条 per-request 事件，FetchLog
+    落库口径不动。修复前 `_authed_get` 零 obslog 调用，本用例在修复前会因 `events == []` 失败。
+    """
+    events: list[dict[str, object]] = []
+
+    def _fake_log_event(level: str, msg: str, **fields: object) -> None:
+        events.append({"level": level, "msg": msg, **fields})
+
+    monkeypatch.setattr(adapter_module, "log_event", _fake_log_event)
+
+    resolve_adapter = _adapter(_fixture_transport("04_fulltext_logged_in"))
+    resolve_adapter.resolve_assets(_VENUE, _paper(), session=_session())
+
+    fetch_adapter = _adapter(
+        direct_transport(200, {"content-type": "application/pdf"}, MINIMAL_PDF)
+    )
+    fetch_adapter.fetch_asset(_pdf_plan(), FakeFetchIO(), session=_session())
+
+    healthcheck_body = (
+        b"<html><body><a href='/my-account'>My Account</a>"
+        b"<a href='/user/logout'>Sign out</a></body></html>"
+    )
+    health_adapter = _adapter(direct_transport(200, {}, healthcheck_body))
+    health_adapter.healthcheck(session=_session())
+
+    assert [event["stage"] for event in events] == ["resolve", "fetch", "healthcheck"]
+    for event in events:
+        assert event["level"] == "DEBUG"
+        assert isinstance(event["url"], str) and event["url"]
+        assert event["status"] == 200
+        assert event["domain"] == "academic.oup.com"
 
 
 # ---------------------------------------------------------------------------

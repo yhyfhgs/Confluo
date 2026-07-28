@@ -36,7 +36,10 @@ def _example(stem: str = "llm-agents") -> Subscription:
 # ssrn→arxiv→nber **非字母序**（字母序应为 arxiv→nber→ssrn）——若 `query_json`
 # 序列化误用 `sort_keys=True`，`sources` 的键序会被打乱成字母序，此处能抓住。
 _DECLARED_SOURCE_ORDER: dict[str, tuple[str, ...]] = {
-    "llm-agents": ("arxiv", "openalex"),
+    # R2b/P0-4：llm-agents fixture 的第二个源（openalex）已随 `SOURCE_FIELDS` 收缩删除。
+    # 该 fixture 因此只剩单源，抓不到"误用 sort_keys 打乱声明序"——判据全靠下面的
+    # asset-pricing-wp（三源、非字母序），它本就是这条回归的主承载。
+    "llm-agents": ("arxiv",),
     "asset-pricing-wp": ("ssrn", "arxiv", "nber"),
 }
 

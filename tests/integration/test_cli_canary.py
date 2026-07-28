@@ -25,11 +25,29 @@ from pathlib import Path
 import pytest
 from typer.testing import CliRunner
 
+import paper_crawler.auth.store as store_mod
 from paper_crawler.adapters.mock_platform import MockPlatformAdapter
 from paper_crawler.cli import app
 from paper_crawler.types import HealthReport
 
 runner = CliRunner()
+
+
+@pytest.fixture(autouse=True)
+def _isolated_keyring(monkeypatch: pytest.MonkeyPatch) -> None:
+    """keyring 绝缘（R2c 独立审查 Minor #3；同 `test_auth_key_seam.py` 的 autouse `_isolated`
+    口径统一）：R2c 起 `_bind_healthcheck_credentials` 经 `_bind_auth_key_clients` →
+    `CredentialStore.read_key` 会先探真实 keyring（本仓 `.venv` 确有装 `keyring` 包，macOS
+    上会真的弹 Keychain）——凡调用该函数的用例（含本文件修复前就有的两条：
+    `test_bind_healthcheck_credentials_returns_dedicated_clients`/
+    `test_register_rate_domains_prevents_config_failfast`，以及新增的两条 elsevier/wiley
+    用例）都会触达这条路径，不止"新增"的两条。绝不触宿主 OS Keychain（`tests/helpers/
+    auth.py:3` 红线）——本 autouse fixture 把 `_import_keyring` 替换为返回 `None`，令
+    `read_key` 走 `_CONFIG_KEY_SLOTS` 委派 config 槽这一分支（keyring 优先级本身已由
+    `test_auth_key_seam.py` 覆盖，不在本文件重复）。对不触及该路径的其余 canary 用例
+    （如 openreview token 那组）无影响——它们从不调用 `_import_keyring`。
+    """
+    monkeypatch.setattr(store_mod, "_import_keyring", lambda: None)
 
 
 def _home(tmp_path: Path) -> Path:
@@ -368,6 +386,89 @@ def test_bind_healthcheck_credentials_returns_dedicated_clients(tmp_path: Path) 
             assert "accessToken" in _cookie_header(adapters["openreview"])
             s2_client = adapters["s2"]._http  # type: ignore[attr-defined]
             assert s2_client._client.headers.get("x-api-key") == "k"
+        finally:
+            for client in dedicated:
+                client.close()
+
+
+def test_bind_healthcheck_credentials_injects_elsevier_and_wiley(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """R2c（R2a 顾虑①闭合）：配了 elsevier api_key / wiley token → canary 的
+    `_bind_healthcheck_credentials` 也要把它们注入到（canary 自己那份独立 `load_adapters()`
+    新鲜实例的）adapter 上——离线断言注入本身，不发真实网络。
+
+    修复前：`_bind_healthcheck_credentials` 只装配 openreview/enrich 三源，完全没有 elsevier/
+    wiley 分支——即便 `pull`/`grab` 侧（R2a 的 `_bind_auth_key_clients`）已能正确鉴权，canary
+    这份独立实例的 `_api_key`/`_token` 仍恒 None，`healthcheck` 恒 `NotImplementedError`→SKIP，
+    体现为"配了 key 也 SKIP"（本用例在修复前会因 `els._api_key is None` 失败）。
+
+    读取方式与 `pull`/`grab` 侧完全一致（同一 `_bind_auth_key_clients`，keyring 优先于
+    config 槽——本用例只需证明"注入发生"，keyring 优先级已由 `test_auth_key_seam.py` 覆盖，
+    不在此重复）。
+    """
+    from paper_crawler.adapter import load_adapters
+    from paper_crawler.adapters.elsevier_sd.adapter import ElsevierScienceDirectAdapter
+    from paper_crawler.adapters.wiley.adapter import TDM_TOKEN_HEADER, WileyAdapter
+    from paper_crawler.cli import _bind_healthcheck_credentials, _env
+
+    monkeypatch.delenv("PAPER_CRAWLER_ELSEVIER_API_KEY", raising=False)
+    monkeypatch.delenv("PAPER_CRAWLER_ELSEVIER_INSTTOKEN", raising=False)
+    monkeypatch.delenv("PAPER_CRAWLER_WILEY_TDM_TOKEN", raising=False)
+
+    home = tmp_path / "home"
+    home.mkdir()
+    (home / "config.toml").write_text(
+        '[auth.elsevier]\napi_key = "els-key-abc"\n[auth.wiley]\ntoken = "wiley-tok-xyz"\n',
+        encoding="utf-8",
+    )
+    with _env(home, False) as env:
+        adapters = load_adapters()
+        dedicated = _bind_healthcheck_credentials(env, adapters)
+        try:
+            els = adapters["elsevier_sd"]
+            wiley = adapters["wiley"]
+            assert isinstance(els, ElsevierScienceDirectAdapter)
+            assert isinstance(wiley, WileyAdapter)
+
+            assert els._api_key == "els-key-abc"  # 此前恒 None
+            assert wiley._token == "wiley-tok-xyz"  # 此前恒 None
+
+            els_headers = dict(els._client()._client.headers)  # noqa: SLF001
+            assert els_headers.get("x-els-apikey") == "els-key-abc"
+            wiley_headers = dict(wiley._client()._client.headers)  # noqa: SLF001
+            assert wiley_headers.get(TDM_TOKEN_HEADER.lower()) == "wiley-tok-xyz"
+
+            # 携密专属 client，绝不是共享 env.http（凭证隔离红线，同 R2a）。
+            assert els._client() is not env.http
+            assert wiley._client() is not env.http
+        finally:
+            for client in dedicated:
+                client.close()
+
+
+def test_bind_healthcheck_credentials_no_elsevier_wiley_keys_stays_unchanged(
+    tmp_path: Path,
+) -> None:
+    """对照组：无 elsevier/wiley 凭证配置 → 不注入、不报错，两 adapter 仍沿用共享
+    client（`_bind_auth_key_clients` 既有的"无凭证=行为不变"契约，canary 侧同样成立）。"""
+    from paper_crawler.adapter import load_adapters
+    from paper_crawler.adapters.elsevier_sd.adapter import ElsevierScienceDirectAdapter
+    from paper_crawler.adapters.wiley.adapter import WileyAdapter
+    from paper_crawler.cli import _bind_healthcheck_credentials, _env
+
+    with _env(_home(tmp_path), False) as env:
+        adapters = load_adapters()
+        dedicated = _bind_healthcheck_credentials(env, adapters)
+        try:
+            els = adapters["elsevier_sd"]
+            wiley = adapters["wiley"]
+            assert isinstance(els, ElsevierScienceDirectAdapter)
+            assert isinstance(wiley, WileyAdapter)
+            assert els._api_key is None
+            assert wiley._token is None
+            assert els._client() is env.http
+            assert wiley._client() is env.http
         finally:
             for client in dedicated:
                 client.close()

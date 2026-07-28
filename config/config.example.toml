@@ -17,6 +17,9 @@
 
 # == 身份（D-014 UA 的 mailto: 段来源；非凭证，可入项目级）=====================================
 [identity]
+# env PAPER_CRAWLER_CONTACT_EMAIL：与本键同一个 env（R2c 起单一贯通）——该 env 同时是
+# unpaywall/arxiv/oup_silverchair 等全部真实 adapter 未经 CLI 注入时的私有兜底读取源；
+# 二者读同一个名字，不必纠结"该配哪个"。
 email = "you@example.edu"          # UA `mailto:`；缺省则 UA 省略该段（config show 部分脱敏）
 
 # == 路径（非凭证，可入项目级 ./paper-crawler.toml）==========================================
@@ -46,6 +49,10 @@ daily_budget_usd = 0.50            # 每日 credit 预算上限（美元）；�
 
 [auth.openreview]
 token = ""        # OpenReview access token（Cookie 通道）；env PAPER_CRAWLER_OPENREVIEW_TOKEN
+# username = "你的注册邮箱"  # 仅 scripts/refresh_openreview_token.py 自动续期 token 时读取——
+# password = "你的密码"      # 不进 `Config`/`_FIELD_SPECS`，不出现在 `crawler config show`；
+#                            # 建议连同 token 一起 chmod 600 该文件（脚本自身不打印任何凭证值，
+#                            # 见 scripts/refresh_openreview_token.py 顶部 docstring）。
 
 [auth.openalex]
 api_key = ""      # OpenAlex API key（可选，提升每日 credit 额度）；env PAPER_CRAWLER_OPENALEX_API_KEY
@@ -67,10 +74,10 @@ token = ""        # Wiley-TDM-Client-Token（UUID 形态）；env PAPER_CRAWLER_
 
 # -- auth-framework §8 pipeline 运行时 knobs（非敏感，可入项目级；env PAPER_CRAWLER_* 覆盖）--
 # 占位=默认值；仅 auth_gated venue 生效（open_access/aggregator 不受约束）。
-# daily_cap = 200          # §8.3 日配额（auth 平台域当日 fetch 尝试篇次上限）；env _AUTH_DAILY_CAP
-# health_interval = 20     # §8.2 每 N 篇强制 healthcheck（过期检测，防 401 轰炸）；env _AUTH_HEALTH_INTERVAL
-# health_max_age_s = 900   # §8.2 健康门老化上限（秒，15min）；env _AUTH_HEALTH_MAX_AGE_S
-# work_hours = "8-23"      # §8.6 本地工作时段窗（起含-止不含）；"0-24" 关闭全天放行；env _AUTH_WORK_HOURS
+# daily_cap = 200          # §8.3 日配额（auth 平台域当日 fetch 尝试篇次上限）；env PAPER_CRAWLER_AUTH_DAILY_CAP
+# health_interval = 20     # §8.2 每 N 篇强制 healthcheck（过期检测，防 401 轰炸）；env PAPER_CRAWLER_AUTH_HEALTH_INTERVAL
+# health_max_age_s = 900   # §8.2 健康门老化上限（秒，15min）；env PAPER_CRAWLER_AUTH_HEALTH_MAX_AGE_S
+# work_hours = "8-23"      # §8.6 本地工作时段窗（起含-止不含）；"0-24" 关闭全天放行；env PAPER_CRAWLER_AUTH_WORK_HOURS
 
 # == OA-fallback（no_entitlement 的 unpaywall 兜底 direct 取回；非凭证）========================
 [oa_fallback]
@@ -84,9 +91,9 @@ token = ""        # Wiley-TDM-Client-Token（UUID 形态）；env PAPER_CRAWLER_
 # 依赖：pip install paper-crawler[auth-browser] && playwright install chromium
 [browserfetch]
 # enabled = false          # 全局开关；env PAPER_CRAWLER_BROWSER_FETCH_ENABLED
-# daily_cap = 50           # 每 venue×域 每日 fetch 尝试篇次上限（成败均计）；env _BROWSER_DAILY_CAP
-# rate_rpm = 10            # 域级限速（req/min，=1 req/6s；并发恒 1）；env _BROWSER_RATE_RPM
-# jitter_s = [2, 5]        # 每次请求前的额外抖动区间（秒）；env _BROWSER_JITTER_S（"2,5"）
+# daily_cap = 50           # 每 venue×域 每日 fetch 尝试篇次上限（成败均计）；env PAPER_CRAWLER_BROWSER_DAILY_CAP
+# rate_rpm = 10            # 域级限速（req/min，=1 req/6s；并发恒 1）；env PAPER_CRAWLER_BROWSER_RATE_RPM
+# jitter_s = [2, 5]        # 每次请求前的额外抖动区间（秒）；env PAPER_CRAWLER_BROWSER_JITTER_S（"2,5"）
 
 # == 全文抽取 stage 5（D-033 / design/12；非凭证，可入项目级）=================================
 # 纯文本基线（pypdf）恒可用、无需配置。GROBID 是**可选增强**：配置 grobid_url 即启用，

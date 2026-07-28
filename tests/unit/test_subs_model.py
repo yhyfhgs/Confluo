@@ -16,10 +16,12 @@ from pathlib import Path
 
 import pytest
 
+from paper_crawler.adapter import AdapterBase, load_adapters
 from paper_crawler.errors import CrawlerError, ErrorClass, SubscriptionInvalid
 from paper_crawler.subs.model import (
     DEFAULT_DEDUPE_AGAINST_LIBRARY,
     DEFAULT_MAX_NEW_PER_RUN,
+    ENRICH_ONLY_SOURCES,
     SOURCE_FIELDS,
     Actions,
     Guard,
@@ -31,8 +33,15 @@ from paper_crawler.subs.model import (
     parse_subscription,
 )
 from paper_crawler.subs.types import DATE_WINDOW_PARAMS
+from paper_crawler.types import Capability
 
 _FIXTURES = Path(__file__).resolve().parents[1] / "fixtures" / "subs"
+
+# 有专属 `SourceFetcher`、因而**不经** `AdapterFetcher` 的 DISCOVER/ENUMERATE 退化路径
+# 的源（`watch.RoutingFetcher` 的路由表）。当前只有 nber——它的 watch 增量主通道是
+# program RSS（`adapters/nber/rss.py::discover_incremental`，T7/nber.md §3.4），其
+# adapter 的能力位是 `RESOLVE|FETCH`，按退化路径的门槛看"不够"，但它根本不走那条路。
+_DEDICATED_WATCH_FETCHERS = frozenset({"nber"})
 
 
 def _write(path: Path, body: str) -> Path:
@@ -47,7 +56,10 @@ def test_llm_agents_example_parses_field_by_field() -> None:
     sub = load_subscription_file(_FIXTURES / "llm-agents.yaml")
 
     assert sub.name == "llm-agents"
-    assert sub.source_names() == ("arxiv", "openalex")  # 声明序
+    # R2b/P0-4：原 fixture 还有一个 `openalex` 源（design/09 §2 示例一逐字转录），随
+    # `SOURCE_FIELDS` 收缩一并删除——enrich-only 源在 watch 侧结构性不可达，留着连解析
+    # 都过不了。fixture 头注记录了这处与设计文档的已知偏离。
+    assert sub.source_names() == ("arxiv",)
 
     arxiv = sub.selector_for("arxiv")
     assert arxiv is not None
@@ -56,10 +68,7 @@ def test_llm_agents_example_parses_field_by_field() -> None:
     assert arxiv.query == '(ti:"agent" OR abs:"agentic" OR abs:"tool use") AND NOT ti:"survey"'
     assert arxiv.concepts == ()  # 非本源字段保持空
 
-    openalex = sub.selector_for("openalex")
-    assert openalex is not None
-    assert openalex.concepts == ("large language model",)
-    assert openalex.from_source_types == ("preprint",)
+    assert sub.selector_for("openalex") is None
 
     assert sub.filters == LocalFilter(
         title_regex_any=(r"\bagent(s|ic)?\b", "LLM"),
@@ -119,12 +128,12 @@ def test_minimal_document_takes_all_defaults() -> None:
     assert sub.schedule_hint is None
 
 
-def test_all_six_sources_parse() -> None:
+def test_all_dsl_sources_parse() -> None:
     """SOURCE_FIELDS 的每个源 × 每个字段都能被解析（能力面自断言，防清单漂移）。
 
     `query` 的合法样例按源区分：arxiv 自 Phase 7 T9 起校验布尔语法（范围=ti/abs
-    字段，见 `_require_arxiv_query_syntax`），裸词 `"x"` 不再合法；s2 的同名字段
-    仍是自由文本，裸词照旧合法。
+    字段，见 `_require_arxiv_query_syntax`），裸词 `"x"` 不再合法；其余源（当前无）
+    的同名字段若为自由文本，裸词照旧合法。
     """
     sources: dict[str, object] = {}
     for source, fields in SOURCE_FIELDS.items():
@@ -137,15 +146,24 @@ def test_all_six_sources_parse() -> None:
             assert getattr(selector, name)  # 非空 = 该字段真的被落进了 dataclass
 
 
+# `SourceSelector` 上随 openalex/s2 退出 `SOURCE_FIELDS` 而失去来源的字段（R2b/P0-4）。
+# 字段本身保留（冻结值对象 + R4 可能实装两源的时间轴，见该 dataclass docstring），
+# 但清单必须显式列出来——否则下面那条等值自断言只能放宽成"包含"，就再也抓不住
+# "新增了一个 DSL 里写得出、代码里永远读不到的字段"这类真漂移。
+_PARKED_SELECTOR_FIELDS = frozenset({"concepts", "from_source_types", "venues", "fields_of_study"})
+
+
 def test_source_fields_and_selector_dataclass_stay_in_sync() -> None:
-    """`SOURCE_FIELDS` 的字段并集 == `SourceSelector` 的非 `source` 字段集合。
+    """`SOURCE_FIELDS` 的字段并集 ∪ 停放字段 == `SourceSelector` 的非 `source` 字段集合。
 
     集合等值自断言（沿审计 S4 的"注册了却没验证"根治手法）：任一侧新增字段而另一侧
-    忘了跟进，这里立刻红——防止"DSL 里写了却永远读不到"的静默漏字段。
+    忘了跟进，这里立刻红——防止"DSL 里写了却永远读不到"的静默漏字段。停放字段列在
+    `_PARKED_SELECTOR_FIELDS` 里，两侧仍是**等值**而非包含。
     """
     declared = {name for fields in SOURCE_FIELDS.values() for name in fields}
     on_class = {f.name for f in dataclasses.fields(SourceSelector)} - {"source"}
-    assert declared == on_class
+    assert declared | _PARKED_SELECTOR_FIELDS == on_class
+    assert declared.isdisjoint(_PARKED_SELECTOR_FIELDS)  # 停放字段确实无源可声明
 
 
 def test_selector_to_dict_only_emits_own_source_fields() -> None:
@@ -155,8 +173,8 @@ def test_selector_to_dict_only_emits_own_source_fields() -> None:
 
 def test_selector_to_dict_skips_unset_fields() -> None:
     """本源合法但未声明的字段（空列表 / query=None）不出现在回写里。"""
-    selector = SourceSelector(source="s2", venues=("NeurIPS",))
-    assert selector.to_dict() == {"venues": ["NeurIPS"]}  # fields_of_study / query 未声明
+    selector = SourceSelector(source="arxiv", categories=("cs.AI",))
+    assert selector.to_dict() == {"categories": ["cs.AI"]}  # query 未声明
 
 
 def test_ingest_metadata_pdf_with_default_fetch_limit() -> None:
@@ -345,17 +363,109 @@ def test_arxiv_query_date_window_names_give_the_specific_message() -> None:
         assert "不支持的字段前缀" not in message
 
 
-def test_s2_query_free_text_is_not_subject_to_arxiv_boolean_syntax() -> None:
-    """s2 的 `query` 是自由文本（直送 bulk search），不受 arxiv 专属语法校验管辖——
+def test_query_is_now_an_arxiv_only_field_and_other_sources_cannot_smuggle_it() -> None:
+    """`query` 随 s2 退出 `SOURCE_FIELDS` 后成了 arxiv 独占字段（R2b/P0-4）。
 
-    这里刻意用一个**不符合** arxiv 语法（无字段前缀）的裸词，证明校验只对 arxiv 生效。
+    原测试（`test_s2_query_free_text_is_not_subject_to_arxiv_boolean_syntax`）用 s2 的
+    自由文本 `query` 证明"arxiv 专属布尔语法校验只对 arxiv 生效"；s2 已不是合法源，那条
+    证明面随之消失。改锁两件仍然为真、且属同一条纪律的事：
+
+    ① `query` 现在只有 arxiv 一个宿主——`_parse_selector` 里 `source == "arxiv"` 那道
+       条件因此暂时恒真，但**保留**（`SourceSelector.query` 是停放期共用的槽位，R4 若
+       实装 s2 会立刻需要它）；
+    ② 别的源写 `query` 一律按"未知字段"拒载——不会有哪个源绕过 arxiv 语法校验偷渡进来。
     """
-    sub = parse_subscription(
-        {"name": "probe", "sources": {"s2": {"query": "large language models"}}}
-    )
-    s2 = sub.selector_for("s2")
-    assert s2 is not None
-    assert s2.query == "large language models"
+    assert [source for source, fields in SOURCE_FIELDS.items() if "query" in fields] == ["arxiv"]
+
+    with pytest.raises(SubscriptionInvalid) as excinfo:
+        parse_subscription({"name": "probe", "sources": {"nber": {"query": "large language"}}})
+    assert "未知字段" in str(excinfo.value)
+    assert excinfo.value.detail is not None
+    assert excinfo.value.detail.endswith("sources.nber.query")
+
+
+# --- enrich-only 源：结构性不可达 → 加载期拒载（R2b/P0-4）--------------------
+#
+# 修复前的真实形态：`openalex`/`s2` 在 `SOURCE_FIELDS` 白名单里 → 订阅解析通过 →
+# `compile.py` 有编译器、译得出漂亮的 `filter=`/`venue=` 参数 → `watch.AdapterFetcher`
+# 调 `discover_timeline` → `AdapterBase` 兜底 `CapabilityNotSupported`，整轮 watch 炸。
+# 9 个 preset 里 6 个声明了这两源，即"照文档抄一份 preset 就必炸"。
+
+
+@pytest.mark.parametrize("source", sorted(ENRICH_ONLY_SOURCES))
+def test_enrich_only_source_is_rejected_at_load_time_with_a_pointed_message(source: str) -> None:
+    """三个 enrich-only 源一律在**加载期**拒载，且消息说清"为什么"与"改用什么"。
+
+    判据不止"报错了"——通用的"未知源 'openalex'"会把用户引向检查拼写（而 openalex
+    确实是本仓库注册在案的 adapter，拼写没错），故断言消息里同时出现 enrich-only 的
+    判词、替代通道，以及仍然可用的四个源。
+    """
+    with pytest.raises(SubscriptionInvalid) as excinfo:
+        parse_subscription({"name": "probe", "sources": {source: {"categories": ["x"]}}})
+
+    message = str(excinfo.value)
+    assert excinfo.value.error_class is ErrorClass.CONFIG
+    assert excinfo.value.detail == f"<subscription>:sources.{source}"
+    assert "enrich-only" in message
+    assert "不支持 watch" in message
+    assert "crawler enrich" in message
+    assert "未知源" not in message  # 不是拼错，别把用户往那边引
+    for available in SOURCE_FIELDS:
+        assert available in message
+
+
+def test_genuinely_unknown_source_still_gets_the_generic_message() -> None:
+    """对照组：真拼错的源仍走通用文案（两档措辞不能塌成一档）。"""
+    with pytest.raises(SubscriptionInvalid) as excinfo:
+        parse_subscription({"name": "probe", "sources": {"arxvi": {"categories": ["cs.AI"]}}})
+    message = str(excinfo.value)
+    assert "未知源" in message
+    assert "enrich-only" not in message
+
+
+def test_enrich_only_source_set_matches_the_real_adapter_capability_bits() -> None:
+    """`ENRICH_ONLY_SOURCES` **恰好** == 真实 adapter 表里 `capabilities` 为空集者。
+
+    这是 P1-12（Capability 全枚举零消费）在订阅域的根治点：清单不再是一句注释里的
+    断言，而是与 `load_adapters()` 的真实能力位对表。将来任何 adapter 退化/新增为
+    enrich-only 却忘了同步词表，或反过来给 openalex 点亮了能力位却没把它加回
+    `SOURCE_FIELDS`，这条都会当场红。
+    """
+    empty_capability_adapters = {
+        adapter_id
+        for adapter_id, adapter in load_adapters().items()
+        if adapter.capabilities == Capability(0)
+    }
+    assert ENRICH_ONLY_SOURCES == empty_capability_adapters
+    assert ENRICH_ONLY_SOURCES.isdisjoint(SOURCE_FIELDS)  # 白名单里一个都不许有
+
+
+def test_every_dsl_source_is_structurally_reachable_by_a_watch_channel() -> None:
+    """`SOURCE_FIELDS` 的每个源都得有一条**跑得动**的 watch 拉取通道。
+
+    两条合法通道（`watch.RoutingFetcher` 的分派面）：
+    - 专属 `SourceFetcher`（nber → `NberRssFetcher` 的 program RSS 通道，T7）；
+    - 退化路径 `AdapterFetcher` → 该源同名 adapter 的 `discover_timeline` +
+      `enumerate_issue`，故它必须同时具备 `DISCOVER` 与 `ENUMERATE`。
+
+    能力位与"方法是否真被覆写"两条一起断言：位是声明、覆写是实现，`AdapterBase` 的
+    兜底方法正是 `CapabilityNotSupported` 的出处——只查位会漏掉"声明了却没实现"，
+    只查覆写会漏掉"实现了却没声明"（后者会让本卡新加的 registry lint 误判）。
+    """
+    adapters = load_adapters()
+    for source in SOURCE_FIELDS:
+        if source in _DEDICATED_WATCH_FETCHERS:
+            continue
+        adapter = adapters.get(source)
+        assert adapter is not None, f"{source}: 无同名 adapter，且无专属 fetcher"
+        assert Capability.DISCOVER in adapter.capabilities, f"{source} 缺 DISCOVER"
+        assert Capability.ENUMERATE in adapter.capabilities, f"{source} 缺 ENUMERATE"
+        assert type(adapter).discover_timeline is not AdapterBase.discover_timeline, (
+            f"{source}: discover_timeline 未覆写，调用即 CapabilityNotSupported"
+        )
+        assert type(adapter).enumerate_issue is not AdapterBase.enumerate_issue, (
+            f"{source}: enumerate_issue 未覆写，调用即 CapabilityNotSupported"
+        )
 
 
 # --- 文件层：坏 YAML / 空文件 / 编码 / 文件名 --------------------------------

@@ -26,6 +26,7 @@ import pytest
 from hypothesis import given, settings
 from hypothesis import strategies as st
 
+from helpers.parked_sources import assert_covers_dsl_sources
 from paper_crawler.errors import CrawlerError, ErrorClass, WatermarkInvalid
 from paper_crawler.storage.db import Database
 from paper_crawler.storage.repo import SubscriptionRepo
@@ -54,6 +55,9 @@ TODAY = date(2026, 7, 26)
 FIRST_RUN_FLOOR = "2026-07-19"
 
 # D-029 联动后（design/09 §5 修订 2026-07-26）：ssrn 归日期游标族，id 差分只剩 nber。
+# openalex/s2 自 R2b/P0-4 起退出 DSL 源白名单（enrich-only，watch 侧不可达），但策略表
+# 仍留着它们的条目——见 `helpers/parked_sources.py`。故本表按"DSL 源 + 停放源"列全，
+# 下方两条断言各自分清哪部分必须与 `SOURCE_FIELDS` 对齐。
 DATE_SOURCES = ("arxiv", "crossref", "openalex", "s2", "ssrn")
 ID_SET_SOURCES = ("nber",)
 
@@ -71,8 +75,8 @@ def _date_state(source: str, day: str) -> Watermark:
 
 
 def test_strategies_cover_exactly_the_dsl_source_set() -> None:
-    """集合等值自断言：策略表与 DSL 源词表同集（防"加了源却没有增量语义"漂移）。"""
-    assert set(STRATEGIES) == set(SOURCE_FIELDS)
+    """集合自断言：策略表覆盖 DSL 源词表（+ 停放源），防"加了源却没有增量语义"漂移。"""
+    assert_covers_dsl_sources(STRATEGIES, SOURCE_FIELDS, name="STRATEGIES")
 
 
 def test_strategy_kinds_match_design_09_assignment() -> None:
@@ -82,7 +86,11 @@ def test_strategy_kinds_match_design_09_assignment() -> None:
         isinstance(STRATEGIES[s], DateCursor) for s in ("crossref", "openalex", "s2", "ssrn")
     )
     assert all(isinstance(STRATEGIES[s], IdSetDiff) for s in ID_SET_SOURCES)
-    assert set(DATE_SOURCES) | set(ID_SET_SOURCES) == set(SOURCE_FIELDS)  # 两族无缺无重
+    # 两族无缺无重：并集 == 策略表键集 == DSL 源 ∪ 停放源。
+    assert set(DATE_SOURCES) | set(ID_SET_SOURCES) == set(STRATEGIES)
+    assert_covers_dsl_sources(
+        set(DATE_SOURCES) | set(ID_SET_SOURCES), SOURCE_FIELDS, name="DATE_SOURCES|ID_SET_SOURCES"
+    )
 
 
 @pytest.mark.parametrize(

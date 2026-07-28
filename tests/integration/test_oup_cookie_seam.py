@@ -239,3 +239,40 @@ def test_assembled_supplier_feeds_oup_adapter_resolve_offline(tmp_path: Path) ->
     assert plans and plans[0].kind is AssetKind.PDF  # 装配完整、无 CONFIG 抛出
     assert seen["doi.org"] is None  # 凭证不泄漏 DOI 解析器（域限定穿过装配链保持）
     assert f"{_COOKIE_NAME}={_COOKIE_VALUE}" in (seen["academic.oup.com"] or "")
+
+
+# ---------------------------------------------------------------------------
+# R2c：`_assemble_auth_seam` 同一装配也须注入联系邮箱（`EmailConsumer`，UA `mailto:` 段）
+# ---------------------------------------------------------------------------
+
+
+def test_assemble_wires_email_into_oup_adapter(tmp_path: Path) -> None:
+    """`_assemble_auth_seam` 后 oup adapter 的 `_email` = `Config.identity_email`（非 None）。
+
+    修复前：`_assemble_auth_seam` 只对 unpaywall 做 `EmailConsumer` 注入，oup 完全没有
+    对应分支——即便用户配了 `[identity].email`，oup 的 UA 也恒是匿名占位（P1-17 根因）。
+    本用例证明修复后 oup 也被同一次装配覆盖到（经通用 `_bind_email`，非逐 adapter 硬编码）。
+    """
+    config = make_config(
+        _home(tmp_path, OUP_COOKIE_PROFILE), identity_email="researcher@example.edu"
+    )
+    adapters = load_adapters()
+    assert isinstance(adapters["oup_silverchair"], OupSilverchairAdapter)
+    assert adapters["oup_silverchair"]._email is None  # 装配前：无参构造 → None
+
+    _assemble(config, adapters)
+
+    assert adapters["oup_silverchair"]._email == "researcher@example.edu"
+
+
+def test_assemble_with_no_identity_email_leaves_oup_email_none(tmp_path: Path) -> None:
+    """未配置 `[identity].email` → 装配仍调用 `set_email(None)`（不注入亦不报错），oup
+    随后在真实请求时按既有回退链（env→占位）自行兜底——`_resolve_email` 的职责，不在此断言。
+    """
+    config = make_config(_home(tmp_path, OUP_COOKIE_PROFILE))
+    assert config.identity_email is None
+    adapters = load_adapters()
+
+    _assemble(config, adapters)
+
+    assert adapters["oup_silverchair"]._email is None

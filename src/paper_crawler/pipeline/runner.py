@@ -99,6 +99,21 @@ class _BatchGate:
     fetched_since_check: int = 0
 
 
+def _identity_url(url: str) -> str:
+    return url
+
+
+def _url_rewriter_of(provider: Any) -> Callable[[str], str]:
+    """取 provider 的 `rewrite_url`（07 §2 五方法之一）；duck-typed 缺该方法时退回恒等。
+
+    `AuthProviderBase` 已提供恒等默认，四个真实 provider 都有此方法——恒等兜底是为
+    `_BatchGate.provider` 的 duck-typed 契约（测试替身/第三方 provider 只实现健康门
+    需要的 `health_check`/`refresh` 也应能跑）：缺方法 = 不改写，绝不因此拦批。
+    """
+    rewrite = getattr(provider, "rewrite_url", None)
+    return rewrite if callable(rewrite) else _identity_url
+
+
 def _work_hours_ok(window: str, now: datetime) -> bool:
     """本地时间是否落在工作时段窗内（§8.6）。
 
@@ -361,6 +376,7 @@ class PipelineRunner:
         self._auth_batch = {}
         self._work_hours_blocked = set()
         self.ctx.auth_sessions.clear()
+        self.ctx.auth_url_rewriters.clear()  # 与 session 同生命周期（同一门写入，逐运行重置）
         return RunReport(command=command, venue_id=venue_id, started_at=utcnow_iso())
 
     def _finalize(self, report: RunReport) -> RunReport:
@@ -594,6 +610,10 @@ class PipelineRunner:
 
         # 注入 session 供 fetch 阶段（§8.2；resolve/fetch 经 ctx.auth_sessions 读取）。
         self.ctx.auth_sessions[venue] = gate.session
+        # 一并注入本 provider 的 URL 改写函数（07 §3.2「rewrite_url 在 fetch 前统一调用」）：
+        # 门已放行 = provider 与 session 都在手，正是"发起 fetch 前"这一刻。fetch 阶段经
+        # `stages._proxy_rewritten` 消费（EZProxy 换代理形态，其余 provider 恒等默认）。
+        self.ctx.auth_url_rewriters[venue] = _url_rewriter_of(gate.provider)
         return True
 
     def _block_work_hours(self, task_id: str, venue: str, report: RunReport) -> None:

@@ -82,6 +82,7 @@ from paper_crawler.adapter import (
     load_adapters,
 )
 from paper_crawler.adapters.crossref.adapter import CrossrefAdapter
+from paper_crawler.adapters.elsevier_sd.adapter import ElsevierScienceDirectAdapter
 from paper_crawler.adapters.nber import adapter as nber_adapter
 from paper_crawler.adapters.nber.adapter import NberAdapter
 from paper_crawler.adapters.openalex import budget as openalex_budget
@@ -89,8 +90,10 @@ from paper_crawler.adapters.openalex.adapter import OpenAlexAdapter
 from paper_crawler.adapters.repec.adapter import RepecAdapter
 from paper_crawler.adapters.unpaywall import report as oa_report
 from paper_crawler.adapters.unpaywall.adapter import UnpaywallAdapter
+from paper_crawler.adapters.wiley.adapter import TDM_TOKEN_HEADER, WileyAdapter
 from paper_crawler.auth.cli import auth_app
 from paper_crawler.auth.manager import AuthManager
+from paper_crawler.auth.store import CredentialStore
 from paper_crawler.canary import (
     canary_exit_code,
     canary_record_path,
@@ -171,6 +174,9 @@ class CliEnv:
     # AuthManager（`auth=True` 装配，pull/grab 用）：auth_gated venue 的 provider/session
     # 解析入口（§8.2）；无 auth 装配的命令为 None。传入 `PipelineRunner(auth_manager=...)`。
     auth_manager: AuthManager | None = None
+    # auth_gated api_key 档的携密**专属** client（elsevier/wiley；`_bind_auth_key_clients`，
+    # 见其 docstring）——有凭证时每 adapter 一个，无凭证时空元组。`_env` 收尾逐个 `close()`。
+    auth_http: tuple[HttpClient, ...] = ()
 
 
 def _http_client_factory(config: Config, rate_limiter: RateLimiter | None = None) -> HttpClient:
@@ -224,6 +230,139 @@ def _bind_openreview_token_client(
     return client
 
 
+# ①类简单串密钥（elsevier api_key/insttoken、wiley TDM token）的委派条目名 = `auth/store.py`
+# `_CONFIG_KEY_SLOTS` 的键（亦即 config/profiles.example.toml 里 key_ref/insttoken_ref 的默认
+# 取值）。装配一律经 `CredentialStore.read_key(ref)` 取值——**keyring 条目优先、缺则委派
+# `[auth.*]` config 槽（含 env 覆盖）**（auth-framework §3.4 两级凭证模型）；绝不绕过 store
+# 直读 `Config` 字段，否则 keyring 加固层形同虚设（配了 keyring 仍取明文槽）。
+_ELSEVIER_KEY_REF = "elsevier_apikey"
+_ELSEVIER_INSTTOKEN_REF = "elsevier_insttoken"
+_WILEY_TOKEN_REF = "wiley_tdm_token"
+
+# elsevier 携密头名（elsevier-sd.md §3.2 冻结口径）；wiley 侧复用 adapter 导出的
+# `TDM_TOKEN_HEADER`。两 adapter 自身都**不**做头注入（只经 set_api_key/set_token 记录
+# "是否已配置"），头必须随专属 client 的构造一次性注入——故头名在装配侧唯一定义。
+_ELSEVIER_APIKEY_HEADER = "X-ELS-APIKey"
+_ELSEVIER_INSTTOKEN_HEADER = "X-ELS-Insttoken"
+
+
+def _elsevier_client_factory(
+    config: Config,
+    api_key: str,
+    insttoken: str | None,
+    rate_limiter: RateLimiter | None = None,
+) -> HttpClient:
+    """构造 elsevier 携 `X-ELS-APIKey`(+可选 `X-ELS-Insttoken`) 头的**专属** client。
+
+    模块级函数是测试注入 `MockTransport` client 的 seam（零真实网络），与
+    `_openreview_client_factory` 对称；共享 limiter 同桶计费（域登记归 stages 逐 route
+    `register`，同共享 client 路径）。insttoken 缺省 → 只挂 api_key 头（不发空头）。
+    """
+    headers = {_ELSEVIER_APIKEY_HEADER: api_key}
+    if insttoken:
+        headers[_ELSEVIER_INSTTOKEN_HEADER] = insttoken
+    return HttpClient(
+        user_agent=build_user_agent(config.identity_email),
+        rate_limiter=rate_limiter,
+        extra_headers=headers,
+    )
+
+
+def _wiley_client_factory(
+    config: Config, token: str, rate_limiter: RateLimiter | None = None
+) -> HttpClient:
+    """构造 wiley 携 `Wiley-TDM-Client-Token` 头的**专属** client（wiley.md §3.2）。"""
+    return HttpClient(
+        user_agent=build_user_agent(config.identity_email),
+        rate_limiter=rate_limiter,
+        extra_headers={TDM_TOKEN_HEADER: token},
+    )
+
+
+def _bind_elsevier_key_client(
+    adapters: dict[str, SourceAdapter],
+    store: CredentialStore,
+    config: Config,
+    rate_limiter: RateLimiter,
+) -> HttpClient | None:
+    """有 api_key 时为 elsevier adapter 注入携密专属 client + `set_api_key`（elsevier-sd.md §3.2）。
+
+    key 缺省 → 返回 None、**不注入不报错**：elsevier 沿用 `bind_http_client` 注入的共享匿名
+    client，`resolve_assets`/`fetch_asset` 触网前 `_require_api_key` 抛 `AuthRequired`（整批
+    BLOCKED(auth) + 配置指引）、`healthcheck` 抛 `NotImplementedError`→canary SKIP，逐字沿用
+    修复前语义。有 key → 专属 client（携 `X-ELS-APIKey` (+`X-ELS-Insttoken`) 头），**绝不把
+    携密头挂到共享 http**（否则随 crossref/dblp 等他域请求外泄，凭证红线）。
+
+    顺序遵守 adapter 侧约定：先构造携正确头的专属 client 注入，再 `set_api_key` 记录
+    "已配置"（后者只驱动门控判定分支，不改 client 的头）。返回专属 client 供 `_env` 关闭。
+    """
+    api_key = store.read_key(_ELSEVIER_KEY_REF)
+    if not api_key:
+        return None
+    adapter = adapters.get("elsevier_sd")
+    if not isinstance(adapter, ElsevierScienceDirectAdapter):
+        return None
+    client = _elsevier_client_factory(
+        config, api_key, store.read_key(_ELSEVIER_INSTTOKEN_REF), rate_limiter
+    )
+    adapter.set_http_client(client)
+    adapter.set_api_key(api_key)
+    return client
+
+
+def _bind_wiley_token_client(
+    adapters: dict[str, SourceAdapter],
+    store: CredentialStore,
+    config: Config,
+    rate_limiter: RateLimiter,
+) -> HttpClient | None:
+    """有 TDM token 时为 wiley adapter 注入携密专属 client + `set_token`（wiley.md §3.2 的
+    "token 到位后的已知 union 点"，adapters/wiley/__init__.py docstring 点名的装配缝）。
+
+    token 缺省 → 返回 None、不注入不报错：wiley 沿用共享 client，`resolve_assets` 仍产
+    `RENDER_PAGE` 页面兜底计划、`fetch_asset` 仍 `AuthRequired`、`healthcheck` 仍
+    `NotImplementedError`→SKIP（修复前语义逐字不变）。有 token → TDM 主路径（`API_CALL`）
+    打开，`Wiley-TDM-Client-Token` 头只挂本专属 client。
+    """
+    token = store.read_key(_WILEY_TOKEN_REF)
+    if not token:
+        return None
+    adapter = adapters.get("wiley")
+    if not isinstance(adapter, WileyAdapter):
+        return None
+    client = _wiley_client_factory(config, token, rate_limiter)
+    adapter.set_http_client(client)
+    adapter.set_token(token)
+    return client
+
+
+def _bind_auth_key_clients(
+    adapters: dict[str, SourceAdapter],
+    store: CredentialStore,
+    config: Config,
+    rate_limiter: RateLimiter,
+) -> tuple[HttpClient, ...]:
+    """auth_gated **api_key 档**（elsevier/wiley）的凭证装配缝（P0-1 修复；auth-framework §3.4）。
+
+    此前 config.py 解析三槽（`[auth.elsevier].api_key`/`.insttoken`、`[auth.wiley].token`）、
+    store 备好 keyring→config 委派表，装配侧却零消费——配好 key 也恒 `adapter._api_key is
+    None`，elsevier 必 `AuthRequired`、wiley TDM 主路径不可达。本函数是缺失的那一环，与
+    `_bind_openreview_token_client`（token cookie）/`bind_cookie_supplier`（OUP cookie）同址
+    同风格，在 `_build_env` 的 `bind_http_client` **之后**调用（有凭证时覆盖共享 client）。
+
+    取值一律经 `CredentialStore.read_key(ref)`（keyring 条目优先于 config.toml 明文槽，见
+    ref 常量注释）；`store` 取自同一次装配的 `AuthManager.store`（已 `bind_config`，不重复
+    `Config.load`）。仅 `auth=True`（pull/grab）时装配——其余命令不触 keyring、行为不变。
+
+    返回全部新建的专属 client（无凭证 → 空元组），调用方（`_env`）负责 `close()`。
+    """
+    clients = (
+        _bind_elsevier_key_client(adapters, store, config, rate_limiter),
+        _bind_wiley_token_client(adapters, store, config, rate_limiter),
+    )
+    return tuple(client for client in clients if client is not None)
+
+
 def _cookie_supplier_for(manager: AuthManager) -> CookieSupplier:
     """构造 OUP（及未来 cookie 档 adapter）的**懒解析** cookie 供给闭包（auth-framework §8.2）。
 
@@ -251,6 +390,27 @@ def _cookie_supplier_for(manager: AuthManager) -> CookieSupplier:
     return _supply
 
 
+def _bind_email(adapters: dict[str, SourceAdapter], email: str | None) -> list[str]:
+    """把联系邮箱注入所有实现 `EmailConsumer` 的 adapter；返回被注入 id 列表（R2c）。
+
+    沿 `bind_http_client`/`bind_cookie_supplier`（adapter.py）的既有先例——通用注入、不
+    硬编码某个 adapter id（`bind_cookie_supplier` docstring："对未来 cookie 档 adapter
+    通用，不硬编码 oup 单例"，本函数同一哲学）。本函数留在 cli.py 而非与前两者同址：R2c
+    卡的允许改动面不含 `adapter.py`，本函数目前只有 `_assemble_auth_seam` 一处消费，不构成
+    跨模块复用缺口；若未来有第二消费方，可原样搬去 `adapter.py` 与另两者并列。
+
+    当前实现 `EmailConsumer` 的真实 adapter：unpaywall（`?email=` 查询参数）、
+    oup_silverchair（UA `mailto:` 段，R2c 新增——修复前该 adapter 恒读 env、CLI 无 seam
+    可挂，是 QJE 等机构订阅站唯一终态 UA 却恒匿名占位的根因）。
+    """
+    injected: list[str] = []
+    for adapter_id, adapter in adapters.items():
+        if isinstance(adapter, EmailConsumer):
+            adapter.set_email(email)
+            injected.append(adapter_id)
+    return injected
+
+
 def _assemble_auth_seam(
     config: Config,
     adapters: dict[str, SourceAdapter],
@@ -266,17 +426,19 @@ def _assemble_auth_seam(
     - AuthManager（§8.2）：`[auth].active_profile` 从 config 接线（T1b 留的构造参数注入点；
       config 尚无该键时为 None → platform 单候选自动解析）。auth_gated venue 的健康门/日配额/
       工作时段窗/挑战冷却均由 runner 经该 manager 驱动。
+    - 联系邮箱（R2c）：`_bind_email` 通用注入 `Config.identity_email` 给全部 `EmailConsumer`
+      实现（unpaywall `?email=` 查询参数、oup_silverchair UA `mailto:` 段）——不逐 adapter
+      id 各写一份，见该函数 docstring。
     """
     ua = adapters.get("unpaywall")
     if isinstance(ua, UnpaywallAdapter):
         if isinstance(ua, HttpClientConsumer):
             ua.set_http_client(http)  # 共享 UA + limiter（同桶计费）
-        if isinstance(ua, EmailConsumer):
-            ua.set_email(config.identity_email)  # ?email= 查询参数（aggregators §3）
         limiter.register(ua.domains[0], ua.default_rate)  # api.unpaywall.org 独立桶
         ctx.unpaywall_adapter = ua
     ctx.http = http
     ctx.oa_fallback = True
+    _bind_email(adapters, config.identity_email)
     active_profiles = getattr(config, "auth_active_profile", None)
     manager = AuthManager(config, active_profiles=active_profiles)
     # OUP（oup_silverchair，已合入 main 且在此装配）及未来 cookie 档 adapter 的 cookie 供给：把
@@ -322,8 +484,20 @@ def _build_env(
     )
     # pull/grab（auth=True）：装配 auth/OA-fallback 接缝（§8；其余命令 auth_manager=None）。
     auth_manager = _assemble_auth_seam(config, adapters, stage_ctx, http, limiter) if auth else None
+    # 同一 auth 装配波次内的 api_key 档凭证注入（P0-1）：elsevier/wiley 携密专属 client
+    # ——必须在 `bind_http_client` 之后（有凭证时覆盖共享 client）、与 AuthManager 共用同一
+    # `store`（keyring 优先→config 槽委派，见 `_bind_auth_key_clients`）。
+    auth_http = (
+        _bind_auth_key_clients(adapters, auth_manager.store, config, limiter)
+        if auth_manager is not None
+        else ()
+    )
     return CliEnv(
-        ctx=stage_ctx, http=http, openreview_http=openreview_http, auth_manager=auth_manager
+        ctx=stage_ctx,
+        http=http,
+        openreview_http=openreview_http,
+        auth_manager=auth_manager,
+        auth_http=auth_http,
     )
 
 
@@ -355,6 +529,8 @@ def _env(
         cli_env.http.close()
         if cli_env.openreview_http is not None:
             cli_env.openreview_http.close()
+        for auth_client in cli_env.auth_http:  # elsevier/wiley 携密专属 client（P0-1）
+            auth_client.close()
         cli_env.ctx.db.close()
 
 
@@ -2012,10 +2188,28 @@ def _bind_healthcheck_credentials(
       逐请求 `acquire(host)` 撞未注册域 → CONFIG fail-fast（伪不健康）。
     - `_bind_openreview_token_client`：有 token → 携 `Cookie` 专属 client（复用既有，不污染共享）。
     - `_apply_enrich_key`（openalex/s2）：有 key → s2 专属 client / openalex 共享 client。
+    - `_bind_auth_key_clients`（elsevier/wiley，R2c）：有 key/token → 携密专属 client（同
+      `_build_env` 的 P0-1 装配，见其 docstring）——**canary 走独立 `load_adapters()` 新鲜
+      实例**，与 `_build_env` 内部装配的那份是两个不同对象，故必须在这里重做一遍同款注入，
+      否则即便用户已配置 elsevier/wiley 凭证，canary 侧仍恒体现为未配置（`_api_key`/`_token`
+      为 None → `healthcheck` 恒 `NotImplementedError`→SKIP，即便真实 pull/grab 已能正常鉴权）
+      ——此前的缺口（R2a 顾虑①）。凭证读取经一个本函数专属构造的**只读** `CredentialStore`
+      （`read_key` 委派链：keyring 条目优先 → config 槽，同 `_bind_auth_key_clients` 既有语义）；
+      不复用/不新建 `AuthManager`（canary 不需要其 provider/session 解析能力，只需要
+      `CredentialStore` 这一薄层）——但仍照 `AuthManager.__init__` 同款纪律跑一次
+      `audit_permissions()` 巡检（见下方 for 循环），不因绕开 `AuthManager` 就丢了这项自查
+      （独立审查 Minor #4：canary 本身是"健康自查"语义位，补这一行恰合适）。
 
-    **auth_gated 平台的 session 注入归 T5（AuthManager 装配），本函数不注入 session**——故
-    auth_gated adapter 无 session 时 healthcheck 抛 `NotImplementedError` → canary SKIP（B-M4：
-    与 pipeline fetch 路径的 `AuthRequired`→BLOCKED 二义分离，canary healthcheck 专用 SKIP）。
+    **auth_gated 平台的 session 注入归 T5（AuthManager 装配），本函数不注入 session**——多数
+    auth_gated adapter（如 oup_silverchair）的 SKIP 判据看 session 是否存在：无 session 时
+    healthcheck 抛 `NotImplementedError` → canary SKIP（B-M4：与 pipeline fetch 路径的
+    `AuthRequired`→BLOCKED 二义分离，canary healthcheck 专用 SKIP）。**elsevier/wiley 是
+    例外**（独立审查 Minor #4 订正——此前本 docstring 误写"配了 key 也不例外仍 SKIP"，
+    与代码相反）：二者的 SKIP 判据看的不是 session，而是 `_api_key`/`_has_token()`（各自
+    `healthcheck` 内部 `if not self._api_key`/`if not self._has_token(): raise
+    NotImplementedError`，对 `session` 参数视而不见）——本函数注入 key/token 后，二者的
+    healthcheck **不再 SKIP**，会真实发起网络探测（elsevier entitlement 预检 / wiley TDM
+    首块探测）。这正是 R2a 顾虑①要修的症状本身（"配了 key 也 SKIP"）：修复后不再如此。
     """
     dedicated: list[HttpClient] = []
     bind_http_client(adapters, env.http)
@@ -2027,6 +2221,11 @@ def _bind_healthcheck_credentials(
         adapter = adapters.get(source_id)
         if isinstance(adapter, EnrichmentSource):
             _apply_enrich_key(env, adapter, source_id, dedicated)
+    store = CredentialStore(env.ctx.config.home)
+    store.bind_config(env.ctx.config)
+    for finding in store.audit_permissions():  # 同 AuthManager.__init__ 同款巡检（§3.5）
+        log_event("WARNING", f"凭证库权限巡检：{finding}")
+    dedicated.extend(_bind_auth_key_clients(adapters, store, env.ctx.config, env.ctx.limiter))
     return dedicated
 
 

@@ -50,7 +50,7 @@ import random
 import sqlite3
 import time
 from collections.abc import Callable
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Literal
 from urllib.parse import urlsplit
@@ -168,6 +168,13 @@ class StageContext:
     # 协议里自 Phase 1 即存在的 `session` 形参。默认空 → Phase 1-3 venue 恒读到 None（session=
     # None，与既有逐字一致）。
     auth_sessions: dict[str, SessionHandle] = field(default_factory=dict)
+    # auth_gated venue 的 **URL 改写函数**注入通道（venue_id → `provider.rewrite_url`）：与
+    # `auth_sessions` 同源同写侧（runner 健康门放行时一并落表，§8.2），fetch 阶段只读消费。
+    # 07 §3.2「`rewrite_url` 在 fetch 前统一调用——adapter 不感知代理存在」的落点：EZProxy
+    # profile 下它把目标 URL 换成代理形态，其余三 provider 是 `AuthProviderBase` 的恒等默认
+    # （统一调用、按 provider 形态生效，pipeline 不做 kind 分流）。默认空 → 非 auth venue /
+    # 未装配 auth 时 `_proxy_rewritten` 恒等返回（Phase 1-3 逐字不变）。
+    auth_url_rewriters: dict[str, Callable[[str], str]] = field(default_factory=dict)
     # ---- Phase 7 browser-fetch 接缝（11-browser-fetch §3.2 案 A 的**唯一**新增槽）----------
     # 本次运行是否允许走浏览器上下文取回通道（§7.1 L1 三级门之一）：CLI `grab --browser` 置位。
     # 默认 False = 关闭（D-029"非默认"）；与 `Config.browser_fetch_enabled` **同时为真**才生效，
@@ -375,6 +382,32 @@ def _asset_url_basename(url: str) -> str:
     return name if name else "si.bin"
 
 
+def _proxy_rewritten(ctx: StageContext, venue_id: str, plan: AssetPlan) -> AssetPlan:
+    """fetch 前统一施加 provider 的 URL 改写（07 §3.2；EZProxy 形态下 = 换成代理 host）。
+
+    **只改 `plan.url`**，`kind`/`version`/`expected_type`/`url_strategy` 逐字保留——asset 的
+    幂等身份是 (paper, kind, version)（T7c 裁决："url 只是执行细节"），改写因此不动身份。
+
+    边界（04 §2 形态 B + 07 §3.2 原文口径，不扩大）：
+    - **作用于 direct 通道实际发出的取回请求**（`adapter.fetch_asset` 拿到的 plan.url），
+      因为 ezproxy 的会话后端就是 `HTTPX_COOKIES`（04 §3 第 2 档）；
+    - **不改 asset.url 落库值**（`refresh_asset_plan` 在本函数之前执行）：库里存 adapter 给的
+      规范引用（§4.4 落盘纪律），代理形态是"某机构某次运行"的执行细节，且 challenge 冷却键
+      读侧取自 `asset.url` host——落代理域会让读写两侧错位（11-browser-fetch §5.6-1 同类缺陷）；
+    - **不改限速/配额归属域**（二者用 `adapter.domains[0]`）：代理域一换，AC-4.4 的
+      "单平台单日上限"对账口径就被打散成每机构一份，出版社侧的实际压力却没变；
+    - **不覆盖 resolve 阶段与 browser 通道**：resolve 的请求由 adapter 自行发出、URL 不经
+      pipeline（"adapter 不感知代理"的对偶代价）；browser 通道消费的是 `PLAYWRIGHT_STATE`
+      后端的 storage_state，ezproxy 声明的是 `HTTPX_COOKIES`——只改 URL 不带 cookie 只会把
+      请求送到代理登录页。两处均如实登记为 P1-11 的剩余缺口，不在此静默半接。
+    """
+    rewrite = ctx.auth_url_rewriters.get(venue_id)
+    if rewrite is None:
+        return plan
+    rewritten = rewrite(plan.url)
+    return plan if rewritten == plan.url else replace(plan, url=rewritten)
+
+
 def _match_plan(plans: list[AssetPlan], asset: sqlite3.Row) -> AssetPlan:
     """在 re-resolve 结果里找回本 asset 的身份 (kind, version)；找不到视为 GONE。
 
@@ -565,6 +598,11 @@ def _stage_fetch(ctx: StageContext, task: sqlite3.Row, report: RunReport) -> Sta
     # landing/稳定引用，同批 volatile URL 只活在 `fetch_one` 的栈上（§4.4 持久化纪律）。
     if plan.url_strategy is UrlStrategy.RENDER_PAGE:
         return _fetch_via_browser(ctx, task, asset, paper, venue_id, plan, adapter)
+
+    # auth provider 的 fetch 前 URL 改写（07 §3.2；EZProxy = 代理形态，其余 provider 恒等）。
+    # 位置有语义：在 `refresh_asset_plan` **之后**（落库存规范 URL）、在取回与两条 fetch_log
+    # 之前（审计记实发 URL）。边界与理由见 `_proxy_rewritten` docstring。
+    plan = _proxy_rewritten(ctx, venue_id, plan)
 
     wait = acquire_and_wait(ctx, domain)
     rate_wait_ms = round(wait * 1000)

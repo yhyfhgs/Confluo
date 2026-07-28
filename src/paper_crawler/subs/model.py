@@ -16,7 +16,9 @@ design/05 §2；plan §4 T1 已裁决歧义③）。
 具体规则（每条都有专测，`tests/unit/test_subs_model.py`）：
 
 - 顶层/各段的**未知字段**→ 报错（并在消息里列出该位置允许的字段）；
-- **未知源**→ 报错（列出 `SOURCE_FIELDS` 支持的六源）；
+- **未知源**→ 报错（列出 `SOURCE_FIELDS` 支持的四源）；**enrich-only 源**
+  （`ENRICH_ONLY_SOURCES`）单独给一条专属消息——它们是"看着像源、其实跑不了 watch"
+  的那一类，通用的"未知源"文案会让用户以为自己拼错了名字（R2b/P0-4）；
 - 声明了却**空值**的字段（`categories: []`、`query: ""`）→ 报错（意图不明）；
 - `filters` 的正则**编译失败**→ 报错（把 `re.error` 归一到 CONFIG，不留到运行期炸）；
 - 数值域：`guard.max_new_per_run ≥ 1`、`actions.auto_fetch_limit ≥ 0`、
@@ -57,14 +59,38 @@ from paper_crawler.subs.types import DATE_WINDOW_PARAMS, parse_arxiv_query
 # 每源允许的选择器字段（design/09 §3 能力映射表的下推面；顺序即序列化/报错列出序）。
 # **日期窗不在 DSL 里**——增量窗由 watermark 推进（design/09 §5，T4 owns），编译期
 # 由 T2 注入，用户不手写。
+#
+# **本表 = "watch 真的跑得动的源"白名单**（R2b/P0-4 收缩到实况）。判据是**结构性可达**：
+# 该源要么有专属 `SourceFetcher`（nber → `watch.NberRssFetcher` 的 program RSS 通道），
+# 要么其同名 adapter 具备 `DISCOVER|ENUMERATE`（`watch.AdapterFetcher` 的退化路径正是
+# 逐个调这两个方法）。openalex/s2 两源曾列在此处却**结构性不可达**——二者
+# `capabilities = Capability(0)`（enrich-only，aggregators.md §1 的设计本意），
+# `AdapterFetcher.fetch` 一调 `discover_timeline` 就吃 `AdapterBase` 的兜底
+# `CapabilityNotSupported`：配置得出、编译得出、watch 一跑必炸。repec 同为 enrich-only
+# 且**从来**不在本表内——现在三者口径统一（`ENRICH_ONLY_SOURCES`）。
+#
+# 实装 openalex/s2 的 watch 时间轴属功能扩展（要真的实现 DISCOVER/ENUMERATE，而不是
+# 把名字加回白名单），归 R4 裁决；`tests/unit/test_subs_model.py` 有把本表与真实
+# adapter 能力位对表的自断言，加名字而不加能力会当场打红。
 SOURCE_FIELDS: dict[str, tuple[str, ...]] = {
     "arxiv": ("categories", "query"),  # 字段前缀 ti/abs/cat/au + 布尔式，完整下推
     "ssrn": ("networks", "ejournals"),  # 仅分类浏览；关键词全在本地过滤
-    "openalex": ("concepts", "from_source_types"),  # filter=concepts/type
-    "s2": ("venues", "fields_of_study", "query"),  # bulk search venue/fieldsOfStudy
     "nber": ("programs",),  # program 分类下推
     "crossref": ("issns",),  # ISSN + from-pub-date（期刊 watch 通道）
 }
+
+# 补充层（enrich）专用源：`capabilities` 恒为空集，只经 `crawler enrich` 的
+# `EnrichmentSource.enrich_batch` 通道驱动，**不进 pull 六阶段、也不进 subs watch**
+# （`adapters/{openalex,s2,repec}/__init__.py` 各自的"能力面"段；aggregators.md §1）。
+#
+# 单列成表而不是让它们落进通用的"未知源"分支：用户写 `openalex:` 是**合理误解**
+# （这些确实是本仓库注册在案的 adapter，`crawler enrich` 里天天用），需要的是
+# "这个源不支持 watch、请改用 enrich"，而不是"没听说过这个名字"。
+#
+# 与真实 adapter 表的一致性由 `tests/unit/test_subs_model.py` 的自断言锁定：本集合
+# **恰好**等于 `load_adapters()` 里 `capabilities` 为空集的 adapter id 集合——将来任何
+# adapter 退化/新增为 enrich-only 而忘了同步这里，测试立刻红。
+ENRICH_ONLY_SOURCES: frozenset[str] = frozenset({"openalex", "repec", "s2"})
 
 # 取值形态：文本字段 vs 字符串列表字段（其余皆列表）。
 _TEXT_FIELDS = frozenset({"query"})
@@ -97,6 +123,31 @@ def _fail(where: str, path: str, message: str) -> NoReturn:
     """统一的拒载出口：消息带 `<文件>:<字段路径>` 定位，`detail` 存同一定位串。"""
     location = f"{where}:{path}" if path else where
     raise SubscriptionInvalid(f"{location} —— {message}", detail=location)
+
+
+def unsupported_source_message(source: str) -> str:
+    """不在 `SOURCE_FIELDS` 里的源 → 拒载消息（**加载期与编译期共用同一句**）。
+
+    两档措辞，差别在于用户到底错在哪：
+
+    - `source ∈ ENRICH_ONLY_SOURCES`：源是真的、只是**跑不了 watch**——它没有
+      DISCOVER/ENUMERATE 能力位，`AdapterFetcher` 一调就是 `CapabilityNotSupported`。
+      故消息直说"enrich-only，不支持 watch"并给出替代通道（`crawler enrich`），
+      而不是含糊地说"未知源"让用户去检查拼写。
+    - 其余：通用未知源（拼错/臆造）。
+
+    单点定义的理由：`_parse_selector`（订阅加载期）与 `compile.compile_subscription`
+    （编译期兜底，挡绕过解析器直构 `Subscription` 的调用方）两处都要报同一件事，
+    两份文案迟早漂移——同 `DATE_WINDOW_PARAMS` 的"槽位名只有一份权威"守法。
+    """
+    available = ", ".join(sorted(SOURCE_FIELDS))
+    if source in ENRICH_ONLY_SOURCES:
+        return (
+            f"源 {source!r} 为 enrich-only（capabilities 空集，无 DISCOVER/ENUMERATE），"
+            f"不支持 watch——它只经 `crawler enrich` 的补充层通道驱动"
+            f"（aggregators.md §1）；可用源: {available}"
+        )
+    return f"未知源 {source!r}（支持: {available}；design/09 §3 能力表）"
 
 
 def _reject_unknown(
@@ -188,8 +239,11 @@ def _require_arxiv_query_syntax(text: str, *, where: str, path: str) -> None:
     `_require_regex` 校验后仍把原始字符串交回、`filter._compile_case_insensitive`
     照样重新编译一遍的先例，非新增的重复劳动）。
 
-    只对 `arxiv` 源的 `query` 字段生效——`s2` 同名字段是自由文本，交给 S2 的
-    bulk search 端点，没有本地布尔语法。
+    只对 `arxiv` 源的 `query` 字段生效。R2b/P0-4 起 arxiv 是 `query` 的**唯一**宿主
+    （原共用该槽位的 s2 已随 enrich-only 收缩退出 `SOURCE_FIELDS`），故调用点那道
+    `source == "arxiv"` 的条件暂时恒真；**保留不删**——`query` 之所以曾要按源分派，
+    正是因为 s2 的同名字段是自由文本（直送 bulk search，没有本地布尔语法），R4 若
+    裁决实装 s2，这道条件立刻重新有意义。
 
     **日期窗名字先判**（独立审查 P2③）：手写日期窗与语法解析器的"未知字段前缀"
     报错面有重叠（`submittedDate` 等名字词法上就是一个合法的 `field:phrase`
@@ -218,22 +272,30 @@ def _require_arxiv_query_syntax(text: str, *, where: str, path: str) -> None:
 class SourceSelector:
     """一个源的选择器（design/09 §2 `sources:` 下的一段）。
 
-    单一类型承载六源的字段并集（而非每源一个子类）：T2 的编译器按 `source` 分派，
+    单一类型承载全部源的字段并集（而非每源一个子类）：T2 的编译器按 `source` 分派，
     读到的字段名与 DSL 逐字一致；哪些字段对哪个源合法由 `SOURCE_FIELDS` 单点定义，
     解析期即已强制——编译器可以放心假设"出现在这里的字段对该源合法"。
+
+    **停放字段**（`concepts`/`from_source_types`/`venues`/`fields_of_study`）：随
+    openalex/s2 一并退出 `SOURCE_FIELDS`（R2b/P0-4，见该表注释），当前没有任何源能
+    声明它们，故经 `parse_subscription` 一定恒为空元组。字段本身**保留不删**——本类是
+    冻结值对象，删字段会牵动 `to_query_dict()` 的库内存量往返形态（`from_stored` 与
+    文件加载共用同一解析器，D-021 的单一解析路径），而 R4 若裁决实装 openalex/s2 的
+    时间轴，这四个字段的语义逐字不变。它们不是被遗忘的残留：`tests/unit/
+    test_subs_model.py` 的"字段并集"自断言把这份停放清单显式列出，多一个少一个都打红。
     """
 
     source: str
     # arxiv
     categories: tuple[str, ...] = ()
-    query: str | None = None  # arxiv 字段级布尔式 / s2 bulk query
+    query: str | None = None  # arxiv 字段级布尔式（s2 停放前亦用此槽）
     # ssrn
     networks: tuple[str, ...] = ()
     ejournals: tuple[str, ...] = ()
-    # openalex
+    # openalex（停放：源已退出 SOURCE_FIELDS，R4 裁决前无来源）
     concepts: tuple[str, ...] = ()
     from_source_types: tuple[str, ...] = ()
-    # s2
+    # s2（停放，同上）
     venues: tuple[str, ...] = ()
     fields_of_study: tuple[str, ...] = ()
     # nber
@@ -443,11 +505,7 @@ def _parse_selector(source: str, raw: object, *, where: str) -> SourceSelector:
     path = f"sources.{source}"
     allowed = SOURCE_FIELDS.get(source)
     if allowed is None:
-        _fail(
-            where,
-            path,
-            f"未知源 {source!r}（支持: {', '.join(sorted(SOURCE_FIELDS))}；design/09 §3 能力表）",
-        )
+        _fail(where, path, unsupported_source_message(source))
     mapping = _require_mapping(raw, where=where, path=path)
     if not mapping:
         _fail(where, path, f"选择器为空（该源可用字段: {', '.join(allowed)}）")
@@ -650,6 +708,7 @@ def load_subscriptions_dir(directory: Path) -> list[Subscription]:
 __all__ = [
     "DEFAULT_DEDUPE_AGAINST_LIBRARY",
     "DEFAULT_MAX_NEW_PER_RUN",
+    "ENRICH_ONLY_SOURCES",
     "SOURCE_FIELDS",
     "Actions",
     "Guard",
@@ -660,4 +719,5 @@ __all__ = [
     "load_subscription_file",
     "load_subscriptions_dir",
     "parse_subscription",
+    "unsupported_source_message",
 ]

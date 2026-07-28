@@ -18,6 +18,7 @@ runner = CliRunner()
 
 _PC_ENV_VARS = (
     "PAPER_CRAWLER_HOME",
+    "PAPER_CRAWLER_CONTACT_EMAIL",
     "PAPER_CRAWLER_OPENREVIEW_TOKEN",
     "PAPER_CRAWLER_OPENALEX_API_KEY",
     "PAPER_CRAWLER_S2_API_KEY",
@@ -88,6 +89,40 @@ def test_config_show_env_source_masked(
     assert "***" in els_line
     assert "env" in els_line
     assert "envsecretvalue123" not in result.output  # env 凭证明文不回显
+
+
+def test_config_show_identity_email_env_source(
+    cwd: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """R2c：`PAPER_CRAWLER_CONTACT_EMAIL` 生效并在 `config show` 里正确标注来源层 `env`
+    + 部分脱敏（非硬凭证整值 `***`）——证明该 env 现在贯通到"正门"`Config.identity_email`，
+    而不只是各 adapter 各自私有兜底读到、`config show` 却看不见。
+    """
+    monkeypatch.setenv("PAPER_CRAWLER_CONTACT_EMAIL", "researcher@example.edu")
+    result = runner.invoke(app, ["config", "show", "--home", str(tmp_path / "home")])
+    assert result.exit_code == 0, result.output
+    email_line = next(ln for ln in result.output.splitlines() if ln.startswith("identity.email"))
+    assert "env" in email_line
+    assert "r***@example.edu" in email_line  # 部分脱敏（首字符 + *** + 域），非整值 ***
+    assert "researcher@example.edu" not in result.output
+
+
+def test_config_show_identity_email_env_overrides_home(
+    cwd: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """env 覆盖 config.toml（同 elsevier api_key 先例的优先级契约，本键此前无 env 故未受约束）。"""
+    monkeypatch.setenv("PAPER_CRAWLER_CONTACT_EMAIL", "env-wins@example.edu")
+    home = tmp_path / "home"
+    home.mkdir()
+    (home / "config.toml").write_text(
+        "[identity]\nemail = 'file-loses@example.edu'\n", encoding="utf-8"
+    )
+    result = runner.invoke(app, ["config", "show", "--home", str(home)])
+    assert result.exit_code == 0, result.output
+    email_line = next(ln for ln in result.output.splitlines() if ln.startswith("identity.email"))
+    assert "env" in email_line
+    assert "e***@example.edu" in email_line
+    assert "file-loses" not in result.output
 
 
 def test_config_show_unset_slots(cwd: Path, tmp_path: Path) -> None:

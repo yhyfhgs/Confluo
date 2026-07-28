@@ -16,10 +16,13 @@ import pytest
 
 from helpers import make_ssrn_venue
 from helpers.arxiv_fixtures import fixture_bytes as arxiv_fixture_bytes
+from helpers.crossref_fixtures import fixture_bytes as crossref_fixture_bytes
 from helpers.nber_fixtures import fixture_bytes
+from helpers.parked_sources import assert_covers_dsl_sources
 from helpers.ssrn_fixtures import fixture_bytes as ssrn_fixture_bytes
 from paper_crawler.adapter import AdapterBase, AdapterFamily
 from paper_crawler.adapters.arxiv.adapter import ArxivAdapter
+from paper_crawler.adapters.crossref.adapter import CrossrefAdapter
 from paper_crawler.adapters.ssrn.adapter import SsrnAdapter
 from paper_crawler.errors import CrawlerError, ErrorClass
 from paper_crawler.http import HttpClient
@@ -57,15 +60,20 @@ from paper_crawler.types import (
 
 # ---------------------------------------------------------------------------
 # 清单漂移自断言（同 `compile.SUPPORTED_SOURCES` 的守法：注册了却没接线 = 静默漏源）
+#
+# R2b/P0-4 起判据是"覆盖全部 DSL 源 **且** 多出来的恰好是停放源（openalex/s2）"：本
+# 模块三张表仍留着两源条目（本卡授权范围明确排除改动 watch.py 主体；条目本身是纯数据，
+# 真正的断裂点已被 `model.SOURCE_FIELDS` 白名单挡在门外）。判据形态与理由的单一权威
+# 在 `helpers/parked_sources.py`。
 # ---------------------------------------------------------------------------
 
 
 def test_composer_registry_covers_every_dsl_source() -> None:
-    assert SUPPORTED_SOURCES == set(SOURCE_FIELDS)
+    assert_covers_dsl_sources(SUPPORTED_SOURCES, SOURCE_FIELDS, name="_COMPOSERS")
 
 
 def test_merge_source_table_covers_every_dsl_source() -> None:
-    assert set(MERGE_SOURCE) == set(SOURCE_FIELDS)
+    assert_covers_dsl_sources(MERGE_SOURCE, SOURCE_FIELDS, name="MERGE_SOURCE")
 
 
 # ---------------------------------------------------------------------------
@@ -367,7 +375,7 @@ def test_deliverable_table_covers_every_dsl_source() -> None:
     """下达面表按源穷举——新增源忘了回答"参数能不能下达"会被这条抓住。"""
     from paper_crawler.subs.watch import _DELIVERABLE_PARAMS
 
-    assert set(_DELIVERABLE_PARAMS) == set(SOURCE_FIELDS)
+    assert_covers_dsl_sources(_DELIVERABLE_PARAMS, SOURCE_FIELDS, name="_DELIVERABLE_PARAMS")
 
 
 def test_crossref_issn_param_reaches_the_venue_identifiers() -> None:
@@ -458,9 +466,9 @@ def test_adapter_fetcher_rejects_unregistered_source() -> None:
 
 def test_synthesized_venue_id_is_registry_legal() -> None:
     """合成 spec 的 id 必须过 `VenueSpec` 的 `^[a-z][a-z0-9_]*$`（构造即校验）。"""
-    spec = AdapterFetcher({}).venue_for(SourceRequest(subscription="s", source="openalex"))
-    assert spec.id == "subs_openalex"
-    assert spec.fulltext_source == "openalex"
+    spec = AdapterFetcher({}).venue_for(SourceRequest(subscription="s", source="crossref"))
+    assert spec.id == "subs_crossref"
+    assert spec.fulltext_source == "crossref"
 
 
 def test_ssrn_result_side_window_is_skipped_because_the_axis_differs() -> None:
@@ -641,6 +649,37 @@ def test_arxiv_fanout_reaches_the_real_oai_set_of_a_cross_archive_category() -> 
     assert captured  # 确有请求发出（fixture 回 noRecordsMatch，故结果为空但 URL 已成形）
     assert {str(url.params.get("set")) for url in captured} == {"q-fin"}
     assert "cs" not in {str(url.params.get("set")) for url in captured}
+
+
+def test_crossref_dispatch_through_a_real_adapter_raises_no_capability_error() -> None:
+    """R2b/P0-4 冒烟：**真实** `CrossrefAdapter`（非 `MockPlatformAdapter`）装配
+    `AdapterFetcher`，合法源分派全程不抛 `CapabilityNotSupported`。
+
+    C1 审计指出的缺口正在这里：既有 e2e 一律用 `MockPlatformAdapter`（能力全开）当
+    fetcher 的 adapter 表，于是"某个 DSL 源的真实 adapter 根本没有 DISCOVER/ENUMERATE"
+    这类断裂**在整套测试里没有任何一处会红**——openalex/s2 的 P0 就是这么活到实测的。
+    arxiv / ssrn 两源已各有一条真实 adapter 驱动的用例（见上方两条 F7 回归），本条补齐
+    crossref；nber 走专属 `NberRssFetcher`（下方 RSS 段落），四源至此全覆盖。
+
+    零真实网络：`httpx.MockTransport` 回放既有 crossref fixture（facet 逐年 + works
+    一页）。`conftest` 的 socket 护栏是第二道保险——真打网络会直接 RuntimeError。
+    """
+    seen: list[str] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        seen.append(str(request.url.path))
+        name = "05_facet_published.json" if "facet" in str(request.url) else "02_works_empty.json"
+        return httpx.Response(200, content=crossref_fixture_bytes(name))
+
+    window = window_params(Watermark(), "crossref", now=date(2026, 7, 26))
+    (request,) = build_requests("probe", _step("crossref", ("issn", "0304-405X")), window)
+    fetcher = AdapterFetcher({"crossref": CrossrefAdapter(http=_mock_client(handler))})
+
+    stubs = list(fetcher.fetch(request))  # 不抛 CapabilityNotSupported 即为通过
+
+    assert seen  # 确实走到了 adapter 的 DISCOVER（而非在能力兜底处早退）
+    assert all(isinstance(stub, PaperStub) for stub in stubs)
+    assert all(path.startswith("/journals/0304-405X/works") for path in seen)
 
 
 def test_ssrn_day_window_reaches_the_crossref_filter_and_trims_the_year_buckets() -> None:

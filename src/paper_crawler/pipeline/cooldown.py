@@ -28,11 +28,24 @@ CLI 侧 `clear <KEY>` 的键来自**用户输入**，未经校验时 `key="../..
 ②防御纵深——校验通过后仍对拼出的路径做 `is_relative_to(cooldown_dir)` 二次
 确认（正常情况下①已保证不可能触发，此层只防①未来被削弱/绕过）。两层任一
 不过 → 响亮 `CrawlerError(CONFIG)`，不静默拒绝、不静默截断、不静默改写。
+
+**键规范化（R2e；原审计 P2-f 根因修复）**：`_KEY_RE` 要求首尾字母数字——这同时是
+上面的路径安全护栏，本卡不放宽它。但三类**合法** host 天然不满足这条白名单：尾点
+FQDN（`host.`，RFC 1035 root 标记）、IPv6 字面量（`::1`、`[2001:db8::1]`，含 `:`）、
+IDN 原生 Unicode 形态（`bücher.de`）。R1d 已把这类非法键异常收敛为不中止整轮
+（per-task BLOCKED，见 `_execute_claimed` 前置门），但键本身若恒定非法，任务
+resume 后会循环 BLOCKED、永不自愈——根因在"键从 host 产出的这一步"，不在异常
+传播路径。`normalize_host_key` 在此补上：`host_of`（唯一把 URL host 变成候选键的
+入口）内部委托它，把上述三类 host 规整成 `_KEY_RE` 接受的形态；规范化后仍不合法
+的极端输入（如 IDNA 都拒绝的单标签超长非 ASCII host）原样交回，交由 `cooldown_path`
+按现有语义响亮拒绝——规范化只扩大"合法 host 都能产出合法键"的覆盖面，不改变
+"非法输入响亮报错"的既有姿态。
 """
 
 from __future__ import annotations
 
 import contextlib
+import ipaddress
 import json
 import re
 from dataclasses import dataclass
@@ -82,13 +95,72 @@ def cooldown_path(home: Path, key: str) -> Path:
     return path
 
 
+def normalize_host_key(host: str) -> str:
+    """host → 冷却键规范化（R2e；原审计 P2-f 根因修复，见模块 docstring"键规范化"段）。
+
+    `_KEY_RE`（首尾须字母数字）本身不放宽；本函数让三类天然不匹配它的**合法** host
+    改为产出合法键，而不是靠放宽白名单妥协路径安全。规则依次应用：
+
+    1. 大小写：整体小写。域名大小写不敏感；`urlsplit().hostname` 通常已小写，这里对
+       "调用方直接传入裸 host 字符串"（不经 URL 解析，如本函数自身的单测）同样兜底。
+    2. IPv6 字面量：方括号（若有，防御性剥离——`urlsplit().hostname` 已剥过一次，这里
+       兜底直接传裸括号形式的调用方）之后交给 `ipaddress.IPv6Address` 解析并取
+       `.exploded`（全展开为 8 组十六进制，如 `::1` → `0000:...:0001`）：全展开后
+       首尾必然是十六进制数字，天然规避 `::` 缩写形式可能开头/结尾非字母数字的问题。
+       构造或 `.exploded` 任一步失败（`ValueError`；后者包含一种实测存在的极端情形——
+       带 zone id 的字面量如 `fe80::1%eth0` 能构造成功但 `.exploded` 本身会抛
+       `AddressValueError`，Python 3.13 stdlib 的形态相关 quirk）都按"不是可规范化的
+       IPv6 字面量"处理，落到下面的普通 host 分支——***不会让调用方看到裸
+       `ValueError`***，只会是规范化失败（原样交回，交由 `_KEY_RE` 走 CONFIG）或
+       规范化成功两种结局。解析与格式化都成功时，冒号替换为 `-`（IPv6 地址语法上
+       不含 `-`，替换不会与地址其余部分产生歧义），并加字母开头的前缀 `ipv6-`（真实
+       域名/adapter_id 不会自然产出这个前缀，避免两类键意外撞进同一文件名命名空间）。
+       不同书写形式（`::1` 与 `0:0:0:0:0:0:0:1`）是同一地址，规范化后落到同一个键
+       ——读写往返的前提；不同地址（如 `::1` 与 `2001:db8::1`）全展开后必然不同，
+       键也必然不同（无碰撞）。
+    3. 尾点 FQDN：`rstrip(".")`。`host.` 与 `host` 是同一域名的两种书写（RFC 1035
+       root 标记），冷却状态理应共享同一条记录，不应因书写差异各自建档。
+    4. IDN → punycode：非纯 ASCII 时经标准库 `str.encode("idna")` 转 ACE 形式（无需
+       新增依赖）。ASCII 输入经它是恒等映射——含已是 `xn--` 形态的键，这正是"规范化
+       幂等"成立的原因之一。`UnicodeError`（极端输入，如单标签超长）→ 原样交回，不
+       掩盖问题：交由 `_KEY_RE` 在 `cooldown_path` 响亮拒绝，与模块一贯"不静默"姿态
+       一致（见模块 docstring"路径穿越防护"段）。
+
+    幂等：对已规范化的结果再调用一次，结果不变（`tests/unit/test_pipeline_cooldown.py`
+    锁定；写侧、读侧各自独立调用 `host_of` 时不会因重复规范化产生漂移）。
+    """
+    candidate = host.strip().lower()
+    if candidate.startswith("[") and candidate.endswith("]"):
+        candidate = candidate[1:-1]
+
+    try:
+        exploded = ipaddress.IPv6Address(candidate).exploded
+    except ValueError:
+        pass  # 不是 IPv6 字面量（或极端形态，如 zone id 令 `.exploded` 自身失败）——按 host 处理
+    else:
+        return "ipv6-" + exploded.replace(":", "-")
+
+    candidate = candidate.rstrip(".")
+    try:
+        candidate = candidate.encode("idna").decode("ascii")
+    except UnicodeError:
+        pass  # 极端输入：原样交回，_KEY_RE 会在 cooldown_path 响亮拒绝（不静默放行）
+    return candidate
+
+
 def host_of(raw_url: str | None) -> str | None:
-    """asset URL → host（域级键来源）；无 URL/解析不出 host 时 None。
+    """asset URL → 规范化后的 host（域级键来源）；无 URL/解析不出 host 时 None。
 
     原 `runner._cooldown_keys` 内联逻辑的纯函数化：`raw_url` 为空/None → None；
-    相对路径（无 host，schema 允许）解析不出 hostname → 同样 None。
+    相对路径（无 host，schema 允许）解析不出 hostname → 同样 None。解析出的 host
+    经 `normalize_host_key` 规范化后返回（R2e）——本函数是"URL host → 候选键"的
+    唯一入口，规范化统一在此生效，调用方（`runner.py`）与直接单测均只看到规范化
+    后的结果。
     """
-    return urlsplit(str(raw_url)).hostname if raw_url else None
+    if not raw_url:
+        return None
+    host = urlsplit(str(raw_url)).hostname
+    return normalize_host_key(host) if host else None
 
 
 def resolve_keys(host: str | None, adapter_id: str | None) -> tuple[str, ...]:

@@ -10,6 +10,10 @@
 #   choice/kidney exchange 四个该子领域公认经典词族（稳定匹配理论一脉：
 #   Gale-Shapley/Roth-Sönmez-Ünver/Abdulkadiroğlu-Sönmez）；exclude_regex 的
 #   survey 锚定为精确短语，防误杀。
+# ⚠ R2b 修复（2026-07-28，P0-4）：删原 openalex 段（concepts=[mechanism design,
+#   auction theory] + from_source_types=[preprint]）——openalex capabilities 空集
+#   （enrich-only），watch 侧无 DISCOVER/ENUMERATE，跑必抛 CapabilityNotSupported。
+#   见 src/paper_crawler/subs/model.py::SOURCE_FIELDS。
 name: mechanism-design
 sources:
   arxiv:
@@ -18,9 +22,6 @@ sources:
       (ti:"mechanism design" OR ti:"auction" OR abs:"matching market"
        OR abs:"incentive compatib" OR abs:"truthful mechanism")
       AND NOT ti:"survey"
-  openalex:
-    concepts: ["mechanism design", "auction theory"]
-    from_source_types: [preprint]
 filters:
   title_regex_any:
     - "mechanism design"

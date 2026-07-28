@@ -12,9 +12,13 @@
 真实触发面（本文件三个场景与之同构）：
 1. `auth/providers/cookie_session.py` 的探针网络故障恒抛 `CrawlerError(TRANSIENT)`，
    而 `_auth_gate_fetch` 的 `health_check`/`refresh` 调用无 try（对照 ensure_session 有）；
-2. 冷却键读侧：`cooldown.read_until` 经 `cooldown_path` 白名单校验，非法键（如带根点的
-   FQDN host `pubs.example.org.`、IPv6 字面量 `2001:db8::1`、IDN 未 punycode 化的 host）
-   抛 `CrawlerError(CONFIG)`——该调用同样在 try 外；
+2. 冷却键读侧：`cooldown.read_until` 经 `cooldown_path` 白名单校验，非法键抛
+   `CrawlerError(CONFIG)`——该调用同样在 try 外。本文件编写时（R1d）的非法键例子是
+   带根点的 FQDN host（`pubs.example.org.`）/IPv6 字面量/未 punycode 化的 IDN
+   host——这三类**合法** host 经 R2e（`cooldown.normalize_host_key`，见其模块
+   docstring"键规范化"段）规范化为合法键后已不再触发本条；下方场景②改用规范化
+   仍拒收的形态（结尾连字符），继续锁定"CONFIG → BLOCKED、整轮不中止"这条本文件
+   真正要测的路由行为，与"哪个具体字符串非法"无关；
 3. 非 `CrawlerError` 的意外异常（门内任意 bug）同样直接逃逸。
 
 修复后的口径（本文件即其回归锁定）：门内异常一律按**当前 fetch 任务**经 `_route_error`
@@ -110,16 +114,20 @@ def test_cooldown_read_illegal_key_blocks_task_and_run_continues(
     """冷却门读侧抛 `CrawlerError(CONFIG)`（非法冷却键）→ 当前任务 BLOCKED（CONFIG 的既有
     路由），后续任务照常取回，`drain()` 正常返回、报告落盘。
 
-    非法键来自 asset URL 的 host——此处用**带根点的 FQDN**（`auth.mock.local.`，合法 URL
-    形态），其 host 以 `.` 结尾即不满足 `cooldown._KEY_RE`（首尾须字母数字）；IPv6 字面量
-    与未 punycode 化的 IDN host 是同一缺陷面的姊妹形态。
+    非法键来自 asset URL 的 host——此处用**结尾连字符**的 host（`auth.mock.local-`，
+    合法 URL 形态），其 host 以 `-` 结尾即不满足 `cooldown._KEY_RE`（首尾须字母数字）。
+    注：带根点的 FQDN（`auth.mock.local.`）曾是本测的例子，R2e 起
+    `cooldown.normalize_host_key` 会把它规范化为合法键 `auth.mock.local`（不再
+    BLOCKED，端到端见 `test_pipeline_cooldown.py` 的
+    `test_host_of_normalizes_trailing_dot_fqdn`），故换用规范化未覆盖、仍真实非法的
+    形态，继续锁定"CONFIG → BLOCKED、整轮不中止"这条本测要锁的行为。
     """
     auth_mock = _AuthGatedMock(fetch_mode="ok")
     env = _setup(tmp_path, request=request, auth_mock=auth_mock, n_papers=2)
-    # 首个 asset 的 URL 换成根点 FQDN：其冷却键非法 → 冷却门读侧抛 CONFIG
+    # 首个 asset 的 URL 换成结尾连字符 host：其冷却键非法 → 冷却门读侧抛 CONFIG
     env.db.execute(
         "UPDATE asset SET url = ? WHERE id = ?",
-        ("https://auth.mock.local./pdf/10.1/auth.0", env.asset_ids[0]),
+        ("https://auth.mock.local-/pdf/10.1/auth.0", env.asset_ids[0]),
     )
     _enqueue_fetches(env)
     runner = PipelineRunner(
@@ -235,11 +243,14 @@ def test_enter_cooldown_with_illegal_key_does_not_raise_from_error_route(
 
     读侧同类异常（`_block_if_cooling_down`）则相反——经 `_route_error` 正常分类为
     BLOCKED(config)，见 `test_cooldown_read_illegal_key_blocks_task_and_run_continues`。
+
+    非法键沿用姊妹测试的**结尾连字符**形态（`auth.mock.local-`）——带根点 FQDN 经
+    R2e `cooldown.normalize_host_key` 规范化后已合法，见该测试 docstring 注记。
     """
     env = _setup(tmp_path, request=request, auth_mock=_AuthGatedMock(fetch_mode="ok"), n_papers=1)
     env.db.execute(
         "UPDATE asset SET url = ? WHERE id = ?",
-        ("https://auth.mock.local./pdf/x", env.asset_ids[0]),
+        ("https://auth.mock.local-/pdf/x", env.asset_ids[0]),
     )
     asset = env.repo.get_asset(env.asset_ids[0])
     runner = PipelineRunner(
@@ -248,6 +259,6 @@ def test_enter_cooldown_with_illegal_key_does_not_raise_from_error_route(
 
     runner._enter_challenge_cooldown(_VENUE, asset)  # 不抛
 
-    assert runner._challenge_cooldown["auth.mock.local."] > _OK_CLOCK  # 运行态仍生效
+    assert runner._challenge_cooldown["auth.mock.local-"] > _OK_CLOCK  # 运行态仍生效
     cooldown_dir = env.config.home / "state" / "cooldown"
     assert not cooldown_dir.is_dir() or list(cooldown_dir.glob("*.json")) == []  # 未落盘

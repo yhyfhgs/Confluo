@@ -2,7 +2,7 @@
 title: 配置分层与敏感边界规范
 status: implemented
 owner: fable5
-updated: 2026-07-26
+updated: 2026-07-28
 ---
 
 # 10 · 配置分层加载 + 敏感边界规范
@@ -32,6 +32,27 @@ config/                        # 仓库内，只放规范与样例——真实�
 - **样例文件纪律**：所有值为占位/样例（如 `api_key = "<your-elsevier-key>"`、`quota_probe` 为样例 DOI）；
   用户复制到 config-home 后填真实值。**样例文件本身不含任何真实凭证**——CI 断言 `config/**` 无凭证形态（AC-0.4 正则）。
 - `config.example.toml` 全键覆盖 = 用户单一可信配置清单（消除"哪些键可配"的隐晦）。
+
+### 2.1 此前"查不到就当不存在"的两个键（R2c 补齐登记）
+
+两项真实被消费、此前未登记于 `config.example.toml`/`config/README.md` 任一处（"查不到就当
+不存在"，2026-07 审计 P1-17/18 发现）——但二者与 `_FIELD_SPECS`（§3 起步的分层解析表）的
+关系并不相同，须分列，不可笼统地都叫"游离"：
+
+- **① 已收编（env 绑定进 `_FIELD_SPECS`，`config show` 可见）——`PAPER_CRAWLER_CONTACT_EMAIL`**：
+  `[identity].email`（`Config.identity_email`）的 `_FieldSpec` 已绑定同名 env（本文档 §3
+  起步的分层解析照常适用，`config show` 以 `identity.email` 一行呈现，来源列 `env`、值部分
+  脱敏）。特殊之处只在于：全部真实 adapter 在未经 CLI 装配注入（`set_email`/`bind_http_
+  client`）时，各自的私有兜底也直读这同一个 env 名——二者刻意共用一个名字（同一 env 值同时
+  驱动两条通道），不是"该 env 游离于 `_FIELD_SPECS` 之外"。
+- **② 真游离（不进 `Config`/`_FIELD_SPECS`，`config show` 恒不可见）——
+  `[auth.openreview].username`/`.password`**：只被 `scripts/refresh_openreview_token.py`
+  （自动续期同表 `token` 字段的运维脚本）直读，从未经过本表任何一条 `_FieldSpec` 解析，因此
+  `crawler config show` 恒不显示、脚本自身也从不打印其值（凭证纪律见该脚本 docstring）。
+  真正驱动 OpenReview 鉴权、经主程序消费的是同表的 `token`（`_FIELD_SPECS` 键，`config show`
+  可见且脱敏）——`username`/`password` 只是 `token` 的续期原料，不是主程序的输入。
+
+两项均已在 `config.example.toml`（注释态）+ `config/README.md` 补齐登记。
 
 ## 3. 分层加载链（改造 `Config.load`；纯附加新增项目级非敏感层）
 
@@ -114,3 +135,4 @@ crawler config show [--home H]
 |---|---|---|---|
 | 1 | 2026-07-23 | 初稿（D-025 用户架构令）：仓库内 config/ 规范文件夹 + 四层加载链 + 敏感键防误提交护栏 + `config show` 脱敏 + 第三方凭证槽归集规范 + 敏感边界不变式；归 T2 扩容 | 用户架构令 2026-07-23 + [D-025](../plan/decision-log.md) |
 | 2 | 2026-07-26 | D-032：config-home 物理迁入仓库根 `.paper-crawler/`（`~/.zshenv` env 主指向 + launchd `--home` 硬化 + `resolve_home()` 兜底纪律）；凭证红线表述「仓库外」收窄为「git 追踪范围外 + 整目录强制 ignore」；新增 git clean 操作红线（AGENTS §6） | 用户架构令 2026-07-26 + [D-032](../plan/decision-log.md) |
+| 3 | 2026-07-28 | R2c 修复批（P1-17/18 + R2a 顾虑①）：`identity.email` 补 env 键 `PAPER_CRAWLER_CONTACT_EMAIL`（此前该 `_FieldSpec` 无 env，正门与 16 个 adapter 的私有兜底各读各的）；oup_silverchair 补 `set_email`（`EmailConsumer`）+ per-request obslog 事件（记终响应，非逐 hop）；新增 §2.1 分列登记"已收编"（`PAPER_CRAWLER_CONTACT_EMAIL`，`config show` 可见）与"真游离"（`[auth.openreview].username`/`.password`，`config show` 恒不可见）两类此前未登记的键；`scripts/refresh_openreview_token.py` 的家目录兜底改用 `resolve_home()`（此前独立手写一份行为等价复本）+ 补 launchd 用外部解释器的 `sys.path` bootstrap（独立审查 Critical #1）；`config.example.toml` 修正 7 处 env 简写注释（缺 `PAPER_CRAWLER` 前缀，照抄不生效）；canary 健康检查装配补 elsevier/wiley 凭证注入（此前配了 key 也恒 SKIP）+ 补权限巡检 WARNING | 修复批 R2c 2026-07-28（独立审查回修） |

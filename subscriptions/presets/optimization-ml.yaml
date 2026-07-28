@@ -14,7 +14,12 @@
 #   漏掉"On the Convergence of X"泛型标题，放宽为带上下文式；③query 的
 #   "stochastic gradient" 分支原无 title 对应式（死子句）；④补 \bSGD\b/mirror
 #   descent/proximal 三个该子领域公认词族；⑤openalex concept 从泛泛的
-#   "mathematical optimization" 换成更贴 ML 的 "stochastic gradient descent"。
+#   "mathematical optimization" 换成更贴 ML 的 "stochastic gradient descent"
+#   （该段已于 R2b 整体删除，见下条）。
+# ⚠ R2b 修复（2026-07-28，P0-4）：删原 openalex 段（concepts=[stochastic gradient
+#   descent, convex optimization] + from_source_types=[preprint]）——openalex
+#   capabilities 空集（enrich-only），watch 侧无 DISCOVER/ENUMERATE，跑必抛
+#   CapabilityNotSupported。见 src/paper_crawler/subs/model.py::SOURCE_FIELDS。
 name: optimization-ml
 sources:
   arxiv:
@@ -23,9 +28,6 @@ sources:
       (ti:"convex optimization" OR abs:"stochastic gradient" OR abs:"convergence rate"
        OR abs:"adaptive optimizer")
       AND NOT ti:"survey"
-  openalex:
-    concepts: ["stochastic gradient descent", "convex optimization"]   # 原 "mathematical optimization" 过泛，换更贴 ML 取值（T8 修复）
-    from_source_types: [preprint]
 filters:
   title_regex_any:
     - "(stochastic|convex|non-?convex) optimiz"   # 原裸 "optimiz" 改为 ML 语境锚定式（T8 修复）

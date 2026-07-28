@@ -11,10 +11,16 @@
 |---|---|---|
 | arxiv | `arxiv_category` 逐分类 fan-out；`query` 无下推面 | 仅 `filters` 三谓词 |
 | crossref | 每 issn 一条（`/journals/{issn}/works`） | 仅 `filters` 三谓词（无关键词场景） |
-| openalex | `filter=concepts.id:` + `filter=type:` | 仅 `filters` 三谓词（名称型 concepts 见下） |
-| s2 | `venue` / `fieldsOfStudy` / `query`（bulk search） | 仅 `filters` 三谓词 |
 | nber | 每 program 一条（feed 路由归 T7） | 仅 `filters` 三谓词 |
 | ssrn | **无**（聚合源无 network/eJournal 维度） | `filters` 三谓词 + `ssrn.topic_filter` |
+
+**openalex / s2 两行已删**（R2b/P0-4）：二者 `capabilities = Capability(0)`（enrich-only，
+aggregators.md §1），watch 侧结构性不可达——编译器把它们译成一份漂亮的 `filter=` /
+`venue=` 参数，`AdapterFetcher` 转头就在 `discover_timeline` 上吃
+`CapabilityNotSupported`。留着编译器只会让"配置写得出、编译过得去、一跑必炸"这条路
+继续存在，故连同 `_COMPILERS` 条目一并摘除；源白名单侧的收缩见
+`model.SOURCE_FIELDS` / `model.ENRICH_ONLY_SOURCES`。要恢复得先真的实现两源的
+DISCOVER/ENUMERATE 时间轴（功能扩展，归 R4 裁决），而不是把编译器搬回来。
 
 arxiv 行两栏都要看细则（`_compile_arxiv` docstring）：分类条目由 T5 逐条展开成独立请求
 并成对补上派生的 `arxiv_set`（经 venue quirks 进 OAI `set=`）；`query` 的关键词布尔式
@@ -40,14 +46,14 @@ arxiv 行两栏都要看细则（`_compile_arxiv` docstring）：分类条目由
 ## 只标记**有实现**的补偿谓词（controller 裁决 2026-07-26）
 
 `local_predicates` 是 T3/T5 的执行契约，不是愿望清单：标一条 T3 registry 里没有的谓词，
-T5 集成时会直接 `ValueError` 崩掉整轮 watch。两个近亲案例的处置因此不同——
+T5 集成时会直接 `ValueError` 崩掉整轮 watch。当前唯一在列者——
 
 - **`ssrn.topic_filter`：谓词有实现、只缺信号** → **保留标记**。执行层
   （`adapters/ssrn/parse.py::topic_field_matches`）在，缺的是 `stub.meta['openalex_field']`
   这个 enrich 信号；信号缺失时的兜底语义由 T3 定为 pass-through 放行 + obslog 一次性提示。
-- **openalex 名称型 concepts：连实现都没有** → **出列，降级 note-only**。名称→id 要一次
-  在线查询，属 T5 运行期；在谓词实现落地前，它既没下推也没本地补偿，如实写进 `note`
-  （用户看得见"这条只是没生效"），而不是标一条没人兑现的契约。
+
+（同一裁决的另一半"openalex 名称型 concepts 连实现都没有 → 降级 note-only"已随
+openalex 编译器一并删除，见上文能力映射表下方的说明。）
 
 ## 接缝：日期窗不在本模块（plan §4 T2 接缝裁决①）
 
@@ -61,12 +67,17 @@ T5 集成时会直接 `ValueError` 崩掉整轮 watch。两个近亲案例的处
 from __future__ import annotations
 
 import re
-from collections.abc import Callable, Mapping, Sequence
+from collections.abc import Callable, Mapping
 from dataclasses import replace
 from typing import NoReturn
 
 from paper_crawler.errors import CrawlerError, ErrorClass, SubscriptionInvalid
-from paper_crawler.subs.model import LocalFilter, SourceSelector, Subscription
+from paper_crawler.subs.model import (
+    LocalFilter,
+    SourceSelector,
+    Subscription,
+    unsupported_source_message,
+)
 from paper_crawler.subs.types import (
     ARXIV_CATEGORY_PARAM,
     DATE_WINDOW_PARAMS,
@@ -139,17 +150,6 @@ _CROSSREF_NOTE = (
     "增量窗由 T4 以 filter=from-pub-date/until-pub-date 注入"
 )
 
-_OPENALEX_NOTE = (
-    "openalex 概念+类型下推；多条 filter 条目是 AND 关系（T5 以逗号拼进单个 filter= 参数），"
-    "同一轴内多值用 | 表 OR；增量窗由 T4 以 filter=from_publication_date/to_publication_date 注入"
-)
-
-_S2_NOTE = (
-    "s2 bulk search（/paper/search/bulk）下推 venue/fieldsOfStudy/query；"
-    "venue 是模糊名/ISO4 缩写 OR 匹配（非 id 精确，site-survey/metadata-apis.md）→ 命中需本地复核；"
-    "增量窗由 T4 以 publicationDateOrYear 注入；token 续页与 API key 归 T5"
-)
-
 _NBER_NOTE = (
     "nber programs 下推为参数形态（每 program 一条）；feed 路由归 T7"
     "（back.nber.org/rss/new{code}.xml，实证 feed 清单见 adapters/nber/rss.py，nber.md §3.4）；"
@@ -161,13 +161,6 @@ _SSRN_NOTE_HEAD = "ssrn 聚合源无 network/eJournal 精确过滤维度（ssrn.
 _SSRN_NOTE_TAIL = (
     "；关键词类条件全量本地补偿；"
     "枚举窗由 T4 以 filter=from-created-date/until-created-date 注入（内部 crossref created 轴）"
-)
-
-# 名称型 concepts 的现状说明（P1 出列裁决 2026-07-26）：既没下推、也**没有**本地补偿谓词
-# 实现——如实说，别让用户以为它生效了。
-_OPENALEX_CONCEPT_NAMES_NOTE = (
-    "名称形态 concepts 未下推亦未本地补偿"
-    "（谓词实现待 enrich 信号接线），当前退化为 LocalFilter-only"
 )
 
 # --- 报错出口（沿 `model._fail` 的"<定位> —— <消息>"格式，CLI 可直接指向出错的行）------
@@ -195,10 +188,6 @@ def _reject_date_window(text: str, *, source: str, field: str) -> None:
                 f"design/09 §5 / model.SOURCE_FIELDS 注释）",
             )
 
-
-# --- s2 查询式空白折叠（s2 的 `query` 是自由文本，直送 bulk search，无布尔语法）---
-
-_WHITESPACE_RUN = re.compile(r"\s+")
 
 # arxiv `query` 布尔式的归一/包裹（`normalize_arxiv_query`/`wrap_arxiv_query`）与解析
 # （`parse_arxiv_query`）自 Phase 7 T9 起迁至叶子模块 `subs/types.py`——`model.py`
@@ -313,100 +302,6 @@ def _compile_crossref(selector: SourceSelector, venue: VenueSpec | None) -> Plan
     )
 
 
-# OpenAlex 概念 id 形态：`C41008148` 或整条实体 URL。名称（"large language model"）无法在
-# 离线编译期解析成 id——那需要一次 `/concepts` 查询（且该端点已弃用转 `/topics`，
-# site-survey/metadata-apis.md ⚡）。故 id 形态下推、名称形态记本地补偿。
-_OPENALEX_CONCEPT_ID = re.compile(r"^(?:https?://openalex\.org/)?(C\d+)$", re.IGNORECASE)
-
-
-def _split_openalex_concepts(concepts: Sequence[str]) -> tuple[tuple[str, ...], tuple[str, ...]]:
-    """把 `concepts` 分成（可下推的 id, 只能本地补偿的名称）两组，各自保序。"""
-    ids: list[str] = []
-    names: list[str] = []
-    for concept in concepts:
-        match = _OPENALEX_CONCEPT_ID.match(concept.strip())
-        if match:
-            ids.append("C" + match.group(1)[1:])
-        else:
-            names.append(concept)
-    return tuple(ids), tuple(names)
-
-
-def _compile_openalex(selector: SourceSelector, venue: VenueSpec | None) -> PlanStep:
-    """openalex：`concepts`（id 形态）+ `from_source_types` → `filter=` 轴（design/09 §3）。
-
-    - `concepts.id:C1|C2`——同轴多值用 `|` 表 OR；
-    - `type:preprint|article`——`from_source_types` 映射到 works 的 `type` 轴
-      （`model.SOURCE_FIELDS` 注释即写明 `filter=concepts/type`）。
-
-    **名称型 concepts 不下推**：把 "large language model" 塞进 `concepts.id:` 只会得到
-    空结果或报错——这类"看似省流量实则改结果"的下推正是 design/09 §3 原则句要挡的。
-
-    它们**也不进 `local_predicates`**（P1 出列裁决 2026-07-26）：名称→id 要一次在线查询，
-    谓词至今无任何实现，标上去只会让 T5 在组装执行链时对着一个不存在的谓词崩掉。故降级为
-    note-only，如实告诉用户"这条既没下推也没补偿"。与 `ssrn.topic_filter` 的差别正在这里：
-    那条**有**执行层实现、只缺 enrich 信号（故保留标记 + 由 T3 兜底），这条连实现都没有。
-    """
-    del venue
-    pushdown: list[tuple[str, str]] = []
-    concept_ids, concept_names = _split_openalex_concepts(selector.concepts)
-    if concept_ids:
-        pushdown.append(("filter", "concepts.id:" + "|".join(concept_ids)))
-    if selector.from_source_types:
-        for index, source_type in enumerate(selector.from_source_types):
-            if "|" in source_type:
-                _invalid(
-                    "openalex",
-                    "from_source_types",
-                    f"取值不得含 '|': {source_type!r}（`|` 是 filter 轴内的 OR 分隔符，"
-                    f"混入会被 OpenAlex 读成两个类型）",
-                    index=index,
-                )
-        pushdown.append(("filter", "type:" + "|".join(selector.from_source_types)))
-
-    note = _OPENALEX_NOTE
-    if concept_names:
-        note += (
-            f"；concepts 名称 [{', '.join(concept_names)}] 无离线 id 解析路径"
-            f"（/concepts 已弃用转 /topics）→ {_OPENALEX_CONCEPT_NAMES_NOTE}"
-        )
-    return PlanStep(source="openalex", pushdown=tuple(pushdown), note=note)
-
-
-def _compile_s2(selector: SourceSelector, venue: VenueSpec | None) -> PlanStep:
-    """s2：`venues`/`fields_of_study`/`query` → bulk search 参数（design/09 §3）。
-
-    参数名取 site-survey/metadata-apis.md 实测面：`/paper/search/bulk` 的 `venue=`（逗号
-    分隔 OR 匹配）、`fieldsOfStudy=`（逗号分隔）、`query=`。**venue 是模糊名匹配而非 id
-    精确**（同上出处）——如实写进 `note`，不假装它是精确过滤。
-
-    值里自带逗号 → 拒载：逗号是这两个参数的分隔符，`"Foo, Bar Journal"` 混进去会被 S2
-    拆成两个 venue，多收一堆无关论文而毫无报错。
-    """
-    del venue
-    pushdown: list[tuple[str, str]] = []
-    for field, values in (
-        ("venues", selector.venues),
-        ("fields_of_study", selector.fields_of_study),
-    ):
-        for index, value in enumerate(values):
-            if "," in value:
-                _invalid(
-                    "s2",
-                    field,
-                    f"取值不得含 ',': {value!r}（逗号是 venue/fieldsOfStudy 的 OR 分隔符，"
-                    f"混入会被 S2 拆成多项）",
-                    index=index,
-                )
-    if selector.venues:
-        pushdown.append(("venue", ",".join(selector.venues)))
-    if selector.fields_of_study:
-        pushdown.append(("fieldsOfStudy", ",".join(selector.fields_of_study)))
-    if selector.query is not None:
-        pushdown.append(("query", _WHITESPACE_RUN.sub(" ", selector.query).strip()))
-    return PlanStep(source="s2", pushdown=tuple(pushdown), note=_S2_NOTE)
-
-
 def _compile_nber(selector: SourceSelector, venue: VenueSpec | None) -> PlanStep:
     """nber：`programs` → 每 program 一条下推（**参数形态**；feed 路由归 T7）。
 
@@ -497,12 +392,12 @@ def _compile_ssrn(selector: SourceSelector, venue: VenueSpec | None) -> PlanStep
 # duck-typed 注册表（不进 `AdapterBase` 协议——编译是订阅域的事，冻结件不因此改动；
 # plan §4 T2 已裁决歧义①）。键集必须与 `model.SOURCE_FIELDS` 等值：
 # `test_subs_compile.py` 有**集合等值自断言**（`SUPPORTED_SOURCES == set(SOURCE_FIELDS)`），
-# 防"扩了 SOURCE_FIELDS 却没写编译器"这类清单漂移（审计 S4 教训的同款守法）。
+# 防"扩了 SOURCE_FIELDS 却没写编译器"这类清单漂移（审计 S4 教训的同款守法）。**反向也
+# 由它守住**：给一个 watch 不可达的源写编译器（openalex/s2 的旧形态）同样会打红——
+# 编译器的存在本身就是"这个源跑得动"的暗示，不该比白名单活得更久（R2b/P0-4）。
 _COMPILERS: dict[str, Callable[[SourceSelector, VenueSpec | None], PlanStep]] = {
     "arxiv": _compile_arxiv,
     "ssrn": _compile_ssrn,
-    "openalex": _compile_openalex,
-    "s2": _compile_s2,
     "nber": _compile_nber,
     "crossref": _compile_crossref,
 }
@@ -522,8 +417,15 @@ def compile_subscription(
     （`quirks.topic_filter`，检查单 #10）；缺该键或整个 `venues` 为 None 时按"未声明
     topic_filter"处理（可编译，`note` 里写明少了这层近似补偿）。
 
-    未知源 → `SubscriptionInvalid`（CONFIG）：正常路径上 `parse_subscription` 已挡住，
-    此处兜住"绕过解析器直接构造 `Subscription`"的调用方，避免 KeyError 这种无信息量的崩法。
+    未知源 / **watch 不可达源** → `SubscriptionInvalid`（CONFIG）：正常路径上
+    `parse_subscription` 已挡住（`SOURCE_FIELDS` 白名单），此处兜住"绕过解析器直接构造
+    `Subscription`"的调用方——包括从**旧库行**还原的历史订阅（`Subscription.from_stored`
+    虽同走解析器，但库里躺着的 `query_json` 可能是白名单收缩之前写入的）。
+
+    enrich-only 源（openalex/s2/repec）在此拿到的是与加载期**逐字相同**的那句话
+    （`model.unsupported_source_message`）："该源不支持 watch，请走 crawler enrich"。
+    修复前这条路径的终点是运行期的 `CapabilityNotSupported`——编译过、请求也合成了，
+    直到 `AdapterFetcher` 调 `discover_timeline` 才炸（R2b/P0-4）。
     """
     venue_map = venues or {}
     universal = local_predicates_of(subscription.filters)
@@ -532,10 +434,9 @@ def compile_subscription(
     for selector in subscription.sources:
         compiler = _COMPILERS.get(selector.source)
         if compiler is None:
+            detail = f"subscription[{subscription.name}]:sources.{selector.source}"
             raise SubscriptionInvalid(
-                f"subscription[{subscription.name}]:sources.{selector.source} —— "
-                f"无该源的编译器（支持: {', '.join(sorted(SUPPORTED_SOURCES))}）",
-                detail=f"subscription[{subscription.name}]:sources.{selector.source}",
+                f"{detail} —— {unsupported_source_message(selector.source)}", detail=detail
             )
         step = compiler(selector, venue_map.get(selector.source))
         # 全源共有的补偿谓词在前、源专属在后——`all_local_predicates()` 的并集因此有稳定前缀。

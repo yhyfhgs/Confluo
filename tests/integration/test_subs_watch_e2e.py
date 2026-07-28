@@ -3,7 +3,7 @@
 四场景 = plan §4 T5 DoD 字面：**正常增量 / 熔断 / dry-run / 零新增**。载体是
 `mock_platform`（确定性语料、零网络），经 `AdapterFetcher` 的 DISCOVER→ENUMERATE 默认
 路径驱动——即"复用各 adapter DISCOVER/ENUMERATE"这条接缝本身也在被测。订阅源用
-`crossref`（DSL 六源之一）而 adapter 实物是 mock_platform：`AdapterFetcher` 按**源 id**
+`crossref`（DSL 四源之一）而 adapter 实物是 mock_platform：`AdapterFetcher` 按**源 id**
 索引 adapter，把哪个实物挂在这个 id 上是装配期的事，正是这个接缝让离线端到端成立。
 
 零网络：mock_platform 程序内生成语料，不触 socket（全局护栏 `tests/conftest.py` 兜底）。
@@ -1016,18 +1016,23 @@ def test_batch_dedupe_nber_two_programs_sharing_a_working_paper(env: _Env) -> No
 
 
 def test_batch_dedupe_across_sources_records_the_merged_origin(env: _Env) -> None:
-    """场景四：arxiv 与 openalex 给出同一个 DOI——保留声明序首个源，另一个记进命中规则。"""
+    """场景四：arxiv 与 ssrn 给出同一个 DOI——保留声明序首个源，另一个记进命中规则。
+
+    R2b/P0-4：原用 arxiv + openalex 这一对，openalex 已退出 DSL 源白名单（enrich-only，
+    watch 侧不可达）。换成 arxiv + ssrn——同为两个真实可跑的源，跨源去重的被测语义
+    （声明序首个胜 + `merged_from:` 记账）逐字不变。
+    """
     shared_arxiv = _stub("Same paper, arxiv view", "10.48550/arxiv.2601.1")
-    shared_openalex = _stub("Same paper, openalex view", "10.48550/arxiv.2601.1")
+    shared_ssrn = _stub("Same paper, ssrn view", "10.48550/arxiv.2601.1")
     fetcher = _StubFetcher(
         {
             "arxiv": [shared_arxiv, _stub("arxiv only", "10.48550/arxiv.2601.2")],
-            "openalex": [shared_openalex],
+            "ssrn": [shared_ssrn],
         }
     )
     subscription = _load_one(
         env,
-        sources={"arxiv": {"categories": ["cs.AI"]}, "openalex": {"concepts": ["C41008148"]}},
+        sources={"arxiv": {"categories": ["cs.AI"]}, "ssrn": {"networks": ["FEN"]}},
     )
 
     summary = run_watch(env.context(fetcher=fetcher), subscription, now=DAY)
@@ -1036,8 +1041,8 @@ def test_batch_dedupe_across_sources_records_the_merged_origin(env: _Env) -> Non
     _assert_deduped(summary, 2)
     survivor = next(e for e in summary.entries if e.title == "Same paper, arxiv view")
     assert survivor.source == "arxiv"  # 声明序在前者胜
-    assert f"{MERGED_SOURCE_RULE_PREFIX}openalex" in survivor.matched_rules
-    assert "Same paper, openalex view" not in [entry.title for entry in summary.entries]
+    assert f"{MERGED_SOURCE_RULE_PREFIX}ssrn" in survivor.matched_rules
+    assert "Same paper, ssrn view" not in [entry.title for entry in summary.entries]
 
 
 def test_batch_dedupe_does_not_merge_identifier_less_stubs(env: _Env) -> None:

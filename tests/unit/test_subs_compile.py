@@ -24,6 +24,7 @@ import pytest
 import yaml
 
 from helpers import make_ssrn_venue
+from helpers.parked_sources import assert_covers_dsl_sources
 from paper_crawler.errors import CrawlerError, ErrorClass, SubscriptionInvalid
 from paper_crawler.subs.compile import (
     DATE_WINDOW_PARAMS,
@@ -34,12 +35,14 @@ from paper_crawler.subs.compile import (
     local_predicates_of,
 )
 from paper_crawler.subs.model import (
+    ENRICH_ONLY_SOURCES,
     SOURCE_FIELDS,
     LocalFilter,
     SourceSelector,
     Subscription,
     load_subscription_file,
     parse_subscription,
+    unsupported_source_message,
 )
 from paper_crawler.subs.types import (
     LOCAL_PREDICATE_EXCLUDE_REGEX,
@@ -337,123 +340,59 @@ def test_crossref_accepts_valid_issn_forms_including_check_digit_x(issn: str) ->
     assert _step("crossref", {"issns": (issn,)}).pushdown == (("issn", issn),)
 
 
-# --- openalex：concepts + from_source_types → filter 轴 -----------------------
+# --- enrich-only 源：编译期拒载（R2b/P0-4；原 openalex/s2 两组编译用例已随编译器删除）--
+#
+# 删掉的是什么：`_compile_openalex`（concepts id/名称分流、`filter=concepts.id:`、
+# `type:` 轴、`|` 分隔符拒载）与 `_compile_s2`（`venue`/`fieldsOfStudy` 逗号拼接、
+# query 空白折叠、逗号拒载）两个编译器，及其各 8/9 条用例。它们本身都是对的——错的是
+# 这两个源在 watch 侧**根本不可达**（capabilities 空集，`AdapterFetcher` 一调
+# `discover_timeline` 就吃 `CapabilityNotSupported`），编译器把"配置写得出、编译过得去、
+# 一跑必炸"这条路铺完了最后一段。R4 若裁决实装两源的时间轴，编译器逻辑在 git 历史里
+# 逐字可取；届时要连同真实的 DISCOVER/ENUMERATE 一起回来，而不是只把编译器搬回。
 
 
-def test_openalex_concept_ids_are_pushed_down_as_or_group() -> None:
-    step = _step("openalex", {"concepts": ("C41008148", "C154945302")})
-    assert step.pushdown == (("filter", "concepts.id:C41008148|C154945302"),)
-    assert step.local_predicates == ()
+@pytest.mark.parametrize("source", sorted(ENRICH_ONLY_SOURCES))
+def test_enrich_only_source_is_rejected_at_compile_time(source: str) -> None:
+    """绕过解析器直构的 `Subscription`（如从收缩前写入的旧库行还原）在编译期被挡住。
 
-
-def test_openalex_concept_entity_url_is_normalized_to_short_id() -> None:
-    step = _step("openalex", {"concepts": ("https://openalex.org/C41008148",)})
-    assert step.pushdown == (("filter", "concepts.id:C41008148"),)
-
-
-def test_openalex_concept_names_are_note_only_not_a_predicate() -> None:
-    """名称型概念：既不臆造下推，**也不标补偿谓词**——该谓词全仓无实现（P1 出列裁决）。
-
-    标一条 T3 registry 里没有的谓词，T5 组装执行链时会直接崩掉整轮 watch；降级 note-only
-    才是如实说法："这条现在没生效"。与 `ssrn.topic_filter`（有实现、只缺信号）区别对待。
+    这是加载期白名单之外的**第二道闸**：`Subscription.from_stored` 虽同走解析器，但
+    库里躺着的 `query_json` 可能是白名单收缩之前写进去的；此前这条路径的终点是运行期
+    `CapabilityNotSupported`（编译过、请求也合成了，直到真去拉数据才炸）。
     """
-    step = _step("openalex", {"concepts": ("large language model",)})
-    assert step.pushdown == ()
-    assert step.local_predicates == ()
-    assert "large language model" in step.note
-    assert "未下推亦未本地补偿" in step.note
+    subscription = Subscription(name="probe", sources=(SourceSelector(source=source),))
 
-
-def test_openalex_mixed_ids_and_names_split_by_form() -> None:
-    step = _step("openalex", {"concepts": ("C41008148", "large language model")})
-    assert step.pushdown == (("filter", "concepts.id:C41008148"),)
-    assert step.local_predicates == ()
-
-
-def test_openalex_source_type_containing_pipe_is_rejected() -> None:
-    """`|` 是 filter 轴内的 OR 分隔符——混进取值会被 OpenAlex 读成两个类型。"""
     with pytest.raises(SubscriptionInvalid) as excinfo:
-        _step("openalex", {"from_source_types": ("preprint|article",)})
-    assert excinfo.value.detail == "sources.openalex.from_source_types[0]"
+        compile_subscription(subscription)
 
-
-def test_openalex_source_types_become_type_filter() -> None:
-    """多值边界：同一 filter 轴内多值用 `|` 表 OR。"""
-    step = _step("openalex", {"from_source_types": ("preprint", "article")})
-    assert step.pushdown == (("filter", "type:preprint|article"),)
-
-
-def test_openalex_two_axes_emit_two_filter_entries_in_field_order() -> None:
-    """两轴同时声明 → 两条 `filter` 重复键条目，顺序 = `SOURCE_FIELDS` 字段序。"""
-    step = _step("openalex", {"concepts": ("C41008148",), "from_source_types": ("preprint",)})
-    assert step.pushdown == (
-        ("filter", "concepts.id:C41008148"),
-        ("filter", "type:preprint"),
-    )
-    assert [key for key, _ in step.pushdown] == ["filter", "filter"]
-
-
-def test_openalex_empty_selector_yields_no_pushdown_and_no_concept_predicate() -> None:
-    step = _step("openalex", {})
-    assert step.pushdown == () and step.local_predicates == ()
-    assert "未下推亦未本地补偿" not in step.note
-
-
-# --- s2：venues / fields_of_study / query → bulk search 参数 ------------------
-
-
-def test_s2_venues_are_comma_joined() -> None:
-    step = _step("s2", {"venues": ("NeurIPS", "ICML")})
-    assert step.pushdown == (("venue", "NeurIPS,ICML"),)
-
-
-def test_s2_fields_of_study_are_comma_joined() -> None:
-    step = _step("s2", {"fields_of_study": ("Economics", "Computer Science")})
-    assert step.pushdown == (("fieldsOfStudy", "Economics,Computer Science"),)
-
-
-def test_s2_query_whitespace_is_collapsed() -> None:
-    step = _step("s2", {"query": "large  language\n  models"})
-    assert step.pushdown == (("query", "large language models"),)
-
-
-def test_s2_all_axes_follow_source_fields_order() -> None:
-    step = _step(
-        "s2",
-        {"venues": ("NeurIPS",), "fields_of_study": ("Computer Science",), "query": "agents"},
-    )
-    assert step.pushdown == (
-        ("venue", "NeurIPS"),
-        ("fieldsOfStudy", "Computer Science"),
-        ("query", "agents"),
-    )
-
-
-def test_s2_without_query_emits_no_query_param() -> None:
-    """空 query 边界：bulk search 允许纯过滤检索，不该塞一个空 `query=`。"""
-    step = _step("s2", {"venues": ("NeurIPS",)})
-    assert "query" not in step.as_params()
-
-
-def test_s2_empty_selector_yields_no_pushdown() -> None:
-    assert _step("s2", {}).pushdown == ()
-
-
-@pytest.mark.parametrize(
-    ("field", "value"),
-    [("venues", "Journal of Finance, Series B"), ("fields_of_study", "Economics, Finance")],
-)
-def test_s2_value_containing_comma_is_rejected(field: str, value: str) -> None:
-    """逗号是 venue/fieldsOfStudy 的分隔符——混进取值会被 S2 静默拆成两项、多收一堆。"""
-    with pytest.raises(SubscriptionInvalid) as excinfo:
-        _step("s2", {field: (value,)})
+    message = str(excinfo.value)
     assert excinfo.value.error_class is ErrorClass.CONFIG
-    assert excinfo.value.detail == f"sources.s2.{field}[0]"
+    assert excinfo.value.detail == f"subscription[probe]:sources.{source}"
+    assert "enrich-only" in message and "不支持 watch" in message
+    assert "crawler enrich" in message
 
 
-def test_s2_note_flags_fuzzy_venue_matching() -> None:
-    """venue 是模糊名匹配而非 id 精确（site-survey）——如实标注，不假装精确。"""
-    assert "模糊名" in _step("s2", {"venues": ("NeurIPS",)}).note
+def test_compile_time_and_load_time_rejections_share_one_message() -> None:
+    """两道闸的措辞出自同一个 `model.unsupported_source_message`——不会各说各的。"""
+    with pytest.raises(SubscriptionInvalid) as load_time:
+        parse_subscription({"name": "probe", "sources": {"openalex": {"concepts": ["C1"]}}})
+    with pytest.raises(SubscriptionInvalid) as compile_time:
+        compile_subscription(
+            Subscription(name="probe", sources=(SourceSelector(source="openalex"),))
+        )
+
+    shared = unsupported_source_message("openalex")
+    assert shared in str(load_time.value)
+    assert shared in str(compile_time.value)
+
+
+def test_no_compiler_survives_for_a_source_outside_the_whitelist() -> None:
+    """反向漂移闸：给一个不在 `SOURCE_FIELDS` 里的源留着编译器 == 留着那条必炸的路。
+
+    `test_compiler_registry_matches_source_fields_exactly` 是正向（白名单有、编译器
+    没有）；这条把同一个等值关系的反向也写成断言的**理由**记在这里，免得后人以为
+    "多一个编译器无害"。
+    """
+    assert SUPPORTED_SOURCES.isdisjoint(ENRICH_ONLY_SOURCES)
 
 
 # --- nber：programs → 每 program 一条（feed 路由归 T7）------------------------
@@ -641,8 +580,14 @@ def test_compiler_registry_matches_source_fields_exactly() -> None:
 
 
 def test_date_window_param_table_covers_every_source() -> None:
-    """T4/T5 接缝表同样按源集合自断言——新增源必须显式回答"日期窗参数叫什么"。"""
-    assert set(DATE_WINDOW_PARAMS) == set(SOURCE_FIELDS)
+    """T4/T5 接缝表同样按源集合自断言——新增源必须显式回答"日期窗参数叫什么"。
+
+    R2b 起是"DSL 源 ∪ 停放源"：`subs/types.py` 的表仍留着 openalex/s2 的槽位名
+    （本卡授权范围排除改动 watch/types 主体，且 R4 若实装两源逐字可用），故断言改成
+    "覆盖全部 DSL 源 **且** 多出来的恰好是停放源"——仍是两个方向都锁死，见
+    `helpers/parked_sources.py`。
+    """
+    assert_covers_dsl_sources(DATE_WINDOW_PARAMS, SOURCE_FIELDS, name="DATE_WINDOW_PARAMS")
 
 
 def test_unknown_source_fails_loud_instead_of_key_error() -> None:
@@ -663,8 +608,6 @@ def _all_sources_subscription() -> Subscription:
             "sources": {
                 "arxiv": {"categories": ["cs.AI"], "query": 'ti:"agent" AND NOT ti:"survey"'},
                 "crossref": {"issns": ["0033-5533"]},
-                "openalex": {"concepts": ["C41008148"], "from_source_types": ["preprint"]},
-                "s2": {"venues": ["NeurIPS"], "fields_of_study": ["Computer Science"]},
                 "nber": {"programs": ["AP"]},
                 "ssrn": {"networks": ["FEN"]},
             },
@@ -675,14 +618,7 @@ def _all_sources_subscription() -> Subscription:
 
 def test_step_order_follows_dsl_declaration_order() -> None:
     plan = compile_subscription(_all_sources_subscription())
-    assert [step.source for step in plan.steps] == [
-        "arxiv",
-        "crossref",
-        "openalex",
-        "s2",
-        "nber",
-        "ssrn",
-    ]
+    assert [step.source for step in plan.steps] == ["arxiv", "crossref", "nber", "ssrn"]
 
 
 def test_source_absent_from_dsl_gets_no_step() -> None:
@@ -758,16 +694,6 @@ def test_llm_agents_example_compiles_to_expected_plan() -> None:
                     '((ti:"agent" OR abs:"agentic" OR abs:"tool use") ANDNOT ti:"survey")',
                 ),
             ),
-        ),
-        (
-            "openalex",
-            (("filter", "type:preprint"),),
-            (
-                LOCAL_PREDICATE_TITLE_REGEX_ANY,
-                LOCAL_PREDICATE_EXCLUDE_REGEX,
-                LOCAL_PREDICATE_MIN_YEAR,
-            ),
-            (),
         ),
     )
 
