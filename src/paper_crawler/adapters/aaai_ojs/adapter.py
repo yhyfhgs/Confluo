@@ -12,12 +12,29 @@ pmlr §1）。
   issue 是站点实现细节非领域概念，"No.M" 降为 per-paper meta。
 - `enumerate_issue`（OAI-PMH 收割）：`ListRecords` + `resumptionToken` 翻页 +
   **DOI-卷号客户端过滤**（membership 判据是 DOI 卷号，非 OAI set/日期窗——datestamp≠
-  发表日，§4 ⚠）。**先全库回填、后当前届固定回看窗增量**（★A 附属，零接口变更、arxiv
-  同构）：历史届无日期窗全库收割按卷 partition；当前届（volume_map 最大年之卷）加
-  ``from=<今日−回看天数>`` datestamp 窗做增量。去重由 `identifier('doi')` 主键天然保证。
-  历史届的那"一趟"全库收割由**跨卷分区缓存**兑现（见 `_backfill_pages`）：首个历史届
-  触发单趟收割并把所有已注册历史卷就地 partition 缓存，其余历史届零请求命中缓存——
-  否则每届各自重扫全库，请求成本随已注册届数线性放大（审计 S1-P1）。
+  发表日，§4 ⚠）。**冷启动全量收割建基线、基线已建后回看窗增量**（P0-3 修复，★A 附属
+  结构延伸）：任一卷（历史或当前届）在本实例内首次被问到（跨卷分区缓存查无该卷）→
+  单趟无日期窗全库收割，目标卷即时产出、**全部已注册卷（含当前届）**就地 partition
+  缓存（见 `_backfill_pages`）——首个被问到的卷触发收割，其余已注册卷零请求命中缓存
+  （历史届：直接命中即返回数据；否则每届各自重扫全库，请求成本随已注册届数线性放大，
+  审计 S1-P1）。**当前届三态**（`_enumerate_current_edition`，基线完整 + 新鲜度优先）：
+  ①**冷启动**（分区未建）→ 与历史届同款单趟无窗全库收割，就地建基线并即时交付；
+  ②**首次交付**（分区已由某历史届的回填顺带建好、但当前届自己还没交付过）→
+  ``chain(缓存分区内容, from=<今日−回看天数> 回看窗查询)`` 按 DOI 去重后一并产出
+  （基线不能烂在缓存里，见 P0-3 回修）；③**稳态**（基线已交付过）→ 只走回看窗做真实
+  增量查询（+1 请求/轮，不重复吐基线）。②③的窗口重叠不成问题：去重由
+  `identifier('doi')` 主键天然保证（重叠窗口不产重复行）。**P0-3 根因（两层）**：其一，
+  旧版注释曾称当前届基线由"历史全库回填"顺带建立，但该前提在旧实现里不成立——
+  `_cacheable_volumes` 排除当前届、`_backfill_pages` 把当前卷记录判
+  discarded_unregistered 丢弃，基线实际无处建立；当前届 enumerate 又无条件恒走
+  回看窗，冷启动时 OJS datestamp 滞后发表（survey §6：可达近 2 年）导致窗口外早发
+  论文被静默漏收，只能等其"滚入历史届"才被下次全库回填补齐。其二（回修）：前述两处
+  改好、当前卷终于进了分区缓存之后，"缓存里有当前届分区"又被误当"基线已交付"信号而
+  直接退回窄回看窗——已收割到的当前卷记录留在缓存里从未 yield 给消费方，缺口原样还在；
+  故"分区已建"与"已交付"必须是两个标记（`_backfill` vs `_current_served`），首次交付
+  走 chain（结构移植自 econsoc 同型 T15 修复，econsoc/adapter.py `_cacheable_years`；
+  econsoc 缓存命中即返回、不再增量，aaai 在交付基线之余保留当前届每轮的回看窗真查以
+  贴合"新鲜度优先"原设计，二者构造差异见 `_enumerate_current_edition`）。
 - `resolve_assets`（零网络）：读 `meta['pdf_url']`（dc:relation 的 galley view URL）→
   ``/view/``→``/download/`` 预换终态 URL（survey §4，省一跳）→ 单个 PDF `AssetPlan`。
 - `fetch_asset`（流式）：`HttpClient.stream` → `io.write_stream`；首字节嗅探——PDF url
@@ -71,9 +88,14 @@ from paper_crawler.useragent import build_user_agent
 
 _OAI_BASE_TMPL = "https://ojs.aaai.org/index.php/{code}/oai"
 _METADATA_PREFIX = "oai_dc"
-# 当前届增量的固定回看天数（§4 ★A 附属：非持久化 watermark 的 adapter 常量）。窗口越长越
-# 抗 datestamp 滞后（survey §6：2019 论文 datestamp=2021 的 2 年滞后），但当前届的初始
-# 完整基线由"历史全库回填"建立，本窗口只负责捕获增量新增（去重由 DOI 主键保证）。
+# 当前届增量的固定回看天数（★D 附属：非持久化 watermark 的 adapter 常量）。窗口越长越
+# 抗 datestamp 滞后（survey §6：2019 论文 datestamp=2021 的 2 年滞后）。**P0-3 修复**：当前
+# 届的初始完整基线由单趟无窗全库收割建立（`_backfill_pages`）——它自己冷启动时触发，或由
+# 某历史届的回填顺带建好、再经 `_enumerate_current_edition` 的首次交付 chain 吐给消费方；
+# 旧注释曾称"历史全库回填顺带建立"即算数，该前提两层落空（`_cacheable_volumes` 排除当前届
+# + 当前卷记录被判 discarded_unregistered 丢弃，基线无处建立；后来即便缓存住了也从不交付，
+# 基线烂在缓存里）。本窗口只负责在基线之上捕获增量新增：首次交付时与基线 chain，此后每轮
+# 单飞（去重由 DOI 主键保证）。
 _LOOKBACK_DAYS = 30
 # 跨卷分区缓存的记录数硬顶（审计 S1-P1 修复）。全库活记录实测 ~22.4k（survey §11.1，
 # completeListSize=26185 含 4.26% 墓碑），本常量取其 ~2× 余量：正常运行永不触顶；真触顶
@@ -132,11 +154,19 @@ class AaaiOjsAdapter(AdapterBase):
     def __init__(self, http: HttpClient | None = None) -> None:
         # http=None：首次网络调用时惰性自建（见模块 docstring 的注入说明）。
         self._http = http
-        # 跨卷分区缓存（审计 S1-P1）：单趟全库收割的产物，key=(venue_id, oai_base)，
-        # value=已注册历史卷→该卷 PaperStub 序列。**实例内存态、非持久化**：随 adapter
-        # 实例（= 一次 CLI 进程内的 registry 实例）生灭，跨进程不复用、不落盘。
+        # 跨卷分区缓存（审计 S1-P1；P0-3 起含当前届）：单趟全库收割的产物，
+        # key=(venue_id, oai_base)，value=已注册卷（含当前届）→该卷 PaperStub 序列。
+        # **实例内存态、非持久化**：随 adapter 实例（= 一次 CLI 进程内的 registry 实例）
+        # 生灭，跨进程不复用、不落盘。
         self._backfill_key: tuple[str, str] | None = None
         self._backfill: dict[str, tuple[PaperStub, ...]] | None = None
+        # 当前届「基线**已交付**」标记（P0-3 回修）——与上面的分区缓存（基线**已建**）
+        # 刻意分成两件事：分区可能由某历史届的全库回填顺带建好，而那份内容还从未 yield
+        # 给当前届的消费方；只有交付过，后续轮次才允许退化成纯回看窗（见
+        # `_enumerate_current_edition`）。key=(venue_id, oai_base, volume)，仅在交付
+        # 生成器**自然跑完**时落标（与 `_publish_backfill` 同哲学：残缺交付不算数，
+        # 下一轮重来只多花一次窗口请求，且下游 DOI 主键幂等）。同为实例内存态。
+        self._current_served: set[tuple[str, str, str]] = set()
 
     def set_http_client(self, client: HttpClient) -> None:
         """注入组装好的 `HttpClient`（`adapter.HttpClientConsumer` 协议，同 arxiv 先例）。"""
@@ -180,20 +210,24 @@ class AaaiOjsAdapter(AdapterBase):
         """届 IssueRef → OAI-PMH `ListRecords` 收割（DOI-卷号客户端过滤 + resumptionToken）。
 
         目标/窗口构造在此**急切**求值（非法 issue 早失败为 CONFIG）；翻页与网络在返回的
-        生成器惰性执行。**先全库回填、后当前届固定回看窗增量**（★A 附属，§4/§9）：
+        生成器惰性执行。**冷启动全量收割建基线、基线已建后回看窗增量**（P0-3 修复，
+        §4/§9）：
 
-        - **当前届**（volume_map 最大年之卷）：加 ``from=<今日−回看天数>`` datestamp 窗，
-          **永不读写跨卷缓存**——新鲜度优先，每次都要真去看站点有没有新增。
-        - **历史届**：无日期窗全库收割，但**一趟喂所有历史届**（跨卷分区缓存）——首个历史
-          届触发收割并 partition 缓存全部已注册历史卷，其余历史届零请求命中缓存。
+        - **当前届**（volume_map 最大年之卷）：见 `_enumerate_current_edition` 的三态——
+          ①分区未建 → 与历史届同款单趟全量收割建基线并即时交付；②分区已建（某历史届
+          顺带建的）但本届还没交付过 → ``chain(缓存分区, 回看窗查询)`` 去重后一并产出；
+          ③已交付过 → 只走 ``from=<今日−回看天数>`` datestamp 回看窗做真实增量查询
+          （新鲜度优先，不重复吐基线）。
+        - **历史届**：无日期窗全库收割，但**一趟喂所有已注册卷（含当前届）**（跨卷分区
+          缓存）——首个被问到的卷触发收割并 partition 缓存全部已注册卷，其余历史届零
+          请求命中缓存直接返回。
 
         去重由下游 `identifier('doi')` 主键天然保证（重叠窗口不产重复行）。
         """
         volume = _issue_volume(issue, venue)
         oai_base = _oai_base(_ojs_code(venue))
         if volume == _latest_volume(venue):
-            url = _oai_list_url(oai_base, _lookback_from())
-            return self._enumerate_pages(venue, issue, volume, oai_base, url)
+            return self._enumerate_current_edition(venue, issue, volume, oai_base)
         cached = self._cached_partition(venue, oai_base, volume)
         if cached is not None:
             log_event(
@@ -207,6 +241,114 @@ class AaaiOjsAdapter(AdapterBase):
             )
             return iter(cached)
         return self._backfill_pages(venue, issue, volume, oai_base, _oai_list_url(oai_base, None))
+
+    def _enumerate_current_edition(
+        self, venue: VenueSpec, issue: IssueRef, volume: str, oai_base: str
+    ) -> Iterable[PaperStub]:
+        """当前届冷启动/首次交付/稳态三分支（P0-3 修复核心 + 回修，闭合"当前届无全量基线
+        路径"与"基线烂在缓存里"两层缺口）。
+
+        分支判据是**两个正交标记**：分区缓存有无该卷（基线**已建**）、`_current_served`
+        有无该卷（基线**已交付**）。
+
+        - **冷启动**（分区未建——本实例内还没有任何一趟全量收割覆盖过当前届，不论是它
+          自己触发的还是某历史届顺带触发的）：与历史届同款单趟全量收割建基线
+          （`_backfill_pages`，无 datestamp 窗、全部已注册卷含当前届一并 partition
+          缓存）——取代旧版"当前届基线由历史全库回填顺带建立"的落空承诺（旧实现里
+          `_cacheable_volumes` 排除当前届、`_backfill_pages` 把当前卷记录判
+          discarded_unregistered 丢弃，基线实际无处建立，见模块 docstring）。
+        - **首次交付**（分区已建但本届还没交付过——典型场景：`discover_timeline` 升序
+          产 issue，v24 等历史届的全库回填顺带把当前届 partition 缓存了，随后才轮到当前
+          届被 enumerate）：``chain(缓存分区内容, 回看窗查询)``，按 DOI 去重后一并产出。
+          此前版本在这里把"分区已建"误当"已交付"、直接退回窄回看窗，致使已收割到的当前
+          卷记录留在缓存里从未 yield、从未入库（P0-3 回修的靶心）。缓存分区那一段**零
+          请求**，回看窗仍是一次真查——基线完整性与新鲜度两头都要。
+        - **稳态**（已交付过）：只走 `from=` 回看窗做真实增量查询，不重复吐基线（当前届
+          数据持续增长，快照很快过期；新鲜度优先，与历史届"缓存命中直接返回数据"不同；
+          也与 econsoc"缓存命中即返回、不再增量"不同——econsoc 没有"同实例内重复
+          enumerate 同一当前年"的场景假设，aaai 保留当前届每轮真查以贴合旧版设计意图）。
+
+        缓存/标记的失效语义按 econsoc 既有口径：均为实例内存态、非持久化，跨进程/下次
+        运行天然是空缓存空标记、天然重新冷启动全量收割，不自创 TTL/落盘机制。
+        """
+        cached = self._cached_partition(venue, oai_base, volume)
+        if cached is None:
+            log_event(
+                "INFO",
+                f"aaai {venue.id} {issue.label}: first harvest this run of current "
+                f"edition volume {volume} (no partition cache yet) — running a full "
+                "window-less harvest instead of a lookback datestamp query, closing "
+                "the gap where papers whose OAI datestamp lags their publication date "
+                "would otherwise be missed until they roll into a historical edition; "
+                "later re-enumeration of this edition is served by a fresh lookback "
+                "query alone (freshness first)",
+                venue=venue.id,
+                stage="enumerate",
+                bucket=issue.label,
+                volume=volume,
+            )
+            return self._serve_cold_baseline(venue, issue, volume, oai_base)
+        if (venue.id, oai_base, volume) not in self._current_served:
+            log_event(
+                "INFO",
+                f"aaai {venue.id} {issue.label}: first serve this run of current "
+                f"edition volume {volume} — chaining the {len(cached)} cached baseline "
+                "records (harvested by an earlier full window-less pass in this run, "
+                "zero extra requests) with one fresh lookback datestamp query, so the "
+                "baseline reaches the consumer instead of rotting in the cache; later "
+                "re-enumeration of this edition is served by the lookback query alone",
+                venue=venue.id,
+                stage="enumerate",
+                bucket=issue.label,
+                volume=volume,
+                baseline_papers=len(cached),
+            )
+            return self._serve_baseline_then_lookback(venue, issue, volume, oai_base, cached)
+        url = _oai_list_url(oai_base, _lookback_from())
+        return self._enumerate_pages(venue, issue, volume, oai_base, url)
+
+    def _serve_cold_baseline(
+        self, venue: VenueSpec, issue: IssueRef, volume: str, oai_base: str
+    ) -> Iterator[PaperStub]:
+        """当前届冷启动交付：单趟无窗全库收割即基线；跑完才落"已交付"标记。"""
+        yield from self._backfill_pages(
+            venue, issue, volume, oai_base, _oai_list_url(oai_base, None)
+        )
+        self._current_served.add((venue.id, oai_base, volume))
+
+    def _serve_baseline_then_lookback(
+        self,
+        venue: VenueSpec,
+        issue: IssueRef,
+        volume: str,
+        oai_base: str,
+        baseline: tuple[PaperStub, ...],
+    ) -> Iterator[PaperStub]:
+        """当前届首次交付：`chain(缓存基线, 回看窗增量)`，同 DOI 只产一次。
+
+        **去重口径**：先吐缓存基线（零请求）并记下其 DOI，回看窗里 DOI 已见者跳过——
+        即"基线版本优先"。之所以不反过来"以回看窗新记录为准"：这份基线不是隔夜快照，
+        而是**同一次运行内**几秒前那趟全库收割的产物，同一条记录在两处只可能字节相同
+        （站点在同一趟运行中间改写该条的概率可忽略）；而"基线优先"能保持惰性——不必把
+        整个窗口结果先物化再回头比对。真出现站点侧改写，下游 `identifier('doi')` 主键
+        upsert 也会在下一轮回看窗把新版本盖回去。
+
+        与 `_backfill_pages` 同哲学：标记只在生成器**自然跑完**时落——消费方提前 break
+        则本届不算已交付，下一轮重走本分支（代价仅多一次窗口请求，产出幂等）。
+        """
+        served_dois: set[str] = set()
+        for stub in baseline:
+            doi = _stub_doi(stub)
+            if doi is not None:
+                served_dois.add(doi)
+            yield stub
+        url = _oai_list_url(oai_base, _lookback_from())
+        for stub in self._enumerate_pages(venue, issue, volume, oai_base, url):
+            doi = _stub_doi(stub)
+            if doi is not None and doi in served_dois:
+                continue
+            yield stub
+        self._current_served.add((venue.id, oai_base, volume))
 
     def _enumerate_pages(
         self, venue: VenueSpec, issue: IssueRef, volume: str, oai_base: str, url: str
@@ -239,12 +381,13 @@ class AaaiOjsAdapter(AdapterBase):
                 skipped_other_volume=other_volume_count,
             )
 
-    # -- 跨卷分区缓存（审计 S1-P1：历史卷冷回填单趟化）----------------------------------------
+    # -- 跨卷分区缓存（审计 S1-P1：全时间轴冷回填单趟化，含当前届基线）-----------------------
 
     def _backfill_pages(
         self, venue: VenueSpec, issue: IssueRef, volume: str, oai_base: str, url: str
     ) -> Iterator[PaperStub]:
-        """历史届全库回填：单趟收割 → 目标卷即时产出 + 其余已注册历史卷就地 partition 缓存。
+        """单趟全库回填：目标卷即时产出 + 其余已注册卷（**含当前届**，P0-3）就地 partition
+        缓存。历史届触发、或当前届冷启动触发（`_enumerate_current_edition`）均走这条路径。
 
         为什么不用日期窗替代（**已否决**，理由入档以免后人重蹈）：OAI `from/until` 过滤的
         是 `datestamp`（入库/修改时间）而非发表日，survey §11.2 实测 Vol.26 的 383 条里
@@ -256,8 +399,8 @@ class AaaiOjsAdapter(AdapterBase):
         生成器，则本趟不发布任何缓存（宁可下次重扫，不要发布残缺分区）。
 
         **真丢弃可观测**（F4 审查追加，S1 台账 (c) 项）：未注册卷号/volume=None（非
-        AAAI DOI 形态）的记录不属任何已知届——既非目标卷也非其余已注册历史卷，此后
-        也不会被任何届的收割路径覆盖，是真正的数据丢失面（区别于 `_enumerate_pages`
+        AAAI DOI 形态）的记录不属任何已知届——既非目标卷也非其余已注册卷（含当前届），
+        此后也不会被任何届的收割路径覆盖，是真正的数据丢失面（区别于 `_enumerate_pages`
         同构位置"记录属于别的届、稍后自会被覆盖"的路由噪声）。此前零日志、纯静默；
         现汇总计数于收割自然跑完时经 obslog INFO 可观测（真丢弃比路由噪声更值得
         留意，故用 INFO 而非 DEBUG；逐记录打日志噪声太大，只在跑完时汇总一条）。
@@ -269,8 +412,8 @@ class AaaiOjsAdapter(AdapterBase):
         for page in self._iter_pages(venue, issue, oai_base, url):
             for record in page.records:
                 vol = record.volume
-                # DOI-卷号 partition（§4）：目标卷即时产出；其余已注册历史卷进缓存；
-                # 未注册卷号/非 AAAI 形态（volume=None）不属任何届，真丢弃。
+                # DOI-卷号 partition（§4）：目标卷即时产出；其余已注册卷（含当前届）进
+                # 缓存；未注册卷号/非 AAAI 形态（volume=None）不属任何届，真丢弃。
                 if vol is None or (vol != volume and vol not in cacheable):
                     discarded_unregistered += 1
                     continue
@@ -326,9 +469,16 @@ class AaaiOjsAdapter(AdapterBase):
             url = _oai_resume_url(oai_base, page.resumption_token)
 
     def _cacheable_volumes(self, venue: VenueSpec) -> frozenset[str]:
-        """可进缓存的卷集合 = 已注册卷 − 当前届卷（当前届恒走回看窗，不吃缓存）。"""
-        registered = {str(v) for v in _volume_map(venue).values()}
-        return frozenset(registered - {_latest_volume(venue)})
+        """可进缓存的卷集合 = 已注册卷全集（**含当前届**，P0-3 修复：不再排除 latest）。
+
+        与旧版刻意不同（旧版排除当前届：当前届恒走回看窗、不吃缓存）——现在当前届也纳入，
+        使任一卷（历史或当前）触发的单趟全量收割都顺带把当前届一并 partition 缓存，那份
+        分区既是"当前届基线已建"的判据，**也是首次交付时真正吐给消费方的基线数据**
+        （`_enumerate_current_edition` 的首次交付分支 chain 它 + 一次回看窗查询；此后的
+        稳态轮次才只走回看窗真增量，新鲜度优先不变；结构改造对齐 econsoc
+        `_cacheable_years`，适配 aaai 的卷号 partition 键）。
+        """
+        return frozenset(str(v) for v in _volume_map(venue).values())
 
     def _cached_partition(
         self, venue: VenueSpec, oai_base: str, volume: str
@@ -531,6 +681,15 @@ def _identify_repository_name(data: bytes) -> str | None:
     if identify is None:
         return None
     return _oai.optional_text(identify, _oai.oai("repositoryName"))
+
+
+def _stub_doi(stub: PaperStub) -> str | None:
+    """`PaperStub` 的 DOI（`identifiers` 恒为单一 `(('doi', ...),)`，parse §3.3）。
+
+    取不到时返回 None（防御性：走到当前届交付路径的 stub 其卷号本就由 DOI 解析而来，
+    理论上必有 DOI；None 时按"不去重"处理，宁可多产一条也不静默吞掉记录）。
+    """
+    return dict(stub.identifiers).get("doi")
 
 
 def _view_to_download(view_url: str) -> str:

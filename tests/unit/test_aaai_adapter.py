@@ -168,21 +168,62 @@ def test_enumerate_historical_edition_partitions_to_its_volume_only() -> None:
     assert dois == ["10.1609/aaai.v33i01.3301695", "10.1609/aaai.v33i01.3301696"]
 
 
-def test_enumerate_current_edition_uses_lookback_datestamp_window() -> None:
+def test_enumerate_current_edition_cold_start_is_full_windowless_harvest() -> None:
+    # P0-3 修复核心：冷启动（本实例内首次问当前届，跨卷缓存查无该卷）不再无条件恒加
+    # 回看窗——旧行为如此会导致 OJS datestamp 滞后发表（可达近 2 年）的窗口外早发论文
+    # 被静默漏收，只能等其"滚入历史届"才被下次全库回填补齐
+    # （根因见 _enumerate_current_edition docstring）。
+    # 新行为：与历史届同款单趟全量收割建基线，请求不带 from=，目标届记录全量入册。
     seen: list[httpx.URL] = []
 
     def handler(request: httpx.Request) -> httpx.Response:
         seen.append(request.url)
         return _two_page_handler(request)
 
-    list(_adapter(handler).enumerate_issue(make_aaai_venue(), _issue(volume="40", year=2026)))
-    # 当前届（volume_map 最大年之卷）加固定回看窗 from=；OAI base 用 ojs_code=AAAI。
+    stubs = list(
+        _adapter(handler).enumerate_issue(make_aaai_venue(), _issue(volume="40", year=2026))
+    )
     assert str(seen[0]).startswith("https://ojs.aaai.org/index.php/AAAI/oai?")
-    assert "from" in seen[0].params
+    assert "from" not in seen[0].params  # 冷启动：无回看窗，全量请求
     assert seen[0].params["metadataPrefix"] == "oai_dc"
-    # 续页只带 verb + resumptionToken（OAI 规范互斥）。
     assert seen[1].params["resumptionToken"] == "AAAI-RESUME-PAGE2"
     assert "from" not in seen[1].params
+    dois = [dict(s.identifiers)["doi"] for s in stubs]
+    # 全量记录入册（不受回看窗口截断，同 test_enumerate_current_edition_partitions_to_its_
+    # volume_only）。
+    assert dois == [
+        "10.1609/aaai.v40i1.36958",
+        "10.1609/aaai.v40i2.37001",
+        "10.1609/aaai.v40i1.36959",
+        "10.1609/aaai.v40i3.37050",
+    ]
+
+
+def test_enumerate_current_edition_uses_lookback_datestamp_window_once_baseline_established() -> (
+    None
+):
+    # 旧测试名 test_enumerate_current_edition_uses_lookback_datestamp_window 断言的是缺陷行为
+    # （冷启动即恒带 from=）——按 P0-3 新语义改写并重命名：回看窗只在**基线已建后的稳态**
+    # 生效（新鲜度优先，见 _enumerate_current_edition），冷启动改走全量收割（见上一测试）。
+    seen: list[httpx.URL] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        seen.append(request.url)
+        return _two_page_handler(request)
+
+    adapter = _adapter(handler)
+    venue = make_aaai_venue()
+    list(adapter.enumerate_issue(venue, _issue(volume="40", year=2026)))  # 冷启动：建基线
+    after_baseline = len(seen)
+
+    list(adapter.enumerate_issue(venue, _issue(volume="40", year=2026)))  # 稳态：回看窗增量
+    # 当前届（volume_map 最大年之卷）加固定回看窗 from=；OAI base 用 ojs_code=AAAI。
+    assert str(seen[after_baseline]).startswith("https://ojs.aaai.org/index.php/AAAI/oai?")
+    assert "from" in seen[after_baseline].params
+    assert seen[after_baseline].params["metadataPrefix"] == "oai_dc"
+    # 续页只带 verb + resumptionToken（OAI 规范互斥）。
+    assert seen[after_baseline + 1].params["resumptionToken"] == "AAAI-RESUME-PAGE2"
+    assert "from" not in seen[after_baseline + 1].params
 
 
 def test_enumerate_historical_edition_has_no_datestamp_window() -> None:
@@ -224,16 +265,19 @@ def test_enumerate_current_edition_logs_skipped_other_volume_debug_event(
     # F4 审查追加（S1 台账 (c) 项）：当前窗查询按 datestamp 取数，天然混入其它卷记录
     # （v33），此前静默丢弃、零日志——现汇总计数经 obslog DEBUG 可观测（路由噪声，
     # 非真丢失：这些记录仍会被 v33 自己的收割路径覆盖）。
+    # P0-3 修复后：这条日志只在**稳态**回看窗查询（`_enumerate_pages` 路径）触发——冷启动
+    # 改走 `_backfill_pages`（无窗全量），那条路径下 v33 记录正常归入 v33 自己的 partition
+    # 缓存，不算"丢弃"、不走这条日志；故先跑一趟建基线，只检视稳态那趟的事件。
     events: list[dict[str, object]] = []
     monkeypatch.setattr(
         "paper_crawler.adapters.aaai_ojs.adapter.log_event",
         lambda level, msg, **kw: events.append({"level": level, "msg": msg, **kw}),
     )
-    list(
-        _adapter(_two_page_handler).enumerate_issue(
-            make_aaai_venue(), _issue(volume="40", year=2026)
-        )
-    )
+    adapter = _adapter(_two_page_handler)
+    venue = make_aaai_venue()
+    list(adapter.enumerate_issue(venue, _issue(volume="40", year=2026)))  # 冷启动建基线
+    events.clear()  # 只看稳态那趟的事件
+    list(adapter.enumerate_issue(venue, _issue(volume="40", year=2026)))  # 稳态回看窗
     expected_msg = "aaai current-window records skipped for non-matching volume"
     skip_events = [e for e in events if e["msg"] == expected_msg]
     assert len(skip_events) == 1
@@ -367,6 +411,25 @@ def _counting_backfill_handler(counter: list[httpx.URL]) -> Handler:
     return handler
 
 
+# 当前届回看窗单页（只有带 `from=` 的请求才回它）：4002 与全库基线**重叠**（钉死首次交付
+# chain 的按 DOI 去重）、4003 是窗内新增（钉死"交付基线之余仍真发了一次增量查询"）；4001
+# 只在基线里、落在窗外（钉死稳态轮次不再重复吐基线）。
+_COLD_WINDOW_PAGE: tuple[tuple[str, str], ...] = (("40", "4002"), ("40", "4003"))
+
+
+def _counting_windowed_handler(counter: list[httpx.URL]) -> Handler:
+    """同 `_counting_backfill_handler`，但把带 `from=` 的当前届回看窗请求单独应答。"""
+    full_pass = _counting_backfill_handler(counter)
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        if "from" not in request.url.params:
+            return full_pass(request)
+        counter.append(request.url)
+        return httpx.Response(200, content=build_oai_page(_COLD_WINDOW_PAGE))
+
+    return handler
+
+
 def _dois(stubs: list[PaperStub]) -> list[str]:
     return [dict(s.identifiers)["doi"] for s in stubs]
 
@@ -425,19 +488,48 @@ def test_cold_backfill_pass_carries_no_datestamp_window() -> None:
     assert all("from" not in url.params for url in seen)
 
 
-def test_current_edition_never_served_from_backfill_cache() -> None:
-    """当前届恒走回看窗真请求——即便全库回填刚跑完（新鲜度优先，缓存只喂历史届）。"""
+def test_current_edition_first_serve_chains_cache_and_lookback() -> None:
+    """当前届**首次**交付 = 缓存基线分区 ∪ 一次新鲜回看窗查询；此后的轮次才只走回看窗。
+
+    P0-3 回修的靶心（旧用例 `test_current_edition_never_served_from_backfill_cache` 断言的
+    是缺陷行为：分区已建即直接退回窄回看窗，已收割到的当前卷记录留在缓存里从未 yield）。
+    新语义按"分区已建"与"基线已交付"两个正交标记分支，见 `_enumerate_current_edition`：
+    历史届 v24 的全库回填顺带把当前届 v40 partition 缓存住，随后 v40 自己被 enumerate 时
+    才是"真正交付给消费方"的时刻——这一次必须 chain(缓存基线, 回看窗)，而非只有窗内那些。
+    """
     seen: list[httpx.URL] = []
-    adapter = _adapter(_counting_backfill_handler(seen))
+    adapter = _adapter(_counting_windowed_handler(seen))
     venue = _cold_venue()
 
-    list(adapter.enumerate_issue(venue, _issue(volume="24", year=2010)))
+    list(adapter.enumerate_issue(venue, _issue(volume="24", year=2010)))  # 历史届顺带建基线
     after_backfill = len(seen)
-    stubs = list(adapter.enumerate_issue(venue, _issue(volume="40", year=2026)))
+    assert adapter._backfill is not None
+    assert _dois(list(adapter._backfill["40"])) == [
+        "10.1609/aaai.v40i1.4001",
+        "10.1609/aaai.v40i1.4002",
+    ]  # P0-3：当前卷记录已随历史届的全库回填一并缓存，不再被 discarded_unregistered 丢弃
+    assert ("aaai", "https://ojs.aaai.org/index.php/AAAI/oai", "40") not in adapter._current_served
 
-    assert len(seen) > after_backfill  # 真发了请求，没吃缓存
-    assert "from" in seen[after_backfill].params  # 且带固定回看窗
-    assert _dois(stubs) == ["10.1609/aaai.v40i1.4001", "10.1609/aaai.v40i1.4002"]
+    first = list(adapter.enumerate_issue(venue, _issue(volume="40", year=2026)))
+
+    # ①交付基线不产生新请求，但同一趟仍真发了一次带固定回看窗的增量查询（新鲜度优先）。
+    assert len(seen) == after_backfill + 1
+    assert "from" in seen[after_backfill].params
+    # ②基线（4001/4002）确实吐给了消费方、不再烂在缓存里；窗内新增 4003 一并产出；
+    #   cache∩window 的 4002 按 DOI 去重后只产一次。
+    assert _dois(first) == [
+        "10.1609/aaai.v40i1.4001",
+        "10.1609/aaai.v40i1.4002",
+        "10.1609/aaai.v40i1.4003",
+    ]
+
+    second = list(adapter.enumerate_issue(venue, _issue(volume="40", year=2026)))
+
+    # ③稳态：每轮仍 +1 次回看窗真请求，但**不重复吐基线**——只在基线里、落在窗外的 4001
+    #   缺席即为证（若仍走 chain，这里会再吐一遍 4001）。
+    assert len(seen) == after_backfill + 2
+    assert "from" in seen[-1].params
+    assert _dois(second) == ["10.1609/aaai.v40i1.4002", "10.1609/aaai.v40i1.4003"]
 
 
 def test_backfill_cache_not_published_when_consumer_breaks_early() -> None:
@@ -509,7 +601,8 @@ def test_backfill_cache_disabled_loudly_when_record_cap_exceeded(
 
 
 def test_backfill_records_outside_registered_volumes_are_dropped() -> None:
-    """未注册卷号/非 AAAI DOI 不属任何届：既不产出也不进缓存（分区表只装已注册历史卷）。"""
+    """未注册卷号/非 AAAI DOI 不属任何届：既不产出也不进缓存（分区表只装已注册卷——P0-3
+    修复后含当前届，见 `_cacheable_volumes`）。"""
     seen: list[httpx.URL] = []
 
     def handler(request: httpx.Request) -> httpx.Response:
@@ -522,7 +615,10 @@ def test_backfill_records_outside_registered_volumes_are_dropped() -> None:
         "10.1609/aaai.v24i1.2401"
     ]
     assert adapter._backfill is not None
-    assert set(adapter._backfill) == set(_COLD_HISTORICAL)  # v99 未入缓存
+    # v99 未入缓存（真丢弃）；"40"（当前届）已含（P0-3：不再排除 latest），虽本页无 v40
+    # 记录，分区表仍为它预留空条目（{v: [] for v in cacheable}）。
+    assert set(adapter._backfill) == set(_COLD_HISTORICAL) | {"40"}
+    assert adapter._backfill["40"] == ()
 
 
 # 混合丢弃场景（F4 审查追加，S1 台账 (c) 项）：目标卷（24，产出）+ 未注册卷号（99，不在
@@ -591,7 +687,10 @@ def test_backfill_logs_info_event_for_unregistered_and_unparseable_volume_discar
     venue = _cold_venue()
     stubs = list(adapter.enumerate_issue(venue, _issue(volume="24", year=2010)))
     assert _dois(stubs) == ["10.1609/aaai.v24i1.2401"]  # 只产目标卷
-    assert set(adapter._backfill) == set(_COLD_HISTORICAL)  # v99/None 均未入缓存
+    # v99/None 均未入缓存（真丢弃）；"40" 已含（P0-3，不再排除 latest），本页无 v40 记录
+    # 故为空分区。
+    assert set(adapter._backfill) == set(_COLD_HISTORICAL) | {"40"}
+    assert adapter._backfill["40"] == ()
 
     discard_events = [
         e

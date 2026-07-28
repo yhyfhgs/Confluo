@@ -151,10 +151,19 @@ def _cold_handler(counter: list[httpx.URL]) -> Callable[[httpx.Request], httpx.R
 
 
 def test_cold_backfill_whole_timeline_costs_one_full_pass(tmp_path: Path) -> None:
-    """discover→enumerate 走完整条时间轴：全部历史届共享单趟全库收割，当前届单独走回看窗。
+    """discover→enumerate 走完整条时间轴：全部历史届共享单趟全库收割，当前届首次交付
+    该缓存基线 ∪ 一次回看窗增量、此后才退回纯回看窗。
 
     修复前每个历史届各自重扫全库（审计 S1-P1，请求成本随已注册届数线性放大）；修复后
-    请求数 = 全库页数 + 当前届窗口页数，与已注册历史届数**解耦**。
+    请求数 = 全库页数 + 当前届窗口页数，与已注册历史届数**解耦**。**P0-3 回修**（独立
+    审查 Critical）：`discover_timeline` 升序产 issue（历史届先于当前届），本测试正是
+    真实 `crawler pull aaai` 冷启动的主场景——v24 的全库回填会把 v40（当前届）的记录顺带
+    partition 缓存；此前版本把"缓存里有当前届分区"误当"已交付基线"信号，直接退回窄回看窗，
+    致使已收集到的 v40 记录（4001/4002）留在缓存里从未 yield 给消费方、从未入库（缺陷
+    在本测试修复前的旧断言 `{"40": 1}`/`len==7` 里逐字可见）。修复后：当前届自己的
+    enumerate **首次**被调用时才是"真正交付给消费方"的时刻——无论基线是自己冷启动收割的
+    还是某历史届顺带缓存的，这次交付都必须是缓存分区 ∪ 一次新鲜回看窗查询（3 条：
+    4001/4002 来自缓存、4003 来自回看窗），而非只有回看窗那一条。
     """
     with closing(Database(tmp_path / "aaai-cold.sqlite")) as db:
         db.migrate()
@@ -176,18 +185,20 @@ def test_cold_backfill_whole_timeline_costs_one_full_pass(tmp_path: Path) -> Non
             rows = repo.list_papers(_VENUE_ID, issue_id=issue_id)
             per_issue[str(ref.volume)] = {str(r["title"]) for r in rows}
 
-        # 请求账：3 页全库（v24 触发，v33/v34 零请求命中缓存）+ 1 页当前届回看窗 = 4。
+        # 请求账：3 页全库（v24 触发，v33/v34 零请求命中缓存）+ 1 页当前届回看窗 = 4——
+        # 交付缓存分区不产生新请求，回看窗增量只需追加 1 次。
         assert len(seen) == len(_COLD_PAGES) + 1 == 4
         assert sum(1 for u in seen if "from" in u.params) == 1  # 只有当前届带日期窗
         # 修复前同一条时间轴的基线：3 历史届 × 3 页 + 1 = 10（降幅 2.5×，随届数增长而放大）。
         assert len(seen) < 3 * len(_COLD_PAGES) + 1
 
-        # 分区落盘正确：每届只装自己卷号的论文（缓存命中路径与真收割路径同一判据）。
-        assert {v: len(t) for v, t in per_issue.items()} == {"24": 2, "33": 2, "34": 2, "40": 1}
+        # 分区落盘正确：每届只装自己卷号的论文；v40 = 缓存基线(4001/4002) ∪ 回看窗新增(4003)
+        # 全量入库，不再只剩回看窗那一条（P0-3 回修验收锚）。
+        assert {v: len(t) for v, t in per_issue.items()} == {"24": 2, "33": 2, "34": 2, "40": 3}
         assert all(
             f"v{volume} " in title for volume, titles in per_issue.items() for title in titles
         )
-        assert len(repo.list_papers(_VENUE_ID)) == 7
+        assert len(repo.list_papers(_VENUE_ID)) == 9
 
 
 # --- 当前届固定回看窗重复 enumerate：无重复无遗漏（DOI 主键去重）--------------------------------
