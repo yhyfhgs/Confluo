@@ -15,6 +15,7 @@ from pathlib import Path
 import pytest
 
 from paper_crawler.adapter import SourceAdapter, load_adapters
+from paper_crawler.errors import CrawlerError, ErrorClass
 from paper_crawler.registry import LintIssue, VenueRegistry
 
 REPO_VENUES_DIR = Path(__file__).resolve().parents[2] / "venues"
@@ -837,3 +838,70 @@ def test_kebab_case_filename_matches_snake_case_id(
     reg = VenueRegistry(adapters)
     issues = reg.load_dirs([tmp_path])
     assert issues == []
+
+
+# -- 9. rate_limit.requests_per_minute ≤ 0（R1b P1-3：token bucket 补充速率归零会死锁）--------
+
+
+def test_venue_rate_limit_zero_rpm_reported_readable_not_raw_traceback(
+    adapters: dict[str, SourceAdapter], tmp_path: Path
+) -> None:
+    """rpm=0 的 venue YAML：load_dirs 必须把 pydantic gt=0 校验失败包成带 venue id 与
+    字段名的可读 LintIssue（同 `bad-kind.yaml`/`extra-field.yaml` 既有包装路径），
+    而不是让裸 `pydantic.ValidationError` traceback 逃逸出 `load_dirs`（其"只返回问题
+    列表，从不 raise"的契约，见 registry.py 模块 docstring）。"""
+    _write(
+        tmp_path / "zero-rpm.yaml",
+        "\n".join(
+            [
+                "id: zero_rpm_venue",
+                "kind: conference",
+                "names: {full: Zero Rpm Venue}",
+                "field: [cs_ai]",
+                "metadata_source: mock_platform",
+                "fulltext_source: mock_platform",
+                "rate_limit: {requests_per_minute: 0}",
+            ]
+        ),
+    )
+    reg = VenueRegistry(adapters)
+    issues = reg.load_dirs([tmp_path])  # 不应 raise
+
+    hits = _issues_for_field(issues, "rate_limit.requests_per_minute")
+    assert len(hits) == 1
+    assert hits[0].venue_id == "zero_rpm_venue"
+    assert hits[0].file.endswith("zero-rpm.yaml")
+    # 可读：定位到具体字段名+来源文件，而非 "Traceback"/"ValidationError" 裸异常文本。
+    assert "Traceback" not in hits[0].message
+    assert "greater than" in hits[0].message.lower()
+    # 该文件的其余部分合法——只此一条问题，不该被结构性错误一路吞掉变成 <root>/<yaml>。
+    assert len([i for i in issues if i.file.endswith("zero-rpm.yaml")]) == 1
+    # 未注册进 registry（校验失败视同加载失败，同结构性错误处置一致）。
+    with pytest.raises(CrawlerError) as exc_info:
+        reg.get("zero_rpm_venue")
+    assert exc_info.value.error_class is ErrorClass.CONFIG
+
+
+def test_venue_rate_limit_negative_rpm_reported(
+    adapters: dict[str, SourceAdapter], tmp_path: Path
+) -> None:
+    _write(
+        tmp_path / "negative-rpm.yaml",
+        "\n".join(
+            [
+                "id: negative_rpm_venue",
+                "kind: conference",
+                "names: {full: Negative Rpm Venue}",
+                "field: [cs_ai]",
+                "metadata_source: mock_platform",
+                "fulltext_source: mock_platform",
+                "rate_limit: {requests_per_minute: -5}",
+            ]
+        ),
+    )
+    reg = VenueRegistry(adapters)
+    issues = reg.load_dirs([tmp_path])
+
+    hits = _issues_for_field(issues, "rate_limit.requests_per_minute")
+    assert len(hits) == 1
+    assert hits[0].venue_id == "negative_rpm_venue"

@@ -188,7 +188,9 @@ class VenueAuth(BaseModel):
 class VenueRateLimit(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
-    requests_per_minute: float | None = None
+    # gt=0（R1b P1-3）：rpm≤0 会让 RateLimiter 的 token bucket 补充速率归零，`acquire`
+    # 永久返回 inf（挂死）——None（未声明限速，沿用 adapter 默认）仍合法，只拦 0/负值。
+    requests_per_minute: float | None = Field(default=None, gt=0)
 
 
 class VenueSpec(BaseModel):

@@ -26,6 +26,7 @@ import pytest
 import yaml
 
 from integration.test_pipeline_e2e import DEFAULT_QUIRKS, VENUE
+from paper_crawler.ratelimit import RateLimiter
 
 __all__ = [
     "DEFAULT_QUIRKS",
@@ -38,6 +39,7 @@ __all__ = [
     "cookie_header",
     "make_home",
     "make_mock_idp_handler",
+    "no_rate_limit_wait",
     "storage_state_bytes",
     "write_mock_venue",
 ]
@@ -103,6 +105,34 @@ def make_home(tmp_path: Path) -> Callable[..., Path]:
         )
 
     return _make
+
+
+# R1b 修复（2026-07-27）：`[rate] scale` 现拒绝 >1（config.py `_FieldSpec`，只用于收紧，
+# 不用于放宽——scale>1 曾让 `effective_rpm()` 观测面失真、且给运行期速率开了绕过 venue/
+# adapter 声明上限的口子）。此前多份"不测限速本身、只想让 CLI 全链路 pull 测试跑快"的用例
+# 靠调大 `rate_scale`（1000/100000）把 acquire() 算出的等待压到 0，现在这条路被合法边界
+# 挡住。CLI 装配（`cli._build_env`）不给 `StageContext(sleeper=...)` 传参、用
+# dataclass 字段默认 `time.sleep`——该默认在 `pipeline/stages.py` 模块首次 import 时就
+# 求值绑定，测试侧事后 `monkeypatch.setattr(time, "sleep", ...)` 对已构造的默认值不生效
+# （函数默认参数"定义时求值一次"的经典坑，经验证：新建实例仍会拿到原始 `time.sleep`）。
+# 改为直接中和 `RateLimiter.acquire`（公开契约：返回值=应等待秒数，恒定 0.0）——效果与旧
+# scale 巨量放大手法等价（等待压到 0，pull 全链路照常跑通），但不再依赖一个现已非法的
+# 配置值，且不须逐用例计算"burst 是否够覆盖请求数"。**不要**用于测限速本身是否生效的用例
+# （如 test_ac_ratelimit.py——它需要真实等待）。
+#
+# 独立审查回修（2026-07-27，Important）：替换函数**不能**整段跳过 `_require_bucket`——
+# 这 7 份 CLI 全链路测试正是"有网络请求却无限速声明"这条装配期护栏（http.py 明文声明）的
+# 主要触发面，此前 `lambda self, domain: 0.0` 完全绕开真实 `acquire()`，把该护栏也一并
+# 静默中和了。改为先调 `self.effective_rpm(domain)`——内部同样经 `_require_bucket`，
+# 未注册域一样会 fail-fast 抛 `CrawlerError(CONFIG)`——再返回 `0.0`：只中和"等待"这一件
+# 事，不吞掉"域必须先注册"这条不变式。
+@pytest.fixture
+def no_rate_limit_wait(monkeypatch: pytest.MonkeyPatch) -> None:
+    def _acquire_without_wait(self: RateLimiter, domain: str) -> float:
+        self.effective_rpm(domain)  # 未注册域在此 fail-fast（_require_bucket），保留护栏
+        return 0.0
+
+    monkeypatch.setattr(RateLimiter, "acquire", _acquire_without_wait)
 
 
 # ---------------------------------------------------------------------------

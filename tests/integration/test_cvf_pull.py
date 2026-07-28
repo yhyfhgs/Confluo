@@ -40,6 +40,13 @@ _MOCK_UA = "PaperCrawler/test (personal research; mailto:test@example.com)"
 _PDF = b"%PDF-1.7\n" + b"cvf-synthetic-pdf\n" + b"0" * 400 + b"\n%%EOF\n"
 
 
+@pytest.fixture(autouse=True)
+def _fast_rate_limiter(no_rate_limit_wait: None) -> None:
+    """CLI 全链路 pull 测试不测限速本身——中和 `RateLimiter.acquire`，见
+    `integration/conftest.py::no_rate_limit_wait`（`rate.scale` R1b 后拒绝 >1，
+    不能再靠调大它快进）。"""
+
+
 # --- home 装配（cvpr venue + rate scale 快进）------------------------------------------------
 
 
@@ -47,7 +54,7 @@ def _write_cvpr_home(base: Path) -> Path:
     home = base / "home"
     venues_dir = home / "venues"
     venues_dir.mkdir(parents=True)
-    config_lines = ["[paths]", 'venues_dirs = ["venues"]', "", "[rate]", "scale = 1000.0"]
+    config_lines = ["[paths]", 'venues_dirs = ["venues"]', "", "[rate]", "scale = 1.0"]
     (home / "config.toml").write_text("\n".join(config_lines) + "\n", encoding="utf-8")
     doc = {
         "id": "cvpr",

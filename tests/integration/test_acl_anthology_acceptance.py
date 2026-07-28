@@ -51,6 +51,15 @@ from paper_crawler.types import AssetKind, IssueRef
 
 runner = CliRunner()
 
+
+@pytest.fixture(autouse=True)
+def _fast_rate_limiter(no_rate_limit_wait: None) -> None:
+    """③的真实 CLI pull 不测限速本身——中和 `RateLimiter.acquire`，见
+    `integration/conftest.py::no_rate_limit_wait`（`rate.scale` R1b 后拒绝 >1，
+    不能再靠调大它快进）。①②直调 adapter，不经 CLI/RateLimiter，本 fixture 对它们
+    是无操作。"""
+
+
 _MOCK_UA = "PaperCrawler/test (personal research; mailto:test@example.com)"
 
 _ANCHOR_PATH = (
@@ -172,7 +181,7 @@ def _write_emnlp_home(base: Path) -> Path:
     home = base / "home"
     venues_dir = home / "venues"
     venues_dir.mkdir(parents=True)
-    config_lines = ["[paths]", 'venues_dirs = ["venues"]', "", "[rate]", "scale = 100000.0"]
+    config_lines = ["[paths]", 'venues_dirs = ["venues"]', "", "[rate]", "scale = 1.0"]
     (home / "config.toml").write_text("\n".join(config_lines) + "\n", encoding="utf-8")
     doc = {
         "id": "emnlp",

@@ -552,6 +552,62 @@ def test_scale_non_number_raises_typeerror(
         Config.load(home=home)
 
 
+# -- rate.scale / retry.scale 边界护栏（R1b P1-1：scale≤0 → RateLimiter.acquire 返 inf ---------
+# 挂死；scale>1 全局放宽且 effective_rpm() 观测面不反映真值）。合法域 rate.scale∈(0,1]，
+# retry.scale 只需 >0（放大退避无合规问题，故无上界）。
+
+
+@pytest.mark.parametrize("bad_scale", ["0", "0.0", "-1", "-0.01"])
+def test_rate_scale_non_positive_rejected(tmp_path: Path, bad_scale: str) -> None:
+    home = tmp_path / "home"
+    home.mkdir()
+    (home / "config.toml").write_text(f"[rate]\nscale = {bad_scale}\n", encoding="utf-8")
+    with pytest.raises(CrawlerError) as excinfo:
+        Config.load(home=home)
+    assert excinfo.value.error_class is ErrorClass.CONFIG
+    assert excinfo.value.detail == "rate.scale"
+
+
+@pytest.mark.parametrize("bad_scale", ["1.01", "1.5", "2", "100"])
+def test_rate_scale_above_one_rejected(tmp_path: Path, bad_scale: str) -> None:
+    """scale 只用于收紧：>1 会让实际 rpm 超过 venue/adapter 声明的上限，响亮拒绝。"""
+    home = tmp_path / "home"
+    home.mkdir()
+    (home / "config.toml").write_text(f"[rate]\nscale = {bad_scale}\n", encoding="utf-8")
+    with pytest.raises(CrawlerError) as excinfo:
+        Config.load(home=home)
+    assert excinfo.value.error_class is ErrorClass.CONFIG
+    assert excinfo.value.detail == "rate.scale"
+    assert "仅用于收紧" in str(excinfo.value)
+
+
+def test_rate_scale_upper_bound_one_is_inclusive_and_allowed(tmp_path: Path) -> None:
+    home = tmp_path / "home"
+    home.mkdir()
+    (home / "config.toml").write_text("[rate]\nscale = 1.0\n", encoding="utf-8")
+    assert Config.load(home=home).rate_scale == 1.0
+
+
+@pytest.mark.parametrize("bad_scale", ["0", "-1", "-0.01"])
+def test_retry_scale_non_positive_rejected(tmp_path: Path, bad_scale: str) -> None:
+    home = tmp_path / "home"
+    home.mkdir()
+    (home / "config.toml").write_text(f"[retry]\nscale = {bad_scale}\n", encoding="utf-8")
+    with pytest.raises(CrawlerError) as excinfo:
+        Config.load(home=home)
+    assert excinfo.value.error_class is ErrorClass.CONFIG
+    assert excinfo.value.detail == "retry.scale"
+
+
+def test_retry_scale_above_one_has_no_upper_bound(tmp_path: Path) -> None:
+    """retry.scale 放大退避秒数无合规问题——刻意不设上界，同 test_config_toml_overrides
+    里 scale=3.0 的既有覆盖互补（这里钉一个更大的值，证明"无上界"是有意为之而非漏校验）。"""
+    home = tmp_path / "home"
+    home.mkdir()
+    (home / "config.toml").write_text("[retry]\nscale = 100.0\n", encoding="utf-8")
+    assert Config.load(home=home).retry_scale == 100.0
+
+
 # -- 项目级发现上界（NIT-1）：以 .git 仓库根为最后一层，不越界命中祖先 stray 文件 ------------
 
 
@@ -626,6 +682,29 @@ def test_auth_knobs_env_overrides_home(tmp_path: Path, monkeypatch: pytest.Monke
     cfg = Config.load(home=home)
     assert cfg.auth_daily_cap == 7  # env > home
     assert cfg.oa_fallback_rate_rpm == 3
+
+
+@pytest.mark.parametrize("bad_rpm", ["0", "-5"])
+def test_oa_fallback_rate_rpm_must_be_positive(tmp_path: Path, bad_rpm: str) -> None:
+    """rpm ≤ 0 → 拒启动：与 browserfetch.rate_rpm（config.py:398 min_value=1）同构——桶
+    补充速率为 0 会让 `acquire` 返回 `inf`（无限等待），畸形配置不能静默变成死锁（R1b P1-2）。
+    """
+    home = tmp_path / "home"
+    home.mkdir()
+    (home / "config.toml").write_text(f"[oa_fallback]\nrate_rpm = {bad_rpm}\n", encoding="utf-8")
+    with pytest.raises(CrawlerError) as excinfo:
+        Config.load(home=home)
+    assert excinfo.value.error_class is ErrorClass.CONFIG
+    assert excinfo.value.detail == "oa_fallback.rate_rpm"
+
+
+def test_oa_fallback_rate_rpm_env_is_validated_too(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setenv("PAPER_CRAWLER_OA_FALLBACK_RATE_RPM", "0")
+    with pytest.raises(CrawlerError) as excinfo:
+        Config.load(home=tmp_path)
+    assert excinfo.value.error_class is ErrorClass.CONFIG
 
 
 def test_active_profile_mapping_from_toml(tmp_path: Path) -> None:

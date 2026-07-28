@@ -29,6 +29,7 @@ from __future__ import annotations
 from collections.abc import Callable
 from pathlib import Path
 
+import pytest
 from typer.testing import CliRunner
 
 from integration.conftest import DEFAULT_QUIRKS, VENUE, write_mock_venue
@@ -36,6 +37,12 @@ from paper_crawler.cli import app
 from paper_crawler.storage.db import Database
 
 runner = CliRunner()
+
+
+@pytest.fixture(autouse=True)
+def _fast_rate_limiter(no_rate_limit_wait: None) -> None:
+    """本文件走真实 CLI 装配（`rate.scale` R1b 后拒绝 >1，不能再靠调大它快进限速
+    sleep）——见 `integration/conftest.py::no_rate_limit_wait`。"""
 
 
 def _fail_fetch(error_class: str, indexes: list[int]) -> dict[str, object]:
@@ -73,7 +80,7 @@ def test_auth_expired_blocks_batch_then_resume_all_then_pull_completes(
     make_home: Callable[..., Path],
 ) -> None:
     """Closes: AC-1.5（auth_expired 整批 BLOCKED 不占重试 → resume --all → 重跑完成）。"""
-    home = make_home(_fail_fetch("auth_expired", [0, 1]), rate_scale=100.0)
+    home = make_home(_fail_fetch("auth_expired", [0, 1]), rate_scale=1.0)
 
     # -- 1/2. 注入 auth_expired → pull 退出 3 + 5 个 fetch BLOCKED（attempts==0）------
     r1 = runner.invoke(app, ["pull", VENUE, "--volume", "1", "--issue", "1", "--home", str(home)])

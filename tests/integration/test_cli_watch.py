@@ -32,11 +32,15 @@ _ARXIV_VENUE = "arxiv_cs_lg"
 _MOCK_UA = "PaperCrawler/test (personal research; mailto:test@example.com)"
 
 
+@pytest.fixture(autouse=True)
+def _fast_rate_limiter(no_rate_limit_wait: None) -> None:
+    """CLI 走真实 `time.sleep` 限速（arxiv 1req/3s，多桶会真睡数秒）；`rate.scale`
+    R1b 后拒绝 >1，不能再靠调大它把 wait 压到 0——改中和 `RateLimiter.acquire`
+    （`integration/conftest.py::no_rate_limit_wait`），效果等价但值仍合法。"""
+
+
 def _write_config(home: Path, *, email: str | None) -> None:
-    # rate.scale 高值：CLI 走真实 time.sleep 限速；arxiv 1req/3s 会真睡 ~3s/桶。
-    # 放大 refill 速率把限速 wait 压到亚毫秒（同 make_env 的 retry_scale 加速手法），
-    # 不改语义只提速测试。
-    lines = ["[paths]", 'venues_dirs = ["venues"]', "[rate]", "scale = 1000"]
+    lines = ["[paths]", 'venues_dirs = ["venues"]', "[rate]", "scale = 1.0"]
     if email is not None:
         lines += ["[identity]", f'email = "{email}"']
     (home / "config.toml").write_text("\n".join(lines) + "\n", encoding="utf-8")

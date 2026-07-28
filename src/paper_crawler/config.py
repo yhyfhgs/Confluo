@@ -246,6 +246,14 @@ class _FieldSpec:
     # OverflowError 被归 TRANSIENT 无限重试），是"畸形配置静默变成灾难"的典型面，必须响亮拒绝。
     # 配额类槽不设下界：cap=0 语义明确（当日直接封停该通道），方向 fail-safe，无须拦。
     min_value: int | None = None
+    # float 类边界（R1b P1-1）：与 min_value 分开建模，因为 scale 的下界是**不含**（>0，
+    # 0 本身非法——补充速率归零同上 min_value 的死锁成因），且只有 rate.scale 需要上界
+    # （含）；retry.scale 只需 >0，放大退避秒数无合规问题，故不设上界。越界同样
+    # `CrawlerError(CONFIG)` 拒启动。
+    min_exclusive: float | None = None  # float 类下界（不含）
+    max_value: float | None = None  # float 类上界（含）
+    # 越界错误消息的附加说明（字段语义相关，如 scale 的"只会更保守"方向性）；None 则不附加。
+    bound_hint: str | None = None
 
 
 # 全部配置键的分层解析规格（顺序即 config show 呈现顺序）。
@@ -301,8 +309,19 @@ _FIELD_SPECS: tuple[_FieldSpec, ...] = (
     ),
     _FieldSpec("paths.data_dir", ("paths",), "data_dir", "path"),
     _FieldSpec("paths.venues_dirs", ("paths",), "venues_dirs", "paths"),
-    _FieldSpec("rate.scale", ("rate",), "scale", "float", default=1.0),
-    _FieldSpec("retry.scale", ("retry",), "scale", "float", default=1.0),
+    _FieldSpec(
+        "rate.scale",
+        ("rate",),
+        "scale",
+        "float",
+        default=1.0,
+        min_exclusive=0.0,
+        max_value=1.0,
+        bound_hint="scale 仅用于收紧；放宽须改 venue/adapter 声明",
+    ),
+    # retry.scale 只需 >0：放大退避秒数（scale>1）无合规问题，不设上界（与 rate.scale 的
+    # 区别——后者直接改变对外请求节奏，前者只改变本地等待时长）。
+    _FieldSpec("retry.scale", ("retry",), "scale", "float", default=1.0, min_exclusive=0.0),
     _FieldSpec(
         "openalex.daily_budget_usd", ("openalex",), "daily_budget_usd", "float", default=0.50
     ),
@@ -347,6 +366,7 @@ _FIELD_SPECS: tuple[_FieldSpec, ...] = (
         "int",
         env="PAPER_CRAWLER_OA_FALLBACK_RATE_RPM",
         default=30,
+        min_value=1,  # 与 browserfetch.rate_rpm（本文件下方）同构：rpm≤0 → 补充速率归零死锁
     ),
     # Phase 7 T7 / D-033（12-fulltext-extract §7.1）：stage 5 的 GROBID 可选增强，**只两槽**
     # ——开/关由 `grobid_url` 是否为空表达（无需第三个 mode 槽）；`consolidateHeader` /
@@ -431,6 +451,27 @@ def _checked_int(spec: _FieldSpec, value: int) -> int:
     return value
 
 
+def _checked_float(spec: _FieldSpec, value: float) -> float:
+    """float 槽的边界校验（`_FieldSpec.min_exclusive`/`max_value`）；越界 →
+    `CrawlerError(CONFIG)` 拒启动（R1b P1-1：rate.scale ≤0 会让 RateLimiter.acquire 返回
+    `inf` 挂死；>1 全局放宽且此前 `effective_rpm()` 观测面不反映真实倍率）。
+    """
+    hint = f"；{spec.bound_hint}" if spec.bound_hint else ""
+    if spec.min_exclusive is not None and value <= spec.min_exclusive:
+        raise CrawlerError(
+            ErrorClass.CONFIG,
+            f"配置项 {spec.key} 取值非法: {value}（须 > {spec.min_exclusive}）{hint}",
+            detail=spec.key,
+        )
+    if spec.max_value is not None and value > spec.max_value:
+        raise CrawlerError(
+            ErrorClass.CONFIG,
+            f"配置项 {spec.key} 取值非法: {value}（须 ≤ {spec.max_value}）{hint}",
+            detail=spec.key,
+        )
+    return value
+
+
 def _resolve_field(
     spec: _FieldSpec,
     *,
@@ -497,7 +538,7 @@ def _resolve_field(
         for doc, source in ((project_doc, "project"), (home_doc, "home")):
             raw = _lookup_toml(doc, spec.table, spec.leaf)
             if raw is not None:
-                return _Resolved(_to_float(raw), source)
+                return _Resolved(_checked_float(spec, _to_float(raw)), source)
         return _Resolved(spec.default, "default")
 
     if spec.kind == "path":

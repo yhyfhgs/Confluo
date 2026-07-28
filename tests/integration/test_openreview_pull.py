@@ -38,6 +38,13 @@ _TOKEN = "sekret-openreview-token-value"
 _PDF = b"%PDF-1.7\n" + b"openreview-synthetic-pdf\n" + b"0" * 400 + b"\n%%EOF\n"
 
 
+@pytest.fixture(autouse=True)
+def _fast_rate_limiter(no_rate_limit_wait: None) -> None:
+    """CLI 全链路 pull 测试不测限速本身——中和 `RateLimiter.acquire`，见
+    `integration/conftest.py::no_rate_limit_wait`（`rate.scale` R1b 后拒绝 >1，
+    不能再靠调大它快进）。"""
+
+
 # --- home 装配（iclr venue + rate scale 快进）------------------------------------------------
 
 
@@ -45,7 +52,7 @@ def _write_iclr_home(base: Path, *, with_token_config: bool = False) -> Path:
     home = base / "home"
     venues_dir = home / "venues"
     venues_dir.mkdir(parents=True)
-    config_lines = ["[paths]", 'venues_dirs = ["venues"]', "", "[rate]", "scale = 1000.0"]
+    config_lines = ["[paths]", 'venues_dirs = ["venues"]', "", "[rate]", "scale = 1.0"]
     if with_token_config:
         config_lines += ["", "[auth.openreview]", f'token = "{_TOKEN}"']
     (home / "config.toml").write_text("\n".join(config_lines) + "\n", encoding="utf-8")

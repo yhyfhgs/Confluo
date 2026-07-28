@@ -174,3 +174,34 @@ def test_venue_spec_rejects_nested_unknown_key(
     assert any(
         err["loc"] == (nested_field, bad_key) and err["type"] == "extra_forbidden" for err in errors
     ), errors
+
+
+# --- VenueRateLimit.requests_per_minute 下界（R1b P1-3：rpm≤0 过 lint 会让 token bucket ---
+# 补充速率归零，acquire 永久 inf 等待——须在 Pydantic 层 gt=0 响亮拒绝，不许静默进 registry。
+
+
+@pytest.mark.parametrize("bad_rpm", [0, -5, -0.1])
+def test_venue_spec_rejects_non_positive_rate_limit_rpm(
+    venue_dict: dict[str, object], bad_rpm: float
+) -> None:
+    venue_dict["rate_limit"] = {"requests_per_minute": bad_rpm}
+    with pytest.raises(ValidationError) as exc_info:
+        VenueSpec(**venue_dict)
+    errors = exc_info.value.errors()
+    assert any(
+        err["loc"] == ("rate_limit", "requests_per_minute") and err["type"] == "greater_than"
+        for err in errors
+    ), errors
+
+
+def test_venue_spec_rate_limit_rpm_none_still_allowed(venue_dict: dict[str, object]) -> None:
+    """None（未声明限速）不该被 gt=0 误伤——沿用 adapter 默认限速的合法留白。"""
+    venue_dict["rate_limit"] = {"requests_per_minute": None}
+    spec = VenueSpec(**venue_dict)
+    assert spec.rate_limit.requests_per_minute is None
+
+
+def test_venue_spec_rate_limit_rpm_positive_still_allowed(venue_dict: dict[str, object]) -> None:
+    venue_dict["rate_limit"] = {"requests_per_minute": 0.1}
+    spec = VenueSpec(**venue_dict)
+    assert spec.rate_limit.requests_per_minute == 0.1

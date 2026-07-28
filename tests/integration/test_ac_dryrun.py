@@ -7,8 +7,9 @@ DB 无 Asset(fetched)；输出的"将下载 N 篇"与随后实跑的实际下载
 （report.py 渲染契约——预览行仅在 `planned_downloads>0 or planned_bytes>0` 即
 dry-run 路径出现）。
 
-以 `typer.testing.CliRunner`（进程内、真实 `Config.load` 路径）驱动；`rate_scale`
-放大把限速 sleep 快进（本 AC 不测限速，免去真实等待）。
+以 `typer.testing.CliRunner`（进程内、真实 `Config.load` 路径）驱动；`no_rate_limit_wait`
+中和 `RateLimiter.acquire` 把限速 wait 压到 0（本 AC 不测限速，免去真实等待——`rate.scale`
+R1b 后拒绝 >1，不能再靠调大它快进，见 `integration/conftest.py`）。
 """
 
 from __future__ import annotations
@@ -16,6 +17,7 @@ from __future__ import annotations
 from collections.abc import Callable
 from pathlib import Path
 
+import pytest
 from typer.testing import CliRunner
 
 from integration.conftest import DEFAULT_QUIRKS, VENUE
@@ -23,6 +25,11 @@ from paper_crawler.cli import app
 from paper_crawler.storage.db import Database
 
 runner = CliRunner()
+
+
+@pytest.fixture(autouse=True)
+def _fast_rate_limiter(no_rate_limit_wait: None) -> None:
+    pass
 
 
 def _data_files(home: Path) -> list[Path]:
@@ -43,7 +50,7 @@ def test_dry_run_no_side_effects_then_real_run_matches_and_has_no_preview(
     make_home: Callable[..., Path],
 ) -> None:
     """Closes: AC-1.2（dry-run 零落盘 + 预览数=实跑下载数 + 实跑报告无预览行）。"""
-    home = make_home(DEFAULT_QUIRKS, rate_scale=100.0)
+    home = make_home(DEFAULT_QUIRKS, rate_scale=1.0)
 
     # -- dry-run：止于 resolve，零下载副作用 ---------------------------------
     dry = runner.invoke(app, ["pull", VENUE, "--year", "2024", "--dry-run", "--home", str(home)])

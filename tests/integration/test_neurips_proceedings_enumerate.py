@@ -36,6 +36,14 @@ _UA = "PaperCrawler/test (personal research; mailto:test@example.com)"
 _VENUE_ID = "neurips"
 
 
+@pytest.fixture(autouse=True)
+def _fast_rate_limiter(no_rate_limit_wait: None) -> None:
+    """`_write_neurips_home` 走真实 CLI 装配的两个用例不测限速本身——中和
+    `RateLimiter.acquire`，见 `integration/conftest.py::no_rate_limit_wait`
+    （`rate.scale` R1b 后拒绝 >1，不能再靠调大它快进）。其余用例走 `repo: Repo`
+    直调 adapter，不经 CLI/RateLimiter，本 fixture 对它们是无操作。"""
+
+
 def _issue_2021() -> IssueRef:
     return IssueRef(venue_id=_VENUE_ID, year=2021, label="2021")
 
@@ -300,7 +308,7 @@ def _write_neurips_home(base: Path) -> Path:
         'venues_dirs = ["venues"]',
         "",
         "[rate]",
-        "scale = 1000.0",  # 快进限速闸，避免真实 sleep 拖慢测试（openreview AC-2.2 同款）
+        "scale = 1.0",  # 合法上界；真正的快进由 no_rate_limit_wait fixture 承担（见上）
     ]
     (home / "config.toml").write_text("\n".join(config_lines) + "\n", encoding="utf-8")
     doc = {

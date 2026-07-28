@@ -12,8 +12,15 @@
   同样取 min，而非保留首次注册值——同 domain 多 adapter 声明不同 burst 时
   不应放宽）。若合并后当前 level 超过新容量会立即下调，保持"level ≤
   capacity"不变式随时成立。
+- `alias` 同理单调不放宽（2026-07-27 R1b 修复 P1-4）：若 `alias_domain` 此刻已有
+  独立桶（曾直接 `register`/`override` 过，或已积累欠账），**不覆盖丢弃**——与
+  `canonical_domain` 的桶合并取更保守值（rpm/capacity 取 min，level 取二者中更负
+  值），两个 key 之后都指向同一个（就地更新的）`_Bucket` 对象。同一对 `alias`
+  反复调用是幂等的（`stages.route_for` 每次路由都会重建 alias，不能越调越严）。
 - 未注册 domain 的 `acquire`/`override`/`effective_rpm` 一律 fail fast，抛
   `CrawlerError(CONFIG)`——未注册即未声明限速策略，静默放行等于绕过限速。
+- `effective_rpm()` 返回的是**已计入 `scale`** 的真实生效速率（rpm × scale），
+  不是注册时的裸 rpm——观测面必须与 `acquire()` 实际消费 token 的速率一致。
 """
 
 import time
@@ -73,39 +80,78 @@ class RateLimiter:
         共用 1req/3s、「并发 1」）：pipeline 在主域 acquire、HttpClient 在实际请求
         host acquire，二者落到同一桶，逐请求限速对整簇域生效而非各自独立放行。
 
-        `register` 首次建桶后从不替换该 `_Bucket` 对象（后续只就地收紧），故别名一经
-        建立即长期有效。alias 到自身是无操作（`canonical` 已注册时幂等）。
+        **`alias_domain` 已有独立桶时不覆盖**（2026-07-27 R1b P1-4 修复）：若它此前被
+        直接 `register`/`override` 过（可能是更严的 rpm）或已积累欠账（level 为负），
+        无条件 `self._buckets[alias_domain] = bucket` 会静默丢弃这些状态——`register`
+        6rpm 后被 alias 到 30rpm 主域会被"放宽"，累积的欠账会被"清零"，两者都等价于
+        绕过限速，与 `register`/`override`"只会更保守"的语义矛盾。故改为合并：rpm/
+        capacity 取 min，level 取二者按当前时钟对齐补充后更负（更保守）的一侧，就地
+        更新其中一个既有 `_Bucket` 对象，`alias_domain`/`canonical_domain` 两个 key
+        合并后都指向它。
+
+        `register` 首次建桶后从不替换该 `_Bucket` 对象（后续只就地收紧），故已经指向
+        它的其它别名 key 会随合并自动同步（同一对象引用）。alias 到自身、或重复调用
+        同一对 `(alias_domain, canonical_domain)`（两个 key 已共享同一对象）是幂等
+        no-op——`stages.route_for` 每次路由都会重建 alias，不能因反复调用越调越严。
         """
-        bucket = self._require_bucket(canonical_domain)
-        self._buckets[alias_domain] = bucket
+        canonical_bucket = self._require_bucket(canonical_domain)
+        existing = self._buckets.get(alias_domain)
+        if existing is None:
+            self._buckets[alias_domain] = canonical_bucket
+            return
+        if existing is canonical_bucket:
+            return  # 已共享同一份桶（含 alias 到自身）——幂等 no-op
+
+        # alias_domain 已有一份独立状态：合并前先把两侧都按当前时钟推进到"此刻"，避免
+        # 两桶 last_update 不同步时直接比较 level 得出错误的"谁更保守"结论。
+        self._refill(existing)
+        self._refill(canonical_bucket)
+        existing.rpm = min(existing.rpm, canonical_bucket.rpm)
+        existing.capacity = min(existing.capacity, canonical_bucket.capacity)
+        existing.level = min(existing.level, canonical_bucket.level)
+        if existing.level > existing.capacity:
+            existing.level = float(existing.capacity)
+        self._buckets[alias_domain] = existing
+        self._buckets[canonical_domain] = existing
 
     def acquire(self, domain: str) -> float:
         """消费一个 token；返回调用方应 sleep 的秒数（0=立即可用）。本方法不 sleep。"""
         bucket = self._require_bucket(domain)
-        rate = self._rate_per_sec(bucket)
+        rate = self._refill(bucket)
 
+        bucket.level -= 1.0  # 预登记本次消费，即使不足也记账（形成"欠账"，供下次排队累加）
+
+        if bucket.level >= 0.0:
+            return 0.0
+        if rate <= 0.0:
+            return float("inf")
+        return -bucket.level / rate
+
+    def effective_rpm(self, domain: str) -> float:
+        """当前生效的 requests_per_minute（register/override/alias 合并后的最保守值），
+        **已计入 `scale`**——反映 `acquire()` 实际消费 token 的真实速率（R1b P1-1：修复
+        前只返回裸 `bucket.rpm`，scale≠1 时与真实吞吐不符的观测面缺陷）。
+        """
+        bucket = self._require_bucket(domain)
+        return bucket.rpm * self._scale
+
+    def _rate_per_sec(self, bucket: _Bucket) -> float:
+        return bucket.rpm / 60.0 * self._scale
+
+    def _refill(self, bucket: _Bucket) -> float:
+        """把 `bucket.level` 按当前时钟推进到"此刻"（不消费 token，只补充+钳到容量上限并
+        推进 `last_update`）；返回本次使用的速率（token/s），供调用方复用（`acquire` 消费
+        token、`alias` 合并前对齐两桶时钟）而不必重复算 `_rate_per_sec`。
+        """
+        rate = self._rate_per_sec(bucket)
         now = self._clock()
         elapsed = max(0.0, now - bucket.last_update)
         level = bucket.level + elapsed * rate
         if level > bucket.capacity:
             level = float(bucket.capacity)
-        bucket.last_update = now
-
-        level -= 1.0  # 预登记本次消费，即使不足也记账（形成"欠账"，供下次排队累加）
         bucket.level = level
-
-        if level >= 0.0:
-            return 0.0
-        if rate <= 0.0:
-            return float("inf")
-        return -level / rate
-
-    def effective_rpm(self, domain: str) -> float:
-        """当前生效的 requests_per_minute（register/override 合并后的最保守值）。"""
-        return self._require_bucket(domain).rpm
-
-    def _rate_per_sec(self, bucket: _Bucket) -> float:
-        return bucket.rpm / 60.0 * self._scale
+        bucket.last_update = now
+        return rate
 
     def _require_bucket(self, domain: str) -> _Bucket:
         bucket = self._buckets.get(domain)

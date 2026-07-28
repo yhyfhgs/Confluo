@@ -233,3 +233,107 @@ def test_alias_to_unregistered_canonical_fails_fast() -> None:
     with pytest.raises(CrawlerError) as exc_info:
         limiter.alias("oaipmh.arxiv.org", "export.arxiv.org")
     assert exc_info.value.error_class is ErrorClass.CONFIG
+
+
+# --- effective_rpm 计入 scale（R1b P1-1：观测面此前不反映 scale 缩放后的真实速率）------------
+
+
+def test_effective_rpm_reflects_scale() -> None:
+    """scale=0.5 时 effective_rpm 必须反映真实生效速率（30），而不是裸 rpm（60）。"""
+    limiter = RateLimiter(scale=0.5, clock=FakeClock())
+    limiter.register("mock.local", RatePolicy(requests_per_minute=60, burst=1))
+
+    assert limiter.effective_rpm("mock.local") == pytest.approx(30.0, abs=1e-9)
+
+
+def test_effective_rpm_reflects_scale_after_alias_and_override() -> None:
+    """register+override+alias 合并后的 rpm 同样按 scale 折算（观测面与实际耗 token 速率一致）。"""
+    limiter = RateLimiter(scale=0.5, clock=FakeClock())
+    limiter.register("export.arxiv.org", RatePolicy(requests_per_minute=60, burst=1))
+    limiter.alias("oaipmh.arxiv.org", "export.arxiv.org")
+    limiter.override("export.arxiv.org", 20)
+
+    assert limiter.effective_rpm("oaipmh.arxiv.org") == pytest.approx(10.0, abs=1e-9)
+
+
+# --- alias 遇 alias_domain 已有独立桶：不覆盖，取更保守值（R1b P1-4；f2_repro.py 场景）--------
+#
+# 修复前：`self._buckets[alias_domain] = bucket` 无条件覆盖——alias_domain 若已直接
+# register/override 过（更严的 rpm）或已积累欠账（更负的 level），会被静默丢弃/清零。
+# 与 register()"只会更保守"docstring 对齐：rpm/capacity 取 min，level 取二者中更负值。
+
+
+def test_alias_keeps_stricter_rpm_when_alias_domain_already_registered() -> None:
+    """①先 register(shared,6rpm) 再 alias 到 30rpm 主域 → effective 仍 6（不被放宽到 30）。"""
+    clock = FakeClock()
+    limiter = RateLimiter(clock=clock)
+    limiter.register("shared.example", RatePolicy(requests_per_minute=6, burst=1))
+    limiter.register("main.example", RatePolicy(requests_per_minute=30, burst=1))
+
+    limiter.alias("shared.example", "main.example")
+
+    assert limiter.effective_rpm("shared.example") == 6
+    # 合并是双向的：main 侧后续 acquire 也应遵守合并后更严的共享桶。
+    assert limiter.effective_rpm("main.example") == 6
+
+
+def test_alias_preserves_debt_when_alias_domain_already_has_bucket() -> None:
+    """②欠账 -2.0 后 alias → 下次 acquire 仍需等待（f2_repro.py 场景 A：修复前欠账被清零，
+    alias 后立即可用）。全程黑盒——只走公开 API（acquire 返回值间接证明欠账，不碰 _buckets）。
+    """
+    clock = FakeClock()
+    limiter = RateLimiter(clock=clock)
+    raw = "raw.githubusercontent.com"
+    limiter.register(raw, RatePolicy(requests_per_minute=30, burst=1))
+    limiter.alias("aclanthology.org", raw)
+    limiter.alias("api.github.com", raw)
+
+    # 时钟不动，30rpm=0.5 token/s，burst=1：连续 3 次 acquire 排队累加 0.0/2.0/4.0（欠账 -2.0）。
+    waits = [limiter.acquire(raw) for _ in range(3)]
+    assert waits == [pytest.approx(v, abs=1e-9) for v in (0.0, 2.0, 4.0)]
+
+    # 新 venue 的 canonical 域注册后把 raw 别名过去——raw 是 alias_domain 一侧（已有独立桶+欠账）。
+    limiter.register("proceedings.mlr.press", RatePolicy(requests_per_minute=30, burst=1))
+    limiter.alias(raw, "proceedings.mlr.press")
+
+    # 欠账必须保留（更保守）并继续累加，不能因合并被清零成新桶的满容量（修复前会变回 0.0）。
+    assert limiter.acquire(raw) == pytest.approx(6.0, abs=1e-9)
+    # 此前已建立的其它别名（aclanthology.org）与 raw 就地合并同一对象，应同步观测到保留
+    # 下来的欠账并继续累加，而不是仍停在被丢弃的旧状态。
+    assert limiter.acquire("aclanthology.org") == pytest.approx(8.0, abs=1e-9)
+
+
+def test_alias_repeated_same_pair_is_idempotent() -> None:
+    """③重复 alias 同一对不劣化——stages.py route_for 每次调用都会重建 alias（幂等要求）。"""
+    clock = FakeClock()
+    limiter = RateLimiter(clock=clock)
+    limiter.register("export.arxiv.org", RatePolicy(requests_per_minute=60, burst=1))
+    limiter.alias("oaipmh.arxiv.org", "export.arxiv.org")
+
+    first_wait = limiter.acquire("oaipmh.arxiv.org")  # 消费初始 token → 0.0
+
+    # 重复调用（如同 route_for 被多次触发）不应进一步收紧或改变已生效状态。
+    limiter.alias("oaipmh.arxiv.org", "export.arxiv.org")
+    limiter.alias("oaipmh.arxiv.org", "export.arxiv.org")
+
+    assert limiter.effective_rpm("oaipmh.arxiv.org") == 60
+    assert first_wait == pytest.approx(0.0, abs=1e-9)
+    # 幂等：再次 acquire 的排队值与"只 alias 一次"时应有的走向一致（欠 1 个 token → 1.0s），
+    # 而不是因重复合并被进一步拉长。
+    assert limiter.acquire("oaipmh.arxiv.org") == pytest.approx(1.0, abs=1e-9)
+
+
+def test_alias_merge_takes_more_conservative_capacity_and_clamps_level() -> None:
+    """burst 同 rpm 同理取 min；合并后 level 不得超过收紧后的新 capacity（不变式）。"""
+    clock = FakeClock()
+    limiter = RateLimiter(clock=clock)
+    limiter.register("a.example", RatePolicy(requests_per_minute=60, burst=5))
+    limiter.register("b.example", RatePolicy(requests_per_minute=60, burst=1))
+
+    limiter.alias("a.example", "b.example")
+
+    # 容量取更小者（1），且此刻两域共享同一桶。
+    clock.advance(100.0)  # 时间充分推进，若容量未收紧则可能误判
+    waits = [limiter.acquire("a.example") for _ in range(1)]
+    assert waits == [pytest.approx(0.0, abs=1e-9)]
+    assert limiter.acquire("b.example") == pytest.approx(1.0, abs=1e-9)
