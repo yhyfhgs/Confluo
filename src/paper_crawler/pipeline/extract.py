@@ -235,6 +235,31 @@ def _has_image_xobject(reader: pypdf.PdfReader) -> bool:
     return False
 
 
+# P1-7：pypdf 6.x 的 `_cmap.py` 在解析内嵌字体 CMap（字符编码表）时 5 处使用
+# `bytes.decode("utf-16-be", "surrogatepass")`——`surrogatepass` 错误处理器允许**未配对**
+# 的 UTF-16 代理码元原样穿透进 Python str（标准 UTF-16 解码下这本是 `UnicodeDecodeError`）。
+# 畸形/截断的 CMap 数据因此可让 `page.extract_text()` 产出**孤立代理字符**（如 U+D800）：
+# 它是合法的 Python str 元素，却不是合法的 Unicode 标量值——下游 `str.encode("utf-8")`
+# （stages.py 落盘/DB upsert 前必经）会对其抛 `UnicodeEncodeError`。该异常不是
+# `CrawlerError`，被 runner 误判 TRANSIENT 并按 RETRY_TABLE 重试 4 次（每次 100% 复现同一
+# 畸形 CMap）后判 FAILED——而畸形 PDF 本应是 §6.1「第 2 类：不失败任务」的长尾。
+#
+# 在本抽取器的**唯一出口**清洗（单一源头 ⇒ visible_char_count/落盘/upsert 全部天然干净）：
+# 孤立代理码点一律替换为 U+FFFD（Unicode 官方「替换字符」，与 GROBID 路径 `_post()` 对
+# 不可解码字节的处理口径一致，见本文件 `raw.decode("utf-8", errors="replace")`）。这里选
+# 正则而非同款 `text.encode("utf-8", errors="replace").decode("utf-8")`：后者对**已经是
+# str**、其中含不可编码字符的情形，替换字节是 ASCII `?`（0x3F）而不是 U+FFFD，达不到「替换
+# 为 U+FFFD」的目标（`errors="replace"` 的替换符随方向而异：decode 缺字节→U+FFFD，encode
+# 缺字节→`?`）。正则单趟 O(n) 扫描，且只匹配代理区间本身——不触碰任何其他字符（含非 BMP
+# 的合法字符：Python str 用单个码点表示它们，从不落在 U+D800–U+DFFF 区间，不会被误伤）。
+_LONE_SURROGATE_RE = re.compile("[\ud800-\udfff]")
+
+
+def _sanitize_lone_surrogates(text: str) -> str:
+    """孤立代理码点 → U+FFFD（见上）；不含代理字符时等价于原样返回。"""
+    return _LONE_SURROGATE_RE.sub("�", text)
+
+
 def _read_encrypted(reader: pypdf.PdfReader) -> bool:
     """加密 PDF：**只试一次空口令**（§2.3 五条约束）。成功打开返回 True，否则 False。
 
@@ -285,6 +310,7 @@ class PypdfExtractor:
             text = "\n".join(page.extract_text() or "" for page in reader.pages)
         except Exception:  # 页面遍历/解码期的损坏同归 corrupt
             return fail(NOTE_CORRUPT)
+        text = _sanitize_lone_surrogates(text)  # P1-7：畸形 CMap → 孤立代理字符清洗（见上）
 
         count = visible_char_count(text)
         if count == 0:

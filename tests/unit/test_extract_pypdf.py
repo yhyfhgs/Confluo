@@ -292,3 +292,58 @@ def test_grobid_version_payload_parsing(raw: str, expected: str) -> None:
     from paper_crawler.pipeline.extract import _parse_version_text
 
     assert _parse_version_text(raw) == expected
+
+
+# -- P1-7：pypdf 孤立代理字符清洗（畸形 CMap → `\ud800` 等）--------------------------------
+#
+# 根因：pypdf `_cmap.py` 解析内嵌字体 CMap 时用 `decode("utf-16-be", "surrogatepass")`，
+# 畸形/截断的 CMap 数据可让 `page.extract_text()` 产出**孤立代理字符**——它是合法的 Python
+# str 元素，却不是合法的 Unicode 标量值，下游 `str.encode("utf-8")`（stages.py 落盘前必经）
+# 会对其抛 `UnicodeEncodeError`（非 `CrawlerError`）。修复：抽取器出口统一清洗为 U+FFFD。
+
+
+def test_sanitize_lone_surrogates_replaces_with_u_fffd() -> None:
+    """孤立代理码点 → U+FFFD；其余字符（含普通 Unicode）原样保留。"""
+    from paper_crawler.pipeline.extract import _sanitize_lone_surrogates
+
+    dirty = "clean \ud800 text \udfff end"
+    clean = _sanitize_lone_surrogates(dirty)
+    assert "\ud800" not in clean and "\udfff" not in clean
+    assert clean.count("�") == 2
+    assert clean == "clean � text � end"
+    assert clean.encode("utf-8") == "clean � text � end".encode()  # 必须不抛
+
+
+def test_sanitize_lone_surrogates_is_a_noop_without_surrogates() -> None:
+    from paper_crawler.pipeline.extract import _sanitize_lone_surrogates
+
+    text = "plain ascii + 你好 unicode, no surrogates here"
+    assert _sanitize_lone_surrogates(text) == text
+
+
+def test_extract_sanitizes_lone_surrogates_from_malformed_cmap(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """回归锁：`page.extract_text()` 产出孤立代理字符时，`PypdfExtractor` 出口必须已净化——
+    否则下游 `.encode("utf-8")` 会抛 `UnicodeEncodeError`，被 runner 误判 TRANSIENT，
+    RETRY_TABLE 4 次重试每次 100% 复现后判 FAILED（P1-7 审查实测；design/12 §6.1「畸形
+    PDF 属第 2 类不失败任务」）。
+
+    用 monkeypatch 模拟 pypdf 内部对畸形 CMap 的产出——无法用 `helpers.minipdf` 构造真实
+    的畸形 CMap 字节流（生成器契约是全 ASCII 源，见 minipdf 模块 docstring），且该缺陷是
+    pypdf 库内部实现细节，与既有 `test_page_iteration_failure_is_corrupt` 同一手法。
+    """
+
+    class _SurrogatePage:
+        def extract_text(self) -> str:
+            return "hello \ud800 world"
+
+    monkeypatch.setattr(pypdf.PdfReader, "pages", property(lambda self: [_SurrogatePage()]))
+    produced = PypdfExtractor().extract(_pdf(tmp_path, make_text_pdf("placeholder")))
+
+    assert "\ud800" not in produced.text and "\udfff" not in produced.text
+    assert produced.text.encode("utf-8") is not None  # 必须不抛
+    assert "�" in produced.text
+    assert "hello" in produced.text and "world" in produced.text
+    assert produced.note is None  # 成功产物：§4.1 不变式要求零 note
+    assert produced.char_count == visible_char_count(produced.text) > 0

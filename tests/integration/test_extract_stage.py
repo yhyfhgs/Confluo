@@ -17,6 +17,7 @@ from collections.abc import Iterator
 from pathlib import Path
 
 import httpx
+import pypdf
 import pytest
 
 from helpers.minipdf import make_image_only_pdf, make_text_pdf
@@ -582,6 +583,52 @@ def test_crash_before_commit_leaves_only_a_part_file(
     monkeypatch.undo()
     assert run_extract(env, asset_id).failed == 0
     assert len(artifacts(env)) == 1
+
+
+# -- P1-7 回归锁：畸形 CMap → 孤立代理字符不得让任务 FAILED -------------------------------
+
+
+def test_lone_surrogate_from_malformed_cmap_does_not_fail_the_task(
+    env: PipelineEnv, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """根因：pypdf `_cmap.py` 解析畸形/截断的内嵌字体 CMap 时用
+    `decode("utf-16-be", "surrogatepass")`，可让 `page.extract_text()` 产出**孤立代理
+    字符**（如 `\\ud800`）。修复前：该字符经 `ExtractedText.text` 原样传到
+    stages.py 的 `produced.text.encode("utf-8")`（落盘前必经）⇒ `UnicodeEncodeError`
+    ⇒ 非 `CrawlerError` ⇒ runner 归 TRANSIENT ⇒ RETRY_TABLE 4 次重试、每次 100% 复现
+    ⇒ 任务 FAILED——而 design/12 §6.1 明文畸形 PDF 属「第 2 类：不失败任务」。
+
+    本测试直接走 stage 5 全链路（`seed_fetched_pdf` → `run_extract`），只 monkeypatch
+    pypdf 的 `.pages`（模拟畸形 CMap 的产出，手法同 `test_extract_pypdf.py` 的
+    `test_extract_sanitizes_lone_surrogates_from_malformed_cmap`），断言：任务成功
+    （非 TRANSIENT/FAILED）、产物落盘、`fulltext` upsert 成功且落盘文本已净化。
+    """
+    asset_id, paper_id = seed_fetched_pdf(env, make_text_pdf(BODY))
+
+    class _SurrogatePage:
+        def extract_text(self) -> str:
+            # 用 chr() 在运行期构造两个孤立代理字符（高代理 0xD800 + 低代理 0xDFFF）：
+            # 若改写成两个相邻的 `\u` 字符串转义，会被当作合法 UTF-16 代理对合并成一个
+            # 真实字符（非代理），chr() 逐个构造可避免这一步转写歧义。
+            return BODY + "\n" + chr(0xD800) + chr(0xDFFF)
+
+    monkeypatch.setattr(pypdf.PdfReader, "pages", property(lambda self: [_SurrogatePage()]))
+    report = run_extract(env, asset_id)
+    assert report.failed == 0 and report.blocked == 0, "畸形 CMap 不得让任务 FAILED/BLOCKED"
+
+    row = fulltext(env, paper_id)
+    assert row["state"] == STATE_EXTRACTED and row["note"] is None
+    assert row["extractor"] == "pypdf" and row["char_count"] > 0
+
+    landed = env.config.data_dir / str(row["text_path"])
+    assert landed.is_file()
+    text = landed.read_text(encoding="utf-8")  # 落盘产物必须是合法 UTF-8——不抛即为证据
+    assert "\ud800" not in text and "\udfff" not in text
+    assert "�" in text
+    assert hashlib.sha256(landed.read_bytes()).hexdigest() == row["text_sha256"]
+    assert env.db.query("SELECT ingest_state FROM paper WHERE id = ?", (paper_id,))[0][0] == (
+        "extracted"
+    )
 
 
 # -- 无 pypdf 参与的接线核对 ---------------------------------------------------------------
