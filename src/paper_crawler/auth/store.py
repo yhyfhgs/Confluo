@@ -29,6 +29,7 @@
 """
 
 import base64
+import hashlib
 import json
 import os
 import re
@@ -54,7 +55,11 @@ if TYPE_CHECKING:  # 惰性依赖仅作类型（运行时经 _import_aesgcm 按�
 _PROFILES_NAME = "profiles.toml"
 _FILEKEY_NAME = ".filekey"
 _KEYRING_SERVICE = "paper-crawler"
+# 主密钥条目**基名**兼修复前的旧名（P0-5）：keyring 条目在系统层全局唯一，裸 `master-key`
+# 让所有 config-home 共用一把主密钥——实际条目一律经 `_master_key_entry()` 取
+# `master-key@<home 指纹>`；本常量此后只用于①拼新名②回读旧名迁移（只读不删）。
 _MASTER_KEY_ENTRY = "master-key"
+_HOME_FP_LEN = 12  # home 指纹取 sha256 hex 前 12 位（48 bit，够分辨一台机上的 config-home）
 _NONCE_LEN = 12  # AES-GCM 标准 96-bit nonce（§3.2 冻结参数）
 _MASTER_KEY_LEN = 32  # AES-256（§3.2 冻结参数）
 
@@ -120,6 +125,36 @@ def _is_usable_backend(backend: object) -> bool:
     """`keyring.get_keyring()` 的 fail/null 后端 = 无可用后端（§3.3 降级判定点）。"""
     module = type(backend).__module__
     return not module.startswith(("keyring.backends.fail", "keyring.backends.null"))
+
+
+def _home_fingerprint(home: Path) -> str:
+    """config-home 的稳定短指纹：**绝对 resolve 后**路径的 sha256 前 12 hex（P0-5）。
+
+    resolve 先行 → `~/pc`、`/Users/x/pc`、含 `..` 段的等价写法落同一指纹（同一 home
+    绝不因调用方路径写法不同而分裂出两把主密钥）。纯路径散列，不含任何凭证素材。
+    """
+    return hashlib.sha256(str(home.expanduser().resolve()).encode("utf-8")).hexdigest()[
+        :_HOME_FP_LEN
+    ]
+
+
+def _decode_master_key(raw: str, entry: str) -> bytes:
+    """keyring 条目值 → 32B 主密钥；非 base64/长度非法 → CONFIG（报错指名**该**条目）。"""
+    try:
+        key = base64.b64decode(raw.encode("ascii"), validate=True)
+    except ValueError as exc:
+        raise CrawlerError(
+            ErrorClass.CONFIG,
+            "keyring 主密钥条目损坏（非 base64）——清理 keyring 条目 "
+            f"'{_KEYRING_SERVICE}/{entry}' 后重新 auth login",
+        ) from exc
+    if len(key) != _MASTER_KEY_LEN:
+        raise CrawlerError(
+            ErrorClass.CONFIG,
+            f"keyring 主密钥长度非 {_MASTER_KEY_LEN}B——清理 keyring 条目 "
+            f"'{_KEYRING_SERVICE}/{entry}' 后重新 auth login",
+        )
+    return key
 
 
 def _warn_filekey_downgrade_once() -> None:
@@ -343,8 +378,17 @@ class CredentialStore:
 
     # -- 主密钥（§3.3 降级链） -------------------------------------------------
 
+    def _master_key_entry(self) -> str:
+        """本 config-home 专属的主密钥 keyring 条目名 `master-key@<home 指纹>`（P0-5）。
+
+        keyring 条目全局唯一：旧的裸 `master-key` 让**所有** config-home 共用一把主密钥，
+        任一 home 的 `clear_master_key_if_unused()`（logout 收尾 ⑤）都会连坐删掉其它 home
+        仍在用的主密钥，其 `state/*.enc` 就此永久不可解。主密钥的读/写/删一律经本方法取名。
+        """
+        return f"{_MASTER_KEY_ENTRY}@{_home_fingerprint(self._home)}"
+
     def _master_key_from_keyring(self) -> bytes | None:
-        """keyring 主密钥：取/首次生成存入；后端不可用/读写失败 → None（降级）。"""
+        """keyring 主密钥：取/旧条目迁移/首次生成存入；后端不可用或读写失败 → None（降级）。"""
         keyring = _import_keyring()
         if keyring is None:
             return None
@@ -354,32 +398,32 @@ class CredentialStore:
             return None
         if not _is_usable_backend(backend):
             return None
+        entry = self._master_key_entry()
+        source = entry
         try:
-            raw = keyring.get_password(_KEYRING_SERVICE, _MASTER_KEY_ENTRY)
+            raw = keyring.get_password(_KEYRING_SERVICE, entry)
+            if raw is None:
+                # 向后兼容迁移（P0-5）：本 home 新名 miss → 回读修复前写入的旧名裸条目。
+                raw = keyring.get_password(_KEYRING_SERVICE, _MASTER_KEY_ENTRY)
+                source = _MASTER_KEY_ENTRY if raw is not None else entry
         except Exception:  # 后端运行期故障（锁定/拒权）→ 降级，不半途而废
             return None
         if raw is None:
             key = os.urandom(_MASTER_KEY_LEN)
             encoded = base64.b64encode(key).decode("ascii")
             try:
-                keyring.set_password(_KEYRING_SERVICE, _MASTER_KEY_ENTRY, encoded)
+                keyring.set_password(_KEYRING_SERVICE, entry, encoded)
             except Exception:  # 存不进 keyring → 弃用该密钥并降级（不留半程状态）
                 return None
             return key
-        try:
-            key = base64.b64decode(raw.encode("ascii"), validate=True)
-        except ValueError as exc:
-            raise CrawlerError(
-                ErrorClass.CONFIG,
-                "keyring 主密钥条目损坏（非 base64）——清理 keyring 条目 "
-                f"'{_KEYRING_SERVICE}/{_MASTER_KEY_ENTRY}' 后重新 auth login",
-            ) from exc
-        if len(key) != _MASTER_KEY_LEN:
-            raise CrawlerError(
-                ErrorClass.CONFIG,
-                f"keyring 主密钥长度非 {_MASTER_KEY_LEN}B——清理 keyring 条目 "
-                f"'{_KEYRING_SERVICE}/{_MASTER_KEY_ENTRY}' 后重新 auth login",
-            )
+        key = _decode_master_key(raw, source)  # 损坏报错指名值的实际出处条目
+        if source != entry:
+            # 迁移是**复制**：把旧名的值写进本 home 新名（既有密文继续可解），**绝不删除
+            # 旧名裸条目**——其它 config-home 的旧版实例可能仍以它为唯一主密钥来源。
+            try:
+                keyring.set_password(_KEYRING_SERVICE, entry, raw)
+            except Exception:  # 复制失败不阻断本次可用：值仍在旧名条目里，下次再迁
+                pass
         return key
 
     def _filekey(self) -> bytes:
@@ -608,12 +652,18 @@ class CredentialStore:
 
         文件密钥同样取证式覆写删除；keyring 条目删除；进程内缓存清空。
         仍有 .enc（他 provider 在用）→ 不动，返回 False。
+
+        清理面**严格限于本 config-home**（P0-5）：判据（`state/*.enc`）与删除对象
+        （`master-key@<本 home 指纹>`）同维度。修复前遗留的旧名裸条目 `master-key`
+        **刻意不删**——本 home 已空不证明其它 config-home 也空，而旧名条目正是它们
+        （旧版实例）的唯一主密钥来源；残留一条可能无主的 keyring 条目，好过让另一个
+        home 的 `state/*.enc` 永久不可解（跨 home 安全 > 彻底清理）。
         """
         if self.state_dir.is_dir() and any(self.state_dir.glob("*.enc")):
             return False
         if self.state_dir.is_dir():
             _forensic_unlink(self.state_dir / _FILEKEY_NAME)
-        self.delete_key(_MASTER_KEY_ENTRY)
+        self.delete_key(self._master_key_entry())
         self._master_key = None
         return True
 

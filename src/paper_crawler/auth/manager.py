@@ -171,7 +171,12 @@ class AuthManager:
 
     def logout(self, provider_key: str) -> AuthProvider:
         """AC-4.5 取证式登出（B-m6 按 kind 分列）：provider.invalidate（api_key=keyring
-        副本+meta；有状态=覆写删 .enc+meta）→ 清进程缓存 ② → 有状态类按需清主密钥 ⑤。"""
+        副本+meta；有状态=覆写删 .enc+meta）→ 清进程缓存 ② → 有状态类按需清主密钥 ⑤。
+
+        ⑤的清理面严格限于**本 store 的 config-home**（P0-5：keyring 主密钥条目按 home
+        指纹分名，见 `CredentialStore._master_key_entry`）——本 home 的 logout 绝不波及
+        其它 config-home 仍在用的主密钥。
+        """
         provider = self.get(provider_key)
         profile = self.profiles()[provider_key]
         handle = self._sessions.pop(provider_key, None) or self._synthetic_handle(profile)

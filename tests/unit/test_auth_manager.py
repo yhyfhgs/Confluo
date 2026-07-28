@@ -13,7 +13,7 @@ from pathlib import Path
 import pytest
 
 import paper_crawler.auth.store as store_mod
-from helpers.auth import FakeKeyring, install_fake_keyring, make_config
+from helpers.auth import FakeKeyring, install_fake_keyring, make_config, master_key_entry
 from paper_crawler.auth.manager import AuthManager, ProviderStatus, load_providers
 from paper_crawler.auth.providers.api_key import ApiKeyProvider
 from paper_crawler.auth.providers.cookie_session import CookieSessionProvider
@@ -248,7 +248,7 @@ def test_logout_api_key_keyring_copy_only(home: Path, monkeypatch: pytest.Monkey
     manager.logout("elsevier")
     assert ("paper-crawler", "elsevier_apikey") not in fake.entries
     assert ("paper-crawler", "elsevier_insttoken") not in fake.entries
-    assert ("paper-crawler", "master-key") not in fake.entries  # api_key 路径不触主密钥
+    assert master_key_entry(home) not in fake.entries  # api_key 路径不触主密钥
     assert manager.store.read_key("elsevier_apikey") == "config-value"  # config 槽不动
 
 

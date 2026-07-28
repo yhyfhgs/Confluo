@@ -12,6 +12,7 @@ from pathlib import Path
 import pytest
 
 import paper_crawler.auth.store as store_mod
+from paper_crawler.auth.store import CredentialStore
 from paper_crawler.config import Config
 
 
@@ -41,6 +42,15 @@ class FakeKeyring:
 
 def install_fake_keyring(monkeypatch: pytest.MonkeyPatch, fake: object) -> None:
     monkeypatch.setattr(store_mod, "_import_keyring", lambda: fake)
+
+
+def master_key_entry(home: Path) -> tuple[str, str]:
+    """该 config-home 主密钥在 keyring 里的键 `(service, master-key@<home 指纹>)`。
+
+    P0-5 后主密钥条目按 config-home 指纹分名（裸 `master-key` 会让任一 home 的 logout
+    连坐删掉其它 home 的主密钥）——断言条目名的测试一律经本函数取名，勿写死字面量。
+    """
+    return ("paper-crawler", CredentialStore(home)._master_key_entry())
 
 
 def make_config(home: Path, **overrides: object) -> Config:

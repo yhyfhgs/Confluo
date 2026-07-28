@@ -20,7 +20,7 @@ from types import SimpleNamespace
 import pytest
 
 import paper_crawler.auth.store as store_mod
-from helpers.auth import FakeKeyring, install_fake_keyring, make_config
+from helpers.auth import FakeKeyring, install_fake_keyring, make_config, master_key_entry
 from paper_crawler.auth.store import CredentialStore, ProviderProfile, parse_meta_datetime
 from paper_crawler.errors import AuthRequired, CrawlerError, ErrorClass
 
@@ -262,13 +262,16 @@ def test_get_keyring_exception_degrades_to_filekey(
 
 
 def test_usable_keyring_backend_holds_master_key_no_filekey(
-    store: CredentialStore, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+    store: CredentialStore,
+    home: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
 ) -> None:
     fake = FakeKeyring()
     install_fake_keyring(monkeypatch, fake)
     store.write_state("ref_a", b"payload")
     assert not (store.state_dir / ".filekey").exists()  # keyring 可用：无文件密钥
-    assert ("paper-crawler", "master-key") in fake.entries
+    assert master_key_entry(home) in fake.entries  # 条目按 home 指纹分名（P0-5）
     assert capsys.readouterr().err == ""  # 无降级警告
     # 新实例（同 keyring）可解密——主密钥持久于 keyring
     second = CredentialStore(store.auth_dir.parent)
@@ -276,10 +279,10 @@ def test_usable_keyring_backend_holds_master_key_no_filekey(
 
 
 def test_keyring_master_key_corrupt_base64_raises_config(
-    store: CredentialStore, monkeypatch: pytest.MonkeyPatch
+    store: CredentialStore, home: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     fake = FakeKeyring()
-    fake.entries[("paper-crawler", "master-key")] = "!!!not-base64!!!"
+    fake.entries[master_key_entry(home)] = "!!!not-base64!!!"
     install_fake_keyring(monkeypatch, fake)
     with pytest.raises(CrawlerError) as excinfo:
         store.write_state("ref_a", b"payload")
@@ -287,12 +290,12 @@ def test_keyring_master_key_corrupt_base64_raises_config(
 
 
 def test_keyring_master_key_wrong_length_raises_config(
-    store: CredentialStore, monkeypatch: pytest.MonkeyPatch
+    store: CredentialStore, home: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     import base64
 
     fake = FakeKeyring()
-    fake.entries[("paper-crawler", "master-key")] = base64.b64encode(b"short").decode()
+    fake.entries[master_key_entry(home)] = base64.b64encode(b"short").decode()
     install_fake_keyring(monkeypatch, fake)
     with pytest.raises(CrawlerError) as excinfo:
         store.write_state("ref_a", b"payload")
@@ -521,15 +524,16 @@ def test_clear_master_key_only_when_no_enc_left(
 
 
 def test_clear_master_key_removes_keyring_entry(
-    store: CredentialStore, monkeypatch: pytest.MonkeyPatch
+    store: CredentialStore, home: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     fake = FakeKeyring()
     install_fake_keyring(monkeypatch, fake)
     store.write_state("ref_a", b"a")
-    assert ("paper-crawler", "master-key") in fake.entries
+    assert master_key_entry(home) in fake.entries
     store.delete_state("ref_a")
     assert store.clear_master_key_if_unused() is True
-    assert ("paper-crawler", "master-key") not in fake.entries
+    assert master_key_entry(home) not in fake.entries
+    # 跨 home 语义（只删本 home 条目、旧名裸条目不碰）见 test_auth_store_home_scope.py。
 
 
 def test_clear_master_key_on_empty_store_is_true_noop(store: CredentialStore) -> None:
@@ -725,14 +729,14 @@ def test_real_import_keyring_absent_returns_none(
 
 
 def test_real_import_keyring_present_returns_module(
-    store: CredentialStore, monkeypatch: pytest.MonkeyPatch
+    store: CredentialStore, home: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """真实 `_import_keyring`：import 成功 → 返回模块对象（fake 注入 sys.modules）。"""
     monkeypatch.setattr(store_mod, "_import_keyring", _REAL_IMPORT_KEYRING)
     fake = FakeKeyring()
     monkeypatch.setitem(sys.modules, "keyring", fake)  # type: ignore[arg-type]
     store.write_state("ref_a", b"payload")
-    assert ("paper-crawler", "master-key") in fake.entries  # fake 被当作 keyring 模块使用
+    assert master_key_entry(home) in fake.entries  # fake 被当作 keyring 模块使用
     assert not (store.state_dir / ".filekey").exists()
 
 

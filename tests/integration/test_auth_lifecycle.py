@@ -40,7 +40,7 @@ import httpx
 import pytest
 
 import paper_crawler.auth.store as store_mod
-from helpers.auth import FakeKeyring, install_fake_keyring, make_config
+from helpers.auth import FakeKeyring, install_fake_keyring, make_config, master_key_entry
 from integration.conftest import (
     AuthClock,
     MockIdPState,
@@ -312,7 +312,7 @@ def test_lifecycle_05_logout_forensic_wipe_full_home_tree(
 
     _first_login(lifecycle)
     assert (lifecycle.store.state_dir / "oup_shib_state.enc").is_file()
-    assert ("paper-crawler", "master-key") in fake_keyring.entries
+    assert master_key_entry(lifecycle.home) in fake_keyring.entries
 
     manager = AuthManager(lifecycle.config, clock=lifecycle.clock, store=lifecycle.store)
     manager.logout("oup@shib")
@@ -320,7 +320,7 @@ def test_lifecycle_05_logout_forensic_wipe_full_home_tree(
     # 取证清单（AC-4.5；B-m6 有状态类）：.enc / meta / keyring 主密钥条目全清。
     assert not list(lifecycle.store.state_dir.glob("*.enc"))
     assert not list(lifecycle.store.state_dir.glob("*.meta.json"))
-    assert ("paper-crawler", "master-key") not in fake_keyring.entries
+    assert master_key_entry(lifecycle.home) not in fake_keyring.entries
 
     # 集成层重验（超出既有单测/CLI 测试逐一核对已知文件路径的范围）：对**全 home
     # 目录树**逐文件扫描字节内容，确认 cookie 明文不藏在任何角落（未知/意外文件亦覆盖）。
