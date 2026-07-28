@@ -46,16 +46,27 @@ runner 启动（`__init__`）：`config.ensure_dirs()` + `cleanup_tmp(data/tmp)`
 （§5.2 崩溃残留清理）+ `queue.recover_running()`（遗留 RUNNING 归还 PENDING 的
 崩溃恢复——语义见 `TaskQueue.recover_running` docstring；2026-07-21 T7c 仲裁
 将其定为冻结件 §2.5 的公开 API）。
+
+**进程级互斥（独立审查 P1-6 / 修复批 R3d）**：上面两件启动动作都是**无进程范围**的
+破坏性操作——`cleanup_tmp` 删 tmp 下全部 `*.part`，`recover_running` 把全库 RUNNING
+归还 PENDING。`.part` 文件名恒为 `{asset_id}.part`，故 cron `watch` 与交互式 `pull`
+重叠时，后启动者会删掉前者正在写的 part、抢走前者已 claim 的 RUNNING 任务：落盘字节
+与 DB `sha256` 可以不符，而且只有事后 `verify` 才看得见。修复是一把 `fcntl.flock`
+排他锁（`<config-home>/state/.pipeline.lock`，见 `pipeline_lock_path` 与 `_exclusive`），
+覆盖启动动作与每一次会话（pull/run_single_stage/drain/watch/grab 各自的整个 drain
+过程）；抢不到锁即**响亮失败**（`CrawlerError(CONFIG)`），不等待不静默。
 """
 
 from __future__ import annotations
 
+import contextlib
 import json
 import sqlite3
-from collections.abc import Callable
+from collections.abc import Callable, Iterator
 from dataclasses import dataclass
 from datetime import UTC, date, datetime, timedelta
-from typing import Any
+from pathlib import Path
+from typing import IO, Any
 
 from paper_crawler.errors import RETRY_TABLE, CrawlerError, ErrorClass, RetrySpec
 from paper_crawler.obslog import log_event
@@ -71,6 +82,35 @@ from paper_crawler.pipeline.stages import (
 )
 from paper_crawler.tasks import EnqueueResult, TaskKind
 from paper_crawler.types import HealthStatus, SessionHandle, utcnow_iso
+
+try:
+    import fcntl
+except ImportError:  # pragma: no cover - Windows 无 fcntl；经 _HAS_FLOCK=False 分支行使
+    fcntl = None  # type: ignore[assignment]
+
+_HAS_FLOCK = fcntl is not None
+
+PIPELINE_LOCK_NAME = ".pipeline.lock"
+
+
+def pipeline_lock_path(home: Path) -> Path:
+    """pipeline 进程级排他锁的文件路径（`<config-home>/state/.pipeline.lock`）。
+
+    **为什么在 `state/` 而不是 `data/`**：`state/` 是本仓库既定的"运行态落盘"位置
+    （`state/cooldown/<key>.json` 的 challenge 冷却、`state/openalex-budget.json` 的
+    预算账本都在此），而 `data/` 的语义是"下载产物"——AC-1.2 有一条可执行判据直说
+    "dry-run 后 `data/` 零写入"（`tests/integration/test_ac_dryrun.py`、`test_cli.py`、
+    `test_pipeline_e2e.py` 三处断言），往 `data/` 放一个每次运行都创建的锁文件会把这
+    条判据变成"零写入，除了那个文件"。锁本就是运行态，归 `state/` 也更自洽。
+
+    互斥域因此是 **config-home**（`--home`）：一个 home = 一套 `catalog.sqlite` +
+    一份 `data/`，正是 cron `watch` 与手动 `pull` 争抢的那一套东西。
+
+    独立函数而非内联字面量：CLI/测试/运维脚本需要能指着同一个路径说话（诊断"是谁在
+    持锁"、断言互斥语义），路径约定只应有一处定义。
+    """
+    return home / "state" / PIPELINE_LOCK_NAME
+
 
 # AUTH_EXPIRED 连带 block 之外的两类"直接 BLOCKED"（design/05 §4）。
 _BLOCK_CLASSES = frozenset({ErrorClass.CHALLENGE, ErrorClass.CONFIG})
@@ -208,15 +248,20 @@ class PipelineRunner:
     ) -> None:
         self.ctx = ctx
         ctx.config.ensure_dirs()
-        removed = cleanup_tmp(ctx.config.data_dir / "tmp")
-        if removed:
-            log_event("WARNING", f"startup: removed {removed} stale *.part file(s)")
-        recovered = ctx.queue.recover_running()  # 崩溃恢复（TaskQueue 公开 API，§2.5 扩充）
-        if recovered:
-            log_event(
-                "WARNING",
-                f"startup: recovered {recovered} RUNNING task(s) to PENDING (crash leftovers)",
-            )
+        # 进程级互斥（P1-6）：锁句柄与重入深度先于任何加锁调用初始化。
+        self._lock_path = pipeline_lock_path(ctx.config.home)
+        self._lock_handle: IO[str] | None = None
+        self._lock_depth = 0
+        with self._exclusive():  # 两件破坏性启动动作必须在锁内（模块 docstring）
+            removed = cleanup_tmp(ctx.config.data_dir / "tmp")
+            if removed:
+                log_event("WARNING", f"startup: removed {removed} stale *.part file(s)")
+            recovered = ctx.queue.recover_running()  # 崩溃恢复（TaskQueue 公开 API，§2.5 扩充）
+            if recovered:
+                log_event(
+                    "WARNING",
+                    f"startup: recovered {recovered} RUNNING task(s) to PENDING (crash leftovers)",
+                )
         # 假时钟缝（B-M1，可测性硬要求）：健康门 15min 老化 / 工作时段窗 / challenge 冷却均经
         # 该注入时钟判定（先例 TaskQueue.__init__(clock=)）；默认 UTC now，有默认值→零回归。
         self._clock: Callable[[], datetime] = clock or (lambda: datetime.now(UTC))
@@ -236,6 +281,102 @@ class PipelineRunner:
         # 不在 `_new_report` 重置（冷却跨运行有效）。
         self._challenge_cooldown: dict[str, datetime] = {}
 
+    # -- 进程级互斥锁（P1-6；模块 docstring "进程级互斥"段）----------------------
+
+    @contextlib.contextmanager
+    def _exclusive(self) -> Iterator[None]:
+        """把调用方的整段临界区放进 `<config-home>/state/.pipeline.lock` 的排他锁内。
+
+        **加锁范围**（两处，合起来覆盖 P1-6 点名的全部破坏面）：
+        - `__init__` 的 `cleanup_tmp` + `recover_running`；
+        - 五个公开入口（pull/run_single_stage/drain/watch/grab）**各自的整个会话**
+          ——从入队到 drain 结束再到 `_finalize` 报告落盘。
+
+        **为什么在会话之间释放，而不是从 `__init__` 一直持到对象析构**：持到析构等于
+        把释放时机交给垃圾回收，而 Python 里"对象何时被回收"并不由本类说了算——一次
+        异常的回溯就会把命令函数那一帧（连同其中的 runner 局部）留到调用方丢弃
+        `__traceback__` 为止（`typer.testing.CliRunner` 正是把 `SystemExit` 连同
+        `__context__` 存进 `Result` 的典型），于是"同一进程里的下一条命令"会被自己
+        上一条挡住。改为会话粒度后释放时机是**确定的**（`with` 退出即释放）。
+
+        会话之间的空档不构成 P1-6 的缺陷窗口：两个进程的破坏性动作（cleanup_tmp /
+        recover_running）与它们各自的 drain 都在锁内，故"B 的 cleanup_tmp 撞上 A 的
+        下载中途"与"B 的 recover_running 抢 A 已 claim 的任务"这两条**都不可能**成立
+        ——空档里 A 既没有在写 part、也没有 claim 中的任务。空档期被对手抢先的后果
+        只是本方下一次会话响亮失败（下同），不是静默交错。
+
+        重入安全（`_lock_depth`）：目前五个入口互不嵌套、`__init__` 也不与入口重叠，
+        但计数使"将来某个入口复用另一个入口"不会退化成自锁死。
+        """
+        self._acquire_lock()
+        try:
+            yield
+        finally:
+            self._release_lock()
+
+    def _acquire_lock(self) -> None:
+        """取排他锁；被别的实例持有即 `CrawlerError(CONFIG)` 立即失败（不等待）。
+
+        `LOCK_EX | LOCK_NB`：等待没有意义——对手可能是一轮跑几小时的 `pull`，而
+        cron `watch` 撞上手动 `pull` 时"本轮报错跳过、下轮正常"才是想要的语义
+        （下一轮 cron 自然重试，不堆积互相等待的进程）。
+
+        **崩溃自动释放**：`flock` 的生命周期绑在打开的文件描述上，进程无论正常退出
+        还是被 SIGKILL/断电，内核都会在回收 fd 时释放锁——因此**没有陈旧锁文件问题**，
+        不需要 PID 探活、不需要 TTL、也不该在启动时删锁文件（与
+        `adapters/openalex/budget.py::_locked` 同一理由，那里也是把锁落在一个从不改名
+        的独立文件上）。锁文件内容恒为空，只作互斥柄；`"a"` 模式表达"不关心内容"。
+
+        Windows（无 `fcntl`）降级为无锁——与 `budget.py` 同款如实标注：`fcntl` 是
+        POSIX-only 标准库模块，本仓库的 CI/开发/部署目标均为 macOS/Linux（AGENTS.md
+        未声明跨平台承诺），此处不引入自定义跨平台锁抽象。
+        """
+        if self._lock_depth == 0 and _HAS_FLOCK:
+            assert fcntl is not None  # narrows type for mypy under _HAS_FLOCK guard
+            self._lock_path.parent.mkdir(parents=True, exist_ok=True)
+            handle = open(self._lock_path, "a", encoding="utf-8")
+            try:
+                fcntl.flock(handle.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
+            except BlockingIOError as exc:  # EWOULDBLOCK/EAGAIN：锁被另一实例持有
+                handle.close()
+                raise CrawlerError(
+                    ErrorClass.CONFIG,
+                    f"另一 pipeline 实例正在运行（锁：{self._lock_path}）；"
+                    "同时跑两个 pipeline 会互删下载中的 *.part、互抢 RUNNING 任务，"
+                    "故本轮拒绝启动——等它结束后重试（cron 撞上手动运行时下一轮自动恢复）",
+                    detail=str(exc),
+                ) from exc
+            except OSError as exc:  # 文件系统不支持 flock（部分网络盘）等真故障
+                handle.close()
+                raise CrawlerError(
+                    ErrorClass.CONFIG,
+                    f"pipeline 互斥锁不可用（锁：{self._lock_path}）: {exc}；"
+                    "把 config-home（`--home`）放到支持 flock 的本地盘后重试",
+                    detail=str(exc),
+                ) from exc
+            self._lock_handle = handle
+        self._lock_depth += 1
+
+    def _release_lock(self) -> None:
+        """释放（重入计数归零时才真放）：显式 `LOCK_UN` + 关句柄。
+
+        `close()` 本身即释放，显式 `LOCK_UN` 只是让"锁在此处交还"在代码里可读
+        （`budget.py::_locked` 同款注释）。释放路径不抛：`finally` 里的二次异常会
+        盖掉临界区里的真实异常。
+        """
+        self._lock_depth -= 1
+        if self._lock_depth > 0:
+            return
+        handle, self._lock_handle = self._lock_handle, None
+        if handle is None:
+            return
+        with contextlib.suppress(OSError):
+            if _HAS_FLOCK:
+                assert fcntl is not None
+                fcntl.flock(handle.fileno(), fcntl.LOCK_UN)
+        with contextlib.suppress(OSError):
+            handle.close()
+
     # -- 公开入口（§2.7 冻结签名）-------------------------------------------
 
     def pull(
@@ -250,48 +391,57 @@ class PipelineRunner:
 
         未知 venue 直接抛 `CrawlerError(CONFIG)`（不产生任何任务；CLI 以退出码 2
         呈现）。返回前报告落盘 reports_dir（`finally`——见 `_finalize` docstring）。
+        整个会话在进程级排他锁内（`_exclusive`；另一实例在跑即响亮失败）。
         """
-        self.ctx.registry.get(venue_id)  # fail fast：未知 id → CrawlerError(CONFIG)
-        report = self._new_report("pull", venue_id)
-        try:
-            result = self.ctx.queue.enqueue(
-                "pull",
-                venue_id,
-                _pull_params(sel, with_extract=with_extract, force=force),
-                force=force,
-            )
-            log_event(
-                "INFO",
-                f"pull enqueued ({result.status})",
-                task_id=result.task_id,
-                venue=venue_id,
-                stage="pull",
-            )
-            self._drain_loop(report)
-        finally:
-            self._finalize(report)
+        with self._exclusive():
+            self.ctx.registry.get(venue_id)  # fail fast：未知 id → CrawlerError(CONFIG)
+            report = self._new_report("pull", venue_id)
+            try:
+                result = self.ctx.queue.enqueue(
+                    "pull",
+                    venue_id,
+                    _pull_params(sel, with_extract=with_extract, force=force),
+                    force=force,
+                )
+                log_event(
+                    "INFO",
+                    f"pull enqueued ({result.status})",
+                    task_id=result.task_id,
+                    venue=venue_id,
+                    stage="pull",
+                )
+                self._drain_loop(report)
+            finally:
+                self._finalize(report)
         return report
 
     def run_single_stage(
         self, kind: TaskKind, venue_id: str, params: dict[str, object]
     ) -> RunReport:
-        """单阶段执行（design/05 §1"阶段可单独执行"）：enqueue 一个任务并 drain。"""
-        report = self._new_report(f"run {kind}", venue_id)
-        try:
-            result = self.ctx.queue.enqueue(kind, venue_id, params)
-            self._note_enqueue(result, kind, venue_id, report)
-            self._drain_loop(report)
-        finally:
-            self._finalize(report)
+        """单阶段执行（design/05 §1"阶段可单独执行"）：enqueue 一个任务并 drain。
+
+        同 `pull`：整个会话在进程级排他锁内（`_exclusive`）。`crawler list` 一条命令
+        里连调多次本方法 = 多个相继的会话，每次各自加/解锁（锁不跨会话保留，理由见
+        `_exclusive` docstring）。
+        """
+        with self._exclusive():
+            report = self._new_report(f"run {kind}", venue_id)
+            try:
+                result = self.ctx.queue.enqueue(kind, venue_id, params)
+                self._note_enqueue(result, kind, venue_id, report)
+                self._drain_loop(report)
+            finally:
+                self._finalize(report)
         return report
 
     def drain(self) -> RunReport:
-        """把队列里现存的 PENDING 全部执行完（claim_next 循环直到空）。"""
-        report = self._new_report("drain", None)
-        try:
-            self._drain_loop(report)
-        finally:
-            self._finalize(report)
+        """把队列里现存的 PENDING 全部执行完（claim_next 循环直到空；会话在锁内）。"""
+        with self._exclusive():
+            report = self._new_report("drain", None)
+            try:
+                self._drain_loop(report)
+            finally:
+                self._finalize(report)
         return report
 
     def watch(self, venue_id: str, *, today: date | None = None) -> RunReport:
@@ -310,34 +460,44 @@ class PipelineRunner:
         目标月由 `today`（缺省真实 UTC 今日）经 `_watch_target_months` 定：当月，且月初
         （≤3 号）含上一月桶。报告 notes 记本次净新增 paper 数（`repo.counts` 前后差）。
         未知 venue fail-fast 抛 `CrawlerError(CONFIG)`（CLI 以退出码 2 呈现）；venue 是否
-        为 `preprint_channel` 由 CLI 层校验（用法约束，非 pipeline 语义）。
+        为 `preprint_channel` 由 CLI 层校验（用法约束，非 pipeline 语义）。整个会话在
+        进程级排他锁内（`_exclusive`）——cron `watch` 撞上手动 `pull` 正是 P1-6 的原始
+        场景：本轮响亮失败跳过，下一轮 cron 自然恢复。
         """
-        self.ctx.registry.get(venue_id)  # fail fast：未知 id → CrawlerError(CONFIG)
-        day = today if today is not None else datetime.now(UTC).date()
-        report = self._new_report("watch", venue_id)
-        try:
-            # 阶段 1 discover（force：保证当月/上月桶存在，绕过 24h 新鲜度）
-            self._enqueue_child(report, "discover", venue_id, {}, None, force=True)
-            self._drain_loop(report)
+        with self._exclusive():
+            self.ctx.registry.get(venue_id)  # fail fast：未知 id → CrawlerError(CONFIG)
+            day = today if today is not None else datetime.now(UTC).date()
+            report = self._new_report("watch", venue_id)
+            try:
+                # 阶段 1 discover（force：保证当月/上月桶存在，绕过 24h 新鲜度）
+                self._enqueue_child(report, "discover", venue_id, {}, None, force=True)
+                self._drain_loop(report)
 
-            papers_before = self.ctx.repo.counts(venue_id)["papers"]
+                papers_before = self.ctx.repo.counts(venue_id)["papers"]
 
-            # 阶段 2 enumerate 目标月桶（force：绕过 7d 新鲜度，强制整窗重收）
-            bucket_count = 0
-            for year, month in _watch_target_months(day):
-                for issue in self.ctx.repo.list_issues(venue_id, number=f"{month:02d}", year=year):
-                    self._enqueue_child(
-                        report, "enumerate", venue_id, {"issue": str(issue["id"])}, None, force=True
-                    )
-                    bucket_count += 1
-            self._drain_loop(report)
+                # 阶段 2 enumerate 目标月桶（force：绕过 7d 新鲜度，强制整窗重收）
+                bucket_count = 0
+                for year, month in _watch_target_months(day):
+                    for issue in self.ctx.repo.list_issues(
+                        venue_id, number=f"{month:02d}", year=year
+                    ):
+                        self._enqueue_child(
+                            report,
+                            "enumerate",
+                            venue_id,
+                            {"issue": str(issue["id"])},
+                            None,
+                            force=True,
+                        )
+                        bucket_count += 1
+                self._drain_loop(report)
 
-            new_papers = self.ctx.repo.counts(venue_id)["papers"] - papers_before
-            report.notes.append(
-                f"watch[{venue_id}]: +{new_papers} new paper(s) over {bucket_count} bucket(s)"
-            )
-        finally:
-            self._finalize(report)
+                new_papers = self.ctx.repo.counts(venue_id)["papers"] - papers_before
+                report.notes.append(
+                    f"watch[{venue_id}]: +{new_papers} new paper(s) over {bucket_count} bucket(s)"
+                )
+            finally:
+                self._finalize(report)
         return report
 
     def grab(self, venue_id: str, paper_id: str, *, force: bool = False) -> RunReport:
@@ -346,25 +506,28 @@ class PipelineRunner:
         paper 已由 CLI 侧确定（库内 DOI 反查 或 crossref 单篇 lookup→`MergeEngine.ingest`
         新建并绑定 `venue_id`）。此处复用 pull 的 resolve/fetch 子任务机制与错误路由——auth
         健康门（§8.2）/日配额（§8.3）/工作时段窗（§8.6）/OA 兜底（§8.1）全生效。未知 venue
-        fail-fast 抛 `CrawlerError(CONFIG)`（CLI 以退出码 2 呈现，不产生任何任务）。
+        fail-fast 抛 `CrawlerError(CONFIG)`（CLI 以退出码 2 呈现，不产生任何任务）。整个
+        会话在进程级排他锁内（`_exclusive`）。
         """
-        spec = self.ctx.registry.get(venue_id)  # fail fast：未知 id → CrawlerError(CONFIG)
-        self.ctx.repo.upsert_venue(spec)  # 确保 venue 行存在（FK + 路由；同 _run_pull）
-        report = self._new_report("grab", venue_id)
-        try:
-            # 阶段 3 resolve（单篇）——planned asset 落库
-            self._enqueue_child(report, "resolve", venue_id, {"paper": paper_id}, None, force)
-            self._drain_loop(report)
+        with self._exclusive():
+            spec = self.ctx.registry.get(venue_id)  # fail fast：未知 id → CrawlerError(CONFIG)
+            self.ctx.repo.upsert_venue(spec)  # 确保 venue 行存在（FK + 路由；同 _run_pull）
+            report = self._new_report("grab", venue_id)
+            try:
+                # 阶段 3 resolve（单篇）——planned asset 落库
+                self._enqueue_child(report, "resolve", venue_id, {"paper": paper_id}, None, force)
+                self._drain_loop(report)
 
-            # 阶段 4 fetch（该 paper 的候选 asset；no_entitlement→OA 兜底任务同 drain 内派生消费）
-            paper_rows = self.ctx.db.query("SELECT * FROM paper WHERE id = ?", (paper_id,))
-            for asset in self._candidate_assets(list(paper_rows), None):
-                self._enqueue_child(
-                    report, "fetch", venue_id, {"asset": str(asset["id"])}, None, force
-                )
-            self._drain_loop(report)
-        finally:
-            self._finalize(report)
+                # 阶段 4 fetch（该 paper 的候选 asset；no_entitlement→OA 兜底任务同 drain 内
+                # 派生消费）
+                paper_rows = self.ctx.db.query("SELECT * FROM paper WHERE id = ?", (paper_id,))
+                for asset in self._candidate_assets(list(paper_rows), None):
+                    self._enqueue_child(
+                        report, "fetch", venue_id, {"asset": str(asset["id"])}, None, force
+                    )
+                self._drain_loop(report)
+            finally:
+                self._finalize(report)
         return report
 
     # -- 报告 ---------------------------------------------------------------
@@ -398,6 +561,7 @@ class PipelineRunner:
             self.ctx.grobid = None
         report.finished_at = utcnow_iso()
         report.save(self.ctx.config.reports_dir)
+        self._gc_done_tasks()
         log_event(
             "INFO",
             f"{report.command}: 成功 {report.succeeded} 失败 {report.failed} "
@@ -405,6 +569,35 @@ class PipelineRunner:
             venue=report.venue_id,
         )
         return report
+
+    def _gc_done_tasks(self) -> None:
+        """会话收尾回收超出保留窗的 DONE 任务行（`TaskQueue.gc_done` 的**唯一**调用点）。
+
+        **接线点为什么是这里**，三条一起成立：
+
+        1. **单点全覆盖**：五个公开入口一律在 `finally` 调 `_finalize`（见上方 docstring），
+           故这一处接线覆盖 pull/run_single_stage/drain/watch/grab 的全部路径，含异常路径；
+        2. **在进程锁内**：`_finalize` 整个落在各入口的 `_exclusive()` 会话锁里（P1-6），
+           因此 GC 与另一进程的任何 pipeline 会话互斥——`gc_done` 内部"先 `SELECT id` 定批、
+           再按 id 列表 `DELETE`"两步之间，别的 pipeline 进程插不进来（那两步之间若有并发
+           删除/新建，批次就会与实际不符）。**这层保护来自会话锁，不来自 GC 自身**：任何
+           把 GC 挪出锁的改动都会把该竞态放回来；
+        3. **在 `report.save()` 之后**：GC 是"顺手做的家务"，绝不能挡住用户本轮的诊断信息
+           落盘，也不能替换掉正在传播的原异常——故位置在报告落盘之后，且异常就地吞成
+           WARNING（`finally` 里再抛会盖掉临界区的真实异常，同 `_release_lock` 的纪律）。
+
+        **刻意不放进 `__init__`**：`crawler list`/`timeline` 这类只读用途也会构造 runner，
+        "构造一个实例"不该顺手删别人的历史行；GC 是"跑完一轮之后的清理"，语义上属会话收尾。
+
+        窗口/批量预算全用 `gc_done` 的默认值（保留窗与 limit 是队列层的策略，runner 不复述）。
+        """
+        try:
+            removed = self.ctx.queue.gc_done()
+        except Exception as exc:  # 家务失败不改变本轮任何语义，但要留痕（不静默）
+            log_event("WARNING", f"gc: DONE 任务行回收失败（不影响本轮结果）: {exc}")
+            return
+        if removed:
+            log_event("INFO", f"gc: removed {removed} DONE task row(s) beyond retention window")
 
     # -- drain 循环与任务执行 ------------------------------------------------
 
@@ -1126,4 +1319,4 @@ def _params_of(task: sqlite3.Row) -> dict[str, Any]:
     return parsed
 
 
-__all__ = ["PipelineRunner"]
+__all__ = ["PIPELINE_LOCK_NAME", "PipelineRunner", "pipeline_lock_path"]

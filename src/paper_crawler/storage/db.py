@@ -321,6 +321,19 @@ class Database:
         self._conn.row_factory = sqlite3.Row
         self._conn.execute("PRAGMA journal_mode=WAL")
         self._conn.execute("PRAGMA foreign_keys=ON")
+        # synchronous=NORMAL（R3c，C2 定量确认）：WAL 模式下 SQLite 官方文档载明 NORMAL 与
+        # FULL 同样保证"进程崩溃（如 kill -9）不丢已提交事务"——两者的差别只在更罕见的
+        # "操作系统崩溃/断电、且恰好卡在 checkpoint 中间"场景：FULL 额外保证这一极端场景也
+        # 不丢最近事务，NORMAL 不保证（至多回滚到上一次 checkpoint，不会损坏库文件本身）。
+        # 单机爬虫场景，该极端场景的代价远小于此前隐式默认 FULL 档每次 upsert 一次 fsync 的
+        # 持续开销——审计 C2 合成库实测：WAL+NORMAL 相对 WAL+FULL 入库吞吐提升约 15%。
+        self._conn.execute("PRAGMA synchronous=NORMAL")
+        # busy_timeout=5000（R3c）：此前未设，默认值 0 = 连接撞上他方持有的写锁时立即抛
+        # `sqlite3.OperationalError: database is locked`，零重试窗口。5s 是"足以吸收典型
+        # 短暂竞争（如 checkpoint 进行中/另一连接的短事务），又不至于让真正的死锁场景无限
+        # 挂起"的经验折中值——多进程/多连接场景下（如 R3d 的进程级 flock 覆盖不到的、同进程
+        # 内多连接短暂竞争窗口）不再当场报错，改为等待到超时才报忙。
+        self._conn.execute("PRAGMA busy_timeout=5000")
 
     # -- 迁移 ---------------------------------------------------------------
 

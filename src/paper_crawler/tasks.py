@@ -77,6 +77,13 @@ FRESHNESS_TTL: dict[str, timedelta | None] = {
     "oa_fallback": None,
 }
 
+# task GC 保留窗口与单次调用总预算（design/05 §2 GC 扩充；R3c，C2 定量确认：task 表全仓零
+# DELETE 语句，DONE 行随运行单调累积——见 `TaskQueue.gc_done` 与
+# storage/migrations/0006_perf_indexes.sql）。不新增 Config 键（YAGNI——尚无按库/按用户调参
+# 的真实消费场景，真出现时再升级为可配项）。
+GC_DONE_RETENTION_DAYS = 30
+GC_DONE_LIMIT = 1000
+
 
 @dataclass(frozen=True)
 class EnqueueResult:
@@ -326,6 +333,63 @@ class TaskQueue:
             )
         return len(rows)
 
+    # -- 维护（GC）------------------------------------------------------------
+
+    def gc_done(
+        self, retention_days: int = GC_DONE_RETENTION_DAYS, limit: int = GC_DONE_LIMIT
+    ) -> int:
+        """清理超过 `retention_days` 窗口的 DONE 任务行，返回本次实际删除行数。
+
+        设计依据（审计 C2 合成库实测，详见 `storage/migrations/0006_perf_indexes.sql`
+        头注释）：task 表全仓零 `DELETE` 语句，DONE 行随运行单调累积——不仅占用存储，还
+        拖慢 `_fresh_skip`/`claim_next` 等高频查询（覆盖索引已由 0006 补上，本方法是防止
+        表行数无界增长的第二道防线，二者互补非替代）。
+
+        - 只删 `state = 'DONE'` 且 `updated_at` 早于 `now - retention_days` 的行；
+          `retention_days <= 0` 时 cutoff 不早于当前时刻，等效清空当下全部 DONE 行（维护/
+          测试场景的合法用法，非误用）。
+        - **非 DONE 任何龄一律不动**——候选集合直接以 `state = 'DONE'` 筛出，与其余状态
+          （PENDING/RUNNING/FAILED/BLOCKED）及其新旧无关。
+        - **自引用外键安全**（`task.parent_id REFERENCES task(id)`；`db.py` 恒开
+          `PRAGMA foreign_keys=ON`）：若某候选行仍被表内另一行的 `parent_id` 引用，且引用者
+          本身未入选本轮候选（未 DONE，或虽 DONE 但未超窗——如 pull 父任务已超窗但其某个子
+          任务因故仍是 FAILED/BLOCKED 未终结），直接删除该候选会撞
+          `sqlite3.IntegrityError: FOREIGN KEY constraint failed`（父子若同批一起删则安全
+          ——SQLite 对单条多行 `DELETE...WHERE id IN (...)` 语句的外键校验在语句执行完毕后
+          统一核验，而非逐行核验，已实测验证）。故每轮只挑"当下真的无人引用"的候选
+          （`NOT EXISTS` 子查询，不预设任务树深度）删除；删除后原父行可能变为无人引用，故
+          循环到不动点（本轮查无候选）或耗尽 `limit` 预算才停——本项目实际任务树目前只有
+          pull→子任务一层（`oa_fallback` 等派生任务的 `parent_id` 也指向 pull 而非直接派生
+          它的任务，见 `runner._route_error`），通常一轮即收敛；循环写法不假设深度，对未来
+          若出现更深的调用链同样安全。
+        - 单批 `LIMIT`（"先 `SELECT id` 定批、再按 id 列表 `DELETE`"两步写法，不依赖 SQLite
+          的 `DELETE...LIMIT` 扩展语法——该扩展需专门编译选项，标准发行版未必启用，本项目
+          `db.py` 全程未假设它）：与本文件其余多行操作方法（`resume(all_blocked=True)`/
+          `retry_failed`）同款自动提交单语句风格，不引入本模块此前不存在的显式事务嵌套；
+          `limit` 是**跨多轮循环的总预算**（每轮批量 ≤ 剩余预算），用于防止单次调用做成
+          长事务/长时间占用连接，不是"恰好一条 DELETE 语句删 limit 行"的字面承诺。
+        - **幂等**：重复调用安全收敛——已删的行不会再次出现在候选集合中，无 DONE 且超窗
+          的行时返回 0、不报错、不改动任何行。
+        """
+        cutoff = (self._now() - timedelta(days=retention_days)).isoformat()
+        deleted = 0
+        budget = max(0, limit)
+        while budget > 0:
+            rows = self.db.query(
+                "SELECT id FROM task t WHERE t.state = 'DONE' AND t.updated_at < ? "
+                "AND NOT EXISTS (SELECT 1 FROM task c WHERE c.parent_id = t.id) "
+                "ORDER BY t.updated_at, t.id LIMIT ?",
+                (cutoff, budget),
+            )
+            if not rows:
+                break
+            ids = [str(r["id"]) for r in rows]
+            placeholders = ",".join("?" * len(ids))
+            self.db.execute(f"DELETE FROM task WHERE id IN ({placeholders})", ids)
+            deleted += len(ids)
+            budget -= len(ids)
+        return deleted
+
     # -- 查询 ---------------------------------------------------------------
 
     def get(self, task_id: str) -> sqlite3.Row | None:
@@ -346,6 +410,8 @@ class TaskQueue:
 
 __all__ = [
     "FRESHNESS_TTL",
+    "GC_DONE_LIMIT",
+    "GC_DONE_RETENTION_DAYS",
     "LEGAL_TRANSITIONS",
     "TASK_STATES",
     "EnqueueResult",

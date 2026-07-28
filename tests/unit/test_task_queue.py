@@ -594,3 +594,174 @@ def test_recover_running_leaves_other_states_untouched(queue: TaskQueue) -> None
         running_id: "PENDING",
         pending_id: "PENDING",
     }
+
+
+# ---------------------------------------------------------------------------
+# gc_done（task GC；design/05 §2 扩充，修复批 R3c，C2 定量确认）
+# ---------------------------------------------------------------------------
+
+
+def test_gc_done_default_retention_and_limit_constants() -> None:
+    """brief 规定的默认值（retention_days=30, limit=1000）以具名常量呈现，非裸字面量。"""
+    from paper_crawler.tasks import GC_DONE_LIMIT, GC_DONE_RETENTION_DAYS
+
+    assert GC_DONE_RETENTION_DAYS == 30
+    assert GC_DONE_LIMIT == 1000
+
+
+def test_gc_done_uses_default_retention_when_unspecified(database: Database) -> None:
+    """不传参时用默认 30 天窗口（`GC_DONE_RETENTION_DAYS`）。"""
+    clock = FakeClock(datetime(2026, 1, 1, tzinfo=UTC))
+    queue = TaskQueue(database, clock=clock)
+    queue.enqueue("fetch", "jfe", {"n": 1})
+    task_id = _drain_to_done(queue)
+    clock.advance(timedelta(days=31))
+    assert queue.gc_done() == 1
+    assert queue.get(task_id) is None
+
+
+def test_gc_done_deletes_old_done_rows(database: Database) -> None:
+    """DONE 且 updated_at 超过 retention_days 窗口 → 删除，返回删除数。"""
+    clock = FakeClock(datetime(2026, 1, 1, tzinfo=UTC))
+    queue = TaskQueue(database, clock=clock)
+    queue.enqueue("fetch", "jfe", {"n": 1})
+    task_id = _drain_to_done(queue)
+    clock.advance(timedelta(days=31))
+    assert queue.gc_done(retention_days=30) == 1
+    assert queue.get(task_id) is None
+
+
+def test_gc_done_keeps_recent_done_rows(database: Database) -> None:
+    """DONE 但 updated_at 仍在 retention_days 窗口内 → 保留，返回 0。"""
+    clock = FakeClock(datetime(2026, 1, 1, tzinfo=UTC))
+    queue = TaskQueue(database, clock=clock)
+    queue.enqueue("fetch", "jfe", {"n": 1})
+    task_id = _drain_to_done(queue)
+    clock.advance(timedelta(days=29))
+    assert queue.gc_done(retention_days=30) == 0
+    assert queue.get(task_id) is not None
+
+
+def test_gc_done_keeps_non_done_rows_regardless_of_age(database: Database) -> None:
+    """非 DONE（PENDING/RUNNING/FAILED/BLOCKED）任何龄一律不动，即便远超窗口。"""
+    clock = FakeClock(datetime(2026, 1, 1, tzinfo=UTC))
+    queue = TaskQueue(database, clock=clock)
+
+    pending_id = str(queue.enqueue("discover", "jfe", {"a": 1}).task_id)  # 留 PENDING
+
+    queue.enqueue("discover", "jfe", {"a": 2})
+    running_id = str(queue.claim_next()["id"])  # type: ignore[index]  # 留 RUNNING
+
+    queue.enqueue("enumerate", "jfe", {"a": 3})
+    failed_id = str(queue.claim_next()["id"])  # type: ignore[index]
+    queue.fail(failed_id, ErrorClass.PARSE, "boom")  # RetrySpec(1)：首次失败即 FAILED
+
+    queue.enqueue("fetch", "jfe", {"a": 4})
+    blocked_id = str(queue.claim_next()["id"])  # type: ignore[index]
+    queue.block(blocked_id, "auth")
+
+    clock.advance(timedelta(days=365))  # 远超任何合理窗口
+    assert queue.gc_done(retention_days=30) == 0
+
+    for task_id in (pending_id, running_id, failed_id, blocked_id):
+        assert queue.get(task_id) is not None
+
+
+def test_gc_done_respects_limit(database: Database) -> None:
+    """limit 生效：候选行数多于 limit 时，单次调用只删 limit 条。"""
+    clock = FakeClock(datetime(2026, 1, 1, tzinfo=UTC))
+    queue = TaskQueue(database, clock=clock)
+    ids: list[str] = []
+    for n in range(5):
+        queue.enqueue("fetch", "jfe", {"n": n})
+        ids.append(_drain_to_done(queue))
+    clock.advance(timedelta(days=31))
+    assert queue.gc_done(retention_days=30, limit=2) == 2
+    remaining = [task_id for task_id in ids if queue.get(task_id) is not None]
+    assert len(remaining) == 3
+
+
+def test_gc_done_limit_zero_deletes_nothing(database: Database) -> None:
+    """limit=0：候选再多也不删（预算为零）。"""
+    clock = FakeClock(datetime(2026, 1, 1, tzinfo=UTC))
+    queue = TaskQueue(database, clock=clock)
+    queue.enqueue("fetch", "jfe", {"n": 1})
+    task_id = _drain_to_done(queue)
+    clock.advance(timedelta(days=31))
+    assert queue.gc_done(retention_days=30, limit=0) == 0
+    assert queue.get(task_id) is not None
+
+
+def test_gc_done_idempotent(database: Database) -> None:
+    """重复调用安全收敛：二次、三次调用对已清空的候选集合返回 0，不报错。"""
+    clock = FakeClock(datetime(2026, 1, 1, tzinfo=UTC))
+    queue = TaskQueue(database, clock=clock)
+    queue.enqueue("fetch", "jfe", {"n": 1})
+    _drain_to_done(queue)
+    clock.advance(timedelta(days=31))
+    assert queue.gc_done(retention_days=30) == 1
+    assert queue.gc_done(retention_days=30) == 0
+    assert queue.gc_done(retention_days=30) == 0
+
+
+def test_gc_done_deletes_parent_and_child_together_when_both_eligible(
+    database: Database,
+) -> None:
+    """自引用外键安全（`task.parent_id REFERENCES task(id)`）：父子任务都 DONE 且都超窗
+    → 同批一起删，不撞 `FOREIGN KEY constraint failed`（SQLite 对单条多行 DELETE 语句的
+    外键校验在语句执行完毕后统一核验，父子同批删除是安全的；`gc_done` 的循环即便分多轮
+    执行，也总能在同一次调用内把这类"父子都到期"的组合彻底清空）。"""
+    clock = FakeClock(datetime(2026, 1, 1, tzinfo=UTC))
+    queue = TaskQueue(database, clock=clock)
+    parent_id = str(queue.enqueue("pull", "jfe", {"v": "1"}).task_id)
+    queue.claim_next()  # pull → RUNNING
+    child_id = str(queue.enqueue("fetch", "jfe", {"asset": 1}, parent_id=parent_id).task_id)
+    queue.claim_next()  # fetch → RUNNING
+    queue.complete(child_id)
+    queue.complete(parent_id)
+
+    clock.advance(timedelta(days=31))
+    assert queue.gc_done(retention_days=30) == 2
+    assert queue.get(parent_id) is None
+    assert queue.get(child_id) is None
+
+
+def test_gc_done_keeps_done_parent_whose_child_is_still_active(database: Database) -> None:
+    """父任务 DONE 且超窗，但其子任务仍处于非 DONE 状态（如 RUNNING）→ 父任务不可删
+    （否则子任务的 `parent_id` 会指向已删行，撞外键）；子任务本身非 DONE 也不删——本轮
+    删除数为 0，两行都原样保留，不报错、不抛 IntegrityError。"""
+    clock = FakeClock(datetime(2026, 1, 1, tzinfo=UTC))
+    queue = TaskQueue(database, clock=clock)
+    parent_id = str(queue.enqueue("pull", "jfe", {"v": "1"}).task_id)
+    queue.claim_next()
+    queue.complete(parent_id)
+    child_id = str(queue.enqueue("fetch", "jfe", {"asset": 1}, parent_id=parent_id).task_id)
+    queue.claim_next()  # fetch → RUNNING，不 complete（模拟仍在跑）
+
+    clock.advance(timedelta(days=31))
+    assert queue.gc_done(retention_days=30) == 0
+    assert queue.get(parent_id) is not None
+    assert queue.get(child_id) is not None
+
+
+def test_gc_done_deletes_parent_after_child_completes_and_ages_out(
+    database: Database,
+) -> None:
+    """承接上一用例：子任务后续 complete 并超窗后，父任务才随之变为可删——单次 `gc_done`
+    调用内部循环到不动点即可一并清掉父子两行（不需要调用方手工分两次调用）。"""
+    clock = FakeClock(datetime(2026, 1, 1, tzinfo=UTC))
+    queue = TaskQueue(database, clock=clock)
+    parent_id = str(queue.enqueue("pull", "jfe", {"v": "1"}).task_id)
+    queue.claim_next()
+    queue.complete(parent_id)
+    child_id = str(queue.enqueue("fetch", "jfe", {"asset": 1}, parent_id=parent_id).task_id)
+    queue.claim_next()
+
+    clock.advance(timedelta(days=31))
+    assert queue.gc_done(retention_days=30) == 0  # 子仍 RUNNING，父被自引用外键挡住
+
+    queue.complete(child_id)
+    clock.advance(timedelta(days=31))  # 子也超窗
+    assert queue.gc_done(retention_days=30) == 2  # 单次调用内循环收敛，父子一起清
+    assert queue.get(parent_id) is None
+    assert queue.get(child_id) is None

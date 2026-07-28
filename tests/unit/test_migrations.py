@@ -79,6 +79,10 @@ EXPECTED_INDEXES = {
     "idx_asset_state",
     "idx_paper_title_norm",  # schema v2（0002_title_norm.sql，Phase 3 T1）
     "idx_paper_weak_key_lookup",  # schema v3（0003_paper_weak_key.sql，Phase 6 F1）
+    # schema v6（0006_perf_indexes.sql，修复批 R3c，C2 定量确认的三条高优先级索引）
+    "idx_identifier_paper",
+    "idx_task_fresh",
+    "idx_paper_venue",
 }
 
 # 当前最新 schema 版本 = migrations/ 下迁移文件数。schema v2（Phase 3 T1）新增
@@ -93,7 +97,10 @@ EXPECTED_INDEXES = {
 # `test_first_build_skips_backup_of_empty_v0` 内的完整记述）：本常量的改动 git 能正确
 # 识别为冲突并要求手工解决，但两支各自往 `.bak` 清单加同一行文本时 git 判定为无冲突、
 # 自动合并，实际却因五步迁移链多出一个中间态而需要额外手改。
-LATEST_SCHEMA_VERSION = 5
+#
+# schema v6（修复批 R3c）新增 0006_perf_indexes.sql（C2 定量确认的三条高优先级索引：
+# idx_identifier_paper / idx_task_fresh / idx_paper_venue；纯附加，无 Python 后置步）。
+LATEST_SCHEMA_VERSION = 6
 
 
 @pytest.fixture
@@ -186,6 +193,20 @@ def test_foreign_keys_pragma_on(db: Database) -> None:
     assert db.query("PRAGMA foreign_keys")[0][0] == 1
 
 
+def test_synchronous_pragma_is_normal(db: Database) -> None:
+    """R3c（审计 C2 合成库实测）：WAL 模式下 synchronous=NORMAL（而非隐式默认 FULL）——
+    PRAGMA 读回的整数编码 0=OFF/1=NORMAL/2=FULL/3=EXTRA，NORMAL=1。省约 15% 入库开销，
+    且不牺牲"进程崩溃不丢已提交事务"的 WAL 不变式（见 db.py `__init__` 该行注释的官方
+    文档引用）。"""
+    assert db.query("PRAGMA synchronous")[0][0] == 1
+
+
+def test_busy_timeout_pragma_is_5000ms(db: Database) -> None:
+    """R3c：此前未设 busy_timeout（默认 0，撞锁立即 SQLITE_BUSY）；现设 5000ms，给多进程/
+    多连接短暂竞争一个等待窗口而非当场报忙。"""
+    assert db.query("PRAGMA busy_timeout")[0][0] == 5000
+
+
 # -- 外键约束生效 ------------------------------------------------------------
 
 
@@ -221,8 +242,8 @@ def test_first_build_skips_backup_of_empty_v0(
 ) -> None:
     """version 0 空库不备份（无 .v0.bak）。
 
-    真实迁移目录含 0001+0002+0003+0004+0005 后，一次全新建库跨 0→1→2→3→4→5：0→1 步
-    （from_version=0）跳过备份，其后每步（from_version>0）会对中间态备份——故断言
+    真实迁移目录含 0001+0002+0003+0004+0005+0006 后，一次全新建库跨 0→1→2→3→4→5→6：
+    0→1 步（from_version=0）跳过备份，其后每步（from_version>0）会对中间态备份——故断言
     "无 .v0.bak"而非"零 .bak"，精确锁定「初始空库不备份」这一规则（migrate() 的
     `if current > 0` 分支）。
 
@@ -232,18 +253,22 @@ def test_first_build_skips_backup_of_empty_v0(
     merge 时不会报冲突，但两支合流后真实迁移链变成五步（1→2→3→4→5），实际会在
     v1/v2/v3/v4 四个中间态各备份一次，第四项 `v4.bak` 因"两支都不知道对方也加了
     一项"而被双方独立版本共同遗漏——merge 完全静默、测试却会转红。本次 rebase 已
-    据此手工把清单改为四项（而非依赖 git 自动合并的三项）。
+    据此手工把清单改为四项（而非依赖 git 自动合并的三项）。**R3c 沿用同一提醒**：新增
+    0006_perf_indexes.sql 使链路多一步（1→2→3→4→5→6），中间态备份相应多一项
+    `v5.bak`——同样是手工同步清单，而非依赖自动合并/自动推导。
     """
     db_path = tmp_path / "app.sqlite"
     with closing(Database(db_path)) as database:
         assert database.migrate() == LATEST_SCHEMA_VERSION
     assert list(tmp_path.glob("*.v0.bak")) == []
-    # 跨到 0002/0003/0004/0005 时分别对 v1/v2/v3/v4 中间态备份（from_version=1/2/3/4）。
+    # 跨到 0002/0003/0004/0005/0006 时分别对 v1/v2/v3/v4/v5 中间态备份
+    # （from_version=1/2/3/4/5）。
     assert sorted(p.name for p in tmp_path.glob("*.bak")) == [
         "app.sqlite.v1.bak",
         "app.sqlite.v2.bak",
         "app.sqlite.v3.bak",
         "app.sqlite.v4.bak",
+        "app.sqlite.v5.bak",
     ]
 
 
@@ -1215,6 +1240,203 @@ def test_tx_translates_paper_fts_rowid_collision_to_crawler_error(db: Database) 
     assert db.query("SELECT 1 AS x FROM paper WHERE id='real-paper'") == []
     ghost_rows = db.query("SELECT paper_id FROM paper_fts WHERE rowid=1")
     assert [r["paper_id"] for r in ghost_rows] == ["ghost"]
+
+
+# -- schema v6（0006_perf_indexes.sql；修复批 R3c，C2 定量确认的三条高优先级索引）-------
+
+
+def _add_0006(tmp_path: Path) -> None:
+    shutil.copy(_REAL_MIGRATIONS_DIR / "0006_perf_indexes.sql", tmp_path / "migrations")
+
+
+def test_v5_to_v6_upgrade_creates_three_indexes(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """v5 旧库（真实 0001→0005 全链、且已有数据）→ v6：三条新索引全部就位，既有行原样
+    保留（纯附加 CREATE INDEX，无 Python 后置步、无回填、不改数据）。"""
+    with closing(_seed_v1(tmp_path, monkeypatch)) as database:
+        _add_0002(tmp_path)
+        assert database.migrate() == 2
+        _add_0003(tmp_path)
+        assert database.migrate() == 3
+        _add_0004(tmp_path)
+        assert database.migrate() == 4
+        _add_0005(tmp_path)
+        assert database.migrate() == 5
+        _insert_paper(database, "p1", "Old Paper")
+        _insert_doi(database, "p1", "10.1/old")
+
+        _add_0006(tmp_path)
+        assert database.migrate() == 6
+
+        assert {"idx_identifier_paper", "idx_task_fresh", "idx_paper_venue"} <= _index_names(
+            database
+        )
+        # 既有行不受影响。
+        assert database.query("SELECT id FROM paper WHERE id='p1'")[0]["id"] == "p1"
+        ids = database.query("SELECT value FROM identifier WHERE paper_id='p1'")
+        assert [r["value"] for r in ids] == ["10.1/old"]
+
+
+def test_v6_migrate_is_idempotent(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """迁移幂等重跑：已 v6 的库再 migrate 不改版本、不报错（`CREATE INDEX` 若重复执行会
+    因索引已存在而报错——能到达这里说明 migrate() 的"仅应用未应用脚本"机制生效，本次
+    重跑根本不会重新执行 0006 的 DDL）。"""
+    with closing(_seed_v1(tmp_path, monkeypatch)) as database:
+        _add_0002(tmp_path)
+        _add_0003(tmp_path)
+        _add_0004(tmp_path)
+        _add_0005(tmp_path)
+        _add_0006(tmp_path)
+        assert database.migrate() == 6
+        assert database.migrate() == 6
+
+
+def test_v6_fresh_build_also_creates_three_indexes(db: Database) -> None:
+    """全新建库（0→…→6 一次性应用）同样创建三条索引——不仅"旧库升级"路径，"首次建库"
+    路径也须覆盖（brief 明确要求两条路径都验证）。"""
+    db.migrate()
+    assert {"idx_identifier_paper", "idx_task_fresh", "idx_paper_venue"} <= _index_names(db)
+
+
+def test_v6_is_dialect_neutral() -> None:
+    """三条 `CREATE INDEX`，无 SQLite 专有特性（design/06 §6 迁移纪律；D-001 PG 迁移路径）。"""
+    script = (_REAL_MIGRATIONS_DIR / "0006_perf_indexes.sql").read_text(encoding="utf-8")
+    statements = list(_iter_statements(script))
+    assert len(statements) == 3
+    assert all(s.upper().startswith("CREATE INDEX") for s in statements)
+    for token in ("AUTOINCREMENT", "WITHOUT ROWID", "fts5", "PRAGMA"):
+        assert token.lower() not in script.lower()
+
+
+# -- EXPLAIN QUERY PLAN：三条高频查询命中新索引（SEARCH 而非 SCAN）---------------------
+#
+# EXPLAIN QUERY PLAN 反映的是查询计划本身（哪条索引被选中/是否需要全表扫描），只要索引
+# 存在，即便表里只有一两行也会照样选用（与审计 C2 的合成大库基准互补：那边测的是"命中
+# 索引后到底快多少"，这里测的是"是否真的命中了索引"）——本节测试因此只需最小可用数据，
+# 不需要复现 C2 的百万行合成库规模。
+
+
+def _seed_perf_probe(database: Database) -> None:
+    """EXPLAIN 断言的最小夹具：一个 venue + 一篇 paper + 一条 identifier + 一条 DONE task。"""
+    database.execute(
+        "INSERT INTO venue (id, kind, name, field_json, status) VALUES (?,?,?,?,?)",
+        ("v1", "journal", "V1", "[]", "active"),
+    )
+    database.execute(
+        "INSERT INTO paper (id, title, venue_id, ingest_state, created_at, updated_at) "
+        "VALUES (?,?,?,?,?,?)",
+        ("p1", "Title", "v1", "metadata_only", "2026-01-01T00:00:00Z", "2026-01-01T00:00:00Z"),
+    )
+    database.execute(
+        "INSERT INTO identifier (paper_id, scheme, value, is_primary) VALUES (?,?,?,1)",
+        ("p1", "doi", "10.1/x"),
+    )
+    database.execute(
+        "INSERT INTO task (id, kind, venue_id, params_json, state, attempts, "
+        "created_at, updated_at) VALUES (?,?,?,?,?,?,?,?)",
+        (
+            "t1",
+            "fetch",
+            "v1",
+            '{"n":1}',
+            "DONE",
+            0,
+            "2026-01-01T00:00:00Z",
+            "2026-01-01T00:00:00Z",
+        ),
+    )
+
+
+def _plan(database: Database, sql: str, params: tuple[object, ...]) -> str:
+    rows = database.query("EXPLAIN QUERY PLAN " + sql, params)
+    return " | ".join(str(r[3]) for r in rows)
+
+
+# tasks.py::TaskQueue._fresh_skip 的字面 SQL（venue_id 非 NULL 分支；tasks.py:167 附近）——
+# 迁移头注释与本处均对照过真实实现的 WHERE 子句列序（kind, venue_id, params_json,
+# state），idx_task_fresh 的列序须与之一致。私有方法 SQL 未来若改写，须同步核对本处
+# （人工同步点，非自动锁定——与 `_iter_statements_pre_t12` 之类"冻结副本回归锁定"手法
+# 不同，此处更看重贴合真实查询形态，而非锁定不变的历史文本）。
+_FRESH_SKIP_SQL = (
+    "SELECT id, updated_at FROM task WHERE kind = ? AND venue_id = ? AND params_json = ? "
+    "AND state = 'DONE' ORDER BY updated_at DESC, id DESC LIMIT 1"
+)
+
+
+def test_explain_identifier_by_paper_uses_new_index(db: Database) -> None:
+    """repo.py `_paper_brief`/`_paper_min_identifier` 形态（按 paper_id 反查 identifier，
+    按 scheme,value 排序）：SEARCH 命中 idx_identifier_paper，不再退化为扫全部 PK
+    （`sqlite_autoindex_identifier_1`）索引项。"""
+    db.migrate()
+    _seed_perf_probe(db)
+    plan = _plan(
+        db,
+        "SELECT scheme, value FROM identifier WHERE paper_id = ? ORDER BY scheme, value",
+        ("p1",),
+    )
+    assert "SEARCH identifier" in plan
+    assert "idx_identifier_paper" in plan
+    assert "SCAN identifier" not in plan
+
+
+def test_explain_identifier_count_by_paper_uses_new_index(db: Database) -> None:
+    """repo.py `_identifier_count` 形态（COUNT(*)）：同样命中新索引，且为覆盖索引扫描
+    （无需回表取行）。"""
+    db.migrate()
+    _seed_perf_probe(db)
+    plan = _plan(db, "SELECT COUNT(*) AS n FROM identifier WHERE paper_id = ?", ("p1",))
+    assert "idx_identifier_paper" in plan
+    assert "SCAN identifier" not in plan
+
+
+def test_explain_task_fresh_skip_uses_new_index(db: Database) -> None:
+    """tasks.py `_fresh_skip`：四列等值谓词（kind, venue_id, params_json, state）全部命中
+    idx_task_fresh，不再只命中旧 idx_task_state_kind(state,kind) 的前两列。"""
+    db.migrate()
+    _seed_perf_probe(db)
+    plan = _plan(db, _FRESH_SKIP_SQL, ("fetch", "v1", '{"n":1}'))
+    assert "idx_task_fresh" in plan
+    assert "kind=? AND venue_id=? AND params_json=? AND state=?" in plan
+
+
+def test_explain_task_find_active_uses_new_index(db: Database) -> None:
+    """tasks.py `_find_active`（duplicate 判定，`state IN ('PENDING','RUNNING')`）：与
+    `_fresh_skip` 共享同一 (kind, venue_id, params_json, state) 前缀，同样命中
+    idx_task_fresh（IN 谓词经索引作范围扫描，非全表扫）。"""
+    db.migrate()
+    _seed_perf_probe(db)
+    plan = _plan(
+        db,
+        "SELECT id FROM task WHERE kind = ? AND venue_id = ? AND params_json = ? "
+        "AND state IN ('PENDING', 'RUNNING') ORDER BY created_at, id LIMIT 1",
+        ("fetch", "v1", '{"n":1}'),
+    )
+    assert "idx_task_fresh" in plan
+
+
+def test_explain_paper_venue_count_uses_new_index(db: Database) -> None:
+    """repo.py `counts()` 形态（按 venue COUNT(*)）：SEARCH 命中覆盖索引 idx_paper_venue，
+    不再是全表 SCAN。"""
+    db.migrate()
+    _seed_perf_probe(db)
+    plan = _plan(db, "SELECT COUNT(*) AS n FROM paper WHERE venue_id = ?", ("v1",))
+    assert "idx_paper_venue" in plan
+    assert "SCAN paper" not in plan
+
+
+def test_explain_claim_next_not_covered_by_new_index(db: Database) -> None:
+    """如实记录（0006 头注释同款结论）：`claim_next` 只以 `state` 单列过滤，而 state 在
+    idx_task_fresh 中处于末位、不构成可用前缀，故本索引不改变 `claim_next` 仍需
+    `TEMP B-TREE` 排序这一既有事实——本测试锁定"未被误认为已解决"，而非要求它被解决
+    （该候选索引 `idx_task_pending(state,created_at,id)` 明确不在本卡范围内）。"""
+    db.migrate()
+    _seed_perf_probe(db)
+    plan = _plan(
+        db, "SELECT id FROM task WHERE state = 'PENDING' ORDER BY created_at, id LIMIT 1", ()
+    )
+    assert "idx_task_fresh" not in plan
+    assert "TEMP B-TREE" in plan
 
 
 def test_tx_does_not_translate_foreign_key_violation(db: Database) -> None:
