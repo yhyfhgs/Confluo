@@ -16,6 +16,7 @@ from helpers import FakeFetchIO, make_oup_venue
 from helpers.oup_silverchair_fixtures import (
     MINIMAL_PDF,
     direct_transport,
+    host_scoped_cookie_supplier,
     landing_transport,
     oup_fixture,
     static_cookie_supplier,
@@ -418,6 +419,123 @@ def test_cookies_scoped_to_oup_domain_not_leaked_to_doi_org() -> None:
 
 
 # ---------------------------------------------------------------------------
+# R3e：cookie 域感知（ezproxy 改写后的 host 拿 proxy cookie；平台 cookie 不外发代理域）
+# ---------------------------------------------------------------------------
+
+# pipeline `_proxy_rewritten` 在 fetch 前把 plan.url 换成的代理形态（EZProxyProvider
+# `rewrite_url` 规则：host 的 `.`→`-` + rewrite_suffix，见 tests/unit/test_auth_providers.py）。
+_PROXY_HOST = "academic-oup-com.login-myuniv-edu.ezproxy"
+_PROXY_PDF_URL = f"https://{_PROXY_HOST}/qje/article-pdf/141/3/2205/61701561/qjae044.pdf"
+_PLATFORM_COOKIES = {"SILVERCHAIR_SESSION": "platform-secret"}
+_PROXY_COOKIES = {"ezproxy": "proxy-secret"}
+
+
+def _cookie_capturing_transport(seen: dict[str, str | None]) -> httpx.MockTransport:
+    """记录每次请求 host → `Cookie` 头，回 200 PDF（fetch 主路快路直接成功）。"""
+
+    def _handler(request: httpx.Request) -> httpx.Response:
+        seen[request.url.host] = request.headers.get("cookie")
+        return httpx.Response(200, content=MINIMAL_PDF, headers={"content-type": "application/pdf"})
+
+    return httpx.MockTransport(_handler)
+
+
+def _host_aware_adapter(transport: httpx.MockTransport) -> OupSilverchairAdapter:
+    """域感知 supplier（平台主域 → 平台 cookie；代理域 → proxy cookie）+ 给定 transport。"""
+    return OupSilverchairAdapter(
+        cookie_supplier=host_scoped_cookie_supplier(
+            {"academic.oup.com": _PLATFORM_COOKIES, _PROXY_HOST: _PROXY_COOKIES}
+        ),
+        transport=transport,
+    )
+
+
+def test_fetch_on_ezproxy_rewritten_host_carries_proxy_cookie() -> None:
+    """ezproxy 形态：pipeline 已把 plan.url 改写到代理域 → 请求须带 **proxy cookie**。
+
+    修复前 `_cookies_for` 把 supplier 交出的 cookie 硬钉平台主域（`domain=_PRIMARY_DOMAIN`）
+    且 seam 的类型面丢掉域信息，代理域请求域匹配失败 → cookie 全被丢、请求裸发（R2d 顾虑①）。
+    """
+    seen: dict[str, str | None] = {}
+    adapter = _host_aware_adapter(_cookie_capturing_transport(seen))
+
+    result = adapter.fetch_asset(_pdf_plan(_PROXY_PDF_URL), FakeFetchIO(), session=_session())
+
+    assert result.ok is True
+    assert "ezproxy=proxy-secret" in (seen[_PROXY_HOST] or ""), "proxy cookie 未随代理请求发出"
+
+
+def test_platform_cookie_not_sent_to_ezproxy_host() -> None:
+    """凭证隔离：平台主域 cookie 绝不外发到代理域（供给方按 host 交付，消费方按 host 钉域）。"""
+    seen: dict[str, str | None] = {}
+    adapter = _host_aware_adapter(_cookie_capturing_transport(seen))
+
+    adapter.fetch_asset(_pdf_plan(_PROXY_PDF_URL), FakeFetchIO(), session=_session())
+
+    assert "platform-secret" not in (seen[_PROXY_HOST] or "")
+    assert "SILVERCHAIR_SESSION" not in (seen[_PROXY_HOST] or "")
+
+
+def test_fetch_on_platform_host_still_carries_platform_cookie() -> None:
+    """直连不回归：未经代理改写的平台域请求仍带平台 cookie（同一域感知路径的另一支）。"""
+    seen: dict[str, str | None] = {}
+    adapter = _host_aware_adapter(_cookie_capturing_transport(seen))
+
+    adapter.fetch_asset(_pdf_plan(), FakeFetchIO(), session=_session())
+
+    assert "SILVERCHAIR_SESSION=platform-secret" in (seen["academic.oup.com"] or "")
+    assert "proxy-secret" not in (seen["academic.oup.com"] or "")
+
+
+@pytest.mark.parametrize(
+    ("url", "expected"),
+    [
+        ("https://doi.org/10.1093/qje/qjae044", "academic.oup.com"),  # 首跳归重定向落点
+        ("https://academic.oup.com/qje/article-pdf/x.pdf", "academic.oup.com"),  # 直连
+        (f"https://{_PROXY_HOST}/qje/article-pdf/x.pdf", _PROXY_HOST),  # ezproxy 改写后
+        ("https://ACADEMIC.OUP.COM/qje/x.pdf", "academic.oup.com"),  # host 归一小写
+        ("/relative/path.pdf", "academic.oup.com"),  # 无 host → 保守回落主域
+    ],
+)
+def test_cookie_host_for_maps_request_url_to_owning_domain(url: str, expected: str) -> None:
+    """cookie 归属域的逐条判据（`_cookies_for` 的过滤键 + 钉域键，两处共用同一函数）。"""
+    assert adapter_module._cookie_host_for(url) == expected
+
+
+def test_resolve_first_hop_asks_supplier_for_platform_host_not_doi_org() -> None:
+    """resolve 首跳是 `doi.org`，但 cookie 归属是**重定向落点**（平台主域）——供给方被问的
+    host 是 `academic.oup.com`，doi.org 依旧零 cookie（防泄漏红线在域感知后仍成立）。"""
+    asked: list[str] = []
+    seen: dict[str, str | None] = {}
+
+    def _supplier(_session_handle: SessionHandle, host: str) -> dict[str, str]:
+        asked.append(host)
+        return dict(_PLATFORM_COOKIES) if host == "academic.oup.com" else {}
+
+    def _handler(request: httpx.Request) -> httpx.Response:
+        seen[request.url.host] = request.headers.get("cookie")
+        if request.url.host == "doi.org":
+            return httpx.Response(
+                302, headers={"Location": "https://academic.oup.com/qje/article/1/1/1/1"}
+            )
+        body = (
+            b'<html><head><meta name="citation_pdf_url" '
+            b'content="https://academic.oup.com/qje/article-pdf/1/1/1/F9/x.pdf"/></head>'
+            b"<body><a href='/user/logout'>Sign out</a></body></html>"
+        )
+        return httpx.Response(200, content=body)
+
+    adapter = OupSilverchairAdapter(
+        cookie_supplier=_supplier, transport=httpx.MockTransport(_handler)
+    )
+    adapter.resolve_assets(_VENUE, _paper(), session=_session())
+
+    assert asked == ["academic.oup.com"], "首跳 doi.org 不该被当成 cookie 归属域"
+    assert seen["doi.org"] is None
+    assert "platform-secret" in (seen["academic.oup.com"] or "")
+
+
+# ---------------------------------------------------------------------------
 # 联系邮箱注入 + per-request obslog（R2c：P1-17/18 修复）
 # ---------------------------------------------------------------------------
 
@@ -519,6 +637,214 @@ def test_authed_get_emits_obslog_event_for_resolve_fetch_and_healthcheck(
         assert isinstance(event["url"], str) and event["url"]
         assert event["status"] == 200
         assert event["domain"] == "academic.oup.com"
+
+
+# ---------------------------------------------------------------------------
+# R3f：URL 改写 seam（oup resolve 侧接入 ezproxy 改写，完成端到端闭环）
+# ---------------------------------------------------------------------------
+
+
+def _proxying_rewriter(_session: SessionHandle, url: str) -> str:
+    """离线替身：模拟 `EZProxyProvider.rewrite_url` 对平台主域的改写（不需要自证不碰
+    doi.org——调用方 `_rewritten_target` 本就不会把 doi.org 传给它，见其 docstring）。"""
+    return url.replace("academic.oup.com", _PROXY_HOST)
+
+
+def test_set_url_rewriter_injects_seam_post_construction() -> None:
+    """生产路径：`load_adapters()` 无参构造 → CLI 装配期经 `set_url_rewriter` 注入
+    （duck-typed，同 `set_cookie_supplier` 先例）。"""
+    adapter = OupSilverchairAdapter(cookie_supplier=static_cookie_supplier())
+    assert adapter._url_rewriter is None
+
+    adapter.set_url_rewriter(_proxying_rewriter)
+
+    assert adapter._url_rewriter is _proxying_rewriter
+
+
+def test_resolve_platform_landing_is_rewritten_to_proxy_host_when_rewriter_set() -> None:
+    """核心断言（R3f AC）：ezproxy 场景下 resolve 的落地请求 host 须为 proxy 域——修复前
+    doi.org 302 后 httpx 径直跟到 `academic.oup.com`（裸发），本用例在修复前构造期就会因
+    `OupSilverchairAdapter` 不认识 `url_rewriter` 形参而 `TypeError` 失败；假设签名已加但
+    改写未接线，则会因 `seen_hosts` 里出现 "academic.oup.com" 而非代理域失败（mock 对
+    未预期 host 返 404，解析随之失败）。"""
+    seen_hosts: list[str] = []
+
+    def _handler(request: httpx.Request) -> httpx.Response:
+        seen_hosts.append(request.url.host)
+        if request.url.host == "doi.org":
+            return httpx.Response(
+                302, headers={"Location": "https://academic.oup.com/qje/article/1/1/1/1"}
+            )
+        if request.url.host == _PROXY_HOST:
+            body = (
+                b'<html><head><meta name="citation_pdf_url" '
+                b'content="https://academic.oup.com/qje/article-pdf/1/1/1/F9/x.pdf"/></head>'
+                b"<body><a href='/user/logout'>Sign out</a></body></html>"
+            )
+            return httpx.Response(200, content=body)
+        return httpx.Response(404, content=b"unexpected host: rewriter did not fire")
+
+    adapter = OupSilverchairAdapter(
+        cookie_supplier=static_cookie_supplier(),
+        transport=httpx.MockTransport(_handler),
+        url_rewriter=_proxying_rewriter,
+    )
+
+    plans = adapter.resolve_assets(_VENUE, _paper(), session=_session())
+
+    assert plans and plans[0].kind is AssetKind.PDF
+    assert seen_hosts[0] == "doi.org", "doi.org 首跳须仍是第一个物理请求"
+    assert _PROXY_HOST in seen_hosts, "落地请求未走代理域——rewriter 未生效"
+    assert "academic.oup.com" not in seen_hosts, "落地请求裸打了真实平台域（rewriter 被跳过）"
+
+
+def test_resolve_doi_org_probe_carries_no_cookie_when_rewriter_set() -> None:
+    """doi.org 首跳零 cookie 的红线在 rewriter 在场（手工两段式探路）时依然成立：探路请求
+    走的是 `_send`，其 cookie 计算沿用既有 `_cookies_for` 口径（doi.org host 域不匹配、
+    恒不随请求发出），不因新增探路分支而破例。"""
+    seen: dict[str, str | None] = {}
+
+    def _handler(request: httpx.Request) -> httpx.Response:
+        seen[request.url.host] = request.headers.get("cookie")
+        if request.url.host == "doi.org":
+            return httpx.Response(
+                302, headers={"Location": "https://academic.oup.com/qje/article/1/1/1/1"}
+            )
+        body = (
+            b'<html><head><meta name="citation_pdf_url" '
+            b'content="https://academic.oup.com/qje/article-pdf/1/1/1/F9/x.pdf"/></head>'
+            b"<body><a href='/user/logout'>Sign out</a></body></html>"
+        )
+        return httpx.Response(200, content=body)
+
+    adapter = OupSilverchairAdapter(
+        cookie_supplier=static_cookie_supplier({"SILVERCHAIR_SESSION": "secret"}),
+        transport=httpx.MockTransport(_handler),
+        url_rewriter=_proxying_rewriter,
+    )
+
+    adapter.resolve_assets(_VENUE, _paper(), session=_session())
+
+    assert seen["doi.org"] is None, "rewriter 在场时 doi.org 探路请求仍不该带 cookie"
+
+
+def test_resolve_ezproxy_cookie_supplier_hits_proxy_cookie_on_rewritten_host() -> None:
+    """端到端（离线，adapter 内）：resolve 落地请求改写到代理域后，域感知 cookie supplier
+    （R3e）在该改写后的 host 上命中 **proxy cookie**（不是平台 cookie）——rewriter 与
+    cookie 域感知在同一个 host 上闭合，doi.org 依旧零 cookie（brief 要求的"端到端断言"）。
+    """
+    seen: dict[str, str | None] = {}
+
+    def _handler(request: httpx.Request) -> httpx.Response:
+        seen[request.url.host] = request.headers.get("cookie")
+        if request.url.host == "doi.org":
+            return httpx.Response(
+                302, headers={"Location": "https://academic.oup.com/qje/article/1/1/1/1"}
+            )
+        body = (
+            b'<html><head><meta name="citation_pdf_url" '
+            b'content="https://academic.oup.com/qje/article-pdf/1/1/1/F9/x.pdf"/></head>'
+            b"<body><a href='/user/logout'>Sign out</a></body></html>"
+        )
+        return httpx.Response(200, content=body)
+
+    adapter = OupSilverchairAdapter(
+        cookie_supplier=host_scoped_cookie_supplier(
+            {"academic.oup.com": _PLATFORM_COOKIES, _PROXY_HOST: _PROXY_COOKIES}
+        ),
+        transport=httpx.MockTransport(_handler),
+        url_rewriter=_proxying_rewriter,
+    )
+
+    plans = adapter.resolve_assets(_VENUE, _paper(), session=_session())
+
+    assert plans and plans[0].kind is AssetKind.PDF
+    assert seen["doi.org"] is None
+    assert "ezproxy=proxy-secret" in (seen[_PROXY_HOST] or "")
+    assert "platform-secret" not in (seen[_PROXY_HOST] or "")
+
+
+def test_fetch_applies_rewriter_to_plan_url_directly() -> None:
+    """fetch 侧同一 seam 生效（`_authed_get` 唯一收口的必然结果）：即便这次 `plan.url` 未经
+    pipeline `stages._proxy_rewritten` 预先改写（adapter 单测天然不过 pipeline），adapter
+    自己的 rewriter 仍把它改到代理域——两处施加各自独立，谁先谁后都不改变最终落点
+    （`EZProxyProvider.rewrite_url` 对已改写 host 幂等，adapter 不需要判断"谁先改过"）。"""
+    seen: dict[str, str | None] = {}
+
+    def _handler(request: httpx.Request) -> httpx.Response:
+        seen[request.url.host] = request.headers.get("cookie")
+        return httpx.Response(200, content=MINIMAL_PDF, headers={"content-type": "application/pdf"})
+
+    adapter = OupSilverchairAdapter(
+        cookie_supplier=host_scoped_cookie_supplier({_PROXY_HOST: _PROXY_COOKIES}),
+        transport=httpx.MockTransport(_handler),
+        url_rewriter=_proxying_rewriter,
+    )
+
+    result = adapter.fetch_asset(_pdf_plan(), FakeFetchIO(), session=_session())  # 平台域 URL
+
+    assert result.ok is True
+    assert _PROXY_HOST in seen
+    assert "academic.oup.com" not in seen
+    assert "ezproxy=proxy-secret" in (seen[_PROXY_HOST] or "")
+
+
+def test_rewritten_target_falls_back_when_doi_org_gives_no_redirect() -> None:
+    """探路响应不是"合式的 3xx+Location"（如 doi.org 直接 200，异常形态）→ `_rewritten_target`
+    退回原 URL，不强行拼一个不存在的改写目标；`_authed_get` 的终请求自然复现该异常状态
+    （此处退化为该 200 页面本身被拿去 classify/解析，0 个 PDF 链接 → PARSE）。"""
+
+    def _handler(request: httpx.Request) -> httpx.Response:
+        assert request.url.host == "doi.org"
+        return httpx.Response(200, content=b"<html><body>doi.org itself, no redirect</body></html>")
+
+    adapter = OupSilverchairAdapter(
+        cookie_supplier=static_cookie_supplier(),
+        transport=httpx.MockTransport(_handler),
+        url_rewriter=_proxying_rewriter,
+    )
+
+    with pytest.raises(CrawlerError) as exc:
+        adapter.resolve_assets(_VENUE, _paper(), session=_session())
+    assert exc.value.error_class is ErrorClass.PARSE
+
+
+def test_resolve_with_rewriter_still_emits_exactly_one_obslog_event(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """R3f 的手工两段式探路不打破"只记终点这一条"的既有口径（同
+    `test_authed_get_emits_obslog_event_for_resolve_fetch_and_healthcheck` 的断言粒度）——
+    doi.org 探路请求物理发生但不产生 obslog 事件，resolve 仍恰产 1 条，且其 `domain` 字段
+    是改写后的代理域（真正记账的终请求落点）。"""
+    events: list[dict[str, object]] = []
+
+    def _fake_log_event(level: str, msg: str, **fields: object) -> None:
+        events.append({"level": level, "msg": msg, **fields})
+
+    monkeypatch.setattr(adapter_module, "log_event", _fake_log_event)
+
+    def _handler(request: httpx.Request) -> httpx.Response:
+        if request.url.host == "doi.org":
+            return httpx.Response(
+                302, headers={"Location": "https://academic.oup.com/qje/article/1/1/1/1"}
+            )
+        body = (
+            b'<html><head><meta name="citation_pdf_url" '
+            b'content="https://academic.oup.com/qje/article-pdf/1/1/1/F9/x.pdf"/></head>'
+            b"<body><a href='/user/logout'>Sign out</a></body></html>"
+        )
+        return httpx.Response(200, content=body)
+
+    adapter = OupSilverchairAdapter(
+        cookie_supplier=static_cookie_supplier(),
+        transport=httpx.MockTransport(_handler),
+        url_rewriter=_proxying_rewriter,
+    )
+
+    adapter.resolve_assets(_VENUE, _paper(), session=_session())
+
+    assert [event["stage"] for event in events] == ["resolve"]
+    assert events[0]["domain"] == _PROXY_HOST
 
 
 # ---------------------------------------------------------------------------

@@ -3,7 +3,7 @@
 覆盖：用法校验（缺 venue/--all、二者同给、未知 venue、非 preprint venue → 退出 2）、
 happy-path（preprint venue 经 `_http_client_factory` seam 注入 MockTransport 零真实网络
 → 退出 0 + 报告）、`--all` 过滤 preprint venue、config `[identity].email` 缺省 warn +
-UA 接线。
+UA 接线、pipeline 进程锁被外部占用时的 CLI 退出码缝（评估卡待补清单第 3 项）。
 
 网络零真实：CLI 的 `_build_env` 默认建真实 HttpClient，本测试 monkeypatch 模块级
 `cli._http_client_factory` seam 注入 `httpx.MockTransport` client（offline 门禁 socket
@@ -12,6 +12,9 @@ UA 接线。
 
 from __future__ import annotations
 
+import contextlib
+import fcntl
+from collections.abc import Iterator
 from pathlib import Path
 
 import httpx
@@ -23,7 +26,9 @@ from helpers.arxiv_fixtures import OaiRecord, build_oai_listrecords
 from paper_crawler import cli as cli_module
 from paper_crawler.cli import app
 from paper_crawler.config import Config
+from paper_crawler.errors import CrawlerError
 from paper_crawler.http import HttpClient
+from paper_crawler.pipeline.runner import pipeline_lock_path
 from paper_crawler.ratelimit import RateLimiter
 
 runner = CliRunner()
@@ -139,6 +144,47 @@ def test_watch_non_preprint_venue_exits_2(tmp_path: Path) -> None:
     result = runner.invoke(app, ["watch", "mock_journal", "--home", str(home)])
     assert result.exit_code == 2
     assert "preprint_channel" in result.output
+
+
+# --- 进程锁被外部占用（CLI 锁异常缝，评估卡待补清单第 3 项）--------------------------------
+
+
+@contextlib.contextmanager
+def _foreign_lock_holder(lock_path: Path) -> Iterator[None]:
+    """以"另一进程"的身份持有真 flock（同进程独立 fd，内核视为互斥，POSIX/BSD 语义）。
+
+    手法同 `tests/integration/test_pipeline_lock.py::_foreign_holder`（该文件只读参照、
+    未跨文件导入——两张修复卡分属不同文件，保持独立不产生耦合）。
+    """
+    lock_path.parent.mkdir(parents=True, exist_ok=True)
+    handle = open(lock_path, "a", encoding="utf-8")
+    try:
+        fcntl.flock(handle.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
+        yield
+    finally:
+        handle.close()
+
+
+def test_watch_all_exits_2_when_pipeline_lock_held(tmp_path: Path) -> None:
+    """锁被外部占用时，`PipelineRunner(...)` 构造期抢锁失败的 `CrawlerError(CONFIG)`
+    必须止于 CLI 边界内——退出码 2 + `_echo_error` 的"错误: …"一行，而不是未捕获异常
+    裸奔出 `_env` 的 `with` 块（退出码 1、无输出）。
+
+    `watch --all` 的第一步就是 `_make_runner(env.ctx)`（cli.py），先于任何 venue 遍历/
+    网络访问，因此本用例不需要 `_patch_mock_client`：锁竞争必须在触达网络前就失败。
+    """
+    home = _make_home(tmp_path, email="me@lab.edu")
+    with _foreign_lock_holder(pipeline_lock_path(home)):
+        result = runner.invoke(app, ["watch", "--all", "--home", str(home)])
+
+    assert result.exit_code == 2, result.output
+    assert "错误:" in result.output
+    assert "另一 pipeline 实例正在运行" in result.output
+    assert "Traceback" not in result.output
+    # 退出码 2 只应经由 CLI 的 `typer.Exit(2)` 落地（呈现为干净的 `SystemExit(2)`）；
+    # 若 `CrawlerError` 逃出未被捕获，它会以裸异常对象出现在 `result.exception` 里
+    # （此时 Click 的退出码是 1，不是 2——见本文件顶部 docstring 与 R3g 修复说明）。
+    assert not isinstance(result.exception, CrawlerError)
 
 
 # --- happy-path（seam 注入 MockTransport）---------------------------------------------------

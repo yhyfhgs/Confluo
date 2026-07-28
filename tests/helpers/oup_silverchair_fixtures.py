@@ -32,15 +32,31 @@ _ARTICLE_PDF_MARKER = "article-pdf"
 
 
 def static_cookie_supplier(cookies: dict[str, str] | None = None):
-    """构造一个固定 `CookieSupplier`（离线 seam 注入）：无视 session、恒返回同一 cookie 表。
+    """构造一个固定 `CookieSupplier`（离线 seam 注入）：无视 session/host、恒返回同一 cookie 表。
 
     默认返回一个占位 session cookie（脱敏合成值）。真实供给（读 CredentialStore 解密
     storage_state）由 T1b 落地——本替身只验 adapter 的 cookie 装配 + 域限定路径。
+    host 形参（R3e 域感知）在此**刻意忽略**：本替身模拟"单域凭证"形态，域过滤的真替身
+    见 `host_scoped_cookie_supplier`。
     """
     jar = dict(cookies) if cookies is not None else {"SILVERCHAIR_SESSION": "synthetic-offline"}
 
-    def _supplier(_session: SessionHandle) -> dict[str, str]:
+    def _supplier(_session: SessionHandle, _host: str) -> dict[str, str]:
         return jar
+
+    return _supplier
+
+
+def host_scoped_cookie_supplier(by_host: dict[str, dict[str, str]]):
+    """构造一个**域感知** `CookieSupplier` 替身：按消费方传入的 host 返回该 host 适用的 cookie。
+
+    模拟 `cli._cookie_supplier_for` 的真实形态——供给方持有带域信息的 jar，按请求 host
+    过滤后才交出 name→value（域信息不再在 seam 上被丢弃，R3e）。`by_host` 未列的 host
+    返回空表（= 该 host 无凭证，请求裸发）。
+    """
+
+    def _supplier(_session: SessionHandle, host: str) -> dict[str, str]:
+        return dict(by_host.get(host, {}))
 
     return _supplier
 
@@ -128,6 +144,7 @@ def oup_fixture(name: str) -> tuple[int, dict[str, str], str, bytes]:
 __all__ = [
     "MINIMAL_PDF",
     "direct_transport",
+    "host_scoped_cookie_supplier",
     "landing_transport",
     "oup_fixture",
     "static_cookie_supplier",

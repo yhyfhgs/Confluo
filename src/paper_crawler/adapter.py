@@ -30,9 +30,17 @@ ADAPTER_ENTRY_POINT_GROUP = "paper_crawler.adapters"
 AdapterFamily = Literal["open_access", "auth_gated", "aggregator"]
 
 # cookie 供给函数：auth_gated cookie 档 adapter（如 oup_silverchair）经此把活跃
-# `SessionHandle` 换成 cookie name→value 映射。CLI 在 auth 装配期注入一个懒解析闭包
-# （见 `CookieSupplierConsumer` / `bind_cookie_supplier` / cli._cookie_supplier_for）。
-CookieSupplier = Callable[[SessionHandle], Mapping[str, str]]
+# `SessionHandle` + **本次请求的 host** 换成该 host 适用的 cookie name→value 映射。CLI 在
+# auth 装配期注入一个懒解析闭包（见 `CookieSupplierConsumer` / `bind_cookie_supplier` /
+# cli._cookie_supplier_for）。
+#
+# `host` 形参（R3e 修复）：此前签名是 `(SessionHandle) -> Mapping[str, str]`——域信息在这一
+# 步被丢弃，消费方拿到的是一张裸表，只能把它硬钉自己的平台主域。ezproxy 形态下 pipeline
+# 已把请求改写到代理子域（`stages._proxy_rewritten`，07 §3.2），钉平台主域的 cookie 域匹配
+# 必然失败 → proxy cookie 被丢、请求裸发（P1-11 的剩余堵点）。现由消费方传入**实际请求
+# host**，供给方按自己 jar 里的域过滤后交付：平台域请求拿平台 cookie，代理域请求拿 proxy
+# cookie，互不串域（凭证隔离仍成立）。
+CookieSupplier = Callable[[SessionHandle, str], Mapping[str, str]]
 
 
 @runtime_checkable
@@ -161,12 +169,18 @@ class CookieSupplierConsumer(Protocol):
     在构造期注入依赖；实现本协议的 cookie 档 adapter 暴露 `set_cookie_supplier`，供 CLI
     在 auth 装配期经 `bind_cookie_supplier` 注入一个**懒解析**闭包——闭包捕获 `AuthManager`，
     真实 fetch 时才按 `session.provider_id` 解析对应 provider → `load_cookies` 解密
-    storage_state → cookie 表（装配期不触发；无凭证配置时不解析、不抛）。
+    storage_state → 按请求 host 过滤出的 cookie 表（装配期不触发；无凭证配置时不解析、不抛）。
 
     与 `HttpClientConsumer` 不同：注入的是**cookie 供给函数**而非已装配 client——cookie
     必须挂在 adapter 内部的**携密专属 client**（凭证隔离红线），绝不复用共享 `HttpClient`
-    （否则随他站请求外泄）；本协议只把"给 session 返 cookie 表"的能力交给 adapter，专属
-    client 的构造与域限定归 adapter 自身。
+    （否则随他站请求外泄）；本协议只把"给 (session, host) 返 cookie 表"的能力交给 adapter，
+    专属 client 的构造与域限定归 adapter 自身。
+
+    **签名变更备案（R3e）**：`CookieSupplier` 从 `(session)` 扩为 `(session, host)`。本协议
+    是 duck-typed 可选面（不在 `SourceAdapter` 冻结协议内，亦不在 auth-framework §2 冻结
+    签名清单内），仓内唯一实现方是 oup_silverchair、唯一生产方是 `cli._cookie_supplier_for`，
+    故直接改签名、不留兼容垫片——旧式单参 supplier 会在真实 fetch 时 `TypeError` 响亮报错，
+    不静默退化成"裸发请求"（后者正是本次修复的缺陷形态）。
     """
 
     def set_cookie_supplier(self, supplier: CookieSupplier) -> None: ...

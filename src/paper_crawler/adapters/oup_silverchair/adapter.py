@@ -12,9 +12,9 @@ family=`auth_gated`（推荐档 **HTTP + session cookie**，design/04 §3 第 2 
 --- cookie 供给 seam（T1b 合并前的最小 duck-typed 接缝）--------------------------------
 
 **一句话**：`fetch`/`resolve` 经**可注入的 cookie 供给函数** `CookieSupplier` 把
-`SessionHandle` 换成 cookie jar（name→value），adapter 用该 jar 构造**专属** httpx
-client 直取；真实供给（读 `CredentialStore` 解密 storage_state）由 T1b 落地、pipeline
-装配期经 `set_cookie_supplier` 注入。本 Phase 未合并 T1b，故：
+`(SessionHandle, 本次请求的 host)` 换成 cookie jar（name→value），adapter 用该 jar 构造
+**专属** httpx client 直取；真实供给（读 `CredentialStore` 解密 storage_state）由 T1b
+落地、pipeline 装配期经 `set_cookie_supplier` 注入。本 Phase 未合并 T1b，故：
 
 - 生产装配：`load_adapters()` 无参实例化 → supplier=None；pipeline（T1b 后）
   `set_cookie_supplier(real)` 注入（duck-typed，仿 `HttpClientConsumer`/`EmailConsumer`
@@ -45,15 +45,60 @@ article-pdf 直取 = 单请求），由 pipeline 的 per-stage `acquire_and_wait
 （1 req/6s，design §4）逐阶段限速——同 cvf 先例（"实际限速由 pipeline，不在本 adapter"）。
 日配额 200 按 fetch 尝试篇次计（resolve 页请求不计，design §4 A-M5）——落库口径归 pipeline。
 
-**cookie 域限定**（凭证红线 + 防 doi.org 泄漏）：供给的 cookie 一律 `domain=academic.oup.com`
-主域限定 → resolve 的 `GET doi.org/{doi}` 首跳**不带** cookie（不泄漏给 DOI 解析器），
-仅重定向落到 academic.oup.com 后才随请求发出。
+**cookie 域限定 / 域感知**（凭证红线 + 防 doi.org 泄漏 + ezproxy 可用性，R3e）：供给的
+cookie 一律限定在 `_cookie_host_for(url)` 这一个域上——
+- 直连形态：该 host = 平台主域 `academic.oup.com`（resolve 的 `GET doi.org/{doi}` 首跳
+  **不带** cookie、不泄漏给 DOI 解析器，仅重定向落到平台后才随请求发出——逐字保持）；
+- ezproxy 形态：pipeline 已在 fetch 前把 `plan.url` 改写成代理子域（`stages._proxy_rewritten`，
+  07 §3.2），该 host 即代理 host，supplier 据此交出**代理父域**的 proxy cookie。
+修复前 seam 的类型面是 `(SessionHandle) -> Mapping[str, str]`（无域信息），本方法只能把
+整表硬钉平台主域 → 代理域请求域匹配失败、proxy cookie 全被丢、请求裸发（R2d 顾虑①/P1-11）。
+本 adapter 仍**不感知代理存在**：它不认识 rewrite 规则，只是不再把 cookie 的域写死（下段
+"URL 改写 seam"同一哲学——只是把这句话从"cookie 该钉哪个域"扩展到"该往哪个 URL 发"）。
+
+**URL 改写 seam（fetch 前施加、resolve 端到端闭合，R3e 顾虑④/R3f）**：R2d 的
+`stages._proxy_rewritten` 只覆盖 pipeline driven 的 fetch 阶段（`adapter.fetch_asset`
+拿到的 `plan.url`）——resolve 的 `GET doi.org/{doi}` 首跳与其后的平台域落地请求由本
+adapter 自行发出，URL 不经 pipeline（该函数 docstring 原话"不覆盖 resolve 阶段…adapter
+不感知代理"）。校外 ezproxy 用户因此在 resolve 阶段就已裸打出版社真实域，走不到 fetch
+就先撞真实 Cloudflare/登录墙。本卡补上对称的 adapter 内 seam：`set_url_rewriter` 注入
+`UrlRewriter`（`(SessionHandle, url) -> url`，与 `CookieSupplier` 同构双参签名，同样的
+"CLI 装配期注入懒解析闭包"时机），`_authed_get` 在**发请求前**对目标 URL 生效——三调用点
+（resolve/fetch/healthcheck）经它唯一收口，改写因此也唯一收口，不需要逐调用点各接一遍。
+
+- doi.org 首跳**绝不改写**（公共解析器、非受保护资源，同 `_cookie_host_for` 的红线口径）；
+  fetch 的 `plan.url`、healthcheck 的探针页目标域已知，直接改写后发，单段请求足矣。
+- resolve 的 doi.org 落地 URL 要等 302 才知道，而 httpx `follow_redirects=True` 的内部自动
+  跟随一旦选定就不可逐跳拦截插改——单次 `client.get()` 内部替我们发出的第二个请求，URL
+  取自服务端 `Location` 头，不经过我们的改写函数（侦察结论：这条路完全走不通）。故 rewriter
+  在场时 doi.org 首跳改走**手工两段式**（`_rewritten_target`）：①`follow_redirects=False`
+  探路拿 302 的 `Location`（不落审计事件，`_authed_get` 仍只记终点这一条）；②改写该落地
+  URL 后才是真正发出并记账的请求（`follow_redirects=True`，交给平台自身可能存在的更深层
+  重定向；不逐跳递归改写——侦察后选定的"最简且语义正确"实现，多级链的深层改写留待真实
+  runbook 观测到需求再补）。
+- **rewriter 注入现为无条件**（R3f controller 复审裁决"改懒"）：cli.py `_assemble_auth_seam`
+  只要装配了 auth seam（pull/grab）就调 `_bind_url_rewriter` 注入，不再像初版那样先探测是否
+  存在 ezproxy profile——"这次 session 是不是 ezproxy"推迟到请求发生时按 `session.provider_id`
+  惰性判定（非 ezproxy provider 的 `rewrite_url` 恒等，闭包因此对它是空操作）。
+  `self._url_rewriter` 仍可能是 `None`：仅当 auth seam 整体未装配时（`timeline`/`list`/
+  `watch` 等非 auth 命令、或离线测试构造期从未调用 `set_url_rewriter`）——此时 `_authed_get`
+  才是改动前的单段 `client.get(url, follow_redirects=True)` 路径，逐字不变。
+  **代价**：pull/grab 途径下，纯直连（未配置 ezproxy）用户的 resolve 现在也会经手工两段式
+  探路（见上一条 `_rewritten_target`）——比改动前的单段 `follow_redirects=True` 多一次
+  doi.org 请求；换来的是校外 ezproxy 用户 resolve 阶段不再裸打出版社真实域（本段开头的
+  缺口）。
+- fetch 侧与 pipeline `stages._proxy_rewritten` 可能对同一个 `plan.url` 各调一次
+  `provider.rewrite_url`：`EZProxyProvider.rewrite_url` 对已改写的 host 幂等（其 docstring
+  "已重写幂等，重复套代理会毁 URL"的自我保护），双重施加不产生错误改写，只是其中一次是
+  空操作——本 adapter 不必、也不去判断"pipeline 是否已经改过"，`_authed_get` 统一收口的
+  哲学是"我的每个出站请求自己对得上号"，不依赖调用方是否已处理过。
 """
 
 from __future__ import annotations
 
 import os
 from collections.abc import Callable, Mapping
+from urllib.parse import urlsplit
 
 import httpx
 
@@ -82,6 +127,7 @@ from paper_crawler.useragent import build_user_agent
 
 _PRIMARY_DOMAIN = "academic.oup.com"
 _DOI_RESOLVER = "https://doi.org"
+_DOI_RESOLVER_HOST = "doi.org"
 # 探针页（design §3.3；⚠ controller 亲读②：R0 无凭证未实测该路径——真实 URL 待 runbook
 # 首登核验，profiles `probe_url` 可覆盖。healthcheck 无 venue 形参，故此为类级默认）。
 _PROBE_URL = f"https://{_PRIMARY_DOMAIN}/my-account"
@@ -97,8 +143,43 @@ _CONTACT_EMAIL_ENV = "PAPER_CRAWLER_CONTACT_EMAIL"
 # ——oup（唯一订阅站 UA）因此恒匿名占位；现比照 unpaywall 补 `set_email`/`_resolve_email`。
 _PLACEHOLDER_EMAIL = "anonymous@paper-crawler.invalid"
 
-# cookie 供给 seam：SessionHandle → cookie name→value 映射（见模块 docstring）。
-CookieSupplier = Callable[[SessionHandle], Mapping[str, str]]
+# cookie 供给 seam：(SessionHandle, 请求 host) → 该 host 适用的 cookie name→value 映射
+# （见模块 docstring "cookie 域感知"段；契约本体在 `paper_crawler.adapter.CookieSupplier`）。
+CookieSupplier = Callable[[SessionHandle, str], Mapping[str, str]]
+
+# URL 改写 seam（R3f）：(SessionHandle, 目标 URL) → 改写后的 URL；与 `CookieSupplier` 同构
+# 双参签名（见模块 docstring "URL 改写 seam"段）。未提炼进 `paper_crawler.adapter` 的具名
+# Protocol——该文件不在本卡允许改动面内，注入点改在 `cli.py` 就地 `getattr` 甄别
+# （`cli._bind_url_rewriter`，风格照抄 `pipeline.runner._url_rewriter_of` 的同款鸭型检测）。
+UrlRewriter = Callable[[SessionHandle, str], str]
+
+
+def _cookie_host_for(url: str) -> str:
+    """本次请求的 **cookie 归属 host**（R3e 域感知；供 supplier 过滤 + jar 钉域两处共用）。
+
+    - `doi.org` 首跳（resolve 的 DOI 解析）→ 归**重定向落点**平台主域：cookie 因此钉在
+      `academic.oup.com` 上、doi.org 请求本身零 cookie（凭证防泄漏红线，见模块 docstring），
+      跟随重定向落到平台后才随请求发出；
+    - 其余一律取**实际请求 URL 的 host**：直连即平台主域（行为与修复前逐字一致）；ezproxy
+      形态下 pipeline 已把 `plan.url` 改写成代理子域（`stages._proxy_rewritten`，07 §3.2
+      "adapter 不感知代理"——本函数也不认识代理，只是不再把 host 写死成平台主域），于是
+      supplier 交出的是代理父域的 proxy cookie，域匹配在改写后的 host 上闭合。
+    - 无 host（畸形/相对 URL）→ 退回平台主域（保守：不凭空造一个域）。
+    """
+    host = (urlsplit(url).hostname or "").lower()
+    if not host or host == _DOI_RESOLVER_HOST:
+        return _PRIMARY_DOMAIN
+    return host
+
+
+def _is_doi_resolver_url(url: str) -> bool:
+    """请求目标是否为 doi.org 本身（R3f rewriter 分支判据：doi.org 首跳绝不改写）。
+
+    与 `_cookie_host_for` 判断"cookie 该钉哪个域"的口径同源（同一个 `urlsplit(...).hostname`
+    取法）但目的不同——这里只问"是不是 doi.org 本身"，空 host（相对/畸形 URL）不视为
+    doi.org（保守：没有证据表明它是 doi.org 就不按 doi.org 特判，交普通改写分支处理）。
+    """
+    return (urlsplit(url).hostname or "").lower() == _DOI_RESOLVER_HOST
 
 
 def _default_email() -> str:
@@ -143,7 +224,9 @@ class OupSilverchairAdapter(AdapterBase):
     )
     # design §2/§4：机构订阅刊，登录 session 态为工作前提。
     auth_requirement = AuthLevel.INSTITUTIONAL
-    # 主域 = 限速/日志账本键 + cookie 域限定键（PDF 与落地页同源，单域）。
+    # 主域 = 限速/日志账本键 + **直连形态**的 cookie 域限定键（PDF 与落地页同源，单域）；
+    # 代理形态的 cookie 域取实际请求 host（R3e，见 `_cookie_host_for`）——限速/账本键不随之
+    # 漂移（R2d §3：代理域一换，AC-4.4 的"单平台单日上限"对账口径就被打散）。
     domains: tuple[str, ...] = (_PRIMARY_DOMAIN,)
 
     def __init__(
@@ -152,15 +235,22 @@ class OupSilverchairAdapter(AdapterBase):
         cookie_supplier: CookieSupplier | None = None,
         transport: httpx.BaseTransport | None = None,
         email: str | None = None,
+        url_rewriter: UrlRewriter | None = None,
     ) -> None:
         # cookie_supplier=None：pipeline（T1b 后）经 set_cookie_supplier 注入真实供给；
         # transport=None：生产用 httpx 默认传输，测试注入 MockTransport 达成零真实网络；
         # email=None：CLI 装配期经 set_email 注入 Config.identity_email（`adapter.EmailConsumer`
         # 协议，同 unpaywall 先例，R2c）——未注入时 `_resolve_email` 回退 env
         # `PAPER_CRAWLER_CONTACT_EMAIL` 再退 `.invalid` 占位（修复前恒读 env、无从被 CLI 覆盖）。
+        # url_rewriter=None：CLI 装配期只要装配了 auth seam（pull/grab）就无条件经
+        # set_url_rewriter 注入（R3f controller 复审裁决"改懒"，见模块 docstring "URL 改写
+        # seam"段）；是否真的存在 ezproxy 推迟到请求发生时惰性判定，与本参数是否配置无关。
+        # 此参数仍为 None 的唯一场景是 auth seam 整体未装配（非 auth 命令/离线测试构造期）
+        # ——此时 `_authed_get` 是改动前的单段请求路径，逐字不变。
         self._cookie_supplier = cookie_supplier
         self._transport = transport
         self._email = email
+        self._url_rewriter = url_rewriter
         self._detector = ChallengeDetector()
 
     def set_cookie_supplier(self, supplier: CookieSupplier) -> None:
@@ -171,6 +261,13 @@ class OupSilverchairAdapter(AdapterBase):
         """注入联系邮箱（`adapter.EmailConsumer` 协议；CLI 装配期传入 `Config.identity_email`，
         同 unpaywall `set_email` 先例，R2c）。"""
         self._email = email
+
+    def set_url_rewriter(self, rewriter: UrlRewriter) -> None:
+        """注入 URL 改写函数（duck-typed seam，与 `set_cookie_supplier` 同风格；CLI 装配期
+        经 `_assemble_auth_seam`→`_bind_url_rewriter` 无条件调用——只要装配了 auth seam
+        （pull/grab）就注入，不判断是否存在 ezproxy profile；见模块 docstring"URL 改写 seam"
+        段，R3f controller 复审裁决"改懒"）。"""
+        self._url_rewriter = rewriter
 
     def _resolve_email(self) -> str:
         """当前生效邮箱：显式注入 > 环境变量 `PAPER_CRAWLER_CONTACT_EMAIL` > `.invalid` 占位
@@ -365,75 +462,116 @@ class OupSilverchairAdapter(AdapterBase):
             f"oup resolve 需要 paper 携带 {_DOI_SCHEME!r} identifier（前缀应为 {_OUP_DOI_PREFIX}）",
         )
 
-    def _cookies_for(self, session: SessionHandle) -> httpx.Cookies:
-        """经 seam 把 session 换成**主域限定**的 httpx cookie jar（凭证红线 + 防泄漏）。
+    def _cookies_for(self, session: SessionHandle, url: str) -> httpx.Cookies:
+        """经 seam 把 (session, 本次请求归属 host) 换成**该 host 限定**的 httpx cookie jar。
 
         supplier 未装配（session 在但 seam 未接线）→ `CONFIG`（装配缺陷，响亮暴露：T1b
-        store 合并后由 pipeline 注入，不该在生产缺席）。全部 cookie 限定 `domain=主域`
-        → 首跳 doi.org 不携带（见模块 docstring）。
+        store 合并后由 pipeline 注入，不该在生产缺席）。全部 cookie 限定
+        `domain=_cookie_host_for(url)` —— 直连形态即平台主域（首跳 doi.org 不携带，见模块
+        docstring）；ezproxy 形态即 pipeline 改写后的代理 host（R3e，见 `_cookie_host_for`）。
         """
         if self._cookie_supplier is None:
             raise CrawlerError(
                 ErrorClass.CONFIG,
                 "oup cookie 供给 seam 未装配（T1b store 合并后由 pipeline 注入）",
             )
+        host = _cookie_host_for(url)
         jar = httpx.Cookies()
-        for name, value in self._cookie_supplier(session).items():
-            jar.set(name, value, domain=_PRIMARY_DOMAIN)
+        for name, value in self._cookie_supplier(session, host).items():
+            jar.set(name, value, domain=host)
         return jar
 
     def _authed_get(self, url: str, session: SessionHandle, *, stage: str) -> _RawResponse:
-        """专属 client（UA+主域 cookie+跟随重定向）GET → 原始响应视图（**4xx 不 raise**）。
+        """专属 client（UA+请求归属域 cookie+跟随重定向）GET → 原始响应视图（**4xx 不 raise**）。
 
         网络层异常（超时/连接错）→ `CrawlerError(TRANSIENT)`（对齐 HttpClient 冻结映射
         口径，design §6）；HTTP 状态码**不**在此 raise——4xx（含 403 挑战）原样带回交
         `ChallengeDetector` 判读（见模块 docstring 为何不复用共享 HttpClient）。
 
-        **R2c 观测补丁**：`client.get(url)` 内部已 `follow_redirects=True` 跟完全部重定向——
-        成功后落**恰一条** obslog DEBUG 事件，字段（`stage`/`domain`/`url`/`status`）取自
-        **终响应**（`response.url`/`response.status_code`，即跟随重定向后的最终落点；`url`
-        经 `obslog.log_event` 内部 `redact()`）。字段名对齐 `http.py::_emit_event` 的形态，
-        但**不**是 `http.py::_log_exchange` 那种逐重定向跳各记一条的行为——本 adapter 只记
-        终点这一条（独立审查 Minor #5 订正措辞：此前"复用 `_emit_event` 既有事件形态"一句
-        易被读成连跳数也复用，如实澄清为"字段形态对齐、覆盖范围不同"）。这是有意为之而非
-        疏漏：`ChallengeDetector` 判读只关心落点本身（headers/body/final_url），中间跳转
-        对四态分类无独立意义，简报"补一条事件"字面量已满足，不需要额外的首跳/中间跳事件。
+        **R2c 观测补丁**：成功后落**恰一条** obslog DEBUG 事件，字段（`stage`/`domain`/
+        `url`/`status`）取自**终响应**（`response.url`/`response.status_code`，即跟随
+        重定向后的最终落点；`url` 经 `obslog.log_event` 内部 `redact()`）。字段名对齐
+        `http.py::_emit_event` 的形态，但**不**是 `http.py::_log_exchange` 那种逐重定向
+        跳各记一条的行为——本 adapter 只记终点这一条（独立审查 Minor #5 订正措辞：此前
+        "复用 `_emit_event` 既有事件形态"一句易被读成连跳数也复用，如实澄清为"字段形态
+        对齐、覆盖范围不同"）。这是有意为之而非疏漏：`ChallengeDetector` 判读只关心落点
+        本身（headers/body/final_url），中间跳转对四态分类无独立意义，简报"补一条事件"
+        字面量已满足，不需要额外的首跳/中间跳事件——R3f 新增的 doi.org 探路请求（见
+        `_rewritten_target`）同样不落事件，这一条只记**真正发出并记账**的终请求。
         `resolve_assets`/`fetch_asset`/`healthcheck` 三调用点经本方法唯一收口，一处
         埋点即全覆盖（V2 订正口径：stage 级 INFO 与 fetch 侧 FetchLog 已有，本卡只补这条
         缺失的 per-request 事件，FetchLog 落库口径不动）。网络层异常分支不落此事件——同
         http.py 现状，异常本身已携带足够诊断信息（`CrawlerError.detail`）。
+
+        **URL 改写落点（R3f）**：真正发出的取回请求目标由 `_rewritten_target` 算出（doi.org
+        首跳的特殊处理见其 docstring）；无 rewriter 时该函数原样返回 `url`，本方法退化回
+        R3e 前逐字一致的单段 `follow_redirects=True` 请求。
         """
-        cookies = self._cookies_for(session)
+        target = self._rewritten_target(url, session)
+        response = self._send(target, session, follow_redirects=True)
+        log_event(
+            "DEBUG",
+            "oup http exchange",
+            stage=stage,
+            domain=response.url.host or None,
+            url=str(response.url),
+            status=response.status_code,
+        )
+        return _RawResponse(
+            status=response.status_code,
+            headers=response.headers,
+            final_url=str(response.url),
+            body=response.content,
+        )
+
+    def _rewritten_target(self, url: str, session: SessionHandle) -> str:
+        """算出 `_authed_get` 真正要请求的 URL（R3f）；无 rewriter → 原样返回 `url`
+        （仅当 auth seam 整体未装配（timeline/list/watch 等非 auth 命令、离线测试构造期）
+        rewriter 才为 None，此时退化回改动前的单段请求路径；pull/grab 下即便纯直连也已
+        注入恒等闭包，doi.org 首跳照走两段式探路（代价见模块 docstring"URL 改写 seam"段末））。
+
+        doi.org 首跳绝不改写（公共解析器，非受保护资源，同 `_cookie_host_for` 的红线口径）；
+        其余（fetch 的 `plan.url`、healthcheck 探针页、resolve 的落地 URL）改写后再发。
+
+        doi.org 的落地 URL 要等 302 才知道，而 httpx `follow_redirects=True` 的内部自动
+        跟随不可逐跳拦截插改（见模块 docstring"URL 改写 seam"段）——故 rewriter 在场时对
+        doi.org 首跳先手工探路（`follow_redirects=False`，不落审计事件，`_authed_get` 仍
+        只记终点这一条）拿 `Location`，改写该落地 URL 后才是 `_authed_get` 真正发出并记账
+        的那个请求。探路响应不是"合式的 3xx+Location"（`has_redirect_location`；doi.org
+        异常形态，如解析失败）→ 退回原 URL，与"没有 rewriter"这一跳等价，交 `_authed_get`
+        的终请求自然复现该异常状态，不强行拼一个不存在的改写目标。
+        """
+        if self._url_rewriter is None:
+            return url
+        if not _is_doi_resolver_url(url):
+            return self._url_rewriter(session, url)
+        probe = self._send(url, session, follow_redirects=False)
+        if not probe.has_redirect_location:
+            return url
+        location = probe.headers["location"]
+        return self._url_rewriter(session, str(probe.url.join(location)))
+
+    def _send(self, url: str, session: SessionHandle, *, follow_redirects: bool) -> httpx.Response:
+        """单次物理 GET（cookie 按**这次实际请求的** `url` 域限定，见 `_cookies_for`）；
+        超时/连接错误统一转 `CrawlerError(TRANSIENT)`——`_authed_get`/`_rewritten_target`
+        两处共用（R3f 前 `_authed_get` 内联本逻辑，拆出后异常映射口径不因调用点分叉）。
+        """
+        cookies = self._cookies_for(session, url)
         client = httpx.Client(
             headers={"User-Agent": build_user_agent(self._resolve_email())},
             cookies=cookies,
             transport=self._transport,
-            follow_redirects=True,
+            follow_redirects=follow_redirects,
             timeout=30.0,
         )
         try:
-            response = client.get(url)
+            return client.get(url)
         except httpx.TimeoutException as exc:
             raise CrawlerError(ErrorClass.TRANSIENT, "oup 请求超时", detail="timeout") from exc
         except httpx.HTTPError as exc:
             raise CrawlerError(
                 ErrorClass.TRANSIENT, "oup 连接错误", detail=type(exc).__name__
             ) from exc
-        else:
-            log_event(
-                "DEBUG",
-                "oup http exchange",
-                stage=stage,
-                domain=response.url.host or None,
-                url=str(response.url),
-                status=response.status_code,
-            )
-            return _RawResponse(
-                status=response.status_code,
-                headers=response.headers,
-                final_url=str(response.url),
-                body=response.content,
-            )
         finally:
             client.close()
 
@@ -466,4 +604,4 @@ def _redacted_where(final_url: str) -> str:
     return final_url.split("?", 1)[0]
 
 
-__all__ = ["CookieSupplier", "OupSilverchairAdapter"]
+__all__ = ["CookieSupplier", "OupSilverchairAdapter", "UrlRewriter"]

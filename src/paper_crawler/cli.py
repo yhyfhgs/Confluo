@@ -63,7 +63,7 @@ from __future__ import annotations
 import contextlib
 import datetime as dt
 import sqlite3
-from collections.abc import Iterator, Mapping
+from collections.abc import Callable, Iterator, Mapping
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Annotated, NoReturn
@@ -363,31 +363,104 @@ def _bind_auth_key_clients(
     return tuple(client for client in clients if client is not None)
 
 
+def _host_matches_cookie_domain(host: str, domain: str) -> bool:
+    """cookie 域匹配（**简化版** RFC 6265 §5.1.3：host 相等或为 domain 的子域）。
+
+    个人工具尺度，刻意不实现完整 RFC：不做 public-suffix 校验、不区分 host-only cookie、
+    不处理 path/secure/expiry（后三者由 httpx 的 cookie jar 在实际请求时兜住——本函数只是
+    "这份 cookie 归不归这个 host 管"的粗筛）。前导点按 Netscape 惯例剥掉（`.foo.edu` 与
+    `foo.edu` 同义）；空域视为**不匹配**（storage_state 条目缺 domain 属畸形数据，宁可少发
+    也不外泄——httpx 对空域 cookie 的默认行为恰恰是"发给任何 host"）。
+    """
+    domain = domain.strip().lower().strip(".")
+    host = host.strip().lower().rstrip(".")
+    if not domain or not host:
+        return False
+    return host == domain or host.endswith(f".{domain}")
+
+
 def _cookie_supplier_for(manager: AuthManager) -> CookieSupplier:
     """构造 OUP（及未来 cookie 档 adapter）的**懒解析** cookie 供给闭包（auth-framework §8.2）。
 
-    闭包捕获 `manager`；仅当**真实 fetch** 触达 adapter 的 `_cookies_for(session)` 时才被调用
-    ——据 `session.provider_id`（runner `ensure_session(provider.provider_id)` 建立该 session
+    闭包捕获 `manager`；仅当**真实 fetch** 触达 adapter 的 `_cookies_for(session, url)` 时才被
+    调用——据 `session.provider_id`（runner `ensure_session(provider.provider_id)` 建立该 session
     的 provider 键）经 `AuthManager.resolve` 拿到对应 provider → `load_cookies` 解密
-    storage_state → httpx cookie jar → `dict`。故装配期不触发（无 session 即不调用）：离线
-    pull（无 auth_gated venue 命中 fetch）与无凭证配置时装配期零解析、不抛 CONFIG。
+    storage_state → httpx cookie jar → **按调用方给的请求 host 过滤**后的 `dict`。故装配期不
+    触发（无 session 即不调用）：离线 pull（无 auth_gated venue 命中 fetch）与无凭证配置时
+    装配期零解析、不抛 CONFIG。
+
+    **按 host 过滤（R3e）**：jar 里的域信息此前在这一步被 `dict(...)` 抹平，消费方只能硬钉
+    平台主域——ezproxy 形态下请求已被 `stages._proxy_rewritten` 改写到代理子域，域匹配必然
+    失配、proxy cookie 被丢（请求裸发 → 落代理登录页 → 呈现为 AUTH_EXPIRED）。现在域匹配在
+    **持有域信息的这一侧**完成：代理域请求只拿代理父域的 cookie，平台域请求只拿平台 cookie，
+    同一份 storage_state 里的跨域条目不互相串（凭证隔离）。
 
     provider 无 `load_cookies`（cookie 档 venue 却映射到 api_key 等非 cookie provider）→ 响亮
     CONFIG（装配/路由缺陷）。cookie 隔离由 adapter 内部专属携密 client 承担，本闭包只返 cookie 表。
+    `load_cookies` 的既有契约是**返回 `httpx.Cookies`**（cookie_session/ezproxy 两实现逐字
+    如此，见各自 docstring）——本闭包读其底层 `.jar` 取每条 cookie 的域；返回裸 dict 的实现
+    会在此 `AttributeError` 响亮失败，而非静默退化成"无域信息、发给任何 host"。
     """
 
-    def _supply(session: SessionHandle) -> Mapping[str, str]:
+    def _supply(session: SessionHandle, host: str) -> Mapping[str, str]:
         provider = manager.resolve(session.provider_id)
         load_cookies = getattr(provider, "load_cookies", None)
         if load_cookies is None:
             raise CrawlerError(
                 ErrorClass.CONFIG,
                 f"auth provider {session.provider_id!r} 无 load_cookies（cookie 档 venue 须映射 "
-                "cookie_session/sso_flow profile）",
+                "cookie_session/sso_flow/ezproxy profile）",
             )
-        return dict(load_cookies(session))
+        jar = load_cookies(session)
+        return {
+            cookie.name: cookie.value or ""
+            for cookie in jar.jar
+            if _host_matches_cookie_domain(host, cookie.domain or "")
+        }
 
     return _supply
+
+
+def _url_rewriter_for(manager: AuthManager) -> Callable[[SessionHandle, str], str]:
+    """构造 OUP（及未来改写档 adapter）的**懒解析** URL 改写闭包（R3f；风格照抄
+    `_cookie_supplier_for`——同一 `manager`、同一"仅真实请求触达才 resolve provider"时机）。
+
+    闭包捕获 `manager`；仅当 adapter 的 `_authed_get`（或其改写落点，见
+    `adapters/oup_silverchair/adapter.py` 模块 docstring"URL 改写 seam"段）真正发起请求时
+    才按 `session.provider_id` 解析 provider，取其 `rewrite_url`（07 §2 五方法之一，
+    `AuthProviderBase` 提供恒等默认，仅 `EZProxyProvider` 真实重写）。装配期只注入不调用，
+    无凭证配置时不解析、不抛（同 `_cookie_supplier_for` 的懒解析纪律）。
+
+    provider 缺 `rewrite_url`（理论上不会发生——`AuthProvider` 冻结协议五方法之一，四个
+    真实 provider 皆有）→ 退回恒等，不因防御性缺口挡请求（风格照抄 `pipeline.runner.
+    _url_rewriter_of` 的同款 `getattr` 兜底）。
+    """
+
+    def _rewrite(session: SessionHandle, url: str) -> str:
+        provider = manager.resolve(session.provider_id)
+        rewrite = getattr(provider, "rewrite_url", None)
+        return rewrite(url) if callable(rewrite) else url
+
+    return _rewrite
+
+
+def _bind_url_rewriter(
+    adapters: dict[str, SourceAdapter], rewriter: Callable[[SessionHandle, str], str]
+) -> list[str]:
+    """把 URL 改写函数注入所有暴露 `set_url_rewriter` 的 adapter；返回被注入 id 列表（R3f）。
+
+    duck-typed，风格照抄 `bind_cookie_supplier`/`_bind_email`——不实现该方法的 adapter
+    静默跳过。未提炼进 `adapter.py` 的具名 Protocol（`CookieSupplierConsumer` 同级）：该
+    文件不在本卡允许改动面内，就地 `getattr` 甄别足够（唯一实现方是 oup_silverchair，同
+    `adapters/oup_silverchair/adapter.py` 模块顶注对本函数的引用）。
+    """
+    injected: list[str] = []
+    for adapter_id, adapter in adapters.items():
+        set_rewriter = getattr(adapter, "set_url_rewriter", None)
+        if callable(set_rewriter):
+            set_rewriter(rewriter)
+            injected.append(adapter_id)
+    return injected
 
 
 def _bind_email(adapters: dict[str, SourceAdapter], email: str | None) -> list[str]:
@@ -429,6 +502,13 @@ def _assemble_auth_seam(
     - 联系邮箱（R2c）：`_bind_email` 通用注入 `Config.identity_email` 给全部 `EmailConsumer`
       实现（unpaywall `?email=` 查询参数、oup_silverchair UA `mailto:` 段）——不逐 adapter
       id 各写一份，见该函数 docstring。
+    - URL 改写（R3f；controller 复审裁决"改懒"）：`_bind_url_rewriter` 把懒解析闭包
+      `_url_rewriter_for(manager)` **无条件**注入所有暴露 `set_url_rewriter` 的 adapter
+      （目前唯一实现方是 oup_silverchair，同 `bind_cookie_supplier` 风格）——补齐 resolve
+      侧此前绕过 `stages._proxy_rewritten` 的 ezproxy 改写缺口。是否真的存在 ezproxy
+      provider 这一问，连同 `profiles.toml` 的解析本身，全部推迟到闭包真正被调用（某次
+      真实请求触达 adapter）时才按 `session.provider_id` 判定——装配期零 `profiles()` 读取，
+      见调用处内联注释。
     """
     ua = adapters.get("unpaywall")
     if isinstance(ua, UnpaywallAdapter):
@@ -448,6 +528,29 @@ def _assemble_auth_seam(
     # per-stage `acquire_and_wait` 依 default_rate 逐阶段兜住（stages.py `_stage_fetch`）；cookie
     # 只挂 adapter 内部专属携密 client（凭证隔离红线，绝不复用共享 http/limiter）。
     bind_cookie_supplier(adapters, _cookie_supplier_for(manager))
+    # OUP resolve 侧 URL 改写 seam（R3f；R3e 顾虑④裁决"接通"；controller 复审裁决"改懒"，
+    # 见下段）：doi.org 首跳自身发的 GET 及后续平台域落地请求此前完全绕过 pipeline 的
+    # `stages._proxy_rewritten`（该机制只覆盖 fetch 阶段的 `plan.url`，见其 docstring"不覆盖
+    # resolve 阶段…resolve 的请求由 adapter 自行发出、URL 不经 pipeline"）——校外 ezproxy
+    # 用户 resolve 阶段就已裸打出版社真实域，走不到 fetch 就先撞真实 Cloudflare/登录墙。
+    #
+    # 无条件装配（同 `bind_cookie_supplier` 风格，不先扫一遍 profiles() 判断"要不要装配"）：
+    # 闭包捕获 `manager`，是否真的存在 ezproxy provider 这一问、连同 `profiles.toml` 的解析
+    # 本身，全部推迟到闭包真正被调用（某次真实请求触达 adapter 的 `_authed_get`）时才按
+    # `session.provider_id` 惰性判定——装配期零 `profiles()` 读取（R3f 初版曾在此处先
+    # `any(profile.kind == "ezproxy" for profile in manager.profiles().values())` 判断
+    # 是否装配，等价于把"读一次 profiles.toml"从"真实 fetch 才触发"提前到"每次 pull/grab
+    # 装配期必触发"——即便目标 venue 与 auth 完全无关；`load_profiles()` 对畸形 profiles.toml
+    # 会 `CrawlerError(CONFIG)`，装配期新增的这次 EAGER 读因此会让"当前 pull 用不到认证但
+    # profiles.toml 恰好写坏"的边缘场景由此前的"照常成功"变成"连带失败"。controller 复审后
+    # 裁决改懒：未配置 ezproxy / 本次运行从未真正触达 auth_gated 请求的用户，装配期应当零
+    # `profiles()` 读取，不只是零网络/零解密）。`AuthProviderBase.rewrite_url` 恒等默认，
+    # 仅 `EZProxyProvider` 真实重写——故即便某次 session 解析到非 ezproxy provider，闭包也
+    # 只是空操作，`_authed_get` 侧因此始终经手工两段式探路 doi.org（见 adapter 模块 docstring
+    # "URL 改写 seam"段），但对非 ezproxy provider 而言该探路的改写落地 URL 与恒等改写前
+    # 完全一致，不改变任何可观测行为（`OupSilverchairAdapter` 侧无需、也不再需要区分
+    # "这一个 session 是不是 ezproxy"）。
+    _bind_url_rewriter(adapters, _url_rewriter_for(manager))
     return manager
 
 
@@ -547,6 +650,23 @@ def _usage_error(message: str) -> NoReturn:
 
 def _echo_error(exc: Exception) -> None:
     typer.echo(f"错误: {exc}", err=True)
+
+
+def _make_runner(ctx: StageContext, *, auth_manager: AuthManager | None = None) -> PipelineRunner:
+    """`PipelineRunner(...)` 构造的统一出口（CLI 锁异常缝修复，评估卡待补清单第 3 项）。
+
+    `PipelineRunner.__init__` 建构时立即经 `_exclusive()` 抢 `<config-home>/state/.pipeline.lock`
+    （cleanup_tmp + recover_running，见 `pipeline/runner.py` 模块 docstring）；锁被另一实例
+    占用时抛 `CrawlerError(CONFIG)`（`_acquire_lock` docstring）。timeline/list/pull/grab/watch
+    五处构造此前均未接 try/except，该异常会裸奔出 `_env` 的 `with` 块之外——用户看到未捕获
+    traceback + 退出码 1，而非本仓库 CONFIG 类错误"`_echo_error` + 退出码 2"的既定契约（`_env`
+    对 `_build_env` 的同款捕获，见其 docstring）。此处统一收口，五处调用点改用本函数。
+    """
+    try:
+        return PipelineRunner(ctx, auth_manager=auth_manager)
+    except CrawlerError as exc:
+        _echo_error(exc)
+        raise typer.Exit(code=2) from exc
 
 
 @dataclass(frozen=True)
@@ -764,7 +884,7 @@ def timeline(
     """时间轴（discover 单阶段；`--refresh` 语义见模块 docstring 第 1 条）。"""
     with _env(home, verbose) as env:
         _require_known_venue(env, venue)
-        runner = PipelineRunner(env.ctx)
+        runner = _make_runner(env.ctx)
         if refresh:
             env.ctx.queue.enqueue("discover", venue, {}, force=True)
             report = runner.drain()
@@ -812,7 +932,7 @@ def list_cmd(
 
     with _env(home, verbose) as env:
         _require_known_venue(env, venue)
-        runner = PipelineRunner(env.ctx)
+        runner = _make_runner(env.ctx)
 
         reports = [runner.run_single_stage("discover", venue, _scope_params(volume, issue, year))]
         issues = env.ctx.repo.list_issues(venue, volume=volume, number=issue, year=year)
@@ -876,7 +996,7 @@ def pull(
         limit=limit,
     )
     with _env(home, verbose, dry_run=dry_run, auth=True) as env:
-        runner = PipelineRunner(env.ctx, auth_manager=env.auth_manager)
+        runner = _make_runner(env.ctx, auth_manager=env.auth_manager)
         try:
             report = runner.pull(venue, selector, with_extract=extract, force=force)
         except CrawlerError as exc:
@@ -1016,7 +1136,7 @@ def grab(
             typer.echo(f"DOI {doi_norm!r} 未在 crossref 找到元数据，无法建 paper——业务失败。")
             raise typer.Exit(code=1)
 
-        runner = PipelineRunner(env.ctx, auth_manager=env.auth_manager)
+        runner = _make_runner(env.ctx, auth_manager=env.auth_manager)
         try:
             report = runner.grab(venue_id, paper_id, force=force)
         except CrawlerError as exc:
@@ -1067,7 +1187,7 @@ def watch(
 
     with _env(home, verbose) as env:
         _emit_missing_email_warning(env)
-        runner = PipelineRunner(env.ctx)
+        runner = _make_runner(env.ctx)
         if all_:
             specs = [s for s in env.ctx.registry.all() if s.kind == "preprint_channel"]
             if not specs:
