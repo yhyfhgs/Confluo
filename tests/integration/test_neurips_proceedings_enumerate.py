@@ -112,7 +112,9 @@ def test_enumerate_upserts_all_2021_legacy_papers_with_fields(repo: Repo) -> Non
     ]
     assert canary["year"] == 2021
     meta = json.loads(str(canary["meta_json"]))
-    assert meta == {"track": "none", "asset_suffix": ""}
+    # `_first_author`：R3b（审计 P1-9）起 pull 路径也落首作者姓氏（弱信号比对锚，
+    # 键名/推导与 aggregator 路径的 `Repo._create_paper` 逐字同源）。
+    assert meta == {"track": "none", "asset_suffix": "", "_first_author": "author"}
 
 
 # --- enumerate→upsert 字段落库（modern 2022，双 track）--------------------------------------------
@@ -129,10 +131,16 @@ def test_enumerate_upserts_all_2022_modern_papers_with_mixed_tracks(repo: Repo) 
     db_canary_title = "Long Range Graph Benchmark"
     conf_meta = json.loads(str(papers[conf_canary_title]["meta_json"]))
     db_meta = json.loads(str(papers[db_canary_title]["meta_json"]))
-    assert conf_meta == {"track": "conference", "asset_suffix": "-Conference"}
+    # `_first_author`（两 canary 的 fixture 作者均为 "Canary Author"）：见上一用例的注记。
+    assert conf_meta == {
+        "track": "conference",
+        "asset_suffix": "-Conference",
+        "_first_author": "author",
+    }
     assert db_meta == {
         "track": "datasets_and_benchmarks",
         "asset_suffix": "-Datasets_and_Benchmarks",
+        "_first_author": "author",
     }
     assert papers[conf_canary_title]["year"] == 2022
 

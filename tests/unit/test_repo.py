@@ -18,6 +18,7 @@ from pathlib import Path
 import pytest
 
 from paper_crawler.errors import CrawlerError, ErrorClass
+from paper_crawler.ids import normalize_title
 from paper_crawler.storage.db import Database
 from paper_crawler.storage.repo import FetchLogRow, MergeInput, Repo
 from paper_crawler.types import AssetKind, AssetPlan, AuthLevel, IssueRef, PaperStub, VenueSpec
@@ -57,6 +58,7 @@ def _stub(
     year: int | None = None,
     abstract: str | None = None,
     pub_date: str | None = None,
+    authors: tuple[str, ...] = (),
     meta: tuple[tuple[str, str], ...] = (),
     extra_ids: tuple[tuple[str, str], ...] = (),
 ) -> PaperStub:
@@ -66,6 +68,7 @@ def _stub(
         year=year,
         abstract=abstract,
         pub_date=pub_date,
+        authors=authors,
         meta=meta,
     )
 
@@ -260,6 +263,408 @@ def test_upsert_paper_second_call_no_new_fields_is_noop_merge(repo: Repo) -> Non
     rows = repo.db.query("SELECT abstract, year FROM paper")
     assert len(rows) == 1
     assert rows[0]["abstract"] == "A" and rows[0]["year"] == 2024
+
+
+# -- pull 路径跨 paper identifier 冲突 + 弱信号候审（R3b；审计 P1-8/P1-9）------
+#
+# design/06 §3 的两条入库算法（跨 paper 冲突裁决、弱信号候审）**未限定路径**，但
+# `upsert_paper`（pull 枚举路径）此前两处都缺：
+# - P1-8：命中**首个** identifier 即 break —— 其余指向别 paper 的 identifier 既不裁决
+#   也不告警，"胜者"由 `stub.identifiers` 的元组序决定（无原则化裁决，g2 复现）。
+# - P1-9：不写 `paper_weak_key` / `meta_json._first_author` —— 落库的 paper 永不进弱
+#   信号匹配面，两侧均 pull 的 WP↔刊发版（AC-3.2 主场景）永不产生候审边。
+# 本节按 `_merge_ingest_conflict` / `_apply_weak_signal` 的**同一口径**锁定两处修复
+# （胜者 = min(-identifier 数, paper_id)、败者 identifier 原地不动、绝不自动合并、
+# 观测级键集合单调只增）；aggregator 路径的对应用例在 test_merge.py，两侧共用同一实现。
+
+
+def _candidates(repo: Repo) -> list[sqlite3.Row]:
+    return repo.db.query(
+        "SELECT from_paper, to_paper, confidence, evidence_json, decided FROM paper_relation "
+        "WHERE kind = 'candidate_duplicate' ORDER BY from_paper, to_paper"
+    )
+
+
+def _meta_of(repo: Repo, paper_id: str) -> dict[str, object]:
+    raw = repo.db.query("SELECT meta_json FROM paper WHERE id = ?", (paper_id,))[0]["meta_json"]
+    return dict(json.loads(raw)) if raw else {}
+
+
+def _weak_keys_of(repo: Repo, paper_id: str) -> list[tuple[str, str]]:
+    rows = repo.db.query(
+        "SELECT title_norm, first_author FROM paper_weak_key WHERE paper_id = ? "
+        "ORDER BY title_norm, first_author",
+        (paper_id,),
+    )
+    return [(str(row["title_norm"]), str(row["first_author"])) for row in rows]
+
+
+_CONFLICT_DOI = "10.9999/conf"
+_CONFLICT_ARXIV = "2401.00001"
+# 桥接 stub 的两个 identifier 分指两篇既有 paper（g2 场景）。
+_CONFLICT_IDS: tuple[tuple[str, str], ...] = (
+    ("arxiv", _CONFLICT_ARXIV),
+    ("doi", _CONFLICT_DOI),
+)
+
+
+def _two_conflicting_papers(repo: Repo) -> tuple[str, str]:
+    """既存 X(doi) 与 Y(arxiv)；X 先建 ⇒ 其 ULID 字典序更小（平局裁决的可预期方）。"""
+    x = repo.upsert_paper(
+        VENUE_ID, None, PaperStub(title="Paper X", identifiers=(("doi", _CONFLICT_DOI),))
+    )
+    y = repo.upsert_paper(
+        VENUE_ID, None, PaperStub(title="Paper Y", identifiers=(("arxiv", _CONFLICT_ARXIV),))
+    )
+    return x, y
+
+
+@pytest.mark.parametrize(
+    "ids",
+    [_CONFLICT_IDS, tuple(reversed(_CONFLICT_IDS))],
+    ids=["arxiv-first", "doi-first"],
+)
+def test_upsert_paper_cross_paper_conflict_flags_candidate_regardless_of_tuple_order(
+    repo: Repo, ids: tuple[tuple[str, str], ...]
+) -> None:
+    """g2：桥接 stub 命中两篇既有 paper → 建候审边，且裁决不随 identifier 元组序摆动。
+
+    修复前：0 条边，且"胜者"= 元组首个命中者（arxiv 在前得 Y、doi 在前得 X）。修复后
+    同 `_merge_ingest_conflict` 口径——两 paper 各 1 个 identifier ⇒ 平局取 paper_id
+    字典序最小者（先建的 X），两种元组序结果一致。
+    """
+    x, y = _two_conflicting_papers(repo)
+
+    winner = repo.upsert_paper(VENUE_ID, None, PaperStub(title="Paper Z", identifiers=ids))
+
+    assert winner == x
+    assert len(repo.db.query("SELECT id FROM paper")) == 2  # 绝不自动合并两 paper
+    edges = _candidates(repo)
+    assert len(edges) == 1
+    assert {edges[0]["from_paper"], edges[0]["to_paper"]} == {x, y}
+    assert edges[0]["decided"] is None
+    assert edges[0]["confidence"] == pytest.approx(0.9)
+    evidence = json.loads(edges[0]["evidence_json"])
+    assert evidence["reason"] == "identifier-conflict"
+    assert evidence["identifiers"] == [f"arxiv:{_CONFLICT_ARXIV}", f"doi:{_CONFLICT_DOI}"]
+
+
+def test_upsert_paper_conflict_winner_has_more_identifiers(repo: Repo) -> None:
+    """胜者取 identifier 数最多者：数量优先于 paper_id 序（多 id 者后建、ULID 更大仍胜）。"""
+    y = repo.upsert_paper(
+        VENUE_ID, None, PaperStub(title="Paper Y", identifiers=(("arxiv", _CONFLICT_ARXIV),))
+    )
+    x = repo.upsert_paper(
+        VENUE_ID,
+        None,
+        PaperStub(title="Paper X", identifiers=(("doi", _CONFLICT_DOI), ("ssrn", "4242"))),
+    )
+    assert y < x  # 若按平局规则（min paper_id）会选 y —— 本用例确实在测"数量优先"
+
+    winner = repo.upsert_paper(
+        VENUE_ID, None, PaperStub(title="Paper Z", identifiers=_CONFLICT_IDS)
+    )
+
+    assert winner == x
+    assert len(_candidates(repo)) == 1
+
+
+def test_upsert_paper_conflict_leaves_loser_identifiers_and_fills_winner_fields(
+    repo: Repo,
+) -> None:
+    """败者的 identifier 原地不动（绝不物理迁移）；stub 的孤儿 identifier 归胜者，字段补缺。"""
+    x, y = _two_conflicting_papers(repo)
+
+    winner = repo.upsert_paper(
+        VENUE_ID,
+        None,
+        PaperStub(
+            title="Paper Z",
+            identifiers=(*_CONFLICT_IDS, ("ssrn", "4242")),
+            year=2024,
+            abstract="Z abstract",
+        ),
+    )
+
+    owners = {
+        (row["scheme"], row["value"]): row["paper_id"]
+        for row in repo.db.query("SELECT scheme, value, paper_id FROM identifier")
+    }
+    assert owners[("doi", _CONFLICT_DOI)] == x  # 既存 identifier 一律不重指
+    assert owners[("arxiv", _CONFLICT_ARXIV)] == y  # 败者名下的照旧属于败者
+    assert owners[("ssrn", "4242")] == winner  # 库中尚无的孤儿 identifier 补给胜者
+    paper = repo.db.query("SELECT title, year, abstract FROM paper WHERE id = ?", (winner,))[0]
+    assert paper["title"] == "Paper X"  # title 是强合并锚点，恒不覆盖
+    assert paper["year"] == 2024 and paper["abstract"] == "Z abstract"  # 补缺照常
+
+
+def test_upsert_paper_single_identifier_hit_builds_no_candidate_edge(repo: Repo) -> None:
+    """单命中/零命中路径逐字不变：冲突检测只在 ≥2 个 distinct 命中时才介入。"""
+    repo.upsert_paper(VENUE_ID, None, _stub(doi="10.9999/single"))
+    merged = repo.upsert_paper(
+        VENUE_ID, None, _stub(doi="10.9999/single", extra_ids=(("arxiv", "2401.00002"),))
+    )
+    assert len(repo.db.query("SELECT id FROM paper")) == 1
+    assert len(repo.db.query("SELECT scheme FROM identifier WHERE paper_id = ?", (merged,))) == 2
+    assert _candidates(repo) == []
+
+
+def test_upsert_paper_weak_signal_flags_candidate_across_two_pulls(repo: Repo) -> None:
+    """AC-3.2 主场景：两侧均 pull 的 WP↔刊发版（无共享 identifier、同归一标题+首作者姓氏）
+    → 弱信号候审边（修复前 0 条：pull 路径根本不进匹配面）。"""
+    wp_title = "Deep Learning and the Cross-Section of Returns"
+    wp = repo.upsert_paper(
+        VENUE_ID,
+        None,
+        PaperStub(
+            title=wp_title,
+            identifiers=(("arxiv", "2401.00003"),),
+            year=2024,
+            authors=("Jane Q. Smith", "Bob Jones"),
+        ),
+    )
+    published = repo.upsert_paper(
+        VENUE_ID,
+        None,
+        PaperStub(  # 排版差异（连字符/惊叹号）归一后同键；姓氏经 family-first 形亦同
+            title="Deep Learning and the Cross Section of Returns!",
+            identifiers=(("doi", "10.9999/wp-pub"),),
+            year=2024,
+            authors=("Smith, Jane Q.",),
+        ),
+    )
+
+    assert wp != published  # 弱信号绝不自动合并（D-007：双条 paper 双份全文）
+    edges = _candidates(repo)
+    assert len(edges) == 1
+    assert {edges[0]["from_paper"], edges[0]["to_paper"]} == {wp, published}
+    assert edges[0]["decided"] is None
+    assert edges[0]["confidence"] == pytest.approx(0.5)
+    evidence = json.loads(edges[0]["evidence_json"])
+    assert evidence["reason"] == "weak-signal-title-author"
+    assert evidence["keys"] == [[normalize_title(wp_title), "smith"]]
+
+
+def test_upsert_paper_records_weak_key_and_first_author_in_meta(repo: Repo) -> None:
+    """pull 路径记本次观测的弱信号键，并把首作者姓氏落 `meta_json._first_author`。"""
+    paper_id = repo.upsert_paper(
+        VENUE_ID,
+        None,
+        _stub(
+            doi="10.9999/wk",
+            title="Alpha Study",
+            authors=("Jane Q. Smith",),
+            meta=(("jel", "G12"),),
+        ),
+    )
+
+    assert _weak_keys_of(repo, paper_id) == [("alpha study", "smith")]
+    meta = json.loads(
+        repo.db.query("SELECT meta_json FROM paper WHERE id = ?", (paper_id,))[0]["meta_json"]
+    )
+    assert meta["_first_author"] == "smith"  # 与 `_create_paper`（aggregator 路径）同键同口径
+    assert meta["jel"] == "G12"  # 弹性 meta 原样保留
+    assert "_field_src" not in meta  # pull 路径仍不记 provenance（视最高优先、只补空）
+
+
+def test_upsert_paper_merge_branch_fills_first_author_without_overwriting(repo: Repo) -> None:
+    """并入分支的 `_first_author` 同属补缺族：空则补、非空则不覆盖；键集合照旧单调只增。"""
+    doi = "10.9999/fa"
+
+    paper_id = repo.upsert_paper(VENUE_ID, None, _stub(doi=doi, title="Alpha Study"))
+    assert _meta_of(repo, paper_id) == {}  # 无作者 → 不落锚
+
+    repo.upsert_paper(VENUE_ID, None, _stub(doi=doi, title="Alpha Study", authors=("Jane Smith",)))
+    assert _meta_of(repo, paper_id)["_first_author"] == "smith"  # 补缺
+
+    repo.upsert_paper(VENUE_ID, None, _stub(doi=doi, title="Alpha Study", authors=("Bob Jones",)))
+    assert _meta_of(repo, paper_id)["_first_author"] == "smith"  # 不覆盖（pull 路径无 provenance）
+    assert _weak_keys_of(repo, paper_id) == [  # 匹配面不受"锚只记第一个"限制
+        ("alpha study", "jones"),
+        ("alpha study", "smith"),
+    ]
+
+
+def test_upsert_paper_authors_only_first_observation_does_not_swallow_later_meta(
+    repo: Repo,
+) -> None:
+    """回修（独立审查 Important）：内部键不得把「该 paper 还没有业务 meta」的判空谓词顶成非空。
+
+    首次观测常见形态是 authors 非空而 `stub.meta` 为空（`PaperStub.meta` 默认 `()`）——此时
+    meta_json 只含内部键 `_first_author`；若判空仍按整列非空判，后续携**真** meta 的 pull
+    会被整块丢弃（静默数据损坏）。业务键与内部键（`_`起头）两族分开判。
+    """
+    doi = "10.9999/metaguard"
+    paper_id = repo.upsert_paper(
+        VENUE_ID, None, _stub(doi=doi, title="Alpha Study", authors=("Jane Smith",))
+    )
+    assert _meta_of(repo, paper_id) == {"_first_author": "smith"}  # 只有内部键
+
+    repo.upsert_paper(
+        VENUE_ID,
+        None,
+        _stub(doi=doi, title="Alpha Study", meta=(("track", "main"), ("jel", "G12"))),
+    )
+
+    assert _meta_of(repo, paper_id) == {
+        "_first_author": "smith",  # 内部键不被业务 meta 冲掉
+        "track": "main",
+        "jel": "G12",
+    }
+
+
+def test_upsert_paper_fills_meta_on_aggregator_created_paper(repo: Repo) -> None:
+    """同一处判空修复也治既有隐患：aggregator 建的行恒带 `_field_src`，
+    pull 的真 meta 从前补不进。"""
+    outcome = repo.merge_ingest(
+        _merge_input(title="Alpha Study"), identifiers=(("doi", "10.9999/aggmeta"),)
+    )
+    assert "_field_src" in _meta_of(repo, outcome.paper_id)  # 建行即写的 provenance 内部键
+
+    repo.upsert_paper(
+        VENUE_ID, None, _stub(doi="10.9999/aggmeta", title="Alpha Study", meta=(("track", "main"),))
+    )
+
+    meta = _meta_of(repo, outcome.paper_id)
+    assert meta["track"] == "main"
+    assert "_field_src" in meta  # provenance 不被业务 meta 覆盖掉
+
+
+def test_upsert_paper_conflict_edge_orientation_matches_merge_ingest_path(repo: Repo) -> None:
+    """两条写路径的冲突边**定向逐字同构**：`_flag_identifier_conflicts` 须在
+    `_ensure_identifiers` **之后**——端点定向取的是"补完本次孤儿 identifier 之后"的最小
+    identifier 快照。
+
+    数据刻意选让定向翻转的：胜者原最小 id 是 `openalex:…`（大于败者的 `doi:…`），本次带来的
+    孤儿 `arxiv:…` 补进后才小于败者。任一路径把建边挪到补 identifier 之前，两侧方向即分岔。
+    只断言**两路一致**（不钉死具体方向）——`candidate_duplicate` 是无序对、定向是建边时刻的
+    快照而非不变量（merge.py 裁决点 5）。
+    """
+
+    def roles(from_paper: str, to_paper: str, winner: str, loser: str) -> tuple[str, str]:
+        label = {winner: "winner", loser: "loser"}
+        return (label[from_paper], label[to_paper])
+
+    pull_loser = repo.upsert_paper(
+        VENUE_ID, None, PaperStub(title="L", identifiers=(("doi", "10.9999/pl"),))
+    )
+    pull_winner = repo.upsert_paper(
+        VENUE_ID, None, PaperStub(title="W", identifiers=(("openalex", "W9"), ("s2", "S9")))
+    )
+    bridge = (("doi", "10.9999/pl"), ("openalex", "W9"), ("arxiv", "2401.77"))
+    assert (
+        repo.upsert_paper(VENUE_ID, None, PaperStub(title="B", identifiers=bridge)) == pull_winner
+    )
+
+    agg_loser = repo.merge_ingest(
+        _merge_input(title="L2"), identifiers=(("doi", "10.9999/al"),)
+    ).paper_id
+    agg_winner = repo.merge_ingest(
+        _merge_input(title="W2"), identifiers=(("openalex", "W8"), ("s2", "S8"))
+    ).paper_id
+    agg_bridge = (("doi", "10.9999/al"), ("openalex", "W8"), ("arxiv", "2401.78"))
+    assert (
+        repo.merge_ingest(_merge_input(title="B2"), identifiers=agg_bridge).paper_id == agg_winner
+    )
+
+    edges = {(row["from_paper"], row["to_paper"]) for row in _candidates(repo)}  # 两条边，各属一路
+    pull_edge = next(e for e in edges if set(e) == {pull_winner, pull_loser})
+    agg_edge = next(e for e in edges if set(e) == {agg_winner, agg_loser})
+    assert roles(*pull_edge, pull_winner, pull_loser) == roles(*agg_edge, agg_winner, agg_loser)
+
+
+def test_upsert_paper_without_authors_records_no_weak_key(repo: Repo) -> None:
+    """空键不参与匹配（无首作者姓氏）：不写键、不建边、meta 不因此长出 `_first_author`。"""
+    first = repo.upsert_paper(VENUE_ID, None, _stub(doi="10.9999/na1", title="Same Title"))
+    repo.upsert_paper(VENUE_ID, None, _stub(doi="10.9999/na2", title="Same Title"))
+
+    assert repo.db.query("SELECT paper_id FROM paper_weak_key") == []
+    assert _candidates(repo) == []
+    assert (
+        repo.db.query("SELECT meta_json FROM paper WHERE id = ?", (first,))[0]["meta_json"] is None
+    )
+
+
+def test_upsert_paper_weak_signal_idempotent_on_repeated_pull(repo: Repo) -> None:
+    """同 stub 重复 pull：键不重复建、候审边仍恰一行、不建自环边。"""
+    wp = PaperStub(
+        title="Alpha Study",
+        identifiers=(("arxiv", "2401.00004"),),
+        authors=("Jane Smith",),
+    )
+    published = PaperStub(
+        title="Alpha Study",
+        identifiers=(("doi", "10.9999/idem"),),
+        authors=("John Smith",),
+    )
+    ids = {repo.upsert_paper(VENUE_ID, None, wp), repo.upsert_paper(VENUE_ID, None, published)}
+    ids |= {repo.upsert_paper(VENUE_ID, None, wp), repo.upsert_paper(VENUE_ID, None, published)}
+
+    assert len(ids) == 2  # 重复 pull 仍命中同两篇
+    assert len(repo.db.query("SELECT paper_id FROM paper_weak_key")) == 2
+    edges = _candidates(repo)
+    assert len(edges) == 1
+    assert edges[0]["from_paper"] != edges[0]["to_paper"]
+
+
+def test_upsert_paper_title_change_appends_weak_key_monotonically(repo: Repo) -> None:
+    """标题变更时键集合**单调只增**（与 ingest 同语义）：旧键不删，此后撞旧键仍能候审。
+
+    pull 路径的 title 是强合并锚点、恒不更新，故 paper 行的 title/title_norm 不变；
+    键是**观测级**的，两次观测两条键。
+    """
+    doi = "10.9999/retitle"
+    paper_id = repo.upsert_paper(
+        VENUE_ID, None, _stub(doi=doi, title="Alpha Study", authors=("Jane Smith",))
+    )
+    repo.upsert_paper(
+        VENUE_ID, None, _stub(doi=doi, title="Alpha Study (Revised)", authors=("Jane Smith",))
+    )
+
+    assert _weak_keys_of(repo, paper_id) == [
+        ("alpha study", "smith"),
+        ("alpha study revised", "smith"),
+    ]
+    assert repo.db.query("SELECT title FROM paper WHERE id = ?", (paper_id,))[0]["title"] == (
+        "Alpha Study"
+    )
+
+    other = repo.upsert_paper(  # 与**旧**键相撞
+        VENUE_ID, None, _stub(doi="10.9999/other", title="Alpha Study", authors=("John Smith",))
+    )
+    edges = _candidates(repo)
+    assert len(edges) == 1
+    assert {edges[0]["from_paper"], edges[0]["to_paper"]} == {paper_id, other}
+
+
+def test_upsert_paper_conflict_path_records_observation_key(repo: Repo) -> None:
+    """冲突并入路径也记本次观测的键（新建/单命中/冲突三分支全覆盖，同 merge_ingest 口径）。"""
+    _two_conflicting_papers(repo)
+
+    winner = repo.upsert_paper(
+        VENUE_ID,
+        None,
+        PaperStub(title="Bridge Study", identifiers=_CONFLICT_IDS, authors=("Carl Nguyen",)),
+    )
+
+    assert ("bridge study", "nguyen") in _weak_keys_of(repo, winner)
+
+
+def test_upsert_paper_weak_signal_matches_across_pull_and_aggregator_paths(repo: Repo) -> None:
+    """pull 落库的 paper 进了匹配面 ⇒ 与 aggregator 路径（`merge_ingest`）同键观测互相候审。"""
+    pulled = repo.upsert_paper(
+        VENUE_ID, None, _stub(doi="10.9999/pull-side", title="Alpha Study", authors=("Jane Smith",))
+    )
+
+    outcome = repo.merge_ingest(
+        _merge_input(title="Alpha Study", first_author="smith"),
+        identifiers=(("arxiv", "2401.00005"),),
+    )
+
+    assert outcome.action == "candidate_flagged"
+    edges = _candidates(repo)
+    assert len(edges) == 1
+    assert {edges[0]["from_paper"], edges[0]["to_paper"]} == {pulled, outcome.paper_id}
 
 
 # -- preprint_of 建边（T10；design/06 §3 单一事实源，检查单 #5）-------------
@@ -636,18 +1041,20 @@ def _merge_input(
     year: int | None = None,
     meta: tuple[tuple[str, str], ...] = (),
     source: str = "crossref",
+    first_author: str | None = None,
 ) -> MergeInput:
     """`Repo.merge_ingest` 直调入参（绕开 `MergeEngine`——本文件只测 `Repo` 层）。
 
     `priority` 是调用方自定义的最小映射，不借用生产 `SOURCE_PRIORITY`（`merge_ingest`
     对 `source`/`priority` 无枚举校验，那是 `MergeEngine.ingest` 的职责，见 merge.py）。
     仅用于构造 venue_id=NULL 的 aggregator 路径 paper（`_create_paper` "venue-agnostic"
-    先例），验证 `list_preprint_relations` 的 LEFT JOIN venue 在两端皆缺 venue 时不报错。
+    先例），验证 `list_preprint_relations` 的 LEFT JOIN venue 在两端皆缺 venue 时不报错；
+    `first_author` 供跨路径弱信号用例注入观测键（`MergeEngine` 侧由 `authors[0]` 推导）。
     """
     return MergeInput(
         title=title,
-        title_norm=title.lower(),
-        first_author=None,
+        title_norm=normalize_title(title),
+        first_author=first_author,
         abstract=None,
         year=year,
         pub_date=None,

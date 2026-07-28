@@ -91,6 +91,9 @@ def test_paging_upserts_both_id_generations_with_fields(repo: Repo) -> None:
     assert json.loads(str(lead["meta_json"])) == {
         "doi": "10.1000/ex.2024.10001",
         "journal_ref": "Proc. Example ML Conf. 2024, pp. 1-12",
+        # R3b（审计 P1-9）：pull 路径与 aggregator 路径同口径落首作者姓氏——弱信号比对锚，
+        # 键名/推导与 `Repo._create_paper` 逐字同源（`merge._first_author_surname`）。
+        "_first_author": "lovelace",
     }
     # cs.CL 论文（2401.10002）不入库。
     assert ("arxiv", "2401.10002") not in _identifiers(repo)

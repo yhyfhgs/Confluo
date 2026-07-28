@@ -347,14 +347,93 @@ def _evidence_reason(evidence_json: object) -> object:
     return _evidence_dict(evidence_json).get("reason")
 
 
-def _weak_key(incoming: MergeInput) -> tuple[str, str] | None:
+def _weak_key(title_norm: str | None, first_author: str | None) -> tuple[str, str] | None:
     """本次观测的弱信号匹配键 `(title_norm, first_author)`；任一为空 → None（不参与匹配）。
 
     空键不匹配是既有判据（避免"无标题/无作者"的残缺观测互相误配），随键集合语义原样保留。
+    入参是两个标量而非 `MergeInput`，因为 pull 路径（`upsert_paper`，审计 P1-9 修复）
+    也须记键，而它持有的是 `PaperStub`——两条写路径共用同一个空键判据。
     """
-    if not incoming.title_norm or not incoming.first_author:
+    if not title_norm or not first_author:
         return None
-    return (incoming.title_norm, incoming.first_author)
+    return (title_norm, first_author)
+
+
+def _stub_first_author(authors: tuple[str, ...]) -> str | None:
+    """`PaperStub.authors` → 弱信号首作者姓氏键；复用 merge 侧**唯一**的那份推导实现。
+
+    局部 import 避免 storage 层顶层依赖上层模块（沿 `_normalize_arxiv_clue` 对
+    `adapters.arxiv.ids` 的先例；merge.py 顶层已 import 本模块，顶层反向 import 成环）。
+    刻意**不复制**那段启发式（逗号前段/末词 → `normalize_title`）：两条写路径的键必须逐字
+    同源，任一侧漂移都会让 pull 与 ingest 的匹配面对不上——那正是审计 P1-9 修复要消除的
+    分岔，而不是要新造一处。
+    """
+    from paper_crawler.merge import _first_author_surname
+
+    return _first_author_surname(authors)
+
+
+# `paper.meta_json` 的**内部键**家族：不是 adapter 产出的业务 meta，而是本层自己写的收敛/
+# 匹配辅助字段——`_first_author`（弱信号比对锚）、`_field_src`（provenance）、`_field_tie`
+# （tie-break 取证）。约定：内部键一律以 `_` 起头（三者皆是），故用前缀判别、无需维护清单。
+#
+# **为什么必须区分两族**（R3b 回修，独立审查 Important）：`_merge_paper_fields` 判「该 paper
+# 还没有任何业务 meta」时若按整列非空判，本层自己写的内部键会把谓词顶成"非空"，此后携**真**
+# meta 的观测被整块丢弃——静默数据损坏。触发面有二：①pull 首次观测常见形态是 authors 非空而
+# `stub.meta` 为空（`PaperStub.meta` 默认 `()`），meta_json 只含 `_first_author`（R3b 引入）；
+# ②`_create_paper`（aggregator 路径）**建行即写** `_field_src`，故「aggregator 建行 → pull 补
+# meta」这一组合在本卡之前就已中招（既有隐患）。两条路径由 `_fill_business_meta` 单点同愈。
+_INTERNAL_META_PREFIX = "_"
+
+
+def _meta_payload(meta_json: str | None) -> dict[str, object] | None:
+    """meta_json → 可改写的 dict；空 → `{}`；畸形 JSON/非对象 → **None**（"看不懂，别动它"）。
+
+    解析不出的情形只可能来自人工 DB 手术。调用方一律按"原样返回、不改写"处理：这一列本就
+    只承载弹性字段，为补一个辅助键而毁掉整列、或让整个 enumerate 事务中止都不划算（与
+    `_evidence_dict` 的"读侧绝不抛"同族取舍；写侧更进一步——看不懂就不写）。
+    """
+    if not meta_json:
+        return {}
+    try:
+        parsed = json.loads(meta_json)
+    except json.JSONDecodeError:
+        return None
+    return parsed if isinstance(parsed, dict) else None
+
+
+def _fill_business_meta(meta_json: str | None, meta: tuple[tuple[str, str], ...]) -> str | None:
+    """既有 payload **尚无任何业务键**时把 stub 的 meta 整块写入；内部键原样保留。
+
+    "整块写入 / 一个都不写"的粒度沿 `_merge_paper_fields` 既有语义（meta 是一个补缺单元，
+    不逐键并——逐键并属字段级收敛，那是 `_converge_fields`/aggregator 路径的职责）；本函数
+    只把判空口径从"整列非空"收敛为"**业务键**非空"，并在写入时保住内部键（见上方注释块）。
+    """
+    payload = _meta_payload(meta_json)
+    if payload is None or any(not key.startswith(_INTERNAL_META_PREFIX) for key in payload):
+        return meta_json
+    payload.update(dict(meta))
+    return json.dumps(payload, ensure_ascii=False, sort_keys=True)
+
+
+def _with_first_author(meta_json: str | None, first_author: str) -> str | None:
+    """把 `_first_author` **补缺不覆盖**地并入 pull 路径的 meta_json（同 `_create_paper` 键名）。
+
+    pull 路径不记 provenance（`_field_src`），故此处写出的姓氏对 `_converge_fields` 而言
+    是"未知来源的存量值"——只补空、绝不被 aggregator 覆盖，与该路径其余字段口径一致。
+    既有值非空即原样返回（连 JSON 文本都不重排，避免无谓的 UPDATE）。
+
+    "非空"取本模块字段级判空口径 `_is_empty`（None 或空串为空）而非裸真值判断：空串**不是**
+    合法观测——键的产出域是 `merge._first_author_surname` 的 `normalize_title(surname) or None`
+    （非空 str 或 None），`_create_paper`/`_converge_fields` 两处写入侧也各有非空守卫。故
+    `_first_author: ""` 只可能是人工 DB 手术的残值，按"缺失"补上是修复而非覆盖；同时
+    `_is_empty` 不把 `0`/`False` 之类的非串残值当空（保守不动），比裸真值判断更窄。
+    """
+    payload = _meta_payload(meta_json)
+    if payload is None or not _is_empty(payload.get("_first_author")):
+        return meta_json
+    payload["_first_author"] = first_author
+    return json.dumps(payload, ensure_ascii=False, sort_keys=True)
 
 
 # ---------------------------------------------------------------------------
@@ -647,12 +726,27 @@ class Repo:
 
         **title_norm 维护**：新建 paper 时一并写 `title_norm`（schema v2 列，`normalize_title`），
         与 0002 迁移的存量回填口径一致。title 是强合并锚点、恒不更新，故 title_norm 仅在建行时
-        写、合并分支不动。
-        **本列已不是弱信号匹配面**（Phase 6 F1）：候审匹配改由 `paper_weak_key`（观测级键集合，
-        schema v3）承载，pull 路径不写该表——故 upsert_paper 建的 paper 仍**不进**弱信号匹配面，
-        直到某次 `MergeEngine.ingest` 并入它时记下那次观测的键（与改造前"无 `_first_author` 即
-        无从确认姓氏、保守不建 candidate"的实际行为一致）。`title_norm` 列现留两个用途：
-        0003 迁移回填存量历史键的取数源，以及归一标题的展示/检索面（`idx_paper_title_norm`）。
+        写、合并分支不动。**本列不是弱信号匹配面**（Phase 6 F1）：候审匹配由 `paper_weak_key`
+        （观测级键集合，schema v3）承载，本方法在三条分支上都记本次观测的键（见下）；
+        `title_norm` 列另留两个用途：0003 迁移回填存量历史键的取数源，以及归一标题的
+        展示/检索面（`idx_paper_title_norm`）。
+
+        **跨 paper identifier 冲突（R3b，审计 P1-8）**：原实现命中**首个** identifier 即
+        `break`——其余指向别 paper 的 identifier 既不裁决也不告警，"胜者"由 `stub.identifiers`
+        的元组序决定（无原则化裁决）。现收集**全部**命中：0/1 个 distinct paper 时行为逐字
+        不变；≥2 个时复用 `merge_ingest` 那套裁决（`_conflict_winner`/
+        `_flag_identifier_conflicts`，权威说明见 `_merge_ingest_conflict` 与 merge.py 裁决点
+        3）——并入 identifier 数最多者（平局取 paper_id 最小者）、其余每个命中 paper 与胜者建
+        `candidate_duplicate(identifier-conflict)`、指向败者的 identifier 原地不动、**绝不
+        自动合并两 paper**。多命中只多花每 identifier 一次 `(scheme,value)` 主键点查
+        （`_ensure_identifiers` 本就逐个点查，量级同阶）。
+
+        **弱信号候审（R3b，审计 P1-9）**：原实现不写 `paper_weak_key`/`meta_json._first_author`
+        ——pull 落库的 paper 永不进匹配面，两侧均 pull 的 WP↔刊发版（AC-3.2 主场景、
+        design/06 §3 的弱信号是**入库算法**、未限定路径）永不产生候审边。现与
+        `merge_ingest` 同口径：三条分支（新建/单命中并入/冲突并入）都把本次观测的
+        `(title_norm, 首作者姓氏)` 并入键集合并重判候审（`_apply_weak_signal`，单调只增、
+        幂等），姓氏经 `_stub_first_author` 复用 merge 侧唯一那份推导。
 
         **preprint_of 建边（T10）**：拿到 `paper_id` 后同事务内消费 `stub.meta` 里的
         preprint 线索（`_apply_preprint_clues`）——真实携带 arxiv/cvf/openreview 等 adapter
@@ -663,20 +757,28 @@ class Repo:
         identifiers = tuple(
             normalize_identifier(scheme, value) for scheme, value in stub.identifiers
         )
+        title_norm = normalize_title(stub.title)
+        first_author = _stub_first_author(stub.authors)
         with self.db.tx() as conn:
-            paper_id: str | None = None
+            hit_papers: dict[str, None] = {}  # 命中的 distinct paper（保插入序，确定性）
+            matched: list[str] = []
             for scheme, value in identifiers:
                 hit = conn.execute(
                     "SELECT paper_id FROM identifier WHERE scheme = ? AND value = ?",
                     (scheme, value),
                 ).fetchone()
                 if hit is not None:
-                    paper_id = str(hit["paper_id"])
-                    break
+                    hit_papers.setdefault(str(hit["paper_id"]), None)
+                    matched.append(f"{scheme}:{value}")
+            distinct = list(hit_papers)
 
             now = utcnow_iso()
-            if paper_id is None:
+            paper_id: str
+            if not distinct:
                 paper_id = new_ulid()
+                meta_json = _meta_to_json(stub.meta)
+                if first_author:
+                    meta_json = _with_first_author(meta_json, first_author)
                 conn.execute(
                     "INSERT INTO paper "
                     "(id, title, abstract, year, pub_date, venue_id, meta_json, title_norm, "
@@ -689,17 +791,25 @@ class Repo:
                         stub.year,
                         stub.pub_date,
                         venue_id,
-                        _meta_to_json(stub.meta),
-                        normalize_title(stub.title),
+                        meta_json,
+                        title_norm,
                         "metadata_only",
                         now,
                         now,
                     ),
                 )
             else:
-                self._merge_paper_fields(conn, paper_id, stub, now)
+                # 胜者必须在 `_ensure_identifiers` **之前**选定（计数取并入孤儿 id 之前的库态）。
+                paper_id = (
+                    distinct[0] if len(distinct) == 1 else self._conflict_winner(conn, distinct)
+                )
+                self._merge_paper_fields(conn, paper_id, stub, now, first_author)
 
             self._ensure_identifiers(conn, paper_id, identifiers)
+            if len(distinct) > 1:
+                # 冲突边先落（证据更强，见 `_upsert_candidate` 的强度序），再记弱信号键。
+                self._flag_identifier_conflicts(conn, paper_id, distinct, tuple(matched))
+            self._apply_weak_signal(conn, paper_id, title_norm, first_author)
             self._apply_preprint_clues(conn, paper_id, stub.meta, venue_id=venue_id)
 
             if issue_id is not None:
@@ -716,11 +826,19 @@ class Repo:
         paper_id: str,
         stub: PaperStub,
         now: str,
+        first_author: str | None = None,
     ) -> None:
         """补缺不覆盖：仅当既有列为空/NULL 时用 stub 的非空值填充。
 
         合并的是跨源可残缺的字段（abstract/year/pub_date/meta）。title 是必填的强合并锚点
         （PaperStub 恒有值），venue_id 建 paper 时即由外键约束绑定，二者不参与补缺。
+        `first_author`（R3b）同属补缺族：落 `meta_json._first_author`（`_with_first_author`），
+        既有值非空即不动——与本方法其余字段、以及 pull 路径"无 provenance 只补空"的口径一致。
+
+        **meta 判空只看业务键**（R3b 回修，独立审查 Important）：`_fill_business_meta` 把
+        内部键（`_first_author`/`_field_src`/`_field_tie`，见 `_INTERNAL_META_PREFIX` 注释块）
+        剔除后再判"该 paper 是否还没有业务 meta"，并在写入时保住它们——否则本层自己写的键
+        会让后续携真 meta 的观测被整块丢弃（两条写路径同愈，见该函数）。
         """
         existing = conn.execute("SELECT * FROM paper WHERE id = ?", (paper_id,)).fetchone()
         updates: dict[str, object] = {}
@@ -730,8 +848,13 @@ class Repo:
             updates["year"] = stub.year
         if not existing["pub_date"] and stub.pub_date:
             updates["pub_date"] = stub.pub_date
-        if not existing["meta_json"] and stub.meta:
-            updates["meta_json"] = _meta_to_json(stub.meta)
+        meta_json = existing["meta_json"]
+        if stub.meta:
+            meta_json = _fill_business_meta(meta_json, stub.meta)
+        if first_author:
+            meta_json = _with_first_author(meta_json, first_author)
+        if meta_json != existing["meta_json"]:
+            updates["meta_json"] = meta_json
         if not updates:
             return
         updates["updated_at"] = now
@@ -812,7 +935,7 @@ class Repo:
                 # 强合并分支也记本次观测的弱信号键并重判候审：键集合单调只增，故"高优先源
                 # 改写标题"不再抹掉此前/此后的匹配面（审计 P1）。action 仍报 `merged`
                 # ——`IngestResult` 三枚举是冻结件，候审边只作为 DB 副作用记录，不改口径。
-                self._apply_weak_signal(conn, paper_id, incoming)
+                self._apply_weak_signal(conn, paper_id, incoming.title_norm, incoming.first_author)
                 # preprint_of 建边（T10）同为 DB 副作用，不改变 action 口径。
                 self._apply_preprint_clues(conn, paper_id, incoming.meta, source=incoming.source)
                 return IngestOutcome(paper_id, "merged", tuple(matched))
@@ -834,7 +957,7 @@ class Repo:
         每对 paper 最终都被建边（后取得该键者对先持有者建边），终态 = 该簇全体两两 candidate。
         """
         new_id = self._create_paper(conn, incoming, identifiers)
-        matches = self._apply_weak_signal(conn, new_id, incoming)
+        matches = self._apply_weak_signal(conn, new_id, incoming.title_norm, incoming.first_author)
         # T10：DB 副作用，不改 action。
         self._apply_preprint_clues(conn, new_id, incoming.meta, source=incoming.source)
         if not matches:
@@ -856,10 +979,42 @@ class Repo:
         candidate_duplicate(evidence=identifier-conflict) 留人审。stub 的 identifier 里指向
         败者的那些**原地不动**（`_ensure_identifiers` 只补库中尚不存在的孤儿 identifier，
         不重指既存者）——绝不物理迁移 identifier 行。
+
+        裁决与建边两步拆成 `_conflict_winner`/`_flag_identifier_conflicts`，与 pull 路径
+        （`upsert_paper`，R3b 修复审计 P1-8）共用同一实现——两条写路径的冲突口径必须逐字
+        一致，否则同一批数据经 pull 与经 aggregator 会得到不同的胜者/边。
         """
-        winner = min(distinct, key=lambda pid: (-self._identifier_count(conn, pid), pid))
+        winner = self._conflict_winner(conn, distinct)
         self._converge_fields(conn, winner, incoming)
         self._ensure_identifiers(conn, winner, identifiers)
+        self._flag_identifier_conflicts(conn, winner, distinct, matched)
+        # 冲突边先落（证据更强，见 `_upsert_candidate` 的强度序），再记本次观测的弱信号键。
+        self._apply_weak_signal(conn, winner, incoming.title_norm, incoming.first_author)
+        # T10：DB 副作用，不改 action。
+        self._apply_preprint_clues(conn, winner, incoming.meta, source=incoming.source)
+        return IngestOutcome(winner, "candidate_flagged", matched)
+
+    def _conflict_winner(self, conn: sqlite3.Connection, distinct: list[str]) -> str:
+        """跨 paper identifier 冲突的胜者：identifier 数最多者，平局取 paper_id 字典序最小者。
+
+        **必须在 `_ensure_identifiers` 之前调用**：计数取的是并入 stub 孤儿 identifier
+        **之前**的库态，否则本次写入会自我污染"谁的 identifier 多"这个判据。
+        """
+        return min(distinct, key=lambda pid: (-self._identifier_count(conn, pid), pid))
+
+    def _flag_identifier_conflicts(
+        self,
+        conn: sqlite3.Connection,
+        winner: str,
+        distinct: list[str],
+        matched: tuple[str, ...],
+    ) -> None:
+        """对每个败者与胜者建 `candidate_duplicate(identifier-conflict)`（无序对，至多一行）。
+
+        应在 `_ensure_identifiers` **之后**调用：`_upsert_candidate` 的端点定向取两 paper
+        当时的最小 identifier 快照，本次补给胜者的孤儿 identifier 须已在库内才算数。
+        """
+        conflicting = sorted(matched)  # 证据里的命中 identifier 列表恒有序（终态可比）
         for other in distinct:
             if other != winner:
                 self._upsert_candidate(
@@ -867,13 +1022,8 @@ class Repo:
                     winner,
                     other,
                     _IDENTIFIER_CONFLICT_CONFIDENCE,
-                    {"reason": _IDENTIFIER_CONFLICT_REASON, "identifiers": sorted(matched)},
+                    {"reason": _IDENTIFIER_CONFLICT_REASON, "identifiers": conflicting},
                 )
-        # 冲突边先落（证据更强，见 `_upsert_candidate` 的强度序），再记本次观测的弱信号键。
-        self._apply_weak_signal(conn, winner, incoming)
-        # T10：DB 副作用，不改 action。
-        self._apply_preprint_clues(conn, winner, incoming.meta, source=incoming.source)
-        return IngestOutcome(winner, "candidate_flagged", matched)
 
     def _create_paper(
         self,
@@ -1034,7 +1184,11 @@ class Repo:
     # -- 弱信号键集合（AC-3.4 顺序无关的匹配面，schema v3 `paper_weak_key`） -------
 
     def _apply_weak_signal(
-        self, conn: sqlite3.Connection, paper_id: str, incoming: MergeInput
+        self,
+        conn: sqlite3.Connection,
+        paper_id: str,
+        title_norm: str | None,
+        first_author: str | None,
     ) -> list[str]:
         """记下本次观测的弱信号键，并对**新键**重判候审；返回本次新配上的既有 paper（升序）。
 
@@ -1046,8 +1200,11 @@ class Repo:
 
         键对本 paper 已存在 → 直接返回：该键当时已与彼时所有持键 paper 建过边，此后取得该键
         的 paper 会在**自己那一侧**建边（增量算法的完备性论证），故无需重判，幂等亦由此保证。
+
+        入参是两个标量（非 `MergeInput`）：pull 路径（`upsert_paper`，R3b 修复审计 P1-9）
+        持有的是 `PaperStub`，两条写路径经本方法共用同一套记键/重判/建边机制。
         """
-        key = _weak_key(incoming)
+        key = _weak_key(title_norm, first_author)
         if key is None:
             return []
         title_norm, first_author = key
