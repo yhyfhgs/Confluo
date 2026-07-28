@@ -6,7 +6,7 @@ journal 缺 issn / issn 格式错 / YAML 解析失败 / pydantic 结构错误（
 
 结构性问题（文件读取失败、YAML 解析失败、pydantic 校验失败、同目录 id 冲突、
 文件名-id 不一致）由 `load_dirs()` 直接返回；语义问题（未知 adapter、能力位、auth
-不兼容、issn 规则）需要 `lint()`（在已加载的 venue 上叠加校验）。仓库自带的 58 份
+不兼容、issn 规则）需要 `lint()`（在已加载的 venue 上叠加校验）。仓库自带的 62 份
 YAML 必须全过 lint。
 """
 
@@ -72,6 +72,13 @@ _NON_ARXIV_VENUE_IDS = {
     "ssrn",
     # Phase 5 T3 nber（preprint_channel；crossref prefix 10.3386 metadata_source + nber fulltext）。
     "nber",
+    # R4a Wiley 全文平台收口 4 刊（审计 P0-2）：finance 两刊 jf/mathfin + econ 两刊 rand/ier；
+    # 均 metadata_source=crossref（D-005，DOI 前缀 10.1111）、fulltext_source=wiley
+    # （TDM API 优先 + 页面兜底，wiley.md §3.1/§3.2）、auth.level=institutional。
+    "jf",
+    "mathfin",
+    "rand",
+    "ier",
 }
 
 
@@ -522,10 +529,10 @@ def test_fetch_capability_is_not_a_gate_for_browser_delegated_fulltext(
 
 
 def test_capability_rules_pass_on_all_shipped_venues(adapters: dict[str, SourceAdapter]) -> None:
-    """新规则跑过全部 58 个 venue：零既有错配（R2b 卡的"跑过全库"判据）。"""
+    """新规则跑过全部 62 个 venue：零既有错配（R2b 卡的"跑过全库"判据）。"""
     reg = VenueRegistry(adapters)
     assert reg.load_dirs([REPO_VENUES_DIR]) == []
-    assert len(reg.all()) == 58
+    assert len(reg.all()) == 62
     assert [issue for issue in reg.lint() if "能力位" in issue.message] == []
 
 

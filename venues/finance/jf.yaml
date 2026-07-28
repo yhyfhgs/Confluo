@@ -1,0 +1,30 @@
+# venues/finance/jf.yaml —— Journal of Finance（R4a 收口；审计 P0-2）
+# R4 收口：兑现 wiley.md §1 覆盖承诺（审计 P0-2）；ECMA 过刊段维持 econsoc 路由，不在此列。
+# adapter 与凭证装配已在 R2 卡修通（cli.py `_bind_wiley_token_client`/`[auth.wiley].token`，
+# 审计 P0-1），本卡（R4a）只补 venue 注册这最后一公里；同批四刊：jf/mathfin/rand/ier。
+id: jf
+kind: journal
+names:
+  full: The Journal of Finance
+  aliases: [JF]
+field: [finance]
+tier: T1                      # catalog/finance-journals.md Top 3（AFA 主刊，金融学公认第一刊）
+identifiers:
+  issn: ["0022-1082"]         # 期刊必填（D-015）；出处 catalog/finance-journals.md Top 3
+metadata_source: crossref     # discover/enumerate 用（D-005 元数据主干；DOI 前缀 10.1111，wiley.md §1）
+fulltext_source: wiley        # Wiley Online Library：TDM API 优先 + 页面兜底（wiley.md §3.1/§3.2）
+auth:
+  level: institutional        # TDM token + 机构订阅域约束（wiley.md §1；adapter auth_requirement 同级）
+  provider_hint: wiley        # AuthProvider profile；对应 Config-slot [auth.wiley].token（wiley.md §1）
+status: active
+notes: >
+  元数据经 Crossref 按 ISSN 枚举全史（D-005）。全文平台 Wiley Online Library
+  （`wiley` adapter：TDM API `api.wiley.com` 优先，`onlinelibrary.wiley.com` 页面
+  兜底，wiley.md §3.1/§3.2）。AFA（American Finance Association）主刊，金融学公认
+  第一刊（catalog/finance-journals.md Top 3）；论文常先在 SSRN 出现先行版，ingest
+  阶段 `preprint_of` 高频关联场景（D-007，wiley.md §2）。限速未在此声明覆盖
+  （`rate_limit` 缺省=沿用 adapter 默认，registry.py `route()` 语义）：wiley.md §4
+  双窗口限速表达（TDM 3 req/s 瞬时 + 60/10min 滑动，绝对主导约束）已在
+  `WileyAdapter.default_rate` 落地为起步保守值
+  `RatePolicy(requests_per_minute=5, burst=3)`，实测真实 429 后按 wiley.md 既有
+  纪律放宽——本 venue 无需再逐刊重复该值。
