@@ -117,7 +117,9 @@ def write(home: Path, key: str, until: datetime) -> None:
     调用方负责捕获 `OSError`（落盘失败不阻断运行态生效——见 runner 的
     `_enter_challenge_cooldown`：写失败只 WARNING 日志，运行态字典仍生效）。
     `key` 非法时 `cooldown_path` 抛 `CrawlerError`（不属 `OSError`，不会被
-    调用方的 `except OSError` 吞掉——响亮传播）。
+    调用方的 `except OSError` 吞掉——响亮传播）。runner 的 `_enter_challenge_cooldown`
+    另有一条**显式** `except CrawlerError` → ERROR 日志（P1-5）：它在 per-task 错误
+    路由**之内**运行，异常在那里逃逸会中止整轮；其余调用方（CLI）仍是响亮传播。
     """
     path = cooldown_path(home, key)
     path.parent.mkdir(parents=True, exist_ok=True)

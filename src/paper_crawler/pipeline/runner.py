@@ -234,38 +234,50 @@ class PipelineRunner:
         """一次 pull 级联（1→4，`with_extract` 加 5，6 尾部必跑；dry-run 止于 3）。
 
         未知 venue 直接抛 `CrawlerError(CONFIG)`（不产生任何任务；CLI 以退出码 2
-        呈现）。返回前报告落盘 reports_dir。
+        呈现）。返回前报告落盘 reports_dir（`finally`——见 `_finalize` docstring）。
         """
         self.ctx.registry.get(venue_id)  # fail fast：未知 id → CrawlerError(CONFIG)
         report = self._new_report("pull", venue_id)
-        result = self.ctx.queue.enqueue(
-            "pull", venue_id, _pull_params(sel, with_extract=with_extract, force=force), force=force
-        )
-        log_event(
-            "INFO",
-            f"pull enqueued ({result.status})",
-            task_id=result.task_id,
-            venue=venue_id,
-            stage="pull",
-        )
-        self._drain_loop(report)
-        return self._finalize(report)
+        try:
+            result = self.ctx.queue.enqueue(
+                "pull",
+                venue_id,
+                _pull_params(sel, with_extract=with_extract, force=force),
+                force=force,
+            )
+            log_event(
+                "INFO",
+                f"pull enqueued ({result.status})",
+                task_id=result.task_id,
+                venue=venue_id,
+                stage="pull",
+            )
+            self._drain_loop(report)
+        finally:
+            self._finalize(report)
+        return report
 
     def run_single_stage(
         self, kind: TaskKind, venue_id: str, params: dict[str, object]
     ) -> RunReport:
         """单阶段执行（design/05 §1"阶段可单独执行"）：enqueue 一个任务并 drain。"""
         report = self._new_report(f"run {kind}", venue_id)
-        result = self.ctx.queue.enqueue(kind, venue_id, params)
-        self._note_enqueue(result, kind, venue_id, report)
-        self._drain_loop(report)
-        return self._finalize(report)
+        try:
+            result = self.ctx.queue.enqueue(kind, venue_id, params)
+            self._note_enqueue(result, kind, venue_id, report)
+            self._drain_loop(report)
+        finally:
+            self._finalize(report)
+        return report
 
     def drain(self) -> RunReport:
         """把队列里现存的 PENDING 全部执行完（claim_next 循环直到空）。"""
         report = self._new_report("drain", None)
-        self._drain_loop(report)
-        return self._finalize(report)
+        try:
+            self._drain_loop(report)
+        finally:
+            self._finalize(report)
+        return report
 
     def watch(self, venue_id: str, *, today: date | None = None) -> RunReport:
         """preprint venue 的当月桶元数据增量收割（arxiv.md §3 watch 裁决；零接口变更）。
@@ -288,28 +300,30 @@ class PipelineRunner:
         self.ctx.registry.get(venue_id)  # fail fast：未知 id → CrawlerError(CONFIG)
         day = today if today is not None else datetime.now(UTC).date()
         report = self._new_report("watch", venue_id)
+        try:
+            # 阶段 1 discover（force：保证当月/上月桶存在，绕过 24h 新鲜度）
+            self._enqueue_child(report, "discover", venue_id, {}, None, force=True)
+            self._drain_loop(report)
 
-        # 阶段 1 discover（force：保证当月/上月桶存在，绕过 24h 新鲜度）
-        self._enqueue_child(report, "discover", venue_id, {}, None, force=True)
-        self._drain_loop(report)
+            papers_before = self.ctx.repo.counts(venue_id)["papers"]
 
-        papers_before = self.ctx.repo.counts(venue_id)["papers"]
+            # 阶段 2 enumerate 目标月桶（force：绕过 7d 新鲜度，强制整窗重收）
+            bucket_count = 0
+            for year, month in _watch_target_months(day):
+                for issue in self.ctx.repo.list_issues(venue_id, number=f"{month:02d}", year=year):
+                    self._enqueue_child(
+                        report, "enumerate", venue_id, {"issue": str(issue["id"])}, None, force=True
+                    )
+                    bucket_count += 1
+            self._drain_loop(report)
 
-        # 阶段 2 enumerate 目标月桶（force：绕过 7d 新鲜度，强制整窗重收）
-        bucket_count = 0
-        for year, month in _watch_target_months(day):
-            for issue in self.ctx.repo.list_issues(venue_id, number=f"{month:02d}", year=year):
-                self._enqueue_child(
-                    report, "enumerate", venue_id, {"issue": str(issue["id"])}, None, force=True
-                )
-                bucket_count += 1
-        self._drain_loop(report)
-
-        new_papers = self.ctx.repo.counts(venue_id)["papers"] - papers_before
-        report.notes.append(
-            f"watch[{venue_id}]: +{new_papers} new paper(s) over {bucket_count} bucket(s)"
-        )
-        return self._finalize(report)
+            new_papers = self.ctx.repo.counts(venue_id)["papers"] - papers_before
+            report.notes.append(
+                f"watch[{venue_id}]: +{new_papers} new paper(s) over {bucket_count} bucket(s)"
+            )
+        finally:
+            self._finalize(report)
+        return report
 
     def grab(self, venue_id: str, paper_id: str, *, force: bool = False) -> RunReport:
         """单篇全链取回（resolve → fetch，含 no_entitlement→OA 兜底）——`grab` 命令的编排。
@@ -322,17 +336,21 @@ class PipelineRunner:
         spec = self.ctx.registry.get(venue_id)  # fail fast：未知 id → CrawlerError(CONFIG)
         self.ctx.repo.upsert_venue(spec)  # 确保 venue 行存在（FK + 路由；同 _run_pull）
         report = self._new_report("grab", venue_id)
+        try:
+            # 阶段 3 resolve（单篇）——planned asset 落库
+            self._enqueue_child(report, "resolve", venue_id, {"paper": paper_id}, None, force)
+            self._drain_loop(report)
 
-        # 阶段 3 resolve（单篇）——planned asset 落库
-        self._enqueue_child(report, "resolve", venue_id, {"paper": paper_id}, None, force)
-        self._drain_loop(report)
-
-        # 阶段 4 fetch（该 paper 的候选 asset；no_entitlement→OA 兜底任务在同一 drain 内派生消费）
-        paper_rows = self.ctx.db.query("SELECT * FROM paper WHERE id = ?", (paper_id,))
-        for asset in self._candidate_assets(list(paper_rows), None):
-            self._enqueue_child(report, "fetch", venue_id, {"asset": str(asset["id"])}, None, force)
-        self._drain_loop(report)
-        return self._finalize(report)
+            # 阶段 4 fetch（该 paper 的候选 asset；no_entitlement→OA 兜底任务同 drain 内派生消费）
+            paper_rows = self.ctx.db.query("SELECT * FROM paper WHERE id = ?", (paper_id,))
+            for asset in self._candidate_assets(list(paper_rows), None):
+                self._enqueue_child(
+                    report, "fetch", venue_id, {"asset": str(asset["id"])}, None, force
+                )
+            self._drain_loop(report)
+        finally:
+            self._finalize(report)
+        return report
 
     # -- 报告 ---------------------------------------------------------------
 
@@ -346,6 +364,15 @@ class PipelineRunner:
         return RunReport(command=command, venue_id=venue_id, started_at=utcnow_iso())
 
     def _finalize(self, report: RunReport) -> RunReport:
+        """运行收尾：释放 GROBID 连接池 + 报告落盘 + 汇总日志。
+
+        **五个公开入口（pull/run_single_stage/drain/watch/grab）一律在 `finally` 中调用本
+        方法**（独立审查 P1-5 修复）：此前它写在 `_drain_loop` 之后的正常返回路径上，drain
+        一旦逃逸（前置门异常、`BaseException` 如 Ctrl-C、handler 之外的任何意外）就整轮
+        跳过收尾——`last-run.md` 不落盘（用户丢掉本轮全部诊断信息）、GROBID 连接池不关
+        （长驻进程每轮泄漏一个）。`finally` 里**不 return**：报告先落盘，原异常照常向上
+        传播，调用方（CLI）的退出码语义逐字不变。
+        """
         # 运行收尾释放 GROBID 连接池（D-033 §7.2「记忆只活在进程内、不跨运行」的资源侧对偶）：
         # `_grobid_runtime` 惰性构造的 HttpClient 挂在 ctx 上，若不在此关闭会活到进程退出——
         # 长驻进程里每次运行泄漏一个连接池。置回 None 使下一次运行重新构造并重新探活（正是
@@ -384,18 +411,28 @@ class PipelineRunner:
         # ② auth 门（§8.2/8.3/8.6：整批连带 / 批入口 / 日配额 / 工作时段 / 健康门）——
         #    OA-fallback direct asset（source_adapter=unpaywall）**旁路**之：第三方 OA 域，
         #    不占 auth 平台 session/配额，也不受整批连带块。
+        #
+        # 两道门在 per-task try **内**（独立审查 P1-5 修复；此前在 try 外）：门内抛出的异常
+        # ——探针网络故障 `CrawlerError(TRANSIENT)`（`cookie_session._probe`，经下方 health_check
+        # /refresh 传出）、非法冷却键 `CrawlerError(CONFIG)`（`cooldown.read_until` 的白名单
+        # 校验）、以及门内任何非 CrawlerError 意外——此前直接逃出 `_drain_loop`：顶层路径整轮
+        # 中止（`_finalize` 不执行、报告不落盘），pull 路径下则被**外层 pull 任务**的 except
+        # 接住而错记在父任务上（归因错位）。现一律按**当前 fetch 任务**经 `_route_error` 分类
+        # （TRANSIENT 退避重试 / CONFIG 转 BLOCKED / 非 CrawlerError 按 TRANSIENT），drain 继续
+        # 领取后续任务。门内**已自行处置**的路径（连带/配额/工作时段/健康门 EXPIRED/CHALLENGE）
+        # 仍走原本的"返回 False → 调用方 return"，语义逐字不变。
         gated_fetch = False
-        if kind == "fetch":
-            asset = self._fetch_asset_of(row)
-            if venue is not None and self._block_if_cooling_down(task_id, venue, asset, report):
-                return
-            is_oa = asset is not None and str(asset["source_adapter"]) == "unpaywall"
-            if not is_oa:
-                if not self._auth_gate_fetch(row, venue, report):
-                    return  # 门内已处置（连带 / 配额 / 工作时段 / 健康门 EXPIRED/CHALLENGE）
-                gated_fetch = venue is not None and venue in self._auth_batch
-
         try:
+            if kind == "fetch":
+                asset = self._fetch_asset_of(row)
+                if venue is not None and self._block_if_cooling_down(task_id, venue, asset, report):
+                    return
+                is_oa = asset is not None and str(asset["source_adapter"]) == "unpaywall"
+                if not is_oa:
+                    if not self._auth_gate_fetch(row, venue, report):
+                        return  # 门内已处置（连带 / 配额 / 工作时段 / 健康门 EXPIRED/CHALLENGE）
+                    gated_fetch = venue is not None and venue in self._auth_batch
+
             if kind == "pull":
                 self._run_pull(row, report)
                 outcome: StageOutcome = "done"
@@ -629,6 +666,19 @@ class PipelineRunner:
             cooldown.write(self.ctx.config.home, key, until)
         except OSError as exc:
             log_event("WARNING", f"challenge 冷却状态落盘失败（运行态仍生效）: {exc}", venue=venue)
+        except CrawlerError as exc:
+            # 非法冷却键（`cooldown.cooldown_path` 白名单：根点 FQDN、IPv6 字面量 host 等）。
+            # 本方法只由 `_route_error` 调用——即**已在 per-task 错误处置之内**：此处再抛会
+            # 从 except 块逃出 `_execute_claimed` 并中止整轮（正是 P1-5 修的那类逃逸）。故
+            # 就地收敛为响亮 ERROR 日志：任务仍按 CHALLENGE 转 BLOCKED（调用方职责），只是
+            # 这一次冷却未能跨运行持久化（运行态字典仍生效）。**读**侧的同类异常则经
+            # `_route_error` 正常分类为 BLOCKED(config)，见 `_execute_claimed` 前置门注释。
+            log_event(
+                "ERROR",
+                f"challenge 冷却键非法，冷却未落盘（运行态仍生效）: {exc}",
+                venue=venue,
+                error_class=exc.error_class.value,
+            )
 
     def _block_if_cooling_down(
         self, task_id: str, venue: str, asset: sqlite3.Row | None, report: RunReport
