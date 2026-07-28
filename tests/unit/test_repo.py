@@ -1922,3 +1922,24 @@ def test_reindex_fts_recovers_after_rowid_collision(repo: Repo) -> None:
     pid = repo.upsert_paper(VENUE_ID, None, _stub(doi="10.9999/s1", title="Real Paper"))
     assert repo.check_fts_consistency().ok is True
     assert [r["paper_id"] for r in repo.search_papers("real")] == [pid]
+
+
+# -- enrich 断点（schema v7，审计 P1-16）---------------------------------------
+
+
+def test_enrich_cursor_round_trip_and_clear(repo: Repo) -> None:
+    """三个窄方法的完整语义：无断点 → None；写后读回；清后又是 None（每源独立）。"""
+    assert repo.read_enrich_cursor("openalex") is None
+
+    repo.write_enrich_cursor("openalex", "01JABC")
+    repo.write_enrich_cursor("s2", "01JXYZ")
+    assert repo.read_enrich_cursor("openalex") == "01JABC"
+    assert repo.read_enrich_cursor("s2") == "01JXYZ"
+
+    repo.write_enrich_cursor("openalex", "01JDEF")  # 幂等覆盖，不是插第二行
+    assert repo.read_enrich_cursor("openalex") == "01JDEF"
+
+    repo.clear_enrich_cursor("openalex")
+    assert repo.read_enrich_cursor("openalex") is None
+    assert repo.read_enrich_cursor("s2") == "01JXYZ"  # 清一个源不动别的源
+    repo.clear_enrich_cursor("openalex")  # 重复清是 no-op，非错误

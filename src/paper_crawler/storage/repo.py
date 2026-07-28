@@ -2457,6 +2457,30 @@ class Repo:
             _reraise_if_fts_table_missing(exc)
         return int(count)
 
+    # -- enrich 断点（schema v7，审计 P1-16）----------------------------------
+    #
+    # 三个窄方法而非一个"upsert(source, key|None)"：调用点（`cli._run_enrich_source`
+    # 的收尾）本来就要在"扫到底 → 回绕"与"没扫完 → 记位置"之间显式二选一，把这个选择
+    # 编码成 None 只会让调用点读起来像在传一个可空值、而不是在做一个决定。
+
+    def read_enrich_cursor(self, source: str) -> str | None:
+        """该 enrich source 的断点键（上一轮处理到的最后一个 `paper.id`）；无断点 → None。"""
+        rows = self.db.query("SELECT last_key FROM enrich_cursor WHERE source = ?", (source,))
+        return str(rows[0]["last_key"]) if rows else None
+
+    def write_enrich_cursor(self, source: str, last_key: str) -> None:
+        """记下断点键（幂等覆盖）。语义是"这个键及之前都已处理"，下轮取 `> last_key`。"""
+        self.db.execute(
+            "INSERT INTO enrich_cursor (source, last_key, updated_at) VALUES (?,?,?) "
+            "ON CONFLICT(source) DO UPDATE SET "
+            "  last_key=excluded.last_key, updated_at=excluded.updated_at",
+            (source, last_key, utcnow_iso()),
+        )
+
+    def clear_enrich_cursor(self, source: str) -> None:
+        """删断点（本源已扫到库尾 → 下一轮从头回绕）。不存在时是 no-op，非错误。"""
+        self.db.execute("DELETE FROM enrich_cursor WHERE source = ?", (source,))
+
 
 class SubscriptionRepo:
     """订阅仓储（Phase 6 T1 冻结件）：`subscription` / `subscription_run` 两表 + watermark。

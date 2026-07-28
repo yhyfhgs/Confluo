@@ -46,8 +46,10 @@ from paper_crawler.subs.watermark import (
     Watermark,
     advance,
     advance_with_report,
+    bump_stalls,
     strategy_for,
     window_params,
+    window_report,
 )
 
 # 固定"今天"——全部时间线推演的锚（今天 − 7 = 2026-07-19 即首跑初窗下界）。
@@ -242,8 +244,10 @@ def test_s2_uses_day_granularity_not_year() -> None:
     strategy = STRATEGIES["s2"]
     assert isinstance(strategy, DateCursor)
     assert strategy.param == "publicationDateOrYear" and strategy.range_suffix == ":"
-    # 跨年也不塌成年份：值里保留完整日期
-    assert window_params(_date_state("s2", "2025-12-31"), "s2", now=TODAY) == (
+    # 跨年也不塌成年份：值里保留完整日期。`now` 取跨年后的第三天而非 `TODAY`——水位须落在
+    # 稳态窗宽 cap（`initial_lookback_days`）之内，否则断言的是 cap 抬高后的下界、
+    # 而非本用例真正要锁的"日粒度不塌成年"（审计 P1-24 后）。
+    assert window_params(_date_state("s2", "2025-12-31"), "s2", now=date(2026, 1, 3)) == (
         ("publicationDateOrYear", "2025-12-31:"),
     )
 
@@ -781,3 +785,139 @@ def test_restrict_to_before_commit_clears_unsubscribed_sources(repo: Subscriptio
     reread = Watermark.parse(repo.read_watermark(subscription.name))
     assert reread.state_for("nber") is None
     assert reread.state_for("arxiv") == DateState("2026-07-22")
+
+
+# ---------------------------------------------------------------------------
+# 稳态窗宽 cap + 连续熔断轮计数（审计 P1-24：熔断自我放大）
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.parametrize("source", DATE_SOURCES)
+def test_stale_watermark_does_not_widen_the_window_past_the_first_run_floor(source: str) -> None:
+    """**缺陷本体**：水位远远落后时窗不再无限变宽——下界钉在首跑初窗那条地板上。
+
+    修前：下界 = 旧水位 − overlap（这里是 2026-01-01），上界随 today 走 → 窗宽随停滞
+    天数线性增长，请求量逐日上涨、下一轮更容易再熔断（自我放大、无自愈）。
+    """
+    strategy = strategy_for(source)
+    stale = _date_state(source, "2026-01-01")
+    report = window_report(stale, source, now=TODAY)
+
+    assert report.lower == date.fromisoformat(FIRST_RUN_FLOOR)
+    assert report.capped is True
+    # 与首跑窗**逐字**同宽：cap 复用的就是首跑那个常量，不是另起一个数。
+    assert report.params == strategy.window_params(None, now=TODAY)
+
+
+@pytest.mark.parametrize("source", DATE_SOURCES)
+def test_window_is_not_capped_while_the_watermark_keeps_up(source: str) -> None:
+    """正常推进的水位不受 cap 影响：`capped` 为假，下界仍是"水位 − overlap"。"""
+    fresh = _date_state(source, "2026-07-25")
+    report = window_report(fresh, source, now=TODAY)
+
+    assert report.capped is False
+    assert report.lower == date(2026, 7, 25) - timedelta(days=OVERLAP_DAYS[source])
+
+
+def test_window_cap_never_undercuts_the_source_overlap() -> None:
+    """地板取 `max(lookback, overlap)`：把初窗配成 0 也不会反过来把重叠窗吃掉。"""
+    strategy = DateCursor(source="crossref", param="from-pub-date", overlap_days=2)
+    pathological = DateCursor(
+        source="crossref", param="from-pub-date", overlap_days=2, initial_lookback_days=0
+    )
+    state = DateState("2026-07-25")
+
+    assert strategy.lower_bound(state, now=TODAY) == date(2026, 7, 23)
+    # 水位 − 2 = 07-23 早于 today，但 cap 不得紧过 overlap → 下界仍是 today − 2。
+    assert pathological.lower_bound(state, now=TODAY) == date(2026, 7, 24)
+    assert pathological.window_report(state, now=TODAY).capped is True
+
+
+def test_id_set_source_has_no_window_to_cap() -> None:
+    """nber 无日期轴 → 恒无窗、恒不截断，但熔断计数照样带出来（源级语义）。"""
+    state = Watermark().with_state("nber", IdSetState(("w1",), stalls=4))
+    report = window_report(state, "nber", now=TODAY)
+    assert (report.params, report.lower, report.capped, report.stalls) == ((), None, False, 4)
+
+
+def test_stall_counter_defaults_to_zero_and_is_not_serialised_when_zero() -> None:
+    """`stalls` 是可选字段：0 不落文档（既有文档逐字不变 → 无需 bump schema_ver）。"""
+    zero = _date_state("crossref", "2026-07-22")
+    assert zero.to_dict()["sources"] == {  # type: ignore[comparison-overlap]
+        "crossref": {"kind": "date_cursor", "date": "2026-07-22"}
+    }
+    # 旧文档（无 stalls 字段）读进来就是 0——正是它的真实含义。
+    assert Watermark.parse(zero.to_dict()).state_for("crossref") == DateState("2026-07-22", 0)
+
+
+def test_stall_counter_round_trips_once_non_zero() -> None:
+    stalled = Watermark().with_state("crossref", DateState("2026-07-22", 3))
+    assert stalled.to_dict()["sources"] == {  # type: ignore[comparison-overlap]
+        "crossref": {"kind": "date_cursor", "date": "2026-07-22", "stalls": 3}
+    }
+    assert Watermark.parse(stalled.to_dict()) == stalled
+
+    ids = Watermark().with_state("nber", IdSetState(("w1",), 2))
+    assert Watermark.parse(ids.to_dict()) == ids
+
+
+@pytest.mark.parametrize(
+    ("bad", "needle"),
+    [
+        ({"kind": "date_cursor", "date": "2026-07-22", "stalls": "3"}, "必须是整数"),
+        ({"kind": "date_cursor", "date": "2026-07-22", "stalls": True}, "必须是整数"),
+        ({"kind": "date_cursor", "date": "2026-07-22", "stalls": -1}, "不得为负"),
+    ],
+)
+def test_stall_counter_is_fail_loud_on_bad_values(bad: dict[str, object], needle: str) -> None:
+    """它是**我们自己写出去的值**，坏了就是文档被改坏——沿存储侧 fail-loud 纪律。"""
+    with pytest.raises(WatermarkInvalid, match=needle):
+        Watermark.parse({"schema_ver": 1, "sources": {"crossref": bad}})
+
+
+def test_bump_stalls_only_touches_the_counter() -> None:
+    """熔断轮 +1 计数，**日期一个字节不动**——"熔断不推进水位"的纪律不受影响。"""
+    before = _date_state("crossref", "2026-07-22").with_state("nber", IdSetState(("w1",)))
+    after, changed = bump_stalls(before, ["crossref", "nber"])
+
+    assert changed is True
+    assert after.state_for("crossref") == DateState("2026-07-22", 1)
+    assert after.state_for("nber") == IdSetState(("w1",), 1)
+    # 连续两轮：计数累加，水位仍不动。
+    again, _ = bump_stalls(after, ["crossref"])
+    assert again.state_for("crossref") == DateState("2026-07-22", 2)
+    assert again.state_for("nber") == IdSetState(("w1",), 1)  # 本轮没跑的源不计
+
+
+def test_bump_stalls_does_not_invent_states_for_first_run_sources() -> None:
+    """首跑轮熔断：一条状态都没有 → `changed` 为假，调用方据此**跳过写库**。
+
+    否则空文档 `{}`（"还没成功跑过任何一轮"）会被覆写成 `{"schema_ver":…, "sources":{}}`。
+    """
+    after, changed = bump_stalls(Watermark(), ["crossref"])
+    assert (after, changed) == (Watermark(), False)
+
+
+@pytest.mark.parametrize("source", DATE_SOURCES)
+def test_successful_advance_resets_the_stall_counter(source: str) -> None:
+    """熔断解除 → 正常推进那一轮把计数清零（新状态的 `stalls` 缺省 0）。"""
+    stalled = Watermark().with_state(source, DateState("2026-07-20", 5))
+    recovered = advance(stalled, source, ["2026-07-24"], now=TODAY)
+    assert recovered.state_for(source) == DateState("2026-07-24", 0)
+
+
+def test_id_set_advance_also_resets_the_stall_counter() -> None:
+    stalled = Watermark().with_state("nber", IdSetState(("w1",), 5))
+    recovered = advance(stalled, "nber", ["w2"], now=TODAY)
+    assert recovered.state_for("nber") == IdSetState(("w2", "w1"), 0)
+
+
+def test_capped_window_stays_bounded_across_many_stalled_rounds() -> None:
+    """连续停滞 30 轮：窗宽恒等于首跑初窗，不随停滞天数增长（自我放大被掐断）。"""
+    stuck = _date_state("crossref", "2026-06-01")
+    widths = {
+        (date(2026, 7, 1) + timedelta(days=n))
+        - window_report(stuck, "crossref", now=date(2026, 7, 1) + timedelta(days=n)).lower  # type: ignore[operator]
+        for n in range(30)
+    }
+    assert widths == {timedelta(days=DEFAULT_INITIAL_LOOKBACK_DAYS)}

@@ -68,6 +68,44 @@ design/09 §5 未给首跑口径，本卡裁决为"回看 `initial_lookback_days
 可收窄，拉取面由 T5 的 feed 预算限定（19 个 program feed × 周更 ~39 item），入库面
 由护栏限定。
 
+## 稳态窗宽 cap（审计 P1-24：熔断自我放大）
+
+首跑那半边（上一段）解决了"空窗 → 全量首拉 → 熔断死循环"；**稳态这半边是同型缺陷的
+另一半**，此前没做：熔断/失败/零新增轮按推进纪律**不推进水位**，于是查询窗的下界钉在
+旧水位不动、上界随 `today` 天天往前走——窗**单调变宽**，请求量逐日线性上涨，下一轮更
+容易再次超护栏。熔断因此**自我放大且无自愈**，只能靠人发现。
+
+修法与首跑同源：窗宽封顶在**同一个** `initial_lookback_days`（缺省
+`DEFAULT_INITIAL_LOOKBACK_DAYS`）——
+
+```
+查询窗下界 = max(旧水位 − overlap_days, today − initial_lookback_days)
+```
+
+即"窗永远不会比首跑那一次更宽"。地板另取 `max(initial_lookback_days, overlap_days)`
+兜底，保证 cap 绝不会比该源自己声明的重叠窗还紧（把 `initial_lookback_days` 配成 0 的
+病态取值不会反过来把重叠窗吃掉）。
+
+**水位推进语义本身不动**（失败轮仍不推进——那是防丢数据的正确设计），所以 cap 生效时
+`[旧水位, today − cap]` 这一段确实**在本轮查询范围之外**：cap 换来的是"请求量有界"，
+代价是"这段可能漏收"。故 `WindowReport.capped` 把截断如实报给调用方
+（`watch._run_source` 打 WARNING 点明"可能漏收、水位仍未推进、需人工 backfill 或等熔断
+解除"），**不静默**。注意后果是延后的：等熔断解除、某一轮真的成功了，`advance` 取
+`max(旧水位, 已见最大日期)` 会把水位从 `旧水位` 直接跳到窗内的新日期，那段缺口就此
+"合法"跳过——所以警报必须在**还能补救的时候**（cap 正在生效的每一轮）响，而不是等
+跳过之后。
+
+## 连续熔断轮计数（同上，可观测面）
+
+光有每轮一条 WARNING 不够：一个天天熔断的源和一个偶发熔断的源在日志里长得一样。故
+每个源状态带一个 `stalls` 计数——熔断轮由调用方 `bump_stalls` +1（**只碰计数，日期/id
+一个字节不动**，故"熔断不推进水位"的纪律不受影响），成功推进轮由 `advance` 产出的
+新状态天然归零（新 `DateState`/`IdSetState` 的 `stalls` 缺省 0）。连续 ≥
+`STALL_ALERT_ROUNDS` 轮时调用方把 WARNING 升格为 ERROR（obslog 最响的一档）。
+
+`stalls` 走**可选字段**语义：值为 0 时不出现在序列化文档里（既有文档与 golden 逐字
+不变），故不需要 bump `schema_ver`——旧文档读进来 `stalls=0`，正是它的真实含义。
+
 ## 推进纪律：候选生成与提交**分离**（design/09 §5 + plan §4 T4）
 
 `advance()` 只产出**候选** `Watermark`（纯函数，不碰 DB）；真正落库是调用方在 run
@@ -106,7 +144,7 @@ T5 已裁决"不入库、不派生任务、不推 watermark、不写 run 记录"
 """
 
 from collections.abc import Iterable, Mapping, Sequence
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from datetime import UTC, date, datetime, timedelta
 from typing import ClassVar, NoReturn
 
@@ -131,6 +169,16 @@ DEFAULT_OVERLAP_DAYS = 1
 # 时最旧的 id 掉出→下次重报→去重兜底，且缺省护栏 200 早在此之前就熔断了。
 DEFAULT_MAX_IDS = 2000
 
+# 连续熔断轮的告警升级阈值（模块 docstring "连续熔断轮计数"段）：连续 ≥ 本值轮没能推进
+# 水位时，调用方把"窗已截断"的 WARNING 升格为 ERROR。3 = "偶发两轮还能自愈，第三轮就
+# 不是偶发了"的经验值；与护栏阈值无关，纯观测面。
+#
+# 时点注记：告警读的是**本轮开始时**的存量 `stalls` 计数（本轮若也熔断，`bump_stalls`
+# 对它的 +1 发生在告警判定之后才落库），故 ERROR 首次响是第 4 个连续熔断轮，而非第 3 个
+# （测试锚 `test_consecutive_stalls_escalate_the_warning_to_error`：
+# `["WARNING"] * STALL_ALERT_ROUNDS + ["ERROR"]`）。
+STALL_ALERT_ROUNDS = 3
+
 # 序列化里的策略标记（人读 + 策略变更逼成显式迁移，模块 docstring "序列化"段）。
 KIND_DATE_UPPER_BOUND = "date_upper_bound"
 KIND_DATE_CURSOR = "date_cursor"
@@ -138,6 +186,7 @@ KIND_ID_SET = "id_set"
 
 _STATE_FIELD_DATE = "date"
 _STATE_FIELD_IDS = "ids"
+_STATE_FIELD_STALLS = "stalls"
 _DOC_FIELD_SCHEMA_VER = "schema_ver"
 _DOC_FIELD_SOURCES = "sources"
 _KIND = "kind"
@@ -232,6 +281,23 @@ def _require_str(value: object, *, path: str) -> str:
     return text
 
 
+def _parse_stalls(payload: Mapping[str, object], *, path: str) -> int:
+    """读**可选**的 `stalls` 计数：缺失 → 0；非非负整数 → 拒载（同存储侧 fail-loud 纪律）。"""
+    if _STATE_FIELD_STALLS not in payload:
+        return 0
+    raw = payload[_STATE_FIELD_STALLS]
+    if isinstance(raw, bool) or not isinstance(raw, int):
+        _fail(f"{path}.{_STATE_FIELD_STALLS}", f"必须是整数，实际是 {type(raw).__name__}")
+    if raw < 0:
+        _fail(f"{path}.{_STATE_FIELD_STALLS}", f"不得为负: {raw}")
+    return raw
+
+
+def _stalls_payload(stalls: int) -> dict[str, object]:
+    """`stalls` 的序列化片段：0 **不落字段**（既有文档/golden 逐字不变，无需 bump 版本）。"""
+    return {_STATE_FIELD_STALLS: stalls} if stalls else {}
+
+
 def _dedupe(values: Iterable[str]) -> list[str]:
     """保序去重（同 `types.CompiledPlan.all_local_predicates` 手法）。"""
     seen: dict[str, None] = {}
@@ -245,14 +311,18 @@ def _dedupe(values: Iterable[str]) -> list[str]:
 
 @dataclass(frozen=True)
 class DateState:
-    """日期类策略的状态：已推进到的日期水位（UTC `YYYY-MM-DD`）。
+    """日期类策略的状态：已推进到的日期水位（UTC `YYYY-MM-DD`）+ 连续熔断轮计数。
 
     语义随策略而异——`DateUpperBound` 下是"已见提交日上界"，`DateCursor` 下是
     "下次 from_date 的起点"；两者的 `advance` 算法一致（取 max，不回退），差别只在
     `window_params` 是否再回退重叠天。
+
+    `stalls` 见模块 docstring "连续熔断轮计数"段：0 = 上一轮正常推进过（也是缺省与
+    旧文档的读入值），序列化时为 0 则**不落字段**。
     """
 
     date: str
+    stalls: int = 0
 
 
 @dataclass(frozen=True)
@@ -261,9 +331,12 @@ class IdSetState:
 
     用 tuple 而非 set：既保 frozen dataclass 可哈希（模块约定），又让"最近"这个
     时间序在截断时有意义——截断永远砍掉最旧的一段。
+
+    `stalls` 同 `DateState`（两类状态共用同一套熔断计数语义，故字段同名同义）。
     """
 
     ids: tuple[str, ...] = ()
+    stalls: int = 0
 
 
 SourceState = DateState | IdSetState
@@ -334,6 +407,46 @@ def _initial_lower_bound(lookback_days: int, today: date) -> date:
     return today - timedelta(days=lookback_days)
 
 
+@dataclass(frozen=True)
+class WindowReport:
+    """某源本次增量窗的完整交代：参数 + 下界 + **是否被 cap 截断** + 连续熔断轮数。
+
+    `window_params` 只给参数，够 T5 合成请求，但不足以让调用方把"这个窗已经不是它本
+    该有的样子了"告诉用户——`capped` 与 `stalls` 就是补上的那半边（模块 docstring
+    "稳态窗宽 cap" / "连续熔断轮计数"两段）。
+
+    - `lower`：窗下界（已含 cap）；无日期轴的源（nber/`IdSetDiff`）恒 None。
+    - `capped`：True = 下界被 `today − initial_lookback_days` 的地板抬高过，即
+      `[旧水位, 下界)` 这段**不在本轮查询范围内**（可能漏收，需人工 backfill）。
+    - `stalls`：该源存量状态里的连续熔断轮数（首跑无状态 → 0）。
+    """
+
+    params: tuple[tuple[str, str], ...] = ()
+    lower: date | None = None
+    capped: bool = False
+    stalls: int = 0
+
+
+def _capped_lower_bound(
+    current: DateState | None, *, today: date, lookback_days: int, overlap_days: int, path: str
+) -> tuple[date, bool, int]:
+    """日期类策略的窗下界 → `(下界, 是否被 cap 截断, 连续熔断轮数)`（两个策略共用）。
+
+    首跑（无状态）= 保守初窗，恒不算截断（那本来就是 cap 的宽度）。有状态时下界 =
+    `max(水位 − overlap, 地板)`，地板 = `today − max(lookback, overlap)`——取 max 是为
+    了让 cap 绝不比该源自己声明的重叠窗还紧（模块 docstring "稳态窗宽 cap"段）。
+    """
+    if current is None:
+        return _initial_lower_bound(lookback_days, today), False, 0
+    floor = _initial_lower_bound(max(lookback_days, overlap_days), today)
+    raw = _parse_date(current.date, path=f"{path}.{_STATE_FIELD_DATE}") - timedelta(
+        days=overlap_days
+    )
+    if raw < floor:
+        return floor, True, current.stalls
+    return raw, False, current.stalls
+
+
 # --- 三类策略 ---------------------------------------------------------------
 
 
@@ -358,23 +471,32 @@ class DateUpperBound:
             self.initial_lookback_days, field="initial_lookback_days", source=self.source
         )
 
-    def lower_bound(self, state: SourceState | None, *, now: date | None = None) -> date:
-        """本次窗的下界（诊断/日报可读；`window_params` 的取值来源）。"""
-        today = now if now is not None else _today()
-        current = _opt_date_state(state, path=f"sources.{self.source}")
-        if current is None:
-            return _initial_lower_bound(self.initial_lookback_days, today)
-        return _parse_date(current.date, path=f"sources.{self.source}.date") - timedelta(
-            days=self.overlap_days
+    def _bounds(self, state: SourceState | None, today: date) -> tuple[date, bool, int]:
+        path = f"sources.{self.source}"
+        return _capped_lower_bound(
+            _opt_date_state(state, path=path),
+            today=today,
+            lookback_days=self.initial_lookback_days,
+            overlap_days=self.overlap_days,
+            path=path,
         )
+
+    def lower_bound(self, state: SourceState | None, *, now: date | None = None) -> date:
+        """本次窗的下界（诊断/日报可读；`window_params` 的取值来源，**已含 cap**）。"""
+        return self._bounds(state, now if now is not None else _today())[0]
+
+    def window_report(self, state: SourceState | None, *, now: date | None = None) -> WindowReport:
+        """窗参数 + 截断/熔断计数的完整交代（`WindowReport` docstring）。"""
+        today = now if now is not None else _today()
+        lower, capped, stalls = self._bounds(state, today)
+        params = ((self.param, f"[{lower:%Y%m%d}0000 TO {today:%Y%m%d}2359]"),)
+        return WindowReport(params=params, lower=lower, capped=capped, stalls=stalls)
 
     def window_params(
         self, state: SourceState | None, *, now: date | None = None
     ) -> tuple[tuple[str, str], ...]:
         """`(("submittedDate", "[YYYYMMDD0000 TO YYYYMMDD2359]"),)`（T5 AND 进 search_query）。"""
-        today = now if now is not None else _today()
-        lower = self.lower_bound(state, now=today)
-        return ((self.param, f"[{lower:%Y%m%d}0000 TO {today:%Y%m%d}2359]"),)
+        return self.window_report(state, now=now).params
 
     def advance(
         self, state: SourceState | None, seen: Sequence[str], *, now: date | None = None
@@ -399,7 +521,11 @@ class DateUpperBound:
 
     def to_payload(self, state: SourceState) -> dict[str, object]:
         current = _as_date_state(state, path=f"sources.{self.source}")
-        return {_KIND: self.kind, _STATE_FIELD_DATE: current.date}
+        return {
+            _KIND: self.kind,
+            _STATE_FIELD_DATE: current.date,
+            **_stalls_payload(current.stalls),
+        }
 
     def parse_state(self, payload: Mapping[str, object], *, path: str) -> DateState:
         return _parse_date_payload(payload, kind=self.kind, path=path)
@@ -441,26 +567,34 @@ class DateCursor:
                 "`until_param` 与 `range_suffix` 互斥（独立 until 参数 vs 单参数区间语法）",
             )
 
-    def lower_bound(self, state: SourceState | None, *, now: date | None = None) -> date:
-        """本次窗的下界 = 水位 − `overlap_days`（含端）；首跑 = 今天 − 初窗回看天数。"""
-        today = now if now is not None else _today()
-        current = _opt_date_state(state, path=f"sources.{self.source}")
-        if current is None:
-            return _initial_lower_bound(self.initial_lookback_days, today)
-        return _parse_date(current.date, path=f"sources.{self.source}.date") - timedelta(
-            days=self.overlap_days
+    def _bounds(self, state: SourceState | None, today: date) -> tuple[date, bool, int]:
+        path = f"sources.{self.source}"
+        return _capped_lower_bound(
+            _opt_date_state(state, path=path),
+            today=today,
+            lookback_days=self.initial_lookback_days,
+            overlap_days=self.overlap_days,
+            path=path,
         )
+
+    def lower_bound(self, state: SourceState | None, *, now: date | None = None) -> date:
+        """本次窗下界 = 水位 − `overlap_days`（含端，**已含 cap**）；首跑 = 今天 − 初窗回看天数。"""
+        return self._bounds(state, now if now is not None else _today())[0]
+
+    def window_report(self, state: SourceState | None, *, now: date | None = None) -> WindowReport:
+        """窗参数 + 截断/熔断计数的完整交代（`WindowReport` docstring）。"""
+        today = now if now is not None else _today()
+        lower, capped, stalls = self._bounds(state, today)
+        params = [(self.param, f"{lower.isoformat()}{self.range_suffix}")]
+        if self.until_param is not None:
+            params.append((self.until_param, today.isoformat()))
+        return WindowReport(params=tuple(params), lower=lower, capped=capped, stalls=stalls)
 
     def window_params(
         self, state: SourceState | None, *, now: date | None = None
     ) -> tuple[tuple[str, str], ...]:
         """`((param, "YYYY-MM-DD"),)`，另按 `until_param`/`range_suffix` 补上界形态。"""
-        today = now if now is not None else _today()
-        lower = self.lower_bound(state, now=today)
-        params = [(self.param, f"{lower.isoformat()}{self.range_suffix}")]
-        if self.until_param is not None:
-            params.append((self.until_param, today.isoformat()))
-        return tuple(params)
+        return self.window_report(state, now=now).params
 
     def advance(
         self, state: SourceState | None, seen: Sequence[str], *, now: date | None = None
@@ -485,7 +619,11 @@ class DateCursor:
 
     def to_payload(self, state: SourceState) -> dict[str, object]:
         current = _as_date_state(state, path=f"sources.{self.source}")
-        return {_KIND: self.kind, _STATE_FIELD_DATE: current.date}
+        return {
+            _KIND: self.kind,
+            _STATE_FIELD_DATE: current.date,
+            **_stalls_payload(current.stalls),
+        }
 
     def parse_state(self, payload: Mapping[str, object], *, path: str) -> DateState:
         return _parse_date_payload(payload, kind=self.kind, path=path)
@@ -517,12 +655,23 @@ class IdSetDiff:
         if self.max_ids < 1:
             _fail(f"strategy.{self.source}.max_ids", f"须 ≥ 1（实际 {self.max_ids}）")
 
+    def window_report(self, state: SourceState | None, *, now: date | None = None) -> WindowReport:
+        """无日期轴 → 参数恒空、`lower` 恒 None、`capped` 恒 False（没有窗可放大，也就无从截断）。
+
+        `stalls` 照常带出、落库——熔断计数是**源级**语义，与"有没有日期窗"无关。但如实
+        订正：本策略 `capped` 恒 False，而 `watch._warn_if_window_capped` 只在
+        `capped=True` 时才告警，故本源（当前唯一使用者 nber）的 `stalls` 目前**没有任何
+        日志消费方**——连续熔断再多轮也不会触发 WARNING/ERROR，只在 watermark 文档里
+        计数留痕。无窗源告警路径待后续需求出现时另立卡。
+        """
+        current = _opt_id_set_state(state, path=f"sources.{self.source}")
+        return WindowReport(stalls=0 if current is None else current.stalls)
+
     def window_params(
         self, state: SourceState | None, *, now: date | None = None
     ) -> tuple[tuple[str, str], ...]:
         """恒空：本策略无日期下推面（拉取范围 = T5 的 feed 预算，非查询参数）。"""
-        _opt_id_set_state(state, path=f"sources.{self.source}")
-        return ()
+        return self.window_report(state, now=now).params
 
     def new_ids(self, state: SourceState | None, candidates: Sequence[str]) -> tuple[str, ...]:
         """差分：`candidates` 里**上次没见过**的部分（保序去重）。首跑 = 全是新的。"""
@@ -550,12 +699,16 @@ class IdSetDiff:
 
     def to_payload(self, state: SourceState) -> dict[str, object]:
         current = _as_id_set_state(state, path=f"sources.{self.source}")
-        return {_KIND: self.kind, _STATE_FIELD_IDS: list(current.ids)}
+        return {
+            _KIND: self.kind,
+            _STATE_FIELD_IDS: list(current.ids),
+            **_stalls_payload(current.stalls),
+        }
 
     def parse_state(self, payload: Mapping[str, object], *, path: str) -> IdSetState:
         # kind 先判：策略不符时给"换策略须显式迁移"而不是"未知字段 ids"这种误导消息。
         _require_kind(payload, expected=self.kind, path=path)
-        _reject_unknown(payload, (_KIND, _STATE_FIELD_IDS), path=path)
+        _reject_unknown(payload, (_KIND, _STATE_FIELD_IDS, _STATE_FIELD_STALLS), path=path)
         if _STATE_FIELD_IDS not in payload:
             _fail(f"{path}.{_STATE_FIELD_IDS}", "必填字段缺失")
         raw = payload[_STATE_FIELD_IDS]
@@ -570,7 +723,7 @@ class IdSetDiff:
                 f"{path}.{_STATE_FIELD_IDS}",
                 f"id 数 {len(ids)} 超出上限 {self.max_ids}（文档被外部改坏？）",
             )
-        return IdSetState(ids)
+        return IdSetState(ids, _parse_stalls(payload, path=path))
 
 
 WatermarkStrategy = DateUpperBound | DateCursor | IdSetDiff
@@ -590,12 +743,15 @@ def _require_kind(payload: Mapping[str, object], *, expected: str, path: str) ->
 
 def _parse_date_payload(payload: Mapping[str, object], *, kind: str, path: str) -> DateState:
     _require_kind(payload, expected=kind, path=path)  # kind 先判，同 `IdSetDiff.parse_state`
-    _reject_unknown(payload, (_KIND, _STATE_FIELD_DATE), path=path)
+    _reject_unknown(payload, (_KIND, _STATE_FIELD_DATE, _STATE_FIELD_STALLS), path=path)
     if _STATE_FIELD_DATE not in payload:
         _fail(f"{path}.{_STATE_FIELD_DATE}", "必填字段缺失")
     text = _require_str(payload[_STATE_FIELD_DATE], path=f"{path}.{_STATE_FIELD_DATE}")
     # 归一为 `YYYY-MM-DD`：文档里写 `2026-07-25T10:00:00Z` 也认，但存回去是日期。
-    return DateState(_parse_date(text, path=f"{path}.{_STATE_FIELD_DATE}").isoformat())
+    return DateState(
+        _parse_date(text, path=f"{path}.{_STATE_FIELD_DATE}").isoformat(),
+        _parse_stalls(payload, path=path),
+    )
 
 
 # --- 源 → 策略注册表（design/09 §3/§5 能力表）--------------------------------
@@ -728,6 +884,40 @@ def window_params(
     return strategy.window_params(watermark.state_for(source), now=now)
 
 
+def window_report(watermark: Watermark, source: str, *, now: date | None = None) -> WindowReport:
+    """`window_params` 的可观测版：另带回窗是否被 cap 截断、该源连续熔断了几轮。
+
+    T5（`watch._run_source`）用它取窗——参数与 `window_params` 逐字相同，只是多了
+    "这个窗有没有被削过"这条调用方必须转达给用户的信息（模块 docstring "稳态窗宽
+    cap"段）。
+    """
+    return strategy_for(source).window_report(watermark.state_for(source), now=now)
+
+
+def bump_stalls(watermark: Watermark, sources: Iterable[str]) -> tuple[Watermark, bool]:
+    """给 `sources` 里**已有状态**的源各 +1 连续熔断计数 → `(新文档, 是否有变化)`。
+
+    **只碰计数**：日期水位 / id 集合一个字节不动，故"熔断轮不推进水位"的纪律原样成立
+    （模块 docstring "连续熔断轮计数"段）。这是调用方在熔断路径上唯一该写的东西。
+
+    **不给"尚无状态"的源凭空造状态**（首跑轮熔断 → 文档仍是 `{}`）：首跑窗宽恒等于
+    cap、没有自我放大也没有"跳过的缺口"，此时造一条状态只会把"这个订阅还没成功跑过
+    任何一轮"这个事实抹掉（存量断言 `read_watermark(...) == {}` 正是在锁这条）。
+
+    返回的 `changed` 让调用方在"一条都没变"时**跳过写库**——否则空文档会被覆写成
+    `{"schema_ver": 1, "sources": {}}`，语义等价却不再是"没跑过"的那个字面值。
+    """
+    wanted = frozenset(sources)
+    changed = False
+    updated: list[tuple[str, SourceState]] = []
+    for name, state in watermark.states:
+        if name in wanted:
+            changed = True
+            state = replace(state, stalls=state.stalls + 1)
+        updated.append((name, state))
+    return Watermark(states=tuple(updated), schema_ver=watermark.schema_ver), changed
+
+
 def advance(
     watermark: Watermark, source: str, seen: Sequence[str], *, now: date | None = None
 ) -> Watermark:
@@ -794,6 +984,7 @@ __all__ = [
     "KIND_DATE_UPPER_BOUND",
     "KIND_ID_SET",
     "SCHEMA_VERSION",
+    "STALL_ALERT_ROUNDS",
     "STRATEGIES",
     "AdvanceReport",
     "DateCursor",
@@ -804,8 +995,11 @@ __all__ = [
     "SourceState",
     "Watermark",
     "WatermarkStrategy",
+    "WindowReport",
     "advance",
     "advance_with_report",
+    "bump_stalls",
     "strategy_for",
     "window_params",
+    "window_report",
 ]

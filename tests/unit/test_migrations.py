@@ -70,6 +70,7 @@ EXPECTED_TABLES = {
     "schema_version",
     "paper_weak_key",  # schema v3（0003_paper_weak_key.sql，Phase 6 F1）
     "paper_fts",  # schema v5（0005_fts_paper.sql，Phase 7 T12，D-034）—— FTS5 虚表
+    "enrich_cursor",  # schema v7（0007_enrich_cursor.sql，修复批 R4b，审计 P1-16）
 }
 
 EXPECTED_INDEXES = {
@@ -100,7 +101,9 @@ EXPECTED_INDEXES = {
 #
 # schema v6（修复批 R3c）新增 0006_perf_indexes.sql（C2 定量确认的三条高优先级索引：
 # idx_identifier_paper / idx_task_fresh / idx_paper_venue；纯附加，无 Python 后置步）。
-LATEST_SCHEMA_VERSION = 6
+# schema v7（修复批 R4b，审计 P1-16）新增 0007_enrich_cursor.sql（enrich 每源断点表；
+# 纯附加建表，无 Python 后置步、无回填）。
+LATEST_SCHEMA_VERSION = 7
 
 
 @pytest.fixture
@@ -255,20 +258,22 @@ def test_first_build_skips_backup_of_empty_v0(
     一项"而被双方独立版本共同遗漏——merge 完全静默、测试却会转红。本次 rebase 已
     据此手工把清单改为四项（而非依赖 git 自动合并的三项）。**R3c 沿用同一提醒**：新增
     0006_perf_indexes.sql 使链路多一步（1→2→3→4→5→6），中间态备份相应多一项
-    `v5.bak`——同样是手工同步清单，而非依赖自动合并/自动推导。
+    `v5.bak`——同样是手工同步清单，而非依赖自动合并/自动推导。**R4b 同理**：
+    0007_enrich_cursor.sql 再多一步（…→6→7），清单相应多一项 `v6.bak`。
     """
     db_path = tmp_path / "app.sqlite"
     with closing(Database(db_path)) as database:
         assert database.migrate() == LATEST_SCHEMA_VERSION
     assert list(tmp_path.glob("*.v0.bak")) == []
-    # 跨到 0002/0003/0004/0005/0006 时分别对 v1/v2/v3/v4/v5 中间态备份
-    # （from_version=1/2/3/4/5）。
+    # 跨到 0002/0003/0004/0005/0006/0007 时分别对 v1/v2/v3/v4/v5/v6 中间态备份
+    # （from_version=1/2/3/4/5/6）。
     assert sorted(p.name for p in tmp_path.glob("*.bak")) == [
         "app.sqlite.v1.bak",
         "app.sqlite.v2.bak",
         "app.sqlite.v3.bak",
         "app.sqlite.v4.bak",
         "app.sqlite.v5.bak",
+        "app.sqlite.v6.bak",
     ]
 
 
@@ -1306,6 +1311,76 @@ def test_v6_is_dialect_neutral() -> None:
     assert len(statements) == 3
     assert all(s.upper().startswith("CREATE INDEX") for s in statements)
     for token in ("AUTOINCREMENT", "WITHOUT ROWID", "fts5", "PRAGMA"):
+        assert token.lower() not in script.lower()
+
+
+# -- schema v7（0007_enrich_cursor.sql；修复批 R4b，审计 P1-16 enrich 断点）-------------
+
+
+def _add_0007(tmp_path: Path) -> None:
+    shutil.copy(_REAL_MIGRATIONS_DIR / "0007_enrich_cursor.sql", tmp_path / "migrations")
+
+
+def _migrate_to_v6(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Database:
+    """真实 0001→0006 全链跑到 v6，返回打开着的库（调用方负责 `closing`）。"""
+    database = _seed_v1(tmp_path, monkeypatch)
+    for add in (_add_0002, _add_0003, _add_0004, _add_0005, _add_0006):
+        add(tmp_path)
+    assert database.migrate() == 6
+    return database
+
+
+def test_v6_to_v7_upgrade_creates_the_enrich_cursor_table(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """v6 旧库（且已有数据）→ v7：断点表就位、可读写，既有行原样保留（纯附加建表）。"""
+    with closing(_migrate_to_v6(tmp_path, monkeypatch)) as database:
+        _insert_paper(database, "p1", "Old Paper")
+        _insert_doi(database, "p1", "10.1/old")
+
+        _add_0007(tmp_path)
+        assert database.migrate() == 7
+
+        assert "enrich_cursor" in _table_names(database)
+        database.execute(
+            "INSERT INTO enrich_cursor (source, last_key, updated_at) VALUES (?,?,?)",
+            ("openalex", "p1", "2026-07-28T00:00:00Z"),
+        )
+        assert database.query("SELECT last_key FROM enrich_cursor")[0]["last_key"] == "p1"
+        # 既有行不受影响（无回填、不改数据）。
+        assert database.query("SELECT id FROM paper WHERE id='p1'")[0]["id"] == "p1"
+
+
+def test_v7_migrate_is_idempotent(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """迁移幂等重跑：已 v7 的库再 migrate 不改版本、不报错（重复 `CREATE TABLE` 会炸，
+    能到这里就说明"仅应用未应用脚本"机制生效）。"""
+    with closing(_migrate_to_v6(tmp_path, monkeypatch)) as database:
+        _add_0007(tmp_path)
+        assert database.migrate() == 7
+        assert database.migrate() == 7
+
+
+def test_v7_fresh_build_also_creates_the_enrich_cursor_table(db: Database) -> None:
+    """全新建库（0→…→7 一次性应用）同样建表——升级路径与首建路径都要覆盖。"""
+    db.migrate()
+    assert "enrich_cursor" in _table_names(db)
+
+
+def test_v7_source_is_the_primary_key(db: Database) -> None:
+    """每源至多一个断点：主键冲突 → `ON CONFLICT` 覆盖（`Repo.write_enrich_cursor` 依赖它）。"""
+    db.migrate()
+    db.execute("INSERT INTO enrich_cursor (source, last_key) VALUES ('s2','k1')")
+    with pytest.raises(sqlite3.IntegrityError):
+        db.execute("INSERT INTO enrich_cursor (source, last_key) VALUES ('s2','k2')")
+
+
+def test_v7_is_dialect_neutral() -> None:
+    """单条 `CREATE TABLE`，无 SQLite 专有特性（design/06 §6 迁移纪律；D-001 PG 迁移路径）。"""
+    script = (_REAL_MIGRATIONS_DIR / "0007_enrich_cursor.sql").read_text(encoding="utf-8")
+    statements = list(_iter_statements(script))
+    assert len(statements) == 1
+    assert statements[0].upper().startswith("CREATE TABLE")
+    for token in ("AUTOINCREMENT", "WITHOUT ROWID", "fts5", "PRAGMA", "ROWID"):
         assert token.lower() not in script.lower()
 
 

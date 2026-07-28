@@ -398,3 +398,153 @@ def test_s2_api_key_from_config_toml_reaches_adapter_and_request_header(
     assert result.exit_code == 0, result.output
     assert seen_keys == ["s2-secret"]
     assert seen_headers == ["s2-secret"]
+
+
+# --- 断点续跑（审计 P1-16：无断点 → 额度不足时后半个库永久饿死）----------------------------
+
+
+def _cursor_of(home: Path, source: str) -> str | None:
+    with closing(Database(home / "catalog.sqlite")) as db:
+        return Repo(db).read_enrich_cursor(source)
+
+
+def _run_openalex(home: Path, *extra: str) -> list[str]:
+    """跑一轮 `enrich --source openalex`，返回本轮真正喂给 `enrich_batch` 的 DOI。"""
+    result = runner.invoke(app, ["enrich", "--source", "openalex", "--home", str(home), *extra])
+    assert result.exit_code == 0, result.output
+    return _SEEN.pop()
+
+
+_SEEN: list[list[str]] = []
+
+
+@pytest.fixture
+def recording_openalex(monkeypatch: pytest.MonkeyPatch) -> None:
+    """把 `enrich_batch` 换成"记下这一轮收到哪些 DOI"的假实现（每轮一条记录）。"""
+    _SEEN.clear()
+
+    def _fake_enrich_batch(self: OpenAlexAdapter, dois: Sequence[str]) -> list[PaperStub]:
+        _SEEN.append(list(dois))
+        return []
+
+    monkeypatch.setattr(OpenAlexAdapter, "enrich_batch", _fake_enrich_batch)
+
+
+def test_limited_runs_resume_from_the_cursor_and_cover_the_whole_library(
+    recording_openalex: None, tmp_path: Path
+) -> None:
+    """**缺陷本体**：日额度只够扫 2 篇时，连跑三轮必须把 5 篇**各扫一次**、无重叠。
+
+    修前每轮都从同一个（字典序最小的）起点开始 → 永远只有前 2 篇被富化，后 3 篇一辈子
+    轮不到，且摘要行上每轮都显示"处理 2 篇"，看不出问题。
+    """
+    home = _make_home(tmp_path)
+    _seed_dois(home, {_VENUE_A: [f"10.0/d{i}" for i in range(5)]})
+
+    rounds = [_run_openalex(home, "--limit", "2") for _ in range(3)]
+
+    assert [len(r) for r in rounds] == [2, 2, 1]
+    covered = [doi for r in rounds for doi in r]
+    assert sorted(covered) == sorted(f"10.0/d{i}" for i in range(5))  # 全覆盖
+    assert len(set(covered)) == len(covered)  # 且无重叠
+
+
+def test_sweeping_past_the_end_clears_the_cursor_and_wraps_around(
+    recording_openalex: None, tmp_path: Path
+) -> None:
+    """扫到库尾 → 清断点 → 下一轮从头再来（老论文因此不会被断点永久跳过）。"""
+    home = _make_home(tmp_path)
+    _seed_dois(home, {_VENUE_A: [f"10.0/d{i}" for i in range(5)]})
+
+    first = _run_openalex(home, "--limit", "2")
+    assert _cursor_of(home, "openalex") is not None  # 没扫完 → 记着位置
+    _run_openalex(home, "--limit", "2")
+    third = _run_openalex(home, "--limit", "2")  # 最后 1 篇，未顶满 limit → 判定到尾
+
+    assert len(third) == 1
+    assert _cursor_of(home, "openalex") is None  # 断点已清
+    assert _run_openalex(home, "--limit", "2") == first  # 回绕：又从头开始
+
+
+def test_cursor_at_the_exact_tail_wraps_on_the_next_round(
+    recording_openalex: None, tmp_path: Path
+) -> None:
+    """`--limit` 恰好在库尾顶满时，"到没到尾"当轮判不出来 → 断点照记；下一轮取空才回绕。
+
+    这条分支是"断点不会把订阅永久钉死在库尾"的兜底：少了它，4 篇 / limit 2 的库会在
+    第三轮取到空集后**什么都不做**，且断点永远停在最后一篇之后。
+    """
+    home = _make_home(tmp_path)
+    _seed_dois(home, {_VENUE_A: [f"10.0/d{i}" for i in range(4)]})
+
+    first = _run_openalex(home, "--limit", "2")
+    _run_openalex(home, "--limit", "2")  # 第二轮吃掉剩下两篇，仍顶满 limit → 断点照记
+    assert _cursor_of(home, "openalex") is not None
+
+    assert _run_openalex(home, "--limit", "2") == first  # 取空 → 清断点 → 当轮即回绕重跑
+    assert _cursor_of(home, "openalex") is not None
+
+
+def test_unlimited_run_sweeps_everything_and_leaves_no_cursor(
+    recording_openalex: None, tmp_path: Path
+) -> None:
+    """不带 `--limit` 的整库一轮扫完：行为与修前一致，且不留断点。"""
+    home = _make_home(tmp_path)
+    _seed_dois(home, {_VENUE_A: [f"10.0/d{i}" for i in range(5)]})
+
+    assert sorted(_run_openalex(home)) == sorted(f"10.0/d{i}" for i in range(5))
+    assert _cursor_of(home, "openalex") is None
+
+
+def test_failed_round_keeps_the_cursor_so_the_next_round_resumes(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """遇错保留断点：失败那一轮既不前进也不倒退，下一轮**接着**跑而不是从头重来。"""
+    home = _make_home(tmp_path)
+    _seed_dois(home, {_VENUE_A: [f"10.0/d{i}" for i in range(5)]})
+    seen: list[list[str]] = []
+    fail = False
+
+    def _fake_enrich_batch(self: OpenAlexAdapter, dois: Sequence[str]) -> list[PaperStub]:
+        if fail:
+            raise CrawlerError(ErrorClass.RATE_LIMITED, "openalex daily budget exhausted")
+        seen.append(list(dois))
+        return []
+
+    monkeypatch.setattr(OpenAlexAdapter, "enrich_batch", _fake_enrich_batch)
+    args = ["enrich", "--source", "openalex", "--limit", "2", "--home", str(home)]
+
+    assert runner.invoke(app, args).exit_code == 0
+    after_first = _cursor_of(home, "openalex")
+
+    fail = True
+    result = runner.invoke(app, args)
+    assert "提前终止" in result.output
+    assert _cursor_of(home, "openalex") == after_first  # 断点原样保留
+
+    fail = False
+    assert runner.invoke(app, args).exit_code == 0
+    assert len(seen) == 2
+    assert set(seen[0]).isdisjoint(seen[1])  # 续跑，不是重扫第一批
+
+
+def test_each_source_carries_its_own_cursor(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """断点按源分开：openalex 跑到哪与 s2 跑到哪互不影响（各自的额度各自算）。"""
+    home = _make_home(tmp_path)
+    _seed_dois(home, {_VENUE_A: [f"10.0/d{i}" for i in range(5)]})
+
+    def _noop(self: object, dois: Sequence[str]) -> list[PaperStub]:
+        return []
+
+    monkeypatch.setattr(OpenAlexAdapter, "enrich_batch", _noop)
+    monkeypatch.setattr(S2Adapter, "enrich_batch", _noop)
+
+    runner.invoke(app, ["enrich", "--source", "openalex", "--limit", "2", "--home", str(home)])
+    assert _cursor_of(home, "openalex") is not None
+    assert _cursor_of(home, "s2") is None
+
+    runner.invoke(app, ["enrich", "--source", "s2", "--limit", "4", "--home", str(home)])
+    assert _cursor_of(home, "s2") is not None
+    assert _cursor_of(home, "s2") != _cursor_of(home, "openalex")

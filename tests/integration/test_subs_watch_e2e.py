@@ -11,6 +11,7 @@
 
 from __future__ import annotations
 
+import logging
 from collections.abc import Iterator
 from dataclasses import dataclass
 from datetime import date
@@ -44,6 +45,7 @@ from paper_crawler.subs.watch import (
     run_watch_all,
     write_daily_report,
 )
+from paper_crawler.subs.watermark import STALL_ALERT_ROUNDS, DateState, Watermark
 from paper_crawler.tasks import TaskQueue
 from paper_crawler.types import PaperStub, VenueNames, VenueSpec
 
@@ -1230,3 +1232,131 @@ def test_id_set_diff_falls_back_to_title_for_identifier_less_stubs(env: _Env) ->
 
     assert first.new_count == 1
     assert stored["sources"]["nber"]["ids"] == ["title:Untitled anchor"]  # type: ignore[index]
+
+
+# ---------------------------------------------------------------------------
+# 稳态窗宽 cap + 连续熔断轮计数（审计 P1-24：熔断自我放大）
+# ---------------------------------------------------------------------------
+
+
+def _seed_watermark(env: _Env, name: str, state: DateState) -> None:
+    """直接把某个存量水位塞进库——省掉"先跑若干轮把水位推到那儿"的铺垫。"""
+    env.subs_repo.write_watermark(name, Watermark().with_state("crossref", state).to_dict())
+
+
+def _capped_warnings(caplog: pytest.LogCaptureFixture) -> list[logging.LogRecord]:
+    return [r for r in caplog.records if "查询窗已按稳态上限截断" in r.getMessage()]
+
+
+def test_stalled_watermark_keeps_the_request_window_bounded(
+    env: _Env, caplog: pytest.LogCaptureFixture
+) -> None:
+    """**缺陷本体的端到端形态**：水位停在半年前，真实请求的窗仍只有首跑那 7 天。
+
+    修前 `SourceRequest.since` = 旧水位 − overlap（2025-12-30），窗随停滞天数天天变宽。
+    """
+    fetcher = _StubFetcher({"crossref": [_stub("Agent A", "10.1/a")]})
+    subscription = _load_one(env)
+    _seed_watermark(env, subscription.name, DateState("2026-01-01"))
+
+    with caplog.at_level(logging.WARNING, logger="paper_crawler"):
+        run_watch(env.context(fetcher=fetcher), subscription, now=DAY)
+
+    assert [request.since for request in fetcher.requests] == ["2026-07-19"]  # DAY − 7
+    (record,) = _capped_warnings(caplog)
+    assert record.levelname == "WARNING"
+    message = record.getMessage()
+    assert "可能漏收" in message and "水位仍未推进" in message and "backfill" in message
+
+
+def test_fresh_watermark_does_not_warn_about_a_capped_window(
+    env: _Env, caplog: pytest.LogCaptureFixture
+) -> None:
+    """正常推进的订阅一句噪音都不该多出来（否则真告警会被淹掉）。"""
+    fetcher = _StubFetcher({"crossref": [_stub("Agent A", "10.1/a")]})
+    subscription = _load_one(env)
+    _seed_watermark(env, subscription.name, DateState("2026-07-25"))
+
+    with caplog.at_level(logging.WARNING, logger="paper_crawler"):
+        run_watch(env.context(fetcher=fetcher), subscription, now=DAY)
+
+    assert [request.since for request in fetcher.requests] == ["2026-07-23"]  # 水位 − 2
+    assert _capped_warnings(caplog) == []
+
+
+def test_truncated_round_counts_the_stall_without_moving_the_watermark(env: _Env) -> None:
+    """熔断轮：日期水位一个字节不动，只把连续熔断轮计数 +1（可观测面的载体）。"""
+    fetcher = _StubFetcher({"crossref": [_stub(f"Agent {i}", f"10.1/{i}") for i in range(5)]})
+    subscription = _load_one(env, guard={"max_new_per_run": 2})
+    _seed_watermark(env, subscription.name, DateState("2026-01-01"))
+    context = env.context(fetcher=fetcher)
+
+    first = run_watch(context, subscription, now=DAY)
+    second = run_watch(context, subscription, now=DAY)
+
+    assert (first.outcome, second.outcome) == (WatchOutcome.TRUNCATED, WatchOutcome.TRUNCATED)
+    assert env.papers() == 0  # 熔断仍是零入库
+    stored = Watermark.parse(env.subs_repo.read_watermark(subscription.name))
+    assert stored.state_for("crossref") == DateState("2026-01-01", 2)
+
+
+def test_first_run_truncation_still_leaves_an_empty_watermark(env: _Env) -> None:
+    """首跑轮熔断不凭空造状态：文档仍是 `{}`（"还没成功跑过任何一轮"必须留得住）。"""
+    fetcher = _StubFetcher({"crossref": [_stub(f"Agent {i}", f"10.1/{i}") for i in range(5)]})
+    subscription = _load_one(env, guard={"max_new_per_run": 2})
+
+    summary = run_watch(env.context(fetcher=fetcher), subscription, now=DAY)
+
+    assert summary.outcome is WatchOutcome.TRUNCATED
+    assert env.subs_repo.read_watermark(subscription.name) == {}
+
+
+def test_dry_run_never_records_a_stall(env: _Env) -> None:
+    """演习不留痕迹——熔断计数同样不写（与"不推 watermark"同因）。"""
+    fetcher = _StubFetcher({"crossref": [_stub(f"Agent {i}", f"10.1/{i}") for i in range(5)]})
+    subscription = _load_one(env, guard={"max_new_per_run": 2})
+    _seed_watermark(env, subscription.name, DateState("2026-01-01"))
+
+    summary = run_watch(env.context(fetcher=fetcher), subscription, dry_run=True, now=DAY)
+
+    assert summary.outcome is WatchOutcome.TRUNCATED
+    stored = Watermark.parse(env.subs_repo.read_watermark(subscription.name))
+    assert stored.state_for("crossref") == DateState("2026-01-01", 0)
+
+
+def test_consecutive_stalls_escalate_the_warning_to_error(
+    env: _Env, caplog: pytest.LogCaptureFixture
+) -> None:
+    """连续 `STALL_ALERT_ROUNDS` 轮没推进 → 同一条告警升格 ERROR（obslog 最响一档）。
+
+    偶发一轮熔断是正常运维态，连续三轮是"这个订阅卡住了、缺口还在变大"——两者在日志里
+    必须长得不一样。
+    """
+    fetcher = _StubFetcher({"crossref": [_stub(f"Agent {i}", f"10.1/{i}") for i in range(5)]})
+    subscription = _load_one(env, guard={"max_new_per_run": 2})
+    _seed_watermark(env, subscription.name, DateState("2026-01-01"))
+    context = env.context(fetcher=fetcher)
+
+    with caplog.at_level(logging.WARNING, logger="paper_crawler"):
+        for _ in range(STALL_ALERT_ROUNDS + 1):
+            run_watch(context, subscription, now=DAY)
+
+    levels = [record.levelname for record in _capped_warnings(caplog)]
+    assert levels == ["WARNING"] * STALL_ALERT_ROUNDS + ["ERROR"]
+    assert f"连续 {STALL_ALERT_ROUNDS} 轮熔断截断" in _capped_warnings(caplog)[-1].getMessage()
+
+
+def test_recovery_advances_the_watermark_and_clears_the_stall_counter(env: _Env) -> None:
+    """熔断解除后的第一轮成功：水位正常推进，计数清零（不留"曾经卡过"的尾巴）。"""
+    corpus = [_stub(f"Agent {i}", f"10.1/{i}", pub_date="2026-07-24") for i in range(5)]
+    fetcher = _StubFetcher({"crossref": corpus})
+    subscription = _load_one(env, guard={"max_new_per_run": 2})
+    _seed_watermark(env, subscription.name, DateState("2026-01-01"))
+    run_watch(env.context(fetcher=fetcher), subscription, now=DAY)  # 熔断轮 → stalls=1
+
+    relaxed = _load_one(env, guard={"max_new_per_run": 200})  # 同名订阅，只放宽护栏
+    summary = run_watch(env.context(fetcher=fetcher), relaxed, now=DAY)
+
+    assert summary.outcome is WatchOutcome.OK
+    stored = Watermark.parse(env.subs_repo.read_watermark(relaxed.name))
+    assert stored.state_for("crossref") == DateState("2026-07-24", 0)

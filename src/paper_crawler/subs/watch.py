@@ -35,6 +35,11 @@
 区分；dry-run 不落（design/09 §6.2"只报数不动库"，plan §4 T5 dry-run 语义），故
 "熔断 + dry-run"同时成立时**以 dry-run 为准**：演习不留任何痕迹。
 
+熔断行的"推 watermark = ✘"指的是**水位本身**（日期/id 一个字节不动，这条纪律不变）。
+自审计 P1-24 起，熔断轮会另写一次 watermark 文档**只为把该源的连续熔断轮计数 +1**
+（`watermark.bump_stalls`，配合稳态窗宽 cap 的告警升级）；已有状态一条都没有时（首跑
+轮熔断）连这次写都不做，文档仍是 `{}`。dry-run 下同样不写。
+
 上表第三行的"整体失败"是 `run_watch` **内部**可收敛的失败（全部源都挂了）。还有一类
 失败发生在 per-step 循环**之前**（最典型：开头那句 `Watermark.parse` 撞上损坏的水位
 文档），`run_watch` 对它**不兜底**——那是"本订阅致命"，且必须 fail-loud（当成首跑会
@@ -205,11 +210,14 @@ from paper_crawler.subs.types import (
     is_source_scoped_predicate,
 )
 from paper_crawler.subs.watermark import (
+    STALL_ALERT_ROUNDS,
     IdSetDiff,
     Watermark,
+    WindowReport,
     advance_with_report,
+    bump_stalls,
     strategy_for,
-    window_params,
+    window_report,
 )
 from paper_crawler.tasks import TaskQueue
 from paper_crawler.types import PaperStub, VenueNames, VenueSpec, utcnow_iso
@@ -941,6 +949,35 @@ def _log_dropped_unknown_year(subscription: str, source: str, stubs: Sequence[Pa
     return dropped
 
 
+def _warn_if_window_capped(subscription: str, source: str, window: WindowReport) -> None:
+    """窗被稳态 cap 截断时的响亮降级（审计 P1-24；`watermark` 模块 docstring 同名两段）。
+
+    截断意味着 `[旧水位, 窗下界)` 这段**不在本轮查询范围内**，而水位又按推进纪律停在
+    旧值——两件事合起来就是"可能漏收，且没人会自动补上"。故必须逐轮说清三件事：窗被削
+    了、可能漏收、以及用户能做什么（人工 backfill 走 `crawler pull`，或等熔断解除）。
+
+    **连续 ≥ `STALL_ALERT_ROUNDS` 轮**（该源状态里的 `stalls` 计数）时升格为 ERROR：
+    偶发一轮熔断是正常运维态，连续三轮是"这个订阅已经卡住了、且缺口在变大"，两者在日志
+    里必须长得不一样，否则前者的噪音会把后者淹掉。
+    """
+    if not window.capped:
+        return
+    stalled = window.stalls >= STALL_ALERT_ROUNDS
+    tail = (
+        f"；该源已连续 {window.stalls} 轮熔断截断（≥{STALL_ALERT_ROUNDS}），缺口仍在扩大"
+        if stalled
+        else ""
+    )
+    log_event(
+        "ERROR" if stalled else "WARNING",
+        f"watch[{subscription}]: 源 {source} 的查询窗已按稳态上限截断"
+        f"（下界抬到 {window.lower}），可能漏收：水位仍未推进，"
+        f"需人工 backfill（crawler pull）或等熔断解除{tail}",
+        stage="watch",
+        venue=source,
+    )
+
+
 def _run_source(
     context: WatchContext,
     subscription: Subscription,
@@ -958,8 +995,9 @@ def _run_source(
     source = step.source
     outcome = _SourceOutcome()
     try:
-        window = window_params(watermark, source, now=day)
-        requests = build_requests(subscription.name, step, window)
+        window = window_report(watermark, source, now=day)
+        _warn_if_window_capped(subscription.name, source, window)
+        requests = build_requests(subscription.name, step, window.params)
         stubs: list[PaperStub] = []
         for request in requests:
             stubs.extend(context.fetcher.fetch(request))
@@ -1198,14 +1236,14 @@ def run_watch(
     failures: list[FailureEvent] = []
     candidates: list[_Candidate] = []
     advanced = watermark
-    succeeded_sources = 0
+    succeeded: list[str] = []
 
     for step in plan.steps:
         outcome = _run_source(context, subscription, step, watermark, day=day)
         if outcome.failure is not None:
             failures.append(outcome.failure)
             continue
-        succeeded_sources += 1
+        succeeded.append(step.source)
         seen_count += outcome.seen
         candidates.extend(_Candidate(source=step.source, paper=item) for item in outcome.kept)
         advanced = _advance_source(
@@ -1235,7 +1273,7 @@ def run_watch(
 
     if truncated:
         outcome_kind = WatchOutcome.TRUNCATED
-    elif failures and succeeded_sources == 0:
+    elif failures and not succeeded:
         outcome_kind = WatchOutcome.FAILED
     else:
         outcome_kind = WatchOutcome.OK
@@ -1265,6 +1303,16 @@ def run_watch(
         context.subs_repo.write_watermark(
             subscription.name, advanced.restrict_to(subscription.source_names()).to_dict()
         )
+    elif outcome_kind is WatchOutcome.TRUNCATED and not dry_run:
+        # 熔断轮**只**记连续轮计数，日期/id 水位一个字节不动（`bump_stalls` docstring）
+        # ——"熔断不推进水位"的纪律不受影响，写进去的是 `watermark`（存量）而非 `advanced`。
+        # 首跑轮熔断时一条状态都没有 → `changed` 为假 → 不写库，文档仍是 `{}`（"还没成功
+        # 跑过任何一轮"这个事实必须留住）。dry-run 照旧不留任何痕迹。
+        stalled, changed = bump_stalls(watermark, succeeded)
+        if changed:
+            context.subs_repo.write_watermark(
+                subscription.name, stalled.restrict_to(subscription.source_names()).to_dict()
+            )
 
     summary = RunSummary(
         subscription=subscription.name,

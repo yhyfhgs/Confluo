@@ -2019,6 +2019,27 @@ def preprint_report_cmd(home: HomeOpt = None, verbose: VerboseOpt = False) -> No
 # 本质差异：**零网络**（bulk 快照本地 join，`domains = ()`），门控是快照存在性与新鲜度
 # 而非 key/预算。registry role 声明式改造挂 P8，本 Phase 走元组扩位。
 _ENRICH_SOURCES = ("openalex", "s2", "repec")
+#
+# -- 断点续跑（schema v7，审计 P1-16）--
+#
+# 缺陷：`_doi_universe` 按 DOI **字典序**取全库、`_run_enrich_source` 遇错永久 break 且
+# 不留位置。日额度不足以扫完全库时每天都从同一批 DOI 从头开始 → 字典序后半段的论文
+# **永远轮不到富化**，且摘要行上看不出来（每天都"处理了 N 篇"）。
+#
+# 修法两件，缺一不可：
+#
+# 1. **遍历序**从 DOI 字典序改为 `paper.id` 升序（`_enrich_doi_page`）。`paper.id` 是
+#    ULID（`types.new_ulid`），前缀是毫秒时间戳、字典序 ≈ 插入序：新论文天然落在尾部，
+#    不会插到别人前面把已扫过的段落再挤一遍。**刻意不用 `paper.rowid`**——同是插入序，
+#    但 rowid 是 SQLite 专有物，写进查询就断了 D-001 的 PostgreSQL 迁移路径（0006/0007
+#    两份迁移的"方言中性"自检也是同一条纪律）。
+# 2. **断点**每源一个（`enrich_cursor` 表 + `Repo.read/write/clear_enrich_cursor`）：
+#    本轮从断点之后取一页，跑完记下末条；取空则清断点从头回绕；遇错保留已完成部分的
+#    位置、下轮接着跑。三条合起来 = 任意一篇论文迟早会轮到，且不会被反复重扫。
+#
+# `--limit` 的语义因此从"只看字典序前 N 个"变成"本轮从断点起扫 N 个"——正是日额度受限
+# 场景真正需要的那个语义（旧语义下它是"永远只看这 N 个"）。
+#
 # 每次 `enrich_batch` 调用处理的 DOI 数上限——CLI 层的"外层分页"，与各 adapter 内部
 # 自己的批量机制（openalex URL 长度自算、s2 官方 ≤500/批）是两层独立的粒度：外层页
 # 控制进度可见度/预算熔断响应粒度（一页可能触发数个真实请求），内层页是单次真实
@@ -2027,9 +2048,58 @@ _ENRICH_SOURCES = ("openalex", "s2", "repec")
 _ENRICH_PAGE_SIZE = 200
 
 
+# 一条待富化条目：`(paper.id, doi)`。键随值一路带着走，因为断点记的是**键**（插入序）
+# 而喂 adapter 的是**值**（DOI），两者在分页收尾时必须能对上。
+_EnrichTarget = tuple[str, str]
+
+
+def _enrich_doi_page(
+    db: Database, *, venue_id: str | None, after: str | None, limit: int | None
+) -> list[_EnrichTarget]:
+    """按 `paper.id` 升序取一页待富化 DOI（keyset 分页，`after` 之后严格取起）。
+
+    与 `_doi_universe`（`oa-report` 用，DOI 字典序、无断点）**刻意分开两个函数**：那边
+    是一份一次性报告的展示序，改它的排序会无端改掉报告的输出面；这边要的是"可续跑的
+    插入序"。两者查的是同一批行，语义诉求不同，合并只会逼出一个带模式开关的函数。
+
+    排序键 = `identifier.paper_id`（= `paper.id`，ULID ≈ 插入序，理由见本节顶部注释）。
+    `identifier` 表主键是 `(scheme,value)`，故同一个 DOI 至多挂一个 paper，无需 DISTINCT。
+    反过来同一个 paper 挂两个 DOI 是可能的（预印本 DOI + 正式 DOI）——那时 `limit` 恰好
+    切在两者中间会让后一条本轮落空，下一次回绕时补上（断点语义是"这个键及之前都已处理"，
+    不允许回头，否则续跑会退化成原地打转）。
+
+    性能实测（50k 库）：无 `ANALYZE` 时 SQLite 对本查询选 `scheme` 列的 autoindex
+    （`sqlite_autoindex_identifier_1`）+ `TEMP B-TREE` 排序（~2.5ms/页）；跑过 `ANALYZE`
+    后改走 `idx_identifier_paper`（~0.1–0.2ms/页，见 0006_perf_indexes.sql）。两种计划
+    **正确性与续跑语义均不受影响**——差的只是常数因子，不影响本函数的分页契约。
+    """
+    where = ["i.scheme = 'doi'"]
+    params: list[object] = []
+    if venue_id is not None:
+        where.append("p.venue_id = ?")
+        params.append(venue_id)
+    if after is not None:
+        where.append("i.paper_id > ?")
+        params.append(after)
+    sql = (
+        "SELECT i.paper_id AS key, i.value AS value FROM identifier i "
+        "JOIN paper p ON p.id = i.paper_id "
+        f"WHERE {' AND '.join(where)} ORDER BY i.paper_id, i.value"
+    )
+    if limit is not None:
+        sql += " LIMIT ?"
+        params.append(limit)
+    return [(str(row["key"]), str(row["value"])) for row in db.query(sql, tuple(params))]
+
+
 @dataclass(frozen=True)
 class _EnrichmentSourceSummary:
-    """单个 source 一次 `crawler enrich` 运行的摘要行数据。"""
+    """单个 source 一次 `crawler enrich` 运行的摘要行数据。
+
+    `last_key` = **最后一个完整跑完的分页**的末条键（一页都没跑完 → None）。断点只认
+    "整页跑完"这个粒度：`enrich_batch` 是整页一次调用，页内失败时哪些 DOI 已被对端处理
+    无从得知，把断点推到页中间就是在猜。
+    """
 
     source: str
     processed: int
@@ -2037,9 +2107,11 @@ class _EnrichmentSourceSummary:
     merged: int
     candidate: int
     stopped_reason: str | None
+    last_key: str | None = None
+    scanned: int = 0
 
 
-def _chunked(items: list[str], size: int) -> Iterator[list[str]]:
+def _chunked(items: list[_EnrichTarget], size: int) -> Iterator[list[_EnrichTarget]]:
     for i in range(0, len(items), size):
         yield items[i : i + size]
 
@@ -2121,9 +2193,9 @@ def _prepare_enrich_source(
 
 
 def _run_enrich_source(
-    adapter: EnrichmentSource, engine: MergeEngine, source_id: str, dois: list[str]
+    adapter: EnrichmentSource, engine: MergeEngine, source_id: str, targets: list[_EnrichTarget]
 ) -> _EnrichmentSourceSummary:
-    """驱动一个 source 对整批 `dois` 的 enrich 循环：外层分页调 `enrich_batch` → 逐
+    """驱动一个 source 对整批 `targets` 的 enrich 循环：外层分页调 `enrich_batch` → 逐
     `PaperStub` 经 `MergeEngine.ingest(stub, source=source_id)` 回注（字段级来源优先级
     收敛天然补缺不覆盖，merge.py `SOURCE_PRIORITY`）。
 
@@ -2131,15 +2203,21 @@ def _run_enrich_source(
     source**剩余**页的处理、记入 `stopped_reason`——不重试、不向上抛出崩溃整个命令：
     `enrich` 不进 pull 六阶段，没有 pipeline 的重试/BLOCKED 语义（模块顶层注释）。
     已经处理完的页在终止前已正确回注入库，不回滚（"尽力而为，报告在哪停下"）。
+
+    每跑完整整一页就把该页末条的键记进 `last_key`（审计 P1-16）：中途终止时它就是断点，
+    下一轮从这里之后接着跑——旧实现在这里只有一个 `break`，位置信息一并丢掉，于是每一轮
+    都从同一个起点重来。
     """
     processed = created = merged = candidate_flagged = 0
     stopped_reason: str | None = None
-    for page in _chunked(dois, _ENRICH_PAGE_SIZE):
+    last_key: str | None = None
+    for page in _chunked(targets, _ENRICH_PAGE_SIZE):
         try:
-            stubs = adapter.enrich_batch(page)
+            stubs = adapter.enrich_batch([doi for _, doi in page])
         except CrawlerError as exc:
             stopped_reason = f"{exc.error_class.value}: {exc}"
             break
+        last_key = page[-1][0]
         for stub in stubs:
             result = engine.ingest(stub, source=source_id)
             processed += 1
@@ -2156,7 +2234,41 @@ def _run_enrich_source(
         merged=merged,
         candidate=candidate_flagged,
         stopped_reason=stopped_reason,
+        last_key=last_key,
+        scanned=len(targets),
     )
+
+
+def _enrich_targets_for(
+    repo: Repo, db: Database, source_id: str, *, venue_id: str | None, limit: int | None
+) -> list[_EnrichTarget]:
+    """该源本轮要处理的一页：从断点之后取；取空说明上轮已到库尾 → 清断点、从头回绕。
+
+    回绕是"老论文不会永久饿死"的那一半保证（另一半是插入序遍历，见本节顶部注释）。
+    """
+    cursor = repo.read_enrich_cursor(source_id)
+    targets = _enrich_doi_page(db, venue_id=venue_id, after=cursor, limit=limit)
+    if not targets and cursor is not None:
+        repo.clear_enrich_cursor(source_id)
+        targets = _enrich_doi_page(db, venue_id=venue_id, after=None, limit=limit)
+    return targets
+
+
+def _commit_enrich_cursor(
+    repo: Repo, summary: _EnrichmentSourceSummary, *, limit: int | None
+) -> None:
+    """把本轮跑到哪落成断点：一页都没跑完 → 原样保留；扫到库尾 → 清；否则记末条键。
+
+    "扫到库尾"的判据 = 本轮没有中途终止，且**取回的条数没有顶满 `limit`**（不限时恒成立）。
+    恰好顶满时不敢断言到没到尾，故照记断点——下一轮取空会走 `_enrich_targets_for` 的回绕
+    分支，最多多花一次空查询，绝不会漏掉尾部那几条。
+    """
+    if summary.last_key is None:
+        return  # 首页即失败：断点原样保留，下轮仍从同一处开始（这是正确的"没有进展"）
+    if summary.stopped_reason is None and (limit is None or summary.scanned < limit):
+        repo.clear_enrich_cursor(summary.source)
+    else:
+        repo.write_enrich_cursor(summary.source, summary.last_key)
 
 
 def _render_enrich_summary(
@@ -2204,16 +2316,22 @@ def enrich(
         str | None, typer.Option("--source", help="仅跑该 enrich source（openalex|s2|repec）")
     ] = None,
     limit: Annotated[
-        int | None, typer.Option("--limit", help="限制扫描的 DOI 数量（默认不限）")
+        int | None,
+        typer.Option("--limit", help="本轮从断点起扫描的 DOI 数量上限（默认不限）"),
     ] = None,
     home: HomeOpt = None,
     verbose: VerboseOpt = False,
 ) -> None:
     """补充层 enrich 通道：openalex/s2 duck-typed `enrich_batch`（plan §2-5/§4 T6）。
 
-    扫库内带 `doi` identifier 的 paper（`--venue` 可选收窄，同 `oa-report` 的
-    `_doi_universe` 复用）→ 按 `--source` 指定的（或省略时全部两个）source 分批调用
-    `enrich_batch` → 每条 `PaperStub` 经 `MergeEngine.ingest(stub, source=…)` 回注。
+    扫库内带 `doi` identifier 的 paper（`--venue` 可选收窄）→ 按 `--source` 指定的
+    （或省略时全部三个）source **各自从自己的断点续跑**一页 → 每条 `PaperStub` 经
+    `MergeEngine.ingest(stub, source=…)` 回注。
+
+    **断点续跑（审计 P1-16）**：每源记"上次处理到哪"（`enrich_cursor` 表），下轮从那之后
+    继续，扫到库尾清断点回绕；遍历序是 `paper.id` 升序（≈ 插入序）而非 DOI 字典序。
+    `--limit` 因此是"本轮扫多少"，配日额度用——旧语义下它是"永远只看字典序前 N 个"，
+    额度不足时后半个库永远轮不到（见本节顶部注释）。
 
     **不参与 pull 六阶段、不产 `RunReport`、无任何 AC 依赖它**（AC-3.5 五刊全史由
     crossref 独立完成，同模块顶层"-- enrich --"分节注释）——退出码恒为 0，除非早期
@@ -2229,23 +2347,24 @@ def enrich(
     with _env(home, verbose) as env:
         if venue is not None:
             _require_known_venue(env, venue)
-        dois = _doi_universe(env.ctx.db, venue_id=venue)
-        if limit is not None:
-            dois = dois[:limit]
-
-        if not dois:
+        # 空库判定走"取一条"而非取全集：本命令此后按源分别取页，不再需要那份全集。
+        if not _enrich_doi_page(env.ctx.db, venue_id=venue, after=None, limit=1):
             typer.echo("库内无 doi identifier（可选按 --venue 过滤后同样为空），无可富化目标。")
             raise typer.Exit(code=0)
 
         engine = MergeEngine(env.ctx.repo)
         sources = [source] if source is not None else list(_ENRICH_SOURCES)
         for source_id in sources:
+            targets = _enrich_targets_for(
+                env.ctx.repo, env.ctx.db, source_id, venue_id=venue, limit=limit
+            )
             adapter, dedicated = _prepare_enrich_source(env, source_id)
             try:
-                summary = _run_enrich_source(adapter, engine, source_id, dois)
+                summary = _run_enrich_source(adapter, engine, source_id, targets)
             finally:
                 if dedicated is not None:
                     dedicated.close()
+            _commit_enrich_cursor(env.ctx.repo, summary, limit=limit)
             typer.echo(_render_enrich_summary(summary, extra_note=_enrich_extra_note(env, adapter)))
     raise typer.Exit(code=0)
 
