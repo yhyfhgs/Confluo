@@ -1,6 +1,6 @@
 # Paper Crawler
 
-`AGENTS.md` is the shared instruction source; `CLAUDE.md` imports it. This repository contains the crawler implementation and its design knowledge base. Read `README.md`, the document registry `docs/INDEX.md`, and current `docs/plan/progress.md`; consult the relevant design and `docs/plan/decision-log.md` for the task. Establish current capability from the implementation and verification evidence.
+`AGENTS.md` is the shared instruction source. This repository contains the crawler implementation and its design knowledge base. Read `README.md`, the document registry `docs/INDEX.md`, and current `docs/plan/progress.md`; consult the relevant design and `docs/plan/decision-log.md` for the task. Establish current capability from the implementation and verification evidence.
 
 ## Layout and design authority
 
