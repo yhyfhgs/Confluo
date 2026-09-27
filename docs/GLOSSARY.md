@@ -7,8 +7,8 @@ updated: 2026-09-27
 
 # 术语表
 
-> v2 的共享术语以 [plan/v2/01 §14 术语登记表](plan/v2/01-vision-and-requirements.md) 为权威，含编号与术语歧义的消解规则。本页只列最常用的术语，供速查；v2 文档评审通过后，01 §14 的术语再并入本页正式章节。
-> v1 术语表已归档，见 [archive-v1](archive-v1.md#docs-glossary-md)。
+> 本页是 v2 最常用术语的速查表。完整的术语登记（含编号与歧义消解规则）在需求长稿的 §14：`git show v2-drafts:docs/plan/v2/01-vision-and-requirements.md`；v2 文档评审通过后再并入本页。
+> v1 术语表在 `archive/v1` 的 `docs/GLOSSARY.md`，见[归档说明](archive.md)。
 
 | 术语 | 含义 |
 |---|---|

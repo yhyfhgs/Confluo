@@ -5,18 +5,62 @@ owner: opus5.5-primary
 updated: 2026-09-27
 ---
 
-# 架构决策记录（Decision Log / ADR）
+# 架构决策记录（ADR）
 
-> **2026-09-27 v2 重新开始**：v1 实现与文档已归档到分支 `archive/v1`（标签 `v1-final`）。v1 决策 D-001…D-039 的正文同样只在该分支上，本文只保留它们的编号索引；v2 草案 D-040…D-071 见文末登记节。
-> 格式：每条决策一节，编号 D-NNN 单调递增，永不复用。推翻旧决策时新增一条并注明 `supersedes: D-XXX`，旧条目标注 `superseded-by`。
-> 状态：`accepted`（生效）/ `proposed`（待定）/ `superseded`（被取代）。
+> 编号 D-NNN 单调递增，永不复用。推翻旧决策时新增一条并注明 `supersedes: D-XXX`，旧条目标注 `superseded-by`。
+> 状态：`accepted`（生效）、`proposed`（待定）、`superseded`（被取代）。
 
----
+## v2 决策草案（D-040…D-071，proposed）
+
+这 32 条都等你逐条确认，这是 V0 的第一张任务卡。每条确认后，按本日志格式补全文并改为 `accepted`，同时在下面的 v1 索引里给被取代或修订的条目标注 `superseded-by` 或 `revised-by`（限定"在 v2 中"）。实现期的新决策从 D-072 起编号。
+
+草案全文（背景、理由、影响与验收映射）：`git show v2-drafts:docs/plan/v2/adr-proposals.md`
+
+| 编号 | 决策 | 与 v1 ADR |
+|---|---|---|
+| D-040 | D-001…D-039 继续约束 v1；v2 只受 D-040 起的 ADR 与明列继承的 v1 ADR 约束，未列即无约束力 | 总则：逐条列明 D-001…D-039 在 v2 中的效力 |
+| D-041 | Web UI 与多用户纳入 v2；"不再分发"实质保留，细化为共享层只收可再分发内容、受限全文只在用户侧单篇取回 | —（修订 v1 需求中"不做 Web UI、多用户"的非目标） |
+| D-042 | 服务端只支持 PostgreSQL 18，不做双后端；v1 冻结只修缺陷；v1→v2 一次性 ETL 只读、幂等，私有物不进共享层 | 修订 D-001；D-017 方言中性不适用；D-025、D-032 只用于 v1、personal 部署与本机代理 pc-agent |
+| D-043 | `corpus`/`usr`/`evt`/`ops` 四域，私有内容及其派生永不进共享层；出版方版权的 B 类摘要默认只进内部索引，登记 TDM 保留者除外 | — |
+| D-044 | 依赖、模型与数据分放行、评审、可选、禁止四级；保留 psycopg 3；AGPL、NC 类只作默认关闭的可选项 | 沿用 D-017 依赖最小化精神 |
+| D-045 | 许可闸按操作判定，许可未知即不共享；共享 OA 缓存默认关；商用开关默认关，开启即停用非商用来源与 NC 内容 | — |
+| D-046 | Source 与 Venue 分离；SourceSpec v2 声明三条来源通道及证据；连接器分九族，只为有官方通道的站点写代码 | 修订 D-002、D-003；取代 D-012、D-013 族归属与 D-015 校验规则；关闭 D-038 的暂缓 |
+| D-047 | 语料流水线定为 harvest→normalize→identify→enrich→index→percolate 六段；受限全文取回移出后台 | 取代 D-004；继承 D-005；D-039 的 backfill 由快照导入取代 |
+| D-048 | Work/Version/Manifestation 三层身份；预印本与正式版同属一个 Work，WP 与发表版只连边；弱信号不自动合并 | 修订 D-007 的表示（原则继承）；继承 D-031 |
+| D-049 | API 与 robots 冲突时后台收割须书面确认，按需单篇须登记例外附表；用户点击取回不算爬虫，具名禁 AI 的站点除外 | 补充 D-014；D-026 推广到全部主机 |
+| D-050 | 不在线访问 dblp，改用 DROPS 月度快照或核验后的 SPARQL；v1 dblp adapter 保留但不接入 | 补充 D-037；取代 D-021 决策 1 与 D-026 的 dblp 在线部分 |
+| D-051 | SSRN 元数据经 Crossref（前缀 10.2139）获取，站点零请求；删除浏览器全文模式，只给外链 | 取代 D-029 决策 2、D-011 浏览器下载部分与 D-030 的 SSRN 用法；D-029 其余决策继承 |
+| D-052 | 书面确认前停用 OpenReview 平台侧共享收割，由 arXiv、dblp 快照与外链兜底；用户令牌只供本人查询 | — |
+| D-053 | 受限全文只在用户显式触发时由浏览器扩展或本机 pc-agent 单篇取回；平台默认"在出版社打开"，不代取、不批量 | 取代 D-030 平台侧使用；修订 D-003、D-006；D-024 的 wiley 全文转用户侧 |
+| D-054 | 部署级 API key 只由出站网关读取；用户级出版商凭证存客户端、服务端不可解密；会话 cookie 不跨设备同步 | 修订 D-023 |
+| D-055 | Egress Gateway 是平台唯一出口，由网络隔离强制；五元组令牌桶加全局配额账本；交互、收割、enrich 三道舱壁 | 取代 D-039；D-030 挑战判定与域级冷却继承到网关与扩展；D-014 诚实 UA 由网关注入 |
+| D-056 | LLM 不进热路径；画像任务只用自托管、T1 默认关；私有数据不发第三方；面向境内只用已备案模型；AI 内容须标识 | — |
+| D-057 | 部署可分地区单元，个人信息按单元存储；受合规约束的特性开关绑定可自动检查的前置清单，未满足不能开启 | — |
+| D-058 | 以 OpenAlex Topics 为骨架的 TSRG 同时服务查询路由、收割调度、兴趣建模与反向推送；路由不用个人画像 | — |
+| D-059 | 统一 Query AST，五意图含 EXPAND（引文扩展）；频道编译为共享 WatchKey；远端不支持的条件放宽后本地过滤 | —（在 v2 中取代 v1 订阅 DSL 设计，下推原则继承） |
+| D-060 | pg_textsearch BM25 作词法排序、tsvector 作过滤谓词，pgvector halfvec HNSW 作稠密召回，RRF 融合后按预算重排 | 修订 D-034 决策 6，其单点封装与对账两原则继承；D-017 的 FTS5 推迟不适用 |
+| D-061 | 推荐分 R0→R1→R2 逐级升级；R0 用每用户逻辑回归，ValueModel 作统一接口并让净负分沉底；批次默认 25 张 | — |
+| D-062 | 06 推荐文档是事件契约唯一权威；训练与热度用的反馈须绑定服务端生成的 `impression_id`；`open_fulltext` 不进公共信号 | — |
+| D-063 | 新论文曝光下限只对资格集合生效，且不超过期望曝光的 5%；其余新作品靠贝叶斯分级曝光逐环扩大受众 | — |
+| D-064 | 设 `k_cf`、`k_reason`、`k_show` 三门槛，`k_show` ≥5；用户派生的作者与引文邻域收割键须 ≥`k_cf` 人共有；V6 前定差分隐私 | — |
+| D-065 | 研究者匹配默认关闭，双方都加入才启用；只用本人主动公开的画像；须年满 18 岁；撤回后 24 小时内删资料 | — |
+| D-066 | 审计主体只存 HMAC 假名；决策链与审计链各为哈希链，单写者串行，每日签名锚点 | — |
+| D-067 | 导出 24 小时内生成；注销 7 天宽限、30 天内删完并加密粉碎；遇法定留存先假名化、期满再删；异地备份由 pgBackRest 拉取 | — |
+| D-068 | REST + SSE，以 OpenAPI 3.1 为契约，URI 主版本 `/api/v2`；联邦检索本地先返回、远端流式补齐；不用 GraphQL | — |
+| D-069 | 领域事件与业务数据同事务写入 outbox，再投递到 PG 原生队列（procrastinate 首选）；T1 不引入 Kafka | — |
+| D-070 | 经 ObjectStore 抽象只用 S3 最小子集；默认本地盘，自托管首选 SeaweedFS；不选 MinIO | — |
+| D-071 | GROBID 启用 `teiCoordinates=figure`，只对许可闸放行的共享 OA 全文定位关键图 | 修订 D-033 |
+
+**裁决顺序**（草案附录的建议）：
+
+- 首批在 V0 裁决：D-040…D-044、D-046、D-047、D-049、D-053、D-055。它们阻塞设计转 approved 或 V1 开工：D-041 是 07 前端交互转 approved 的前提，D-049 是 V1 收割与 V0 书面确认发函的依据。
+- 次批在 V1 前裁决：D-045、D-048、D-050…D-052、D-054、D-056、D-066、D-070、D-071，影响 V1 的来源接入、enrich 与审计。
+- 其余在承接的里程碑开工前裁决：V2 前 D-058…D-060；V3 前 D-057、D-062、D-067…D-069；V4 前 D-061、D-063、D-064；V6 前 D-065。
+- 草案请用户特别确认 6 处取舍，其中 4 处已有主 agent 裁决，表中按裁决写：D-043 在条款中用自然语言声明 TDM（文本与数据挖掘）保留的来源，其摘要同样排除；D-049 的 NCBI 与其他冲突主机一样，按需单篇以登记例外附表为前提，书面确认通道遇 ToS 变化 24 小时回退；D-053 personal 本机部署把私有全文交第三方 API，须同时有单独同意、来源条款允许与零保留条款；D-059 EXPAND 列为第五意图。仍待定的是 D-064 的 k 初值（V4 开工前）与 D-067 的注销、备份时限（待法务）。
 
 ## v1 决策索引（D-001…D-039）
 
-- 正文、依据与 v1 内的修订关系见 `archive/v1` 上的 [decision-log](../archive-v1.md#docs-plan-decision-log-md)：`git show archive/v1:docs/plan/decision-log.md`。
-- 这 39 条在 v1 中均为 `accepted`，继续约束 v1 实现。它们在 v2 中继承、修订、取代还是不适用，由 D-040（proposed，全文见 [adr-proposals](v2/adr-proposals.md)）逐条列明。D-040 起的 ADR 经用户确认后，在下表对应行标注 `superseded-by` 或 `revised-by`（限定"在 v2 中"）。
+这 39 条在 v1 中都是 `accepted`，继续约束 v1 实现；它们在 v2 中的效力由 D-040 逐条列明。正文、依据与 v1 内部的修订关系只在 `archive/v1` 上：`git show archive/v1:docs/plan/decision-log.md`。
 
 | 编号 | 标题 | 日期 |
 |---|---|---|
@@ -59,46 +103,3 @@ updated: 2026-09-27
 | D-037 | dblp adapter 出列生产链（保留代码与测试） | 2026-07-29 |
 | D-038 | design/08 venue-tracking 整域 defer（Phase 8 候选） | 2026-07-29 |
 | D-039 | 任务优先级队列 + `crawler backfill` 命令 defer | 2026-07-29 |
-
----
-
-## v2 重新设计 ADR 草案登记（D-040…D-071，proposed）
-
-- 状态：proposed · 日期：2026-09-27 · 全文：[plan/v2/adr-proposals.md](v2/adr-proposals.md)（背景、决策、理由、影响，以及 supersedes/修订的旧 ADR 逐条写明）
-- 说明：v2 重新设计阶段（调研见 [docs/survey/](../survey/README.md)，设计见 [plan/v2/](v2/README.md)）起草了以下 32 条 ADR。本节在决策日志中**预留编号**并登记状态，防止与其他工作冲突；全文只维护在草案文件中。每条经用户确认后，按本日志格式把全文移入本文件、状态改为 `accepted`，并在被取代或修订的旧条目上标注 `superseded-by` / `revised-by`。在此之前，D-001…D-039 对 v1 继续有效。
-- 主 agent 的第 2、3 轮设计裁决（[简报](v2/00-design-brief.md) §10、§11）中需要 ADR 的条目已并入下表各条。
-
-| 编号 | 标题 | 状态 |
-|---|---|---|
-| D-040 | v1 ADR 在 v2 中的适用范围（总则） | proposed |
-| D-041 | 需求范围修订：Web UI 与多用户进入 v2，"不再分发"细化为数据三域与用户侧取回 | proposed |
-| D-042 | v2 单栈 PostgreSQL 18、v1 维护冻结与一次性 ETL | proposed |
-| D-043 | 数据四域、单向流、派生继承最严与共享索引资格 | proposed |
-| D-044 | 依赖、模型与数据的许可门禁四级 | proposed |
-| D-045 | 内容许可闸与商用开关 | proposed |
-| D-046 | SourceSpec v2、Source 与 Venue 分离、ConnectorFamily 九族 | proposed |
-| D-047 | 语料流水线六段（在 v2 中取代 D-004） | proposed |
-| D-048 | 身份模型三层与版本边投票（修订 D-007 的表示） | proposed |
-| D-049 | robots/ToS 统一规则：文档化 API 冲突、needs_confirmation、例外附表与漂移分档 | proposed |
-| D-050 | dblp：停止在线访问，改用 DROPS 月度快照或 SPARQL | proposed |
-| D-051 | SSRN：只取元数据与外链，删除浏览器 opt-in 全文 | proposed |
-| D-052 | OpenReview 平台服务账号的使用边界 | proposed |
-| D-053 | 受限全文的执行位置在用户侧 | proposed |
-| D-054 | 用户级凭证与私有全文的端到端加密与多设备同步 | proposed |
-| D-055 | Egress Gateway：唯一出口、五元组令牌桶、全局配额账本与三道舱壁 | proposed |
-| D-056 | LLM 路由、AI 生成内容标识与数据出境 | proposed |
-| D-057 | 地区单元与特性开关前置清单 | proposed |
-| D-058 | TSRG：路由、调度、兴趣与反向推送的统一索引结构 | proposed |
-| D-059 | Query AST v2 与用户频道取代 v1 订阅 DSL | proposed |
-| D-060 | 检索索引选型（修订 D-034 决策 6） | proposed |
-| D-061 | 推荐分阶段栈 R0→R1→R2 与 ValueModel 配置化 | proposed |
-| D-062 | 事件契约、曝光绑定、ID 生成与公共信号准入 | proposed |
-| D-063 | 新论文曝光下限：资格集合与全局预算 | proposed |
-| D-064 | k 匿名阈值与差分隐私决策点 | proposed |
-| D-065 | 研究者匹配的 opt-in 边界 | proposed |
-| D-066 | 审计日志：HMAC 假名、哈希链、单写者与每日锚点 | proposed |
-| D-067 | 数据权利实现与备份：导出、注销、加密粉碎与拉取式异地备份 | proposed |
-| D-068 | API 契约：OpenAPI 3.1、URI 主版本与 SSE 流式语义 | proposed |
-| D-069 | 事务性 outbox 与 PG 原生队列 | proposed |
-| D-070 | 对象存储：ObjectStore 抽象，不选 MinIO | proposed |
-| D-071 | GROBID 启用 `teiCoordinates=figure`（修订 D-033 与 design/12） | proposed |

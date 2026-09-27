@@ -1,51 +1,36 @@
-# Paper Crawler — v2 重新开始
+# Paper Crawler
 
-> 状态：**v2 调研与设计计划已完成，待评审；尚无实现代码**。最后更新：2026-09-27。
-> v1（Phase 0–7 的单用户 CLI 实现与设计文档）已完整归档到分支 `archive/v1`（标签 `v1-final`），见 [docs/archive-v1.md](docs/archive-v1.md)。
+面向研究者的跨学科论文发现平台。它从合法来源持续收割论文，用可解释、可学习的个性化推荐，把"今天值得看的论文"做成一叠有限的卡片，由用户滑动分拣。用户自己的机构权限只用于本人在用户侧取回全文。
 
-## 这是什么
+> **现状（2026-09-27）**：v2 设计已完成，等你评审；还没有实现代码。
 
-面向研究者的跨学科论文发现平台。它从合法来源持续收割论文，用可解释、可学习的个性化推荐，把"今天值得看的论文"做成一叠有限的卡片，用户靠滑动分拣；用户自己的机构权限只用于本人在用户侧取回全文。
+## 从这里读
 
-- **来源**：一级来源为出版商、预印本、期刊与会议平台，覆盖数学、物理、化学、生物、心理学、经济、金融、商业管理、计算机与 AI；二级来源为仓库与聚合平台。支持名录共 187 条。
-- **检索**：先收割、后联邦；统一查询语法树；主题-来源路由图（TSRG）；多用户 PostgreSQL 平台。
-- **推荐**：可解释的价值模型，打分、点赞、收藏与评价，持续学习，三层双向匹配。
-- **前端**：类小红书、抖音的极简卡片流，左右滑分拣，每日有限批次。
+1. [v2 方案总览](docs/plan/v2/README.md)：一篇看完整个方案和需要你拍板的事。
+2. 按兴趣读分篇：[需求](docs/plan/v2/01-vision-and-requirements.md)、[架构](docs/plan/v2/02-architecture.md)、[来源](docs/plan/v2/03-sources-and-corpus-pipeline.md)、[检索](docs/plan/v2/04-retrieval-and-routing.md)、[数据](docs/plan/v2/05-data-platform.md)、[推荐](docs/plan/v2/06-recommendation-and-matching.md)、[前端](docs/plan/v2/07-frontend-interaction.md)、[合规](docs/plan/v2/08-compliance-security-privacy.md)、[路线图](docs/plan/v2/09-roadmap-and-milestones.md)。
+3. [交互 demo](docs/plan/v2/demo/paper-feed-demo.html)，也可以在线打开：<https://claude.ai/artifact/YYZiiZjCVVeTzbESeFxqQr>。
+4. 查阅用：[支持名录](docs/catalog/source-directory.md)、[调研结论](docs/survey/README.md)、[ADR 登记](docs/plan/decision-log.md)、[术语表](docs/GLOSSARY.md)。
 
-## 从这里开始
+全部文档清单见 [docs/INDEX.md](docs/INDEX.md)。
 
-| 你想… | 阅读 |
+## 合规红线
+
+只经合法来源和用户自有的授权凭证获取论文：遵守 robots.txt 与 ToS，保守限速，使用诚实可识别的 UA；不绕付费墙或 CAPTCHA，不接盗版源，不冒充他人；Google Scholar 不做自动化来源。受限全文只在用户侧、用本人凭证、由本人显式触发时取回，私有存放，**绝不在用户之间共享或再分发**。详见[合规](docs/plan/v2/08-compliance-security-privacy.md)。
+
+## 分支与归档
+
+| 位置 | 内容 |
 |---|---|
-| 5 分钟了解 v2 计划 | [docs/plan/v2/README.md](docs/plan/v2/README.md) |
-| 看交互 demo 与视觉案例 | [docs/plan/v2/demo/paper-feed-demo.html](docs/plan/v2/demo/paper-feed-demo.html)（已发布：<https://claude.ai/artifact/YYZiiZjCVVeTzbESeFxqQr>） |
-| 看架构裁决与待决事项 | [docs/plan/v2/00-design-brief.md](docs/plan/v2/00-design-brief.md)（§10–§12） |
-| 看调研证据 | [docs/survey/README.md](docs/survey/README.md) → [调研综合](docs/survey/00-survey-synthesis.md) |
-| 看支持的来源 | [docs/catalog/source-directory.md](docs/catalog/source-directory.md) |
-| 看实施路线图 | [docs/plan/v2/09-roadmap-and-milestones.md](docs/plan/v2/09-roadmap-and-milestones.md) |
-| 全部文档清单 | [docs/INDEX.md](docs/INDEX.md) |
+| `main` | 当前文档（本分支） |
+| 标签 `v2-drafts` | v2 设计阶段的完整长稿：调研全文、设计长稿、ADR 全文、过程记录 |
+| 分支 `archive/v1`（标签 `v1-final`） | v1 单用户 CLI 的完整实现与文档 |
 
-## 合规红线（先读）
-
-只经合法来源与用户自有授权凭证获取：遵守 robots.txt 与 ToS，保守限速，使用诚实可识别的 UA；不绕付费墙或 CAPTCHA，不接盗版源，不冒充；Google Scholar 不做自动化源。v2 是多用户平台：受限全文只在用户侧、用本人凭证、由本人显式触发时取回，并私有存放，**绝不在用户之间共享或再分发**。详见 [docs/plan/v2/08-compliance-security-privacy.md](docs/plan/v2/08-compliance-security-privacy.md)。
-
-## v1 在哪里
+读取方法见[归档说明](docs/archive.md)，例如：
 
 ```bash
-git switch archive/v1
+git show v2-drafts:docs/plan/v2/04-retrieval-and-routing.md
 ```
 
-或者只看某个文件、不切换分支：
+## 给 AI 协作者
 
-```bash
-git show archive/v1:docs/design/01-architecture.md
-```
-
-也可以另开一个工作树并排对照：
-
-```bash
-git worktree add ../paper-crawler-v1 archive/v1
-```
-
-## 给 AI/LLM 协作者
-
-请先读 [AGENTS.md](AGENTS.md)。
+先读 [AGENTS.md](AGENTS.md)。

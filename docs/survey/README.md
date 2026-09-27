@@ -1,159 +1,214 @@
 ---
-title: Survey 目录：v2 重新设计调研归档
+title: v2 调研结论
 status: draft
-owner: opus5.5-survey
-updated: 2026-09-26
+owner: opus5.5-primary
+updated: 2026-09-27
 ---
 
-# Survey 目录：v2 重新设计调研归档
+# v2 调研结论
 
-## 1. 目录说明
+> 本篇回答：设计 v2 之前，外部世界是什么样——哪些来源能合法接入，别人做到了什么，哪些算法和交互可以借，合规边界在哪里。核心结论：上游限速和条款很硬，多用户平台只能"先收割、后联邦"，受限全文只能在用户侧取回；差异化只能来自几项能力的组合。设计如何落地见 [v2 计划包](../plan/v2/README.md)。
 
-本目录归档 Paper Crawler **v2 重新设计**的调研阶段成果，共 14 篇主题调研和 1 篇综合，时点为 2026-09-26（UTC）。它是设计阶段（`docs/plan/v2/01`–`09`）的证据层：
+## 要点
 
-- [00-survey-synthesis.md](00-survey-synthesis.md) 把 14 篇调研合成为设计输入。内容包括：
-  - 候选来源总表（187 行）；
-  - 按五项需求的结论；
-  - 跨主题张力；
-  - SI-01…SI-70 设计输入；
-  - HC 对照表；
-  - 调研缺口。
-- [v2 设计决策简报](../plan/v2/00-design-brief.md) 是主 agent 的架构裁决，以本目录为依据。简报与调研的逐条核对见综合 §8。
-- 本目录只放调研与证据，不放设计与实现。设计文档引用本目录的结论，本目录不反向引用设计的定稿内容（综合 §8 的核对表除外）。
+- **差异化只能靠组合**：没有产品同时做到学习型个性化、卡片分拣、经管工作论文（WP）覆盖、用户自带凭证取全文和可解释推荐，但单项能力都不稀缺。
+- **上游约束很硬**：Crossref 公共池列表查询每秒 1 次，arXiv 按全部机器合计每 3 秒 1 次，多个重要主机的 robots 全禁；多用户规模下只能先收割到本地，覆盖不足再查远端。
+- **摘要缺口是头号数据问题**：Crossref 摘要覆盖的学科中位数，心理 0%、化学/材料 11%。需要按出版方路由的补齐链，并给每条摘要标权利等级。
+- **2025–2026 年上游变化密集**，策略引擎与漂移探针必须是一等组件。
+- **推荐起点很朴素**：三套独立的学术推荐系统都收敛到"共享论文表示 + 每用户线性模型"。社媒可借的是机制，不是亿级模型；北极星是"有价值阅读"，不是时长。
+- **PostgreSQL 18 单栈可承载 T1 档**（首个规模目标：≤1,000 活跃用户、≤1,000 万篇），不另上图数据库或检索集群。
+- **卡片内容的瓶颈是许可与忠实度，不是 LLM 费用**：arXiv 新论文只有 39.5% 允许展示图，翻译在版权上属于演绎。
+- **合规直接决定架构**：共享层与私有层单向流动、受限全文在用户侧取回、按篇许可白名单、对每个上游只用一个平台身份、AI 生成内容必须标识。
 
-**目录结构**
+## 调研了什么
 
-```text
-docs/survey/
-├── README.md                     本文件
-├── 00-survey-synthesis.md        综合：v2 重新设计的输入与结论
-├── sources/                      ① 来源调研（L1 分学科 4 篇 + L2 聚合 1 篇）
-├── oss/                          ⑤ 开源项目调研（获取/检索 1 篇 + 推荐 1 篇）
-├── market/                       ⑤ 初创与产品调研
-├── algorithms/                   ②③④ 算法与技术调研（社媒推荐、学术推荐、检索路由、卡片内容）
-├── ux/                           ④ 卡片流交互调研
-└── compliance/                   横切：多用户平台合规调研
-```
+- **14 个主题**：
+  - 来源 5 篇：理科、生命科学与心理学、经管、CS/AI、二级聚合与仓储；
+  - 开源 2 篇：论文获取与检索、推荐系统；
+  - 市场与竞品 1 篇；
+  - 算法 4 篇：社媒推荐、学术推荐与匹配、检索路由与数据平台、论文理解与卡片内容；
+  - 卡片流交互 1 篇，多用户合规 1 篇。
+- **方法分三步**：14 个调研 agent 并行各写一篇 → 每篇由独立的核验 agent 对抗复核（只认一手来源，错误就地修正）→ 一篇综合把 14 篇合成设计输入。
+- **核验日期 2026-09-26（UTC）**。复核约 800 组承重断言，就地修正约 150–160 处，删除 0 处，没有发现编造的仓库、论文、公司或数字。
+- **请求纪律**：诚实 UA、同站串行、遇挑战页即停，没有使用用户的机构凭证。少量请求落进 robots 禁区或先于读取 robots 发出，说明 robots 先行必须由出口层强制。
 
-附件（请求台账、实测数据、仓库指标）放在与文档**同名的子目录**中，文件名带日期后缀（`*-2026-09-26.*`）。
+## 来源格局与接口
 
-## 2. 文档一览
+- **名录**：5 篇来源调研共登记 249 行，合并去重得 187 行候选来源：L1 一级来源（出版商、预印本、期刊与会议平台）129 行，L2 二级来源（仓储与聚合器）57 行，盗版源合并为 1 行。建议状态：v2-P0 36、v2-P1 63、v2-P2 44、仅元数据 26、仅外链 2、仅用户导入 3、排除 13。逐行现状以[支持名录](../catalog/source-directory.md)为准。
+- **元数据主干**：期刊与带 DOI 的 WP 用 Crossref 按 ISSN 枚举（合并历史 ISSN），本地底座以 OpenAlex 季度快照为主，再叠加学科 L2（Europe PMC、INSPIRE、zbMATH、RePEc、dblp 快照）。多数期刊只需登记来源声明（SourceSpec）与 venue，由 Crossref 委托通道承接。
+- **Crossref 的用法**：按请求类型分池限速，venue 枚举走 `/journals/{issn}/works`，不做关键词检索。最新论文以 `from-created-date` 加重叠窗口为主；`from-index-date` 会把结果放大约 100 倍，只作补漏。
+- **只为有官方 API 或协议通道的站点写代码**，如 INSPIRE、zbMATH Open、SCOAP3、Europe PMC、PMC S3、ACL Anthology 包。WAF（Web 应用防火墙）拦截或 robots 全禁的站点只做元数据与外链，或由用户本人单篇触发。例外：robots 允许、无挑战门的 OA 会议论文集静态页（PMLR、CVF 等）可写专站 connector。
+- **需每用户自有凭证**：Elsevier key、Wiley 文本与数据挖掘（TDM）token、Springer Nature key、ADS token。IEEE API 只限被许可机构内部使用，平台层不接。
+- **robots 与官方 API 文档冲突**：NCBI、ORCID、OSF、eLife、HAL、Zenodo 等的 API 路径被 robots 禁止，NCBI、EBI 的批量下载主机也全禁；取得书面确认前不做后台批量收割（D-049）。
+- **近两年的漂移**：bioRxiv/medRxiv 转到 openRxiv 并启用新 DOI 前缀，其 `/details` 接口调研当日返回空体；PMC 下线 OA Web Service，自动化通道只剩 4 条；ChemRxiv、RSC、Royal Society 换平台；SSRN 关停商业线。
+- **出版商 RSS 大多被 robots 禁止**；登记且 robots 允许的官方 WP feed（ECB、BIS、JMLR 等）可作元数据主通道。
+- **分学科**：
+  - 生命科学的 L2 最强；NCBI 书面确认前，由 Europe PMC、PMC 允许的通道与 Crossref 承担主干。
+  - 化学是最弱的理科（ACS 只取元数据）；地学最薄（仅 6 行）。
+  - 经济金融行数最多（41 行）：SSRN 只取元数据加外链，NBER 有 18 个月门控。
+  - CS 的 P0 最多（14 个）；OpenReview 需账号，平台服务账号书面确认前停用共享收割，由 arXiv 与 dblp 快照兜底（D-052）。
+  - 中文没有 P0/P1：知网、万方、维普只能由用户导入题录。
 
-"核验状态"列的格式为"核验断言数 / 修正数 / 删除数"。前 6 篇的统计取自工作流核验回执，其余取自文内核验记录（部分由综合复算）。口径说明见综合 §1.3。
+## 许可事实
 
-| 路径 | 主题 | 核验状态 | 要点 |
-|---|---|---|---|
-| [00-survey-synthesis.md](00-survey-synthesis.md) | 调研综合：v2 重新设计的输入与结论 | 综合文档，不单独核验；事实转引自下列已核验文档，未发新的外部请求 | 候选来源总表（187 行，含学科覆盖统计）、五项需求结论、18 项张力与取舍、SI-01…SI-70、HC-01…HC-28 对照、16 项调研缺口、与简报的一致性核对 |
-| [sources/natural-sciences.md](sources/natural-sciences.md) | 理科（数学/物理/化学，材料与地学简述）出版商、预印本与平台 | 已核验 2026-09-26：63 / 13 / 0 | Crossref 可枚举 115 刊，但摘要缺口大（Elsevier 为 0，ACS 约 0.1）；arXiv OAI 类目级 set，物理 set 须加 `physics:` 前缀；APS Harvest、SN API、INSPIRE、zbMATH、SCOAP3 为合规通道；IOP、ACS 等站点零自动化；MSC2020 为 CC BY-NC-SA |
-| [sources/life-sciences-psychology.md](sources/life-sciences-psychology.md) | 生命科学与心理学来源 | 已核验 2026-09-26：54 / 13 / 0 | Europe PMC、PubMed、PMC 为骨干；心理学的 Crossref 摘要为 0%；openRxiv 启用新前缀 10.64898，`/details` 返回空体；PMC 只允许 4 条自动化通道；共享层按条许可门控 |
-| [sources/social-sciences-econ-fin-mgmt.md](sources/social-sciences-econ-fin-mgmt.md) | 经济/金融/商业/管理来源、工作论文与期刊名录 | 已核验 2026-09-26：66 / 7 / 0 | SSRN 商业线关停且 ToU 禁止自动化，只取元数据；NBER 有 18 个月门控；UTD24 中 21/24 在 Atypon 或 Silverchair；央行 WP 走 Crossref、RSS 或 API；期刊名录按许可分级 |
-| [sources/cs-ai.md](sources/cs-ai.md) | 计算机与 AI 会议、期刊、预印本与社区信号 | 已核验 2026-09-26：44 / 9 / 0 | dblp 的 robots 全禁，改用 DROPS 快照或 SPARQL；OpenReview 需账号；ACM 全库 OA 但禁止脚本下载；IEEE 零摘要且 DOI 滞后；新鲜度阶梯 L0–L3 |
-| [sources/aggregators-repositories.md](sources/aggregators-repositories.md) | 二级来源：仓库与聚合平台 | 已核验 2026-09-26：61 / 7 / 0 | Crossref 按请求类型分池；OpenAlex 按量计费并提供季度快照；S2 为 1 RPS 且未明示允许商用；R1–R17 查询路由表；204 刊分学科的摘要覆盖画像 |
-| [oss/paper-acquisition-and-search-oss.md](oss/paper-acquisition-and-search-oss.md) | 论文获取、检索与学术搜索开源（197 项） | 已核验 2026-09-26：44 / 15 / 0，另批量复测 196 个仓库 | R/I/B/X 分级；findpapers 的查询编译；没有开源项目实现"多用户 + 每用户凭证 + 合规分层"；盗版、Scholar 自动化、UA 伪装组件列入排除清单 |
-| [oss/recommendation-oss.md](oss/recommendation-oss.md) | 推荐系统与学术推荐开源 | 已核验 2026-09-26（两轮）：40 / 12 / 0 | X 2026 开源管线与权重（commit 4c5cfe8）；Scholar Inbox 配方；S1/S2/S3 推荐栈；许可陷阱（GRID 限非商业，jina 为 NC） |
-| [market/startups-and-products.md](market/startups-and-products.md) | 学术发现与论文推荐的初创与产品（约 66 个） | 已核验 2026-09-26（两轮）：99 / 17 / 0 | 8 层市场地图；没有产品同时具备五项能力；机构凭证取全文已有先例；Researcher App 于 2024-11 关停；付费转化率约 3% |
-| [algorithms/social-media-recsys.md](algorithms/social-media-recsys.md) | 抖音/TikTok、小红书、X、快手、Meta 等社媒推荐 | 已核验 2026-09-26（两轮）：49 / 17 / 0 | Σ V·P̂ 是官方确认的范式；"八级流量池"与"CES 评分"属民间说法；照搬 C1–C11，改造 M1–M12；北极星为有价值阅读 |
-| [algorithms/scholarly-recommendation-and-matching.md](algorithms/scholarly-recommendation-and-matching.md) | 学术推荐、兴趣建模与双向匹配 | 已核验 2026-09-26：74 / 10 / 0 | 共享表示加每用户线性头；没有单一最优嵌入；R0→R1→R2；论文→读者的反向路由与最小费用流；兴趣树以 OpenAlex Topics 为骨架，下挂原生分类 |
-| [algorithms/retrieval-routing-indexing.md](algorithms/retrieval-routing-indexing.md) | 多源检索、路由、索引结构与多用户数据平台 | 已核验 2026-09-26：59 / 13 处 / 0 | 先收割后联邦；SCD、主题路由图与健全放宽；PG 单栈混合检索；Roaring 已见集；WatchKey；稳定性四件套；Pool + RLS；T0–T3 分档 |
-| [ux/card-feed-interaction.md](ux/card-feed-interaction.md) | 卡片流与滑动交互及实现技术 | 已核验 2026-09-26：55 / 7 / 0 | Deck + 瀑布流 + Sheet；手势映射 A；投影判定与弹簧参数；WCAG 2.2 等价操作；React 19.3 PWA；事件契约 |
-| [algorithms/paper-understanding-and-card-content.md](algorithms/paper-understanding-and-card-content.md) | 论文理解与卡片内容生成（TL;DR、关键图、翻译、标签） | 已核验 2026-09-26：32 / 10 / 0 | LLM 费用不是瓶颈；S2 TLDR 的学科覆盖严重偏科；图片许可闸（仅 39.5% 可展示）；翻译属于演绎；三道闸与 AI 标识；按学科定卡片模板 |
-| [compliance/multi-user-platform-compliance.md](compliance/multi-user-platform-compliance.md) | 从单用户工具到多用户平台的许可、ToS 与监管边界 | 已核验 2026-09-26：57 / 10 / 0 | HC-01…HC-28；V0–V4 展示级别与 M1–M25 权利矩阵；受限全文在用户侧取回；中欧美监管对照；LQ-01…LQ-18 待法务确认 |
+- **arXiv**：元数据（含摘要）为 CC0；PDF 等 e-print 不得在自有服务器存储并对外提供，CC 许可的除外。新记录中只有 39.5% 是 CC BY、BY-SA 或 CC0。
+- **Crossref 与 OpenAlex**：书目事实可自由使用，摘要版权归出版方或作者；OpenAlex 数据为 CC0，却因法律原因只给摘要倒排索引。OpenAlex 2026-03 的新文章中，许可未知的占 38.4%。
+- **限用途的来源**：S2 数据集为 ODC-BY（须署名），API 条款未明确允许商用；ORCID 公共 API 限非商业；CORE、J-STAGE 商用须另行申请或取得许可。
+- **分类体系**：PhySH、dblp 快照为 CC0；zbMATH 为 CC BY-SA；MSC2020 为 CC BY-NC-SA，因此只作默认不加载的可选插件。
+- **出版商 API**：IEEE API 禁止用于任何 AI、ML 或 LLM 用途；Elsevier 的 TDM 片段外发不超过 200 字符。
+- **全文能否在用户间共享只看逐篇许可**：CC BY、BY-SA、CC0 与公有领域可以；NC 只在非商业部署下可以；许可未知一律不可。
 
-**附件**
+## 开源项目可复用什么
 
-| 所属文档 | 附件（同名子目录） | 内容 |
-|---|---|---|
-| natural-sciences | `request-ledger-2026-09-26.tsv`、`venue-verification-2026-09-26.csv` | 请求台账；107 行刊级实测（DOI 数、摘要覆盖等） |
-| aggregators-repositories | `conference-crossref-check-2026-09-26.json`、`crossref-stats-2026-09-26.json`、`openalex-field-stats-2025.json`、`venue-verification-2026-09-26.jsonl` | 12 个 CS 会议的 Crossref 检查；Crossref 统计；OpenAlex 2025 学科画像；204 刊的核验原始结果 |
-| paper-acquisition-and-search-oss | `repo-metrics-2026-09-26.tsv`、`repo-metrics-verify-2026-09-26.tsv` | 仓库的 star、许可、推送时间，以及核验复测结果 |
-| multi-user-platform-compliance | `access-ledger-2026-09-26.tsv` | 访问台账 |
-| paper-understanding-and-card-content | `arxiv-html-availability-`、`arxiv-license-dist-`、`arxiv-sample-stats-`、`hf-papers-coverage-`、`openalex-license-groupby-2026-09-26.json`；`price-inputs-`、`repo-metrics-`、`request-ledger-`、`s2-tldr-coverage-2026-09-26.tsv` | 实测 E1–E8、价格输入、41 个仓库的指标、225 次外部请求的台账 |
+- 获取与检索类开源调研了 197 项，推荐与表示类约 90 项。没有一个同时做到"多用户 + 每用户凭证 + 合规分层共享"；卡片滑动类开源都不到 100 star。
+- **直接复用**：
+  - 存储与检索：pgvector、pgvectorscale、pg_textsearch、pg_roaringbitmap；
+  - 队列与采集：procrastinate、protego（robots 解析）、sickle（OAI-PMH 收割）；
+  - 客户端与实体消解：openreview-py、acl-anthology、pyzotero、splink；
+  - 表示与推荐：sentence-transformers、Qwen3-Embedding、gte-large、SPECTER2 base、implicit、Vowpal Wabbit（≥9.11.6）；
+  - 内容与质检：Docling、MiniCheck-FT5、HHEM-2.1-Open；
+  - 前端：React 19.3、Motion 13、Base UI、TanStack Virtual、KaTeX。
+- **作独立服务集成**：GROBID（需开启图坐标，见 D-071）；Zotero translation-server（AGPL，独立进程）；Gorse 可作 R1 阶段推荐引擎候选，私有反馈隔离待验证。
+- **只借思路**：findpapers 的查询编译、Asta PaperFinder 的意图路由、X 开源的推荐管线、Scholar Inbox 的配方；openreview-matcher 没有 LICENSE，只能照论文自行实现。
+- **排除**：
+  - 盗版源组件、Google Scholar 自动化、UA 或 TLS 指纹冒充；
+  - 已归档或停更的 Kùzu、LightFM、vaul；
+  - 许可冲突的 FalkorDB（SSPL）、Memgraph（BSL）、jina v3/v5 与 NV-Embed-v2（NC）。
+- **许可门禁分四级**（D-044）：宽松许可放行；LGPL、MPL 在不修改、动态导入时评审后放行；AGPL、SSPL、BUSL、NC 只作默认关闭的可选项；没有 LICENSE 的不引入代码。
 
-## 3. 调研过程记录
+## 市场与竞品的空位
 
-- **日期**：2026-09-26（UTC）。各篇核验记录统一以 UTC 记日期；执行时本机时区已进入 09-27 凌晨。
-- **编排方式**：分三个阶段。
-  1. **14 个主题并行调研**：每个主题由一个 Survey agent 独立完成。
-  2. **逐篇对抗核验**：每篇由一个独立的 Verify agent 复核。核验时默认怀疑，只认一手来源；错误就地修正，标"核验修正/核验补充"，并在文末写唯一的"核验记录"节。
-  3. **综合**：一个 Synthesize agent 通读 14 篇原文，产出 `00-survey-synthesis.md` 与本 README。
-- **模型**：全部 subagent 使用 **Opus 5.5（max effort）**；文档 owner 统一为 `opus5.5-survey`。
-- **共同约束**：
-  - **合规红线**：只经合法来源与用户自有授权凭证获取；遵守 robots.txt 与 ToS，保守限速，使用诚实可识别的 UA；不绕付费墙或 CAPTCHA；不集成盗版源；不冒充；Google Scholar 不作自动化主源；多用户化后，auth-gated 全文不在用户间共享。
-  - **写作规范**：front matter 四个字段；事实断言带来源 URL 与核验日期；无法核验的标"⚠ 未核验"；不编造仓库、论文、公司或数字。
-  - **文件纪律**：只写分配给自己的文件，附件放同名子目录；不改 `docs/INDEX.md`、`docs/plan/progress.md`、`docs/plan/decision-log.md`。
-- **请求纪律**：
-  - 各篇使用诚实 UA，同站串行并保守间隔，遇 Cloudflare、Akamai、Imperva 等挑战页即停，不重试、不绕过；
-  - 各篇记载的出版商与学术 API 请求都**没有使用用户的机构凭证或出版商账号**。NS、LS、AG、RT、PU 明确记载未登录，也未使用凭证、API key 或 cookie；SS 记载使用诚实 UA、不携带任何个人邮箱。PU 明确记载没有调用付费 LLM API；GitHub 元数据经 `gh api` 只读获取；
-  - 请求台账见各附件与各篇"过程记录"。
-- **中断与续核验**：
-  - market、recommendation-oss、social-media 三篇的核验中断过一次（market 注明原因是会话用量上限，另两篇未写原因），之后由续核验复核首轮改动并合并完成，没有留下半截修改；
-  - 本综合在一次会话用量上限中断后续做完成；
-  - 部分篇在会话共享的 WebSearch 配额耗尽后，改用 curl、`gh api` 或官方 API 直读，见各篇"过程记录"。
-- **偏差披露**：调研期间有少量请求落在 robots 禁区，或发生在读取 robots 之前，各篇已自行披露，综合 §1.5 汇总：
-  - natural-sciences：IOP RSS、PubChem PUG-REST；
-  - aggregators：9 次请求先于读取 robots；
-  - social-sciences：`rss.sciencedirect.com`；
-  - cs-ai：ICORE 门户与 `icml.cc/static`。
+- **空位在组合，不在单项**：机构凭证一键取全文已有 R Discovery 等先例，"滑动 + 学习"也有个人开发者 App。可差异化的是五项能力的组合、经管 WP 的新鲜度和多用户下的私域合规。
+- **数据层已商品化**：S2 有 2.25 亿篇，语料规模不是护城河。
+- **滑动形态未被证明能留住用户**：学术滑动 App 采用度极低；社区反馈是 AI 须可关、首屏要零摩擦，学界反感"TikTok"式命名。
+- **商业化难**：Consensus 付费率约 3%，能持续的多靠机构授权与生态补贴。
+- **关停风险真实**：Microsoft Academic、Researcher App、Papers with Code 先后关停，所以数据可导出、不锁定单一上游是设计约束。
 
-  这些偏差是设计输入 SI-38（robots 先行闸由框架强制）的依据，不构成对上游的持续访问。
+## 社媒推荐机制的可借鉴点
 
-## 4. 引用规范
+- **排序范式**：抖音、X、Meta 都证实用"Σ 行为价值权重 × 预测行为概率"打分（ValueModel）。X 2026 年开源的管线（Apache-2.0）给出了真实权重，例如点赞 0.5、回复 5、复制链接分享 20、不感兴趣 −43.2、举报 −234。
+- **可照搬的机制**：
+  - 价值权重做成版本化配置；
+  - 负反馈分两档：左滑是弱负，"不感兴趣 + 原因"是强负，至少差一个数量级，强负当次会话生效；
+  - 净负分的候选沉底；
+  - 作者多样性衰减，加 DPP（挑选彼此不相似条目的算法）重排；
+  - 新内容分级曝光：内容先验加 Thompson 采样（按后验随机抽样兼顾探索），逐级扩大受众；
+  - 可见性过滤与排序分开；只有绑定曝光记录的反馈才用于训练。
+- **不采信、不照搬**：抖音"八级流量池"、小红书"CES 评分"是民间说法；OneRec、HSTU 等生成式端到端模型依赖十亿级交互，1–1 万用户用不上。
+- **目标不同**：北极星取每周每活跃用户的"有价值阅读数"（收藏、4 星以上评分、导出引用、打开全文，去重计），时长只作护栏。
 
-1. **引用调研**：写"文档路径（或综合 §1.1 的代号）+ 节号"，链接只指向文件，节号写在文字里，例如 `RT §3.5.3`。"启示"条目写成"§3-n"（RT 为"§12-n"，SR 与 RO 为"§3.1-n"，MK 为"I-n"）。
-2. **引用数字**：必须带时点，写"截至 2026-09-26"。限速、计费、版本、计数等快变事实，进入 ADR 或需求前须按 §5 的清单复核。
-3. **标记含义**（各篇在"证据分级"一节另有 A–E 或 A/B/C 等级定义）：
-   - "⚠ 未核验"：没有一手来源；
-   - "◐"：部分核验或只有二手来源；
-   - "⚠ 推断"：由已核验事实推理得到，未经实测；
-   - "[SEC]" 或 "C/D/E 级"：二手、泄露或民间来源。
+## 学术推荐与匹配
 
-   设计文档**不得**把带 ⚠ 或 ◐ 的事实写成需求或 ADR 的确定性条款；需要时先补核验。
-4. **合规约束**：引用写"CP HC-xx"（编号局部于 compliance 文档）。设计文档 08 统一登记全库唯一的 HC 编号时，须保留与 CP 编号的对照。
-5. **设计输入**：引用写"SI-xx"（编号局部于综合文档）。设计文档采纳时写"依据 SI-xx"；不采纳时，在该文档的"异议与备选"一节说明证据（简报 §0 的规则）。
-6. **一手来源**：转引一手来源时，保留原 URL 与原访问日期，不改写成本目录的引用。
+- **起步配方**：Scholar Inbox 用 GTE-large 向量降到 256 维，每用户一个逻辑回归，每次评分后重训，已在 2.3 万注册用户、80 万条评分上验证。推荐按 R0→R1→R2 分阶段升级（D-061），R0 即用此配方。
+- **表示没有绝对赢家**：同一评测中 TF-IDF 的 nDCG 最高、GTE-large 的 AUC 最高，所以稀疏与稠密两路都要；主要杠杆在用户建模与反馈。候选模型为 gte-large、Qwen3-Embedding-0.6B（多语）、SPECTER2 base；NC 许可模型不进默认路径。
+- **协同过滤在学术场景证据偏弱**（综述文献中只占 18%，基于内容的占 55%），到 R1 再作补充信号。共被引依赖未来的引用，对新论文不利；文献耦合（共享参考文献）可以即时使用。
+- **LLM 只做离线或近线**：每用户每日 30 篇整组重排 $0.0006–0.029；论文侧预处理每月 $30–1,121，与用户数无关。
+- **兴趣树**：以 OpenAlex Topics 四级（4/26/252/4,516）为骨架，下挂 arXiv、MeSH、JEL、PhySH 等原生分类；约 12% 的作品没有 topic，用本地嵌入补标。
+- **双向匹配分三层**：
+  - 读者↔论文：受众适配加供给约束的重排；
+  - 论文→读者：新论文按"每用户日预算 + 每篇曝光下限"分配，硬配额用最小费用流；
+  - 研究者↔研究者：互惠分加容量约束，双方都选择加入才启用，默认关闭。
+- **冷启动**：兴趣树勾选 → 导入种子（ORCID、Zotero、BibTeX、DOI）→ 10–20 张主动学习校准卡。
+- **隐私**：社会证明至少需要 k 个不同用户；私有库的共现不进协同信号；解释不引用他人的私有行为。
 
-## 5. 后续维护方式
+## 检索与路由
 
-1. **状态流转**：本目录文档目前均为 `draft`，按 [status-workflow](../archive-v1.md#docs-process-status-workflow-md) 流转。
-   - 主 agent 复核后可提升为 `approved`，作为证据基线；
-   - 调研文档不进入 `implemented`；
-   - 被新调研替代的文档改为 `deprecated`，在顶部注明替代者，文件保留。
-2. **INDEX 登记**：由主 agent 在 [docs/INDEX.md](../INDEX.md) 登记本目录。本轮文件纪律不允许调研 agent 修改 INDEX；登记时建议以本 README 为入口。
-3. **事实修正**：发现过时或错误时，在原文就地修正，标"核验修正（YYYY-MM-DD）"，并在该篇"核验记录"表追加一行。若影响 SI、名录或 HC，同步更新综合文档的对应节，并在综合 §1.3 的统计中注明。
-4. **新增调研**：
-   - 放在对应子目录，文件名用 kebab-case；
-   - front matter 四个字段齐全；
-   - 必含章节：调研范围与方法（含过程记录）、主体内容、对 v2 设计的启示（编号）、未决问题与风险、参考来源（URL 与访问日期）；
-   - 附件放同名子目录，文件名带日期后缀；
-   - 完成后须经独立的对抗式核验，并更新本 README 的"文档一览"。
+- **先收割、后联邦**：订阅、最新论文、卡片流只读本地；即席查询本地优先，覆盖不足才查远端。Crossref、OpenAlex、S2 都不返回 ETag（HTTP 条件缓存所需的版本标记），只能做应用层 TTL 缓存。
+- **路由**：
+  - 每个源的能力描述（可下推条件、成本、礼貌参数、许可）是路由的唯一输入；
+  - 主题-来源路由图（TSRG）的主题节点挂各源的覆盖、滞后与更新率，按"边际召回 / 成本"预算贪心选源；候选源通常少于 20 个，可精确枚举校验；
+  - 源不支持的条件先放宽成它能执行的查询，结果回本地再精确过滤；
+  - 查询分五种意图：LOOKUP、SEARCH、SIMILAR、LATEST、EXPAND（引文扩展）。
+- **本地混合检索**：BM25 词法检索与 pgvector `halfvec` HNSW 向量检索并行召回，RRF（按名次倒数融合）合并，k=60，外置 Qdrant 时须显式设置；再用小型 cross-encoder 精排，纯 CPU 从 top-50 起步。LitSearch 上最好的稠密检索比 BM25 的 recall@5 高 24.8 个百分点。
+- **容量**：1,000 万条 1024 维向量连同索引粗估约 23 GB；放不进内存或单路召回 p95 超 300 ms 时，再升级到 pgvectorscale 或外置引擎，PG 始终是真值源。
+- **图与去重**：图存 PG 邻接表，在线查询 ≤2 跳；不引入图数据库（Kùzu 已归档）。去重用标识符并查集物化 `cluster_id`，弱信号只出候审对、不自动合并（D-007）。
+- **新鲜度与稳定性**：用户频道编译成共享收割键，同键只收割一次；新论文入库时反向匹配全部频道。出口用令牌桶、重试预算（每请求 ≤3 次、总占比 ≤10%）、以书面限额为上限的自适应并发、按"源 × 端点"熔断；不对同一第三方主机发对冲请求。
+- **多租户**：共享语料只读，用户私有层全表 RLS（行级安全）；已见集合用 Roaring 位图。
 
-   综合 §7.3 已列出建议的补充调研：G-01 用户之声、G-05 地学/材料/中文生态等覆盖缺口、G-06 分学科表示评测等。
-5. **名录的权威迁移**：设计阶段建立 `registry/sources/*.yaml` 与 `docs/catalog/source-directory.md` 后，来源状态以它们为准。综合 §3 的总表之后只作为历史证据，不再单独维护。
-6. **快变事实按季度复核**（以 2026-09-26 为基线）：
+## 论文理解与卡片内容的成本
 
-| 事实 | 基线值 | 出处 | 复核频率 |
-|---|---|---|---|
-| Crossref 分池限速 | 公共池：单条 5/s、列表 1/s、并发 1；polite 池：10/s 与 3/s、并发 3；Plus 150/s | AG §0.1 | 季度 |
-| OpenAlex 计费与快照 | 列表 $0.10/千次、搜索 $1/千次、PDF $0.01/次；免费 key 每日 $1；季度快照 | AG §2.2.2；RT §2.2 | 季度 |
-| arXiv ToU 与限速 | 全部机器合计每 3 秒 1 次、单连接；自 2026-07-01 起为独立非营利机构 | CS §2.1.1；NS §2.3.5 | 季度 |
-| Semantic Scholar API | key 为 1 RPS；许可未明示允许商用 | AG §2.2.3 | 季度 |
-| bioRxiv/medRxiv API | `/details` 返回 200 空体（2026-09-26） | LS §2.2.1 | 月度 |
-| PMC 自动化通道 | 仅 S3、OAI-PMH、E-utilities、BioC；OA Web Service 已退役 | LS §2.3.2 | 季度 |
-| dblp | 三个主机的 robots 均为 `Disallow: /`；只用 DROPS 月度快照与 SPARQL | CS §0.1；AG §2.2.12 | 季度 |
-| SSRN | 商业线 2026-12-31 关停；ToU 禁止自动化 | SS §2.1 | 2027-01 |
-| ADS→SciX | 切换日期 ⚠ 未核验 | NS §4 | 切换后 |
-| X 推荐参数 | 固定在 commit 4c5cfe8 引用 | RO §2.2.2；SM §2.4.2 | 引用时按 commit |
-| LLM 与翻译 API 价格 | 见 PU §2.6.2（附件 `price-inputs-2026-09-26.tsv`） | PU §2.6.2 | 月度 |
-| 前端框架版本 | React 19.3、Motion 13、Expo SDK 57 等 | UX §2.7.1 | 季度 |
+- **费用**：卡片基础包（中英 TL;DR、中文标题、关键词）每千篇 $0.06–3.44；日增 3 万篇的最大场景每月 $26–806。真正的成本在全文获取与解析、质检人力和版权合规。
+- **S2 TLDR 不能当主源**：覆盖严重偏科，cs.CL/cs.CV 92–98%，hep-th 0%；只作 CS 与生医的兜底和对照。
+- **忠实度**：非推理小模型幻觉率约 3%，推理型 18–23%；LLM 科学摘要的过度概括率 26–73%。对策是三道闸：规则闸、NLI 闸（用蕴含判断模型核对事实）、抽样 LLM 裁判加人工；不过闸就降级为原文首句；600 篇双语黄金集作上线门槛。
+- **关键图**：优先用 arXiv HTML（近期 88.6% 可得）和 PMC 的 JATS XML，PDF 解析只兜底；只有许可允许的论文才展示图，其余用标题排版生成的封面。
+- **翻译属于演绎**：arXiv 摘要（CC0）可以翻译；出版商摘要的共享中文版要等法务结论。
+- **AI 标识是法定义务**：中国《人工智能生成合成内容标识办法》2025-09-01 施行，EU AI Act 第 50 条 2026-08-02 起适用。
+- **按学科定卡片模板**：CS 与生医全功能；数学、物理用 LaTeX 渲染加排版封面；社科与心理期刊在法务结论前只放元数据与受控标签，外加私有即时生成的"中文速读"。
+- **部署**：T1 默认不配 GPU；涉及用户画像的 LLM 任务只用自托管模型且默认关闭；只处理开放内容的预处理可用第三方 API（零保留、非境内路由）。
 
-## 6. 已知局限
+## 卡片流交互
 
-- **时点抽样**：各篇的实测都是时点小样本，不代表全量统计。WAF 与挑战的观察受出口 IP 影响，在校园网或用户本地网络下可能不同。
-- **法律边界未决**：LQ-01…LQ-18 仍待法务确认，涉及摘要展示长度、B 类摘要能否进索引、商用定义、LLM 摘要门槛等。相关结论只能作为默认假设。
-- **覆盖缺口**：地学、材料、中文生态、心理学会议与部分 CS venue 的覆盖不全，见综合 §3.3、§7.3。
+- **形态取舍**：单卡横向决策给出的标签最干净，但有"拒绝心态"：三项研究中，从第一个到最后一个选项，接受概率平均下降 27%。
+- **三件套**：今日分拣卡叠（Deck）作默认首页，收藏库用瀑布流或紧凑列表，详情用底部抽屉（Sheet）；纯纵向沉浸流只作实验。每日有限批次（默认 25 张），看完有明确的结束态。
+- **手势**：→ 想读，← 不感兴趣，↑ 跳过（中性），↓ 撤回上一张，单击进详情，长按出原因菜单。每个手势都有按钮与键盘等价操作（WCAG 2.2）；撤销免费且不限次。
+- **动效参数**：投影判定 proj = d + v·0.1 s；横向阈值 0.35W、纵向 0.2H、逃逸速度 800 pt/s；弹簧回弹 500/36、次卡升位 600/49。Motion 默认弹簧会过冲 16%，必须显式传参；开启"减少动态效果"时改为 150 ms 淡入淡出。
+- **性能**：DOM 只保留 3 张卡，只动画 transform 与 opacity；提交到下一张可交互 ≤100 ms。
+- **技术**：v2.0 做可安装的网页应用（PWA：React 19.3、Motion 13、Base UI）；原生端等留存验证后再做。
+- **卡片 P0 字段 6 项**：标题、AI TL;DR（标注、可关、不替代作者摘要）、venue·年份、评审状态、OA 状态、why-this（推荐理由）；分拣卡不显示社交计数。
+- **透明与控制**：why-this、兴趣标签可删、一键关闭个性化，是中国算法推荐规定的要求，与欧盟 DSA 同向；DSA 还要求从信息流界面直达这些设置。
 
-## 7. 参考
+## 合规边界
 
-- [00-survey-synthesis.md](00-survey-synthesis.md)——综合与设计输入
-- [v2 设计决策简报](../plan/v2/00-design-brief.md)——上游架构裁决
-- [文档写作与目录规范](../archive-v1.md#docs-process-doc-conventions-md)、[状态流程](../archive-v1.md#docs-process-status-workflow-md)——本目录遵循的写作与状态规则
+- **角色变了**：v1 的前提是"本人、个人科研、本地存储"；v2 的平台是运营者与被许可方，而许多条款以"被许可人本人或其授权用户"或"非商业"为前提。
+- **摘要分级**：CC0 或开放许可的摘要可完整展示；有版权但公开分发的（B 类）只展示摘录加链接，默认可进内部检索索引，登记了 TDM 保留的来源除外；出版商 API 个人许可的（C 类）永不进共享层。
+- **受限全文**：每用户自有凭证、私有存储、不共享，这是多数条款的共同要求。图书馆代理 EZproxy 会把"24 小时内来自超过 4 个国家"之类的行为判为账号共享并封禁。所以取回在用户的浏览器扩展或本机执行，平台不从自己的出口代取（D-053）。
+- **LLM 摘要是新增的高风险面**：美国版权局认为以概括原作为目的的 RAG 更难构成转换性使用。
+- **礼貌按平台整体计算**：arXiv 按"你控制的所有机器合计"限速。每个上游只用一个平台身份，禁止用多 key、多 IP 规避。
+- **中国大陆门槛高**：有评论或点赞功能，大概率要做安全评估与算法备案；跟帖评论要后台实名与审核；LLM 功能须用已备案模型并登记公示。
+- **UGC**：ResearchGate 因托管用户上传的出版商 PDF 被诉，所以不做公共全文上传。
+- 调研给出 28 条合规硬约束 HC-01…HC-28，[08 合规、安全与隐私](../plan/v2/08-compliance-security-privacy.md)原样沿用并新增 4 条。
+
+## 推翻或修正 v1 的事实
+
+- arXiv OAI 已支持类目级集合；v1 推导的物理集合名（如 `cond-mat`）现在报错，须写 `physics:cond-mat`。
+- dblp 三个主机的 robots 改为全禁，v1 的在线通道作废，只能用 DROPS 月度快照或 SPARQL（D-050）。
+- Crossref 不再是 v1 记录的 polite 池统一 10 次/秒，而是按请求类型分池，公共池列表查询每秒 1 次、并发 1。
+- SSRN 条款禁止任何自动化查询，v1 的浏览器 opt-in 取全文模式须删除（D-051）。
+- v1 设计声明的 ETag 条件缓存从未实现，而 Crossref、OpenAlex、S2 本来就不返回 ETag。
+- v1 调用 GROBID 时没有请求图坐标，定位关键图须开启 `teiCoordinates=figure`（D-071）。
+- OpenAlex 快照由月更改为季更；Unpaywall 已并入 OpenAlex，只剩按 DOI 查询等少数服务。
+- v1 名录登记的 `rss.sciencedirect.com` 被 robots 全禁，应删除。
+- v1 未决的 Econometrica 已结案：混合 OA，按单篇许可判定。
+- NBER 的 JEL 不只来自 RePEc：NBER 有周更元数据文件，但须申请授权，不得抓取。
+- OpenReview 的限流随请求而变，不是 v1 记录的统一 60 次/分，须读响应头。
+- CS venue 映射有 7 处过时，例如 TASLP 换了 ISSN，NeurIPS 自 2022 年起有 Crossref DOI，ECCV 的开放全文在 ECVA 而不在 CVF。
+
+## 未解决的缺口
+
+- **用户验证**：没有研究者对卡片流和 AI 摘要的真实反馈；每批张数、手势映射、iOS PWA 帧率都没有实测。
+- **法务与书面确认**：摘录长度、B 类摘要能否进内部索引、何为"商业"、LLM 摘要门槛、受限全文取回架构，都还没有法务意见；NCBI、EBI、OpenReview 等的书面确认尚未取得；一批出版商条款只有二手证据。
+- **名录覆盖**：地学（AGU、EGU/Copernicus、GSA）、材料、心理学会议、部分 CS venue、中文生态覆盖不全；社会学、政治学、教育学不在 v2.0 范围。
+- **模型与参数**：分学科的表示质量、学术场景的价值权重、LLM 在科学文本上的忠实度与本地吞吐，都没有实测。
+- **规模与费用**：Crossref 付费档价格、OpenAlex 预算、S2 商用许可都不明；容量须在目标硬件上用自有语料压测。
+- **观测局限**：实测都是时点小样本；WAF 与挑战页的结论受出口 IP 影响。
+
+## 怎么验收
+
+- V0：向 NCBI、EBI、OpenReview 发函；确认前按保守默认运行（D-049、D-052）。
+- V1 之前：做用户之声调研与 demo 可用性测试（5–8 人 × 3 学科）。
+- V1：分学科表示评测（每学科 ≥200 条金标）后选定表示模型。
+- 持续：快变事实以 2026-09-26 为基线按季度复核，变化写回名录的证据字段。
+
+## 分篇与全文
+
+分篇与原始数据附件只保留在标签 `v2-drafts`。读全文用 `git show v2-drafts:docs/survey/<路径>`，列出全部文件用 `git ls-tree -r --name-only v2-drafts docs/survey`。
+
+- `00-survey-synthesis.md`：综合，含 187 行来源总表与缺口清单
+- `sources/natural-sciences.md`：数学、物理、化学来源
+- `sources/life-sciences-psychology.md`：生命科学与心理学来源
+- `sources/social-sciences-econ-fin-mgmt.md`：经济、金融、商业、管理来源
+- `sources/cs-ai.md`：计算机与 AI 来源
+- `sources/aggregators-repositories.md`：二级聚合器、仓储与注册表
+- `oss/paper-acquisition-and-search-oss.md`：论文获取与检索开源（197 项）
+- `oss/recommendation-oss.md`：推荐系统与学术推荐开源
+- `market/startups-and-products.md`：学术发现的初创与产品
+- `algorithms/social-media-recsys.md`：社媒推荐算法
+- `algorithms/scholarly-recommendation-and-matching.md`：学术推荐与双向匹配
+- `algorithms/retrieval-routing-indexing.md`：检索、路由、索引与数据平台
+- `algorithms/paper-understanding-and-card-content.md`：卡片内容生成
+- `ux/card-feed-interaction.md`：卡片流与滑动交互
+- `compliance/multi-user-platform-compliance.md`：多用户平台合规边界
+
+---
+
+完整草稿（含来源总表、70 条设计输入、核验统计与一手来源清单）：`git show v2-drafts:docs/survey/README.md`、`git show v2-drafts:docs/survey/00-survey-synthesis.md`
