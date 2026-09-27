@@ -1,0 +1,245 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1440" height="1080" viewBox="0 0 1440 1080" font-family="'PingFang SC','Hiragino Sans GB','Microsoft YaHei','Noto Sans CJK SC','Source Han Sans SC',sans-serif">
+  <!-- Paper Crawler v2 · 图 v2-08 · 三层双向匹配 · 对应 docs/plan/v2/06-recommendation-and-matching.md §10–§11 · 2026-09-27 -->
+  <defs>
+    <marker id="aBlue" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M 0 0 L 10 5 L 0 10 z" fill="#1d4ed8"/>
+    </marker>
+    <marker id="aGreen" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M 0 0 L 10 5 L 0 10 z" fill="#15803d"/>
+    </marker>
+    <marker id="aGray" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+      <path d="M 0 0 L 10 5 L 0 10 z" fill="#64748b"/>
+    </marker>
+    <marker id="aOrange" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M 0 0 L 10 5 L 0 10 z" fill="#c2410c"/>
+    </marker>
+    <marker id="aRed" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M 0 0 L 10 5 L 0 10 z" fill="#dc2626"/>
+    </marker>
+  </defs>
+
+  <rect x="0" y="0" width="1440" height="1080" fill="#ffffff"/>
+  <text x="30" y="38" font-size="22" font-weight="bold" fill="#1f2937">图 v2-08 · 三层双向匹配：读者 ↔ 论文 · 论文 → 读者 · 研究者 ↔ 研究者</text>
+  <text x="30" y="62" font-size="12" fill="#6b7280">对应 docs/plan/v2/06-recommendation-and-matching.md §10–§11 · ①② 默认启用（简报 Q5）· ③ 默认关闭、双方单独同意（CP HC-18）· ⚠ = 设计假设 · 2026-09-27</text>
+
+  <!-- ================= ① 读者 ↔ 论文 ================= -->
+  <rect x="20" y="80" width="1400" height="262" rx="12" fill="#eff6ff" stroke="#93c5fd" stroke-width="1.2"/>
+  <text x="36" y="104" font-size="14" font-weight="bold" fill="#1e3a8a">① 读者 ↔ 论文：受众适配 + 供给侧约束重排（R0 起，在 Selector 中执行）</text>
+
+  <rect x="40" y="122" width="230" height="92" rx="8" fill="#ffffff" stroke="#60a5fa" stroke-width="1.5"/>
+  <text x="155" y="144" font-size="13.5" font-weight="bold" text-anchor="middle" fill="#1e3a8a">读者 u</text>
+  <text x="52" y="166" font-size="12" fill="#374151">兴趣树 T_u（长期 / 短期）</text>
+  <text x="52" y="184" font-size="12" fill="#374151">多质心 C_u · 每用户 LR 头</text>
+  <text x="52" y="202" font-size="12" fill="#374151">显式画像 · 屏蔽 · 频道</text>
+
+  <rect x="40" y="230" width="230" height="96" rx="8" fill="#ffffff" stroke="#60a5fa" stroke-width="1.5"/>
+  <text x="155" y="252" font-size="13.5" font-weight="bold" text-anchor="middle" fill="#1e3a8a">论文 x</text>
+  <text x="52" y="274" font-size="12" fill="#374151">主题分布 π_x · 嵌入 e_x</text>
+  <text x="52" y="292" font-size="12" fill="#374151">作者簇 · venue · 首见时间</text>
+  <text x="52" y="310" font-size="12" fill="#374151">读者向量 R_x（R1，≥ k_cf 收藏者）</text>
+
+  <rect x="310" y="122" width="300" height="92" rx="8" fill="#ffffff" stroke="#3b82f6" stroke-width="1.5"/>
+  <text x="460" y="144" font-size="13.5" font-weight="bold" text-anchor="middle" fill="#1e3a8a">读者侧价值</text>
+  <text x="322" y="168" font-size="12.5" fill="#374151">s(u, x) = Σ V_a · P_u(a | x)</text>
+  <text x="322" y="190" font-size="12" fill="#374151">每用户 LR + 校准 + 行为倾向 ρ（§7.6）</text>
+
+  <rect x="310" y="230" width="300" height="96" rx="8" fill="#ffffff" stroke="#3b82f6" stroke-width="1.5"/>
+  <text x="460" y="252" font-size="13.5" font-weight="bold" text-anchor="middle" fill="#1e3a8a">论文侧受众适配</text>
+  <text x="322" y="276" font-size="12.5" fill="#374151">a(x, u) = cos(R*_x, T_u)</text>
+  <text x="322" y="296" font-size="12" fill="#374151">R*_x = R_x（≥ k_cf），否则取 π_x</text>
+  <text x="322" y="315" font-size="11" fill="#1e40af">R0 中 γ_a = 0：先验已含主题亲和，避免重复计入</text>
+
+  <rect x="650" y="150" width="270" height="150" rx="8" fill="#dbeafe" stroke="#2563eb" stroke-width="1.5"/>
+  <text x="785" y="174" font-size="13.5" font-weight="bold" text-anchor="middle" fill="#1e3a8a">组合（只作用于非负部分）</text>
+  <text x="662" y="200" font-size="12.5" fill="#374151">s′ = OFFSET + (s − OFFSET)</text>
+  <text x="662" y="220" font-size="12.5" fill="#374151">       × (1 + γ_a · (a − ā_u))</text>
+  <text x="662" y="244" font-size="12" fill="#374151">γ_a = 0.2（R1）⚠</text>
+  <text x="662" y="264" font-size="12" fill="#374151">R1：难度适配（太基础 / 太难）</text>
+  <text x="662" y="287" font-size="11" fill="#1e40af">净负候选仍一律沉底</text>
+
+  <rect x="960" y="122" width="444" height="204" rx="8" fill="#ffffff" stroke="#1d4ed8" stroke-width="1.5"/>
+  <text x="1182" y="146" font-size="13.5" font-weight="bold" text-anchor="middle" fill="#1e3a8a">供给侧约束（Selector，§7.7）</text>
+  <text x="974" y="170" font-size="12" fill="#374151">同作者簇 ≤ 2 张/批 · 作者衰减 (1−floor)·decay^k + floor</text>
+  <text x="974" y="190" font-size="12" fill="#374151">venue ≤ 3 · 预印本频道 ≤ 5 · 单一主题 ≤ 40%</text>
+  <text x="974" y="210" font-size="12" fill="#374151">兴趣校准：次要兴趣保底（Steck）</text>
+  <text x="974" y="230" font-size="12" fill="#374151">DPP θ = 0.5：相邻不重复</text>
+  <text x="974" y="250" font-size="12" fill="#374151">新作者下限位 ≤ 1 张/批 ← 来自 ②</text>
+  <text x="974" y="270" font-size="12" fill="#374151">护栏：作者曝光 Gini · 新作者占比 · 覆盖率</text>
+  <text x="974" y="302" font-size="11" fill="#1e40af">这是约束重排，而不是互惠打分（RO §2.9）</text>
+
+  <line x1="270" y1="168" x2="307" y2="168" stroke="#1d4ed8" stroke-width="1.6" marker-end="url(#aBlue)"/>
+  <line x1="270" y1="278" x2="307" y2="278" stroke="#1d4ed8" stroke-width="1.6" marker-end="url(#aBlue)"/>
+  <line x1="610" y1="168" x2="647" y2="192" stroke="#1d4ed8" stroke-width="1.6" marker-end="url(#aBlue)"/>
+  <line x1="610" y1="278" x2="647" y2="258" stroke="#1d4ed8" stroke-width="1.6" marker-end="url(#aBlue)"/>
+  <line x1="920" y1="225" x2="957" y2="225" stroke="#1d4ed8" stroke-width="1.6" marker-end="url(#aBlue)"/>
+
+  <!-- ================= ② 论文 → 读者 ================= -->
+  <rect x="20" y="358" width="1400" height="370" rx="12" fill="#f0fdf4" stroke="#86efac" stroke-width="1.2"/>
+  <text x="36" y="382" font-size="14" font-weight="bold" fill="#14532d">② 论文 → 读者：反向推送（Percolator 硬命中 + 反向推送规划器，§11.3）</text>
+
+  <rect x="40" y="400" width="110" height="312" rx="8" fill="#ffffff" stroke="#22c55e" stroke-width="1.5"/>
+  <text x="95" y="530" font-size="14" font-weight="bold" text-anchor="middle" fill="#14532d">新论文</text>
+  <text x="95" y="550" font-size="14" font-weight="bold" text-anchor="middle" fill="#14532d">入库</text>
+  <text x="95" y="580" font-size="12" text-anchor="middle" fill="#374151">日新增</text>
+  <text x="95" y="598" font-size="12" text-anchor="middle" fill="#374151">1–3 万篇</text>
+  <text x="95" y="616" font-size="11" text-anchor="middle" fill="#166534">（简报 B-04）</text>
+
+  <rect x="172" y="400" width="240" height="92" rx="8" fill="#ffffff" stroke="#22c55e" stroke-width="1.5"/>
+  <text x="184" y="422" font-size="13" font-weight="bold" fill="#14532d">频道 AST 硬命中</text>
+  <text x="184" y="442" font-size="12" fill="#374151">04 Percolator 倒排匹配</text>
+  <text x="184" y="460" font-size="12" fill="#374151">直接写 FeedInbox</text>
+  <text x="184" y="478" font-size="12" fill="#374151">不占软预算，受频道护栏约束</text>
+
+  <rect x="172" y="508" width="240" height="92" rx="8" fill="#ffffff" stroke="#22c55e" stroke-width="1.5"/>
+  <text x="184" y="530" font-size="13" font-weight="bold" fill="#14532d">节点倒排</text>
+  <text x="184" y="550" font-size="12" fill="#374151">TopicNode → 高亲和用户</text>
+  <text x="184" y="568" font-size="12" fill="#374151">θ_L(t) ≥ τ，或显式关注</text>
+  <text x="184" y="586" font-size="12" fill="#374151">（TSRG 的反向路由）</text>
+
+  <rect x="172" y="616" width="240" height="96" rx="8" fill="#ffffff" stroke="#22c55e" stroke-width="1.5"/>
+  <text x="184" y="638" font-size="13" font-weight="bold" fill="#14532d">批量质心点积</text>
+  <text x="184" y="658" font-size="12" fill="#374151">E_new · C_users^T，每篇取前 200</text>
+  <text x="184" y="676" font-size="12" fill="#374151">1 万 × 5 质心 × 2.5 万篇 × 256 维</text>
+  <text x="184" y="694" font-size="12" fill="#374151">≈ 3.2e11 次乘加（SR §2.10.2）</text>
+
+  <line x1="150" y1="446" x2="169" y2="446" stroke="#15803d" stroke-width="1.6" marker-end="url(#aGreen)"/>
+  <line x1="150" y1="554" x2="169" y2="554" stroke="#15803d" stroke-width="1.6" marker-end="url(#aGreen)"/>
+  <line x1="150" y1="664" x2="169" y2="664" stroke="#15803d" stroke-width="1.6" marker-end="url(#aGreen)"/>
+
+  <!-- 流网络 -->
+  <text x="446" y="418" font-size="13" font-weight="bold" fill="#14532d">资格集下限单位 → 最小费用流（其余边贪心）</text>
+  <text x="446" y="437" font-size="11" fill="#166534">边权 w_ux = Σ V·P × p_show(u)；w &lt; τ_min 的边丢弃 ⚠；非个性化用户不参与</text>
+
+  <line x1="412" y1="446" x2="462" y2="533" stroke="#15803d" stroke-width="1.4" marker-end="url(#aGreen)"/>
+  <line x1="412" y1="554" x2="458" y2="547" stroke="#15803d" stroke-width="1.4" marker-end="url(#aGreen)"/>
+  <line x1="412" y1="664" x2="462" y2="560" stroke="#15803d" stroke-width="1.4" marker-end="url(#aGreen)"/>
+
+  <!-- s → x -->
+  <line x1="498" y1="537" x2="584" y2="492" stroke="#64748b" stroke-width="1.3" marker-end="url(#aGray)"/>
+  <line x1="500" y1="545" x2="581" y2="545" stroke="#64748b" stroke-width="1.3" marker-end="url(#aGray)"/>
+  <line x1="498" y1="553" x2="584" y2="598" stroke="#64748b" stroke-width="1.3" marker-end="url(#aGray)"/>
+  <text x="468" y="497" font-size="10.5" fill="#475569">need_x · −M</text>
+  <!-- x → u -->
+  <line x1="617" y1="482" x2="733" y2="471" stroke="#64748b" stroke-width="1.2" marker-end="url(#aGray)"/>
+  <line x1="616" y1="490" x2="735" y2="516" stroke="#64748b" stroke-width="1.2" marker-end="url(#aGray)"/>
+  <line x1="616" y1="540" x2="735" y2="524" stroke="#64748b" stroke-width="1.2" marker-end="url(#aGray)"/>
+  <line x1="616" y1="550" x2="735" y2="566" stroke="#64748b" stroke-width="1.2" marker-end="url(#aGray)"/>
+  <line x1="616" y1="600" x2="735" y2="574" stroke="#64748b" stroke-width="1.2" marker-end="url(#aGray)"/>
+  <line x1="617" y1="608" x2="733" y2="619" stroke="#64748b" stroke-width="1.2" marker-end="url(#aGray)"/>
+  <text x="648" y="462" font-size="10.5" fill="#475569">1 · −w_ux</text>
+  <!-- u → t -->
+  <line x1="766" y1="472" x2="872" y2="535" stroke="#64748b" stroke-width="1.2" marker-end="url(#aGray)"/>
+  <line x1="766" y1="522" x2="869" y2="541" stroke="#64748b" stroke-width="1.2" marker-end="url(#aGray)"/>
+  <line x1="766" y1="569" x2="869" y2="550" stroke="#64748b" stroke-width="1.2" marker-end="url(#aGray)"/>
+  <line x1="766" y1="618" x2="872" y2="556" stroke="#64748b" stroke-width="1.2" marker-end="url(#aGray)"/>
+  <text x="812" y="500" font-size="10.5" fill="#475569">≤ 2</text>
+  <!-- 旁路 s → t -->
+  <path d="M 480 565 L 480 650 L 890 650 L 890 568" fill="none" stroke="#94a3b8" stroke-width="1.3" stroke-dasharray="5 4" marker-end="url(#aGray)"/>
+  <text x="685" y="664" font-size="11" text-anchor="middle" fill="#475569">旁路 s→t（成本 0）</text>
+
+  <circle cx="480" cy="545" r="20" fill="#166534" stroke="#14532d" stroke-width="1.5"/>
+  <text x="480" y="550" font-size="14" font-weight="bold" text-anchor="middle" fill="#ffffff">s</text>
+  <circle cx="600" cy="485" r="17" fill="#dcfce7" stroke="#16a34a" stroke-width="1.5"/>
+  <text x="600" y="490" font-size="13" text-anchor="middle" fill="#14532d">x₁</text>
+  <circle cx="600" cy="545" r="17" fill="#dcfce7" stroke="#16a34a" stroke-width="1.5"/>
+  <text x="600" y="550" font-size="13" text-anchor="middle" fill="#14532d">x₂</text>
+  <circle cx="600" cy="605" r="17" fill="#dcfce7" stroke="#16a34a" stroke-width="1.5"/>
+  <text x="600" y="610" font-size="13" text-anchor="middle" fill="#14532d">x₃</text>
+  <circle cx="750" cy="470" r="16" fill="#ecfeff" stroke="#0891b2" stroke-width="1.5"/>
+  <text x="750" y="475" font-size="12.5" text-anchor="middle" fill="#155e75">u₁</text>
+  <circle cx="750" cy="520" r="16" fill="#ecfeff" stroke="#0891b2" stroke-width="1.5"/>
+  <text x="750" y="525" font-size="12.5" text-anchor="middle" fill="#155e75">u₂</text>
+  <circle cx="750" cy="570" r="16" fill="#ecfeff" stroke="#0891b2" stroke-width="1.5"/>
+  <text x="750" y="575" font-size="12.5" text-anchor="middle" fill="#155e75">u₃</text>
+  <circle cx="750" cy="620" r="16" fill="#ecfeff" stroke="#0891b2" stroke-width="1.5"/>
+  <text x="750" y="625" font-size="12.5" text-anchor="middle" fill="#155e75">u₄</text>
+  <circle cx="890" cy="545" r="20" fill="#166534" stroke="#14532d" stroke-width="1.5"/>
+  <text x="890" y="550" font-size="14" font-weight="bold" text-anchor="middle" fill="#ffffff">t</text>
+
+  <text x="446" y="684" font-size="11" fill="#374151">s→x：容量 need_x（剩余下限，按 p_show 过量），成本 −M（软下限）</text>
+  <text x="446" y="700" font-size="11" fill="#374151">x→u：容量 1、成本 −⌊1000·w_ux⌋；u→t：容量 min(预算余量, 2 − 已有下限)</text>
+  <text x="446" y="716" font-size="11" fill="#374151">旁路吸收满足不了的需求；求解后其余边按价值贪心（10⁴–10⁵ 条弧，秒级，估算）</text>
+
+  <rect x="950" y="400" width="454" height="150" rx="8" fill="#ffffff" stroke="#16a34a" stroke-width="1.5"/>
+  <text x="1177" y="424" font-size="13" font-weight="bold" text-anchor="middle" fill="#14532d">下限资格与预算（§10.4–§10.5）</text>
+  <text x="964" y="446" font-size="12" fill="#374151">资格：新作者或小领域 · 通过质量闸 · 合格受众 ≥ f_x / p_show</text>
+  <text x="964" y="466" font-size="12" fill="#374151">f_x = 20 次确认可见曝光 / 7 天 ⚠ · 每作者簇 30 天 ≤ 1 篇</text>
+  <text x="964" y="486" font-size="12" fill="#374151">全局下限预算 ≤ 5% 期望 Deck 曝光（估算）：</text>
+  <text x="964" y="506" font-size="12" fill="#374151">1,000 活跃 × 0.7 × 25 ≈ 1.75 万次/日 → ≈ 875 次 ≈ 44 篇</text>
+  <text x="964" y="530" font-size="11.5" fill="#b45309">日新增 1–3 万篇 ⇒ 下限只覆盖资格集合（R2-41；§24 A1）</text>
+
+  <rect x="950" y="562" width="454" height="150" rx="8" fill="#ffffff" stroke="#16a34a" stroke-width="1.5"/>
+  <text x="1177" y="586" font-size="13" font-weight="bold" text-anchor="middle" fill="#14532d">输出：FeedInbox（14 天过期；下限条目随期限）</text>
+  <text x="964" y="608" font-size="12" fill="#374151">push_reason ∈ {channel_hit, node_match, centroid_match, floor}</text>
+  <text x="964" y="628" font-size="12" fill="#374151">每用户软推送预算 b_u = 2B = 50 · 每篇上限 U_x = 300 ⚠</text>
+  <text x="964" y="648" font-size="12" fill="#374151">→ Deck：S1 频道源 · S7 分级曝光池 · 下限条目占探索槽</text>
+  <text x="964" y="668" font-size="12" fill="#374151">默认贪心（下限优先，再按价值）；资格集用最小费用流</text>
+  <text x="964" y="690" font-size="11.5" fill="#166534">站外推送默认关闭；开启后每日 ≤1 封 digest · 免打扰 · 无角标</text>
+
+  <line x1="912" y1="545" x2="947" y2="610" stroke="#15803d" stroke-width="1.6" marker-end="url(#aGreen)"/>
+  <line x1="950" y1="470" x2="916" y2="470" stroke="#15803d" stroke-width="1.4" stroke-dasharray="5 3" marker-end="url(#aGreen)"/>
+  <text x="910" y="462" font-size="10.5" fill="#166534">need_x</text>
+
+  <!-- ================= ③ 研究者 ↔ 研究者 ================= -->
+  <rect x="20" y="744" width="1400" height="320" rx="12" fill="#fff7ed" stroke="#fdba74" stroke-width="1.2"/>
+  <text x="36" y="768" font-size="14" font-weight="bold" fill="#7c2d12">③ 研究者 ↔ 研究者：互惠匹配（实验功能 · 默认关闭 · 双方单独同意 · 可随时撤回；§11.4）</text>
+
+  <rect x="40" y="786" width="230" height="70" rx="8" fill="#ffffff" stroke="#fb923c" stroke-width="1.5"/>
+  <text x="52" y="810" font-size="12.5" font-weight="bold" fill="#7c2d12">u：单独同意（CP HC-18）</text>
+  <text x="52" y="830" font-size="11" fill="#374151">≥18 岁 ⚠ · 实名锚定（ORCID / 机构邮箱）</text>
+  <text x="52" y="847" font-size="11" fill="#374151">同意页不与用户协议捆绑</text>
+
+  <rect x="40" y="868" width="230" height="70" rx="8" fill="#ffffff" stroke="#fb923c" stroke-width="1.5"/>
+  <text x="52" y="892" font-size="12.5" font-weight="bold" fill="#7c2d12">v：单独同意</text>
+  <text x="52" y="912" font-size="11" fill="#374151">撤回 → 1 分钟内移出匹配池</text>
+  <text x="52" y="929" font-size="11" fill="#374151">24 h 内删除画像与建议；记录留审计</text>
+
+  <rect x="40" y="952" width="230" height="100" rx="8" fill="#fef2f2" stroke="#dc2626" stroke-width="1.5" stroke-dasharray="6 3"/>
+  <text x="155" y="976" font-size="13" font-weight="bold" text-anchor="middle" fill="#b91c1c">隐私墙 ✕</text>
+  <text x="52" y="998" font-size="11.5" fill="#7f1d1d">滑动 · 收藏 · 评分 · 笔记</text>
+  <text x="52" y="1016" font-size="11.5" fill="#7f1d1d">阅读轨迹 · 全文 · 打开全文</text>
+  <text x="52" y="1036" font-size="11.5" font-weight="bold" fill="#b91c1c">私有行为永不进入 ③</text>
+
+  <rect x="300" y="786" width="260" height="152" rx="8" fill="#ffffff" stroke="#f97316" stroke-width="1.5"/>
+  <text x="430" y="810" font-size="13" font-weight="bold" text-anchor="middle" fill="#7c2d12">公开研究画像（唯一输入）</text>
+  <text x="312" y="834" font-size="12" fill="#374151">自选兴趣标签（受控词表）</text>
+  <text x="312" y="854" font-size="12" fill="#374151">本人作品（ORCID 认领）</text>
+  <text x="312" y="874" font-size="12" fill="#374151">意图：合作 / 审稿交流 / 读书会</text>
+  <text x="312" y="894" font-size="12" fill="#374151">自愿公开的列表</text>
+  <text x="312" y="920" font-size="11" fill="#9a3412">平台不为未加入者建立画像</text>
+
+  <path d="M 270 1002 L 430 1002 L 430 944" fill="none" stroke="#dc2626" stroke-width="1.6" stroke-dasharray="5 4"/>
+  <text x="442" y="984" font-size="13" font-weight="bold" fill="#dc2626">✕ 阻断</text>
+
+  <rect x="590" y="786" width="320" height="110" rx="8" fill="#ffffff" stroke="#f97316" stroke-width="1.5"/>
+  <text x="750" y="810" font-size="13" font-weight="bold" text-anchor="middle" fill="#7c2d12">方向分 s(u→v) ∈ (0, 1]</text>
+  <text x="602" y="834" font-size="12" fill="#374151">0.5 · 兴趣标签重叠（subfield 向量余弦）</text>
+  <text x="602" y="854" font-size="12" fill="#374151">+ 0.3 · v 的作品与 u 兴趣的相关</text>
+  <text x="602" y="874" font-size="12" fill="#374151">+ 0.2 · 意图相容；× 匹配活跃度（仅匹配页内动作）⚠</text>
+
+  <rect x="590" y="910" width="320" height="80" rx="8" fill="#ffedd5" stroke="#ea580c" stroke-width="1.5"/>
+  <text x="750" y="934" font-size="13" font-weight="bold" text-anchor="middle" fill="#7c2d12">互惠分（RECON 调和平均）</text>
+  <text x="750" y="958" font-size="13" text-anchor="middle" fill="#374151">r = 2 / (1/s(u→v) + 1/s(v→u))</text>
+  <text x="750" y="978" font-size="11" text-anchor="middle" fill="#9a3412">任一方兴趣低 → r 低</text>
+
+  <rect x="940" y="786" width="464" height="110" rx="8" fill="#ffffff" stroke="#ea580c" stroke-width="1.5"/>
+  <text x="1172" y="810" font-size="13" font-weight="bold" text-anchor="middle" fill="#7c2d12">容量与公平（每周，⚠）</text>
+  <text x="952" y="834" font-size="12" fill="#374151">每人每周建议度 ≤ 3（对称下发：收到 = 被推荐），防拥塞</text>
+  <text x="952" y="854" font-size="12" fill="#374151">有合格候选者每 2 周至少 1 次曝光（公平）</text>
+  <text x="952" y="874" font-size="12" fill="#374151">带度上限的 b-matching：贪心 + 公平补位</text>
+
+  <rect x="940" y="910" width="464" height="142" rx="8" fill="#ffffff" stroke="#ea580c" stroke-width="1.5"/>
+  <text x="1172" y="934" font-size="13" font-weight="bold" text-anchor="middle" fill="#7c2d12">双向意愿才揭示</text>
+  <text x="952" y="958" font-size="12" fill="#374151">建议卡只显示公开画像；双方都点「有兴趣」</text>
+  <text x="952" y="978" font-size="12" fill="#374151">→ 互见各自选择公开的联系方式（ORCID / 机构邮箱）</text>
+  <text x="952" y="998" font-size="12" fill="#374151">不做站内私信 · 跳过不通知对方 · 90 天不重推</text>
+  <text x="952" y="1018" font-size="12" fill="#374151">可屏蔽 / 举报；试运行 8 周后按举报率与</text>
+  <text x="952" y="1036" font-size="12" fill="#374151">"互相有兴趣"率决定去留</text>
+
+  <line x1="270" y1="821" x2="297" y2="830" stroke="#c2410c" stroke-width="1.6" marker-end="url(#aOrange)"/>
+  <line x1="270" y1="903" x2="297" y2="892" stroke="#c2410c" stroke-width="1.6" marker-end="url(#aOrange)"/>
+  <line x1="560" y1="841" x2="587" y2="841" stroke="#c2410c" stroke-width="1.6" marker-end="url(#aOrange)"/>
+  <line x1="750" y1="896" x2="750" y2="907" stroke="#c2410c" stroke-width="1.6" marker-end="url(#aOrange)"/>
+  <line x1="910" y1="950" x2="937" y2="866" stroke="#c2410c" stroke-width="1.6" marker-end="url(#aOrange)"/>
+  <line x1="1172" y1="896" x2="1172" y2="907" stroke="#c2410c" stroke-width="1.6" marker-end="url(#aOrange)"/>
+</svg>

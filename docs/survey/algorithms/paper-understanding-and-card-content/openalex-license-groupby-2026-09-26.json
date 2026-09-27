@@ -1,0 +1,46 @@
+{
+ "query_date": "2026-09-26",
+ "cost_usd_per_request": 0.0001,
+ "arxiv_2026_03": {
+  "filter": "primary_location.source.id:S4306400194,from_publication_date:2026-03-01,to_publication_date:2026-03-31",
+  "group_by": "best_oa_location.license",
+  "count": 34212,
+  "groups": {
+   "CC BY": 14563,
+   "CC BY-NC-ND": 1642,
+   "CC BY-NC-SA": 1099,
+   "CC BY-SA": 543,
+   "public domain (CC0)": 409,
+   "other open access": 121,
+   "CC BY-NC": 13
+  },
+  "null_or_unknown": 15822
+ },
+ "articles_2026_03": {
+  "filter": "from_publication_date:2026-03-01,to_publication_date:2026-03-31,type:article",
+  "group_by": "best_oa_location.license",
+  "count": 778166,
+  "groups": {
+   "CC BY": 296500,
+   "CC BY-NC-ND": 70545,
+   "public domain (CC0)": 39121,
+   "CC BY-NC": 33438,
+   "CC BY-SA": 23428,
+   "CC BY-NC-SA": 11514,
+   "other open access": 3791,
+   "CC BY-ND": 1280
+  },
+  "null_or_unknown": 298549
+ },
+ "articles_2026_03_oa_status": {
+  "group_by": "open_access.oa_status",
+  "groups": {
+   "green": 266979,
+   "closed": 176870,
+   "diamond": 114834,
+   "gold": 104692,
+   "hybrid": 94581,
+   "bronze": 20210
+  }
+ }
+}

@@ -1,0 +1,150 @@
+{
+ "source": "Crossref REST API (LIVE 2026-09-26, public pool, no mailto)",
+ "results": {
+  "all": {
+   "url": "https://api.crossref.org/works?rows=0",
+   "total": 186987698,
+   "facets": {},
+   "pool": "public-array",
+   "lim": "1",
+   "type": null
+  },
+  "has_abstract": {
+   "url": "https://api.crossref.org/works?rows=0&filter=has-abstract:true",
+   "total": 45187859,
+   "facets": {},
+   "pool": "public-array",
+   "lim": "1",
+   "type": null
+  },
+  "ja": {
+   "url": "https://api.crossref.org/works?rows=0&filter=type:journal-article",
+   "total": 124068499,
+   "facets": {},
+   "pool": "public-array",
+   "lim": "1",
+   "type": null
+  },
+  "ja_abs": {
+   "url": "https://api.crossref.org/works?rows=0&filter=type:journal-article,has-abstract:true",
+   "total": 38837648,
+   "facets": {},
+   "pool": "public-array",
+   "lim": "1",
+   "type": null
+  },
+  "ja_2025": {
+   "url": "https://api.crossref.org/works?rows=0&filter=type:journal-article,from-pub-date:2025-01-01,until-pub-date:2025-12-31",
+   "total": 6635682,
+   "facets": {},
+   "pool": "public-array",
+   "lim": "1",
+   "type": null
+  },
+  "ja_2025_abs": {
+   "url": "https://api.crossref.org/works?rows=0&filter=type:journal-article,from-pub-date:2025-01-01,until-pub-date:2025-12-31,has-abstract:true",
+   "total": 3660022,
+   "facets": {},
+   "pool": "public-array",
+   "lim": "1",
+   "type": null
+  },
+  "ja_2025_refs": {
+   "url": "https://api.crossref.org/works?rows=0&filter=type:journal-article,from-pub-date:2025-01-01,until-pub-date:2025-12-31,has-references:true",
+   "total": 3801145,
+   "facets": {},
+   "pool": "public-array",
+   "lim": "1",
+   "type": null
+  },
+  "ja_2025_orcid": {
+   "url": "https://api.crossref.org/works?rows=0&filter=type:journal-article,from-pub-date:2025-01-01,until-pub-date:2025-12-31,has-orcid:true",
+   "total": 2742871,
+   "facets": {},
+   "pool": "public-array",
+   "lim": "1",
+   "type": null
+  },
+  "retractions": {
+   "url": "https://api.crossref.org/works?rows=0&filter=update-type:retraction",
+   "total": 75776,
+   "facets": {},
+   "pool": "public-array",
+   "lim": "1",
+   "type": null
+  },
+  "posted_content": {
+   "url": "https://api.crossref.org/works?rows=0&filter=type:posted-content",
+   "total": 4086004,
+   "facets": {},
+   "pool": "public-array",
+   "lim": "1",
+   "type": null
+  },
+  "posted_2025": {
+   "url": "https://api.crossref.org/works?rows=0&filter=type:posted-content,from-posted-date:2025-01-01,until-posted-date:2025-12-31",
+   "total": 625574,
+   "facets": {},
+   "pool": "public-array",
+   "lim": "1",
+   "type": null
+  },
+  "elsevier_ja_2025": {
+   "url": "https://api.crossref.org/members/78/works?rows=0&filter=type:journal-article,from-pub-date:2025-01-01,until-pub-date:2025-12-31",
+   "total": 1040981,
+   "facets": {},
+   "pool": "public-single",
+   "lim": "5",
+   "type": null
+  },
+  "elsevier_ja_2025_abs": {
+   "url": "https://api.crossref.org/members/78/works?rows=0&filter=type:journal-article,from-pub-date:2025-01-01,until-pub-date:2025-12-31,has-abstract:true",
+   "total": 424,
+   "facets": {},
+   "pool": "public-single",
+   "lim": "5",
+   "type": null
+  },
+  "natmeth_issn_facet": {
+   "url": "https://api.crossref.org/journals/1548-7091/works?rows=0&facet=container-title:5",
+   "total": 8419,
+   "facets": {
+    "container-title": {
+     "value-count": 1,
+     "values": {
+      "Nature Methods": 8418
+     }
+    }
+   },
+   "pool": "public-single",
+   "lim": "5",
+   "type": null
+  }
+ },
+ "pool_classification_probes": [
+  {
+   "url": "https://api.crossref.org/journals/0033-5533/works?rows=0&filter=from-pub-date:2025-01-01",
+   "x-api-pool": "public-single",
+   "x-rate-limit-limit": "5",
+   "x-concurrency-limit": "1"
+  },
+  {
+   "url": "https://api.crossref.org/works?rows=0&filter=issn:0033-5533,from-pub-date:2025-01-01",
+   "x-api-pool": "public-array",
+   "x-rate-limit-limit": "1",
+   "x-concurrency-limit": "1"
+  },
+  {
+   "url": "https://api.crossref.org/journals/0033-5533/works?rows=20&filter=from-pub-date:2025-01-01&cursor=*",
+   "x-api-pool": "public-single",
+   "x-rate-limit-limit": "5",
+   "x-concurrency-limit": "1"
+  },
+  {
+   "url": "https://api.crossref.org/works?rows=1&query.bibliographic=Why+most+published+research+findings+are+false",
+   "x-api-pool": "public-array",
+   "x-rate-limit-limit": "1",
+   "x-concurrency-limit": "1"
+  }
+ ]
+}

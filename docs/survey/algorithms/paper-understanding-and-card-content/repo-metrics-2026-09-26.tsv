@@ -1,0 +1,42 @@
+repo	stars	license_spdx(gh api)	pushed_at	archived	created_at	description
+allenai/scitldr	761	Apache-2.0	2023-05-22T22:43:52Z	false	2020-05-01T01:32:50Z	-
+allenai/pdffigures2	759	Apache-2.0	2024-03-10T09:43:06Z	false	2016-05-09T22:39:41Z	Given a scholarly PDF, extract figures, tables, captions, and section titles.
+allenai/deepfigures-open	149	Apache-2.0	2022-06-14T16:07:48Z	false	2018-04-06T17:51:40Z	Companion code to the paper "Extracting Scientific Figures with Distantly Supervised Neural Networks" 🤖
+grobidOrg/grobid	5143	Apache-2.0	2026-09-22T10:20:16Z	false	2012-09-13T15:48:54Z	A machine learning software for extracting information from scholarly documents
+docling-project/docling	67991	MIT	2026-09-25T09:57:30Z	false	2024-07-09T07:50:26Z	Get your documents ready for gen AI
+opendatalab/MinerU	80679	NOASSERTION	2026-09-24T02:30:01Z	false	2024-02-29T08:52:34Z	Transforms complex documents like PDFs and Office docs into LLM-ready markdown/JSON for your Agentic workflows.
+datalab-to/marker	39987	Apache-2.0	2026-09-13T07:35:22Z	false	2023-10-30T20:14:08Z	Convert PDF to markdown + JSON quickly with high accuracy
+facebookresearch/nougat	10079	MIT	2025-02-21T16:38:00Z	false	2023-06-07T14:26:29Z	Implementation of Nougat Neural Optical Understanding for Academic Documents
+MaartenGr/KeyBERT	4221	MIT	2026-08-25T13:40:00Z	false	2020-10-22T12:21:22Z	Minimal keyword extraction with BERT
+INESCTEC/yake	1883	NOASSERTION	2026-02-11T17:48:40Z	false	2018-11-16T16:55:43Z	Single-document unsupervised keyword extraction
+allenai/s2_fos	34	Apache-2.0	2024-01-02T23:37:50Z	false	2021-08-06T18:56:19Z	-
+brucemiller/LaTeXML	1310	NOASSERTION	2026-09-20T17:48:56Z	false	2013-10-22T05:38:14Z	LaTeXML: a TeX and LaTeX to XML/HTML/ePub/MathML translator.
+dginev/ar5iv	874	MIT	2026-09-21T16:51:24Z	false	2021-09-26T16:27:54Z	A web service offering HTML5 articles from arXiv.org as converted with latexml
+allenai/papermage	803	Apache-2.0	2024-11-08T01:03:20Z	false	2023-01-14T05:49:08Z	library supporting NLP and CV research on scientific papers
+Tencent-Hunyuan/Hunyuan-MT	722	NOASSERTION	2025-12-30T09:12:46Z	false	2025-08-28T09:54:40Z	-
+ByteDance-Seed/Seed-X-7B	170	NOASSERTION	2025-08-18T11:40:20Z	false	2025-07-16T07:18:16Z	-
+Unbabel/COMET	779	Apache-2.0	2026-04-21T22:26:09Z	false	2020-05-28T14:59:58Z	 A Neural Framework for MT Evaluation
+google-research/metricx	151	Apache-2.0	2026-07-02T02:03:17Z	false	2024-02-07T18:47:02Z	-
+yuh-zha/AlignScore	173	MIT	2024-03-11T05:49:09Z	false	2023-05-24T04:25:09Z	ACL2023 - AlignScore, a metric for factual consistency evaluation.
+tingofurro/summac	110	Apache-2.0	2025-01-30T20:15:43Z	false	2021-10-06T22:23:19Z	Codebase, data and models for the SummaC paper in TACL
+Liyan06/MiniCheck	228	Apache-2.0	2025-08-27T21:09:59Z	false	2024-04-14T21:48:41Z	MiniCheck: Efficient Fact-Checking of LLMs on Grounding Documents [EMNLP 2024]
+paperswithcode/paperswithcode-data	941	none	2025-09-08T16:33:49Z	false	2019-01-31T15:23:49Z	The full dataset behind paperswithcode.com
+allenai/SciRIFF	48	Apache-2.0	2025-03-17T20:13:50Z	false	2024-06-05T04:38:13Z	Dataset and evaluation suite enabling LLM instruction-following for scientific literature understanding.
+Paper2Poster/Paper2Poster	3956	MIT	2026-06-08T14:53:00Z	false	2025-05-16T08:32:50Z	[NeurIPS 2025] Open-source Multi-agent Poster Generation from Papers
+showlab/Paper2Video	2381	MIT	2026-03-05T09:05:41Z	false	2025-10-03T08:50:16Z	Automatic Video Generation from Scientific Papers
+Layout-Parser/layout-parser	5779	Apache-2.0	2024-08-15T06:26:34Z	false	2020-06-10T20:22:54Z	A Unified Toolkit for Deep Learning Based Document Image Analysis
+opendatalab/DocLayout-YOLO	2280	AGPL-3.0	2025-04-14T07:18:01Z	false	2024-10-14T02:37:01Z	DocLayout-YOLO: Enhancing Document Layout Analysis through Diverse Synthetic Data and Global-to-Local Adaptive Perception
+tingyaohsu/SciCap	59	none	2021-11-05T16:44:07Z	false	2021-09-06T15:23:15Z	SciCap Dataset
+allenai/olmocr	19664	Apache-2.0	2026-03-25T17:52:37Z	false	2024-09-17T14:53:40Z	Toolkit for linearizing PDFs for LLM datasets/training
+TideDra/zotero-arxiv-daily	5992	AGPL-3.0	2026-09-01T04:26:00Z	false	2024-11-23T10:40:48Z	Recommend new arxiv papers of your interest daily according to your Zotero libarary.
+DISL-Lab/FineSurE-ACL24	36	Apache-2.0	2024-07-08T08:32:44Z	false	-	-
+nlpyang/geval	429	MIT	2024-02-04T05:26:17Z	false	-	-
+vectara/hallucination-leaderboard	3313	Apache-2.0	2026-09-23T01:07:11Z	false	-	-
+ourresearch/openalex-topic-classification	59	MIT	2025-08-04T18:20:00Z	false	-	-
+bojone/papers.cool	809	none	2026-07-06T13:31:24Z	false	-	-
+pypdfium2-team/pypdfium2	826	none	2026-09-24T18:19:31Z	false	-	-
+INESCTEC/yake	1883	NOASSERTION	2026-02-11T17:48:40Z	false	-	-
+allenai/SciREX	141	Apache-2.0	2024-07-25T10:56:42Z	false	-	-
+paperswithcode/axcell	439	Apache-2.0	2022-11-28T06:53:08Z	false	-	-
+PDFMathTranslate/PDFMathTranslate	37202	AGPL-3.0	2026-09-26T15:42:48Z	false	-	-
+funstory-ai/BabelDOC	9611	AGPL-3.0	2026-08-05T20:40:20Z	false	-	-

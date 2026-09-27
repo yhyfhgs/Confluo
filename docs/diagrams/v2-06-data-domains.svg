@@ -1,0 +1,408 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1600" height="1100" viewBox="0 0 1600 1100" font-family="'PingFang SC','Hiragino Sans GB','Microsoft YaHei','Noto Sans CJK SC','Source Han Sans SC',Helvetica,Arial,sans-serif">
+  <title>v2 数据平台：四域、主要表、数据流向与 RLS 边界</title>
+  <desc>对应 docs/plan/v2/05-data-platform.md（draft，2026-09-27，已按简报 §10 第 2 轮裁决对齐）。corpus / usr / evt / ops 四个数据域、主要表、允许与禁止的数据流、RLS 边界、k 匿名聚合闸、兴趣并集控制面、两条审计哈希链与对象存储布局。</desc>
+  <defs>
+    <marker id="arrGreen" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse">
+      <path d="M0,0 L10,5 L0,10 z" fill="#2e7d32"/>
+    </marker>
+    <marker id="arrRed" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse">
+      <path d="M0,0 L10,5 L0,10 z" fill="#c62828"/>
+    </marker>
+    <marker id="arrAmber" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse">
+      <path d="M0,0 L10,5 L0,10 z" fill="#ef6c00"/>
+    </marker>
+    <marker id="arrPurple" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse">
+      <path d="M0,0 L10,5 L0,10 z" fill="#6a1b9a"/>
+    </marker>
+    <marker id="arrGrey" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse">
+      <path d="M0,0 L10,5 L0,10 z" fill="#455a64"/>
+    </marker>
+    <marker id="arrBlue" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse">
+      <path d="M0,0 L10,5 L0,10 z" fill="#1565c0"/>
+    </marker>
+  </defs>
+
+  <!-- 白底 -->
+  <rect x="0" y="0" width="1600" height="1100" fill="#ffffff"/>
+
+  <!-- 标题 -->
+  <text x="24" y="38" font-size="22" font-weight="bold" fill="#1f2933">v2 数据平台：四域、主要表、数据流向与 RLS 边界</text>
+  <text x="24" y="60" font-size="12.5" fill="#52606d">对应 docs/plan/v2/05-data-platform.md · draft · 2026-09-27 · 已对齐简报 §10（R2）· PostgreSQL 18 单栈（B-01）+ 对象存储 · 表名与参数为设计草案</text>
+  <text x="24" y="81" font-size="12.5" fill="#b71c1c">INV-D1：不存在“能读 usr/evt、又能写 corpus”的数据库角色；由用户活动派生的共享统计只经 k 匿名聚合闸进入 evt.agg_*</text>
+  <text x="1386" y="91" font-size="11" fill="#c62828" text-anchor="end">红色虚线 = RLS 边界：usr 与 evt 全表 FORCE RLS</text>
+
+  <!-- ===================== 外部来源 ===================== -->
+  <rect x="24" y="100" width="190" height="420" rx="10" fill="#eceff1" stroke="#78909c" stroke-width="1.5"/>
+  <rect x="24" y="100" width="190" height="32" rx="10" fill="#cfd8dc"/>
+  <rect x="24" y="118" width="190" height="14" fill="#cfd8dc"/>
+  <text x="119" y="122" font-size="14" font-weight="bold" fill="#263238" text-anchor="middle">外部来源</text>
+  <g font-size="12" fill="#37474f">
+    <text x="36" y="154">Source / Connector</text>
+    <text x="36" y="172">（SourceSpec v2 + SCD）</text>
+    <text x="36" y="200">bulk 快照：</text>
+    <text x="36" y="218">OpenAlex 子集 · RePEc ·</text>
+    <text x="36" y="236">DROPS dblp（清单见 03）</text>
+    <text x="36" y="262">增量：API / OAI-PMH /</text>
+    <text x="36" y="280">feed（robots 先行闸）</text>
+    <text x="36" y="306">Egress Gateway（唯一出口）</text>
+    <text x="36" y="324">全局令牌桶（P-04、R2-08）</text>
+    <text x="36" y="350">exec_side = platform</text>
+    <text x="36" y="376">受限全文不经此路</text>
+    <text x="36" y="394">（用户侧逐篇取回）</text>
+  </g>
+  <text x="36" y="430" font-size="12.5" font-weight="bold" fill="#2e7d32">→ 只写 corpus</text>
+  <text x="36" y="448" font-size="10.5" fill="#2e7d32">（pc_ingest / pc_enrich）</text>
+  <text x="36" y="476" font-size="10.5" fill="#546e7a">元数据与可再分发</text>
+  <text x="36" y="492" font-size="10.5" fill="#546e7a">OA 内容的唯一入口</text>
+
+  <!-- 来源 → corpus -->
+  <line x1="214" y1="300" x2="238" y2="300" stroke="#2e7d32" stroke-width="2.5" marker-end="url(#arrGreen)"/>
+
+  <!-- ===================== corpus ===================== -->
+  <rect x="240" y="100" width="590" height="456" rx="10" fill="#f1f8e9" stroke="#43a047" stroke-width="2"/>
+  <rect x="240" y="100" width="590" height="34" rx="10" fill="#c5e1a5"/>
+  <rect x="240" y="120" width="590" height="14" fill="#c5e1a5"/>
+  <text x="256" y="123" font-size="15" font-weight="bold" fill="#1b5e20">corpus · 共享语料层</text>
+  <text x="822" y="123" font-size="11.5" fill="#33691e" text-anchor="end">无个人数据 · 写：pc_ingest / pc_enrich · 读：全部服务</text>
+
+  <!-- 身份三层 -->
+  <rect x="254" y="146" width="280" height="150" rx="8" fill="#ffffff" stroke="#a5d6a7" stroke-width="1.3"/>
+  <text x="266" y="166" font-size="12.5" font-weight="bold" fill="#2e7d32">身份三层 W / V / M（规则见 03）</text>
+  <g font-size="11.5" fill="#37474f" font-family="Menlo, Consolas, 'Courier New', monospace">
+    <text x="266" y="188">work（int4 簇）· cluster_log</text>
+    <text x="266" y="205">version（family_key · VoR / WP）</text>
+    <text x="266" y="222">manifestation（载体 · 许可证据）</text>
+    <text x="266" y="239">identifier（scheme,value）PK</text>
+    <text x="266" y="256">identifier_assertion（投票证据）</text>
+    <text x="266" y="273">source_record · norm_record</text>
+    <text x="266" y="290">version_edge · dedupe_candidate</text>
+  </g>
+
+  <!-- Venue 与作者 -->
+  <rect x="546" y="146" width="270" height="150" rx="8" fill="#ffffff" stroke="#a5d6a7" stroke-width="1.3"/>
+  <text x="558" y="166" font-size="12.5" font-weight="bold" fill="#2e7d32">Venue 与作者</text>
+  <g font-size="11.5" fill="#37474f" font-family="Menlo, Consolas, 'Courier New', monospace">
+    <text x="558" y="188">venue（slug · issn_l · kind）</text>
+    <text x="558" y="205">venue_key（多键归一）</text>
+    <text x="558" y="222">venue_edge（演化边）</text>
+    <text x="558" y="239">venue_era · issue</text>
+    <text x="558" y="256">author · author_key（消歧）</text>
+    <text x="558" y="273">authorship · institution</text>
+    <text x="558" y="290">author.status（拒绝权）</text>
+  </g>
+
+  <!-- 图与主题 -->
+  <rect x="254" y="308" width="280" height="120" rx="8" fill="#ffffff" stroke="#a5d6a7" stroke-width="1.3"/>
+  <text x="266" y="328" font-size="12.5" font-weight="bold" fill="#2e7d32">图与主题（TSRG 存储，语义见 04）</text>
+  <g font-size="11.5" fill="#37474f" font-family="Menlo, Consolas, 'Courier New', monospace">
+    <text x="266" y="350">citation · work_neighbor（数组）</text>
+    <text x="266" y="367">topic_node · topic_edge</text>
+    <text x="266" y="384">work_topic（节点倒排）</text>
+    <text x="266" y="401">route_stat（覆盖·滞后·λ·窗口）</text>
+    <text x="266" y="418">work_feature（夜间批算）</text>
+  </g>
+
+  <!-- 内容、派生与权利 -->
+  <rect x="546" y="308" width="270" height="120" rx="8" fill="#ffffff" stroke="#a5d6a7" stroke-width="1.3"/>
+  <text x="558" y="328" font-size="12.5" font-weight="bold" fill="#2e7d32">内容、派生与权利</text>
+  <g font-size="11.5" fill="#37474f" font-family="Menlo, Consolas, 'Courier New', monospace">
+    <text x="558" y="350">abstract（A/B；C 类禁入）</text>
+    <text x="558" y="367">card_field（RightsTag 列组）</text>
+    <text x="558" y="384">work_embedding · embedding_model</text>
+    <text x="558" y="401">work_search（BM25 + tsvector）</text>
+    <text x="558" y="418">derivation_edge（派生血缘·级联撤回）</text>
+  </g>
+
+  <!-- 资产、状态与注册表 -->
+  <rect x="254" y="440" width="562" height="104" rx="8" fill="#ffffff" stroke="#a5d6a7" stroke-width="1.3"/>
+  <text x="266" y="460" font-size="12.5" font-weight="bold" fill="#2e7d32">资产、状态与注册表</text>
+  <g font-size="11.5" fill="#37474f" font-family="Menlo, Consolas, 'Courier New', monospace">
+    <text x="266" y="482">oa_asset：仅可再分发许可（NC 受商用开关）· 一手证据 · HC-05</text>
+    <text x="266" y="499">work_status_event · work_badge（撤稿 / 更正 / 评审状态）</text>
+    <text x="266" y="516">source（v1/v2_status）· license（SPDX / x-；NC、ND 可再分发）· rights_class</text>
+    <text x="266" y="533">display_scope ∈ {public_shared, link_only}；per_user_only 被 CHECK 拒绝</text>
+  </g>
+
+  <!-- ===================== RLS 边界（usr + evt） ===================== -->
+  <rect x="920" y="94" width="470" height="794" rx="12" fill="none" stroke="#c62828" stroke-width="2" stroke-dasharray="8 5"/>
+
+  <!-- ===================== usr ===================== -->
+  <rect x="930" y="100" width="450" height="456" rx="10" fill="#e3f2fd" stroke="#1e88e5" stroke-width="2"/>
+  <rect x="930" y="100" width="450" height="34" rx="10" fill="#bbdefb"/>
+  <rect x="930" y="120" width="450" height="14" fill="#bbdefb"/>
+  <text x="946" y="123" font-size="15" font-weight="bold" fill="#0d47a1">usr · 用户私有层</text>
+  <text x="1372" y="123" font-size="11.5" fill="#1565c0" text-anchor="end">FORCE RLS · pc_app 非 owner、无 BYPASSRLS</text>
+
+  <rect x="944" y="146" width="206" height="122" rx="8" fill="#ffffff" stroke="#90caf9" stroke-width="1.3"/>
+  <text x="956" y="166" font-size="12.5" font-weight="bold" fill="#1565c0">账户 · 同意 · 数据权利</text>
+  <g font-size="11.5" fill="#37474f" font-family="Menlo, Consolas, 'Courier New', monospace">
+    <text x="956" y="188">account · auth_identity</text>
+    <text x="956" y="205">mfa_factor · login_session</text>
+    <text x="956" y="222">profile · public_persona</text>
+    <text x="956" y="239">consent（含匹配三项同意）</text>
+    <text x="956" y="256">dsr_request（导出/删除）</text>
+  </g>
+
+  <rect x="1160" y="146" width="206" height="122" rx="8" fill="#ffffff" stroke="#90caf9" stroke-width="1.3"/>
+  <text x="1172" y="166" font-size="12.5" font-weight="bold" fill="#1565c0">画像与模型（可看可删）</text>
+  <g font-size="11.5" fill="#37474f" font-family="Menlo, Consolas, 'Courier New', monospace">
+    <text x="1172" y="188">interest_node_weight</text>
+    <text x="1172" y="205">user_vector（多质心）</text>
+    <text x="1172" y="222">user_model（每用户 LR）</text>
+    <text x="1172" y="239">interaction_label</text>
+    <text x="1172" y="256">action_stat · user_tag</text>
+  </g>
+
+  <rect x="944" y="280" width="206" height="120" rx="8" fill="#ffffff" stroke="#90caf9" stroke-width="1.3"/>
+  <text x="956" y="300" font-size="12.5" font-weight="bold" fill="#1565c0">频道 · 推送 · 已见</text>
+  <g font-size="11.5" fill="#37474f" font-family="Menlo, Consolas, 'Courier New', monospace">
+    <text x="956" y="322">channel（Query AST）</text>
+    <text x="956" y="339">channel_watch · follow</text>
+    <text x="956" y="356">mute_rule · seed</text>
+    <text x="956" y="373">feed_inbox · deck_batch</text>
+    <text x="956" y="390">seen_segment（roaring）</text>
+  </g>
+
+  <rect x="1160" y="280" width="206" height="120" rx="8" fill="#ffffff" stroke="#90caf9" stroke-width="1.3"/>
+  <text x="1172" y="300" font-size="12.5" font-weight="bold" fill="#1565c0">文献库与 UGC</text>
+  <g font-size="11.5" fill="#37474f" font-family="Menlo, Consolas, 'Courier New', monospace">
+    <text x="1172" y="322">library_item · collection</text>
+    <text x="1172" y="339">note（仅私有）· rating</text>
+    <text x="1172" y="356">comment（可见性·审核态）</text>
+    <text x="1172" y="373">private_record（导入题录）</text>
+    <text x="1172" y="390">explanation_cache</text>
+  </g>
+
+  <rect x="944" y="412" width="422" height="84" rx="8" fill="#fff3e0" stroke="#fb8c00" stroke-width="1.5"/>
+  <text x="956" y="432" font-size="12.5" font-weight="bold" fill="#e65100">私有全文与凭证（永不进入共享层）</text>
+  <g font-size="11.5" fill="#37474f" font-family="Menlo, Consolas, 'Courier New', monospace">
+    <text x="956" y="454">private_asset：E2E 密文，不存明文哈希；server_envelope</text>
+    <text x="956" y="471">仅 personal+本机（R2-27/28）· private_derivative</text>
+    <text x="956" y="488">credential_blob（仅 API key 类可同步，R2-29）· vault_wrap</text>
+  </g>
+
+  <rect x="944" y="504" width="422" height="46" rx="8" fill="#ffffff" stroke="#90caf9" stroke-width="1.3"/>
+  <g font-size="11.5" fill="#37474f" font-family="Menlo, Consolas, 'Courier New', monospace">
+    <text x="956" y="523">match_profile · match_suggestion（opt-in）· author_claim</text>
+    <text x="956" y="541">fetch_intent（90 天）· experiment_assignment</text>
+  </g>
+
+  <!-- corpus ↔ usr 之间的流 -->
+  <line x1="832" y1="190" x2="926" y2="190" stroke="#2e7d32" stroke-width="2.5" marker-end="url(#arrGreen)"/>
+  <text x="879" y="178" font-size="11" fill="#2e7d32" text-anchor="middle">只读引用</text>
+  <text x="879" y="206" font-size="10.5" fill="#2e7d32" text-anchor="middle">corpus ID</text>
+
+  <line x1="832" y1="300" x2="926" y2="300" stroke="#2e7d32" stroke-width="2.5" marker-end="url(#arrGreen)"/>
+  <text x="879" y="288" font-size="11" fill="#2e7d32" text-anchor="middle">Percolator</text>
+  <text x="875" y="316" font-size="10.5" fill="#2e7d32" text-anchor="middle">只写 feed_inbox</text>
+
+  <line x1="926" y1="410" x2="834" y2="410" stroke="#c62828" stroke-width="2.5" stroke-dasharray="7 4" marker-end="url(#arrRed)"/>
+  <line x1="870" y1="401" x2="888" y2="419" stroke="#c62828" stroke-width="3"/>
+  <line x1="888" y1="401" x2="870" y2="419" stroke="#c62828" stroke-width="3"/>
+  <text x="879" y="394" font-size="11" font-weight="bold" fill="#c62828" text-anchor="middle">私→共 禁止</text>
+  <text x="879" y="436" font-size="10.5" fill="#c62828" text-anchor="middle">HC-01</text>
+
+  <!-- usr.channel → ops.watch_key（控制面） -->
+  <line x1="940" y1="558" x2="836" y2="598" stroke="#455a64" stroke-width="2" marker-end="url(#arrGrey)"/>
+  <text x="826" y="574" font-size="11" fill="#455a64" text-anchor="end">频道编译为 WatchKey（只传查询键与引用计数）</text>
+  <text x="826" y="590" font-size="11" fill="#455a64" text-anchor="end">兴趣并集 corpus_scope：只写键与计数，私有文献库细粒度键须 ≥ k_cf（R2-19）</text>
+
+  <!-- ===================== ops ===================== -->
+  <rect x="240" y="600" width="590" height="280" rx="10" fill="#f3e5f5" stroke="#8e24aa" stroke-width="2"/>
+  <rect x="240" y="600" width="590" height="34" rx="10" fill="#e1bee7"/>
+  <rect x="240" y="620" width="590" height="14" fill="#e1bee7"/>
+  <text x="256" y="623" font-size="15" font-weight="bold" fill="#4a148c">ops · 运维与合规域</text>
+  <text x="822" y="623" font-size="11.5" fill="#6a1b9a" text-anchor="end">无用户内容 · 用户引用假名化 · 策略与审计证据链</text>
+
+  <rect x="254" y="646" width="280" height="112" rx="8" fill="#ffffff" stroke="#ce93d8" stroke-width="1.3"/>
+  <text x="266" y="666" font-size="12.5" font-weight="bold" fill="#6a1b9a">收割与礼貌（P-04）</text>
+  <g font-size="11" fill="#37474f" font-family="Menlo, Consolas, 'Courier New', monospace">
+    <text x="266" y="686">watch_key（引用计数·λ·游标）</text>
+    <text x="266" y="702">corpus_scope（兴趣并集·k_cf 闸）</text>
+    <text x="266" y="718">quota_ledger（五元组，IP 只收紧）</text>
+    <text x="266" y="734">harvest_run · fetch_log · health</text>
+    <text x="266" y="750">队列（rec_update…）· outbox</text>
+  </g>
+
+  <rect x="546" y="646" width="270" height="112" rx="8" fill="#ffffff" stroke="#ce93d8" stroke-width="1.3"/>
+  <text x="558" y="666" font-size="12.5" font-weight="bold" fill="#6a1b9a">策略 · 配置 · 路由</text>
+  <g font-size="11" fill="#37474f" font-family="Menlo, Consolas, 'Courier New', monospace">
+    <text x="558" y="686">policy_snapshot（mode·review）</text>
+    <text x="558" y="702">confirmation · drift_alert</text>
+    <text x="558" y="718">keyword_blocklist · feature_flag</text>
+    <text x="558" y="734">value_model · model_registry</text>
+    <text x="558" y="750">route_decision · tsrg_snapshot</text>
+  </g>
+
+  <rect x="254" y="768" width="562" height="104" rx="8" fill="#ffffff" stroke="#ce93d8" stroke-width="1.3"/>
+  <text x="266" y="788" font-size="12.5" font-weight="bold" fill="#6a1b9a">合规与数据权利（HC-14 / HC-20 / HC-28；R2-36；留存按 08 §6.2）</text>
+  <g font-size="11" fill="#37474f" font-family="Menlo, Consolas, 'Courier New', monospace">
+    <text x="266" y="810">security_log 190 天 · decision_log 12 个月 · audit_log 3 年</text>
+    <text x="266" y="827">两条哈希链：audit_pending → 单写者 audit_chain · subject_ref</text>
+    <text x="266" y="844">moderation_queue（结案后 24 个月）· legal_hold · compliance_record</text>
+    <text x="266" y="861">dsr_ledger · consent_ledger（3 年）· erasure_ledger（WORM）· pseudonym_key</text>
+  </g>
+
+  <!-- ops → 来源（调度与策略门控） -->
+  <path d="M240,690 C180,690 150,610 150,524" fill="none" stroke="#6a1b9a" stroke-width="2" stroke-dasharray="7 4" marker-end="url(#arrPurple)"/>
+  <text x="30" y="612" font-size="11" fill="#6a1b9a">WatchKey 调度 /</text>
+  <text x="30" y="628" font-size="11" fill="#6a1b9a">策略快照门控收割</text>
+  <text x="30" y="644" font-size="11" fill="#6a1b9a">（needs_confirmation →</text>
+  <text x="30" y="660" font-size="11" fill="#6a1b9a">不做后台批量）</text>
+
+  <!-- ===================== evt ===================== -->
+  <rect x="930" y="600" width="450" height="280" rx="10" fill="#fff8e1" stroke="#fb8c00" stroke-width="2"/>
+  <rect x="930" y="600" width="450" height="34" rx="10" fill="#ffe0b2"/>
+  <rect x="930" y="620" width="450" height="14" fill="#ffe0b2"/>
+  <text x="946" y="623" font-size="15" font-weight="bold" fill="#e65100">evt · 事件层</text>
+  <text x="1372" y="623" font-size="11.5" fill="#ef6c00" text-anchor="end">应用侧只追加 · 月分区 · 同样 FORCE RLS</text>
+
+  <rect x="944" y="646" width="206" height="96" rx="8" fill="#ffffff" stroke="#ffcc80" stroke-width="1.3"/>
+  <text x="956" y="666" font-size="12.5" font-weight="bold" fill="#e65100">impression（服务端）</text>
+  <g font-size="11.5" fill="#37474f" font-family="Menlo, Consolas, 'Courier New', monospace">
+    <text x="956" y="686">impression_id = uuidv7()</text>
+    <text x="956" y="703">position · sources（编码）</text>
+    <text x="956" y="720">score_terms · propensity</text>
+    <text x="956" y="737">exp_buckets · reason_codes</text>
+  </g>
+
+  <rect x="1160" y="646" width="206" height="96" rx="8" fill="#ffffff" stroke="#ffcc80" stroke-width="1.3"/>
+  <text x="1172" y="666" font-size="12.5" font-weight="bold" fill="#e65100">event（客户端）</text>
+  <g font-size="11.5" fill="#37474f" font-family="Menlo, Consolas, 'Courier New', monospace">
+    <text x="1172" y="686">event_id = 客户端 UUIDv7</text>
+    <text x="1172" y="703">PK(event_id, event_ts)</text>
+    <text x="1172" y="720">privacy_level（PL0–PLP）</text>
+    <text x="1172" y="737">agg_eligible · 撤回=追加</text>
+  </g>
+
+  <!-- 月分区条 -->
+  <rect x="944" y="752" width="422" height="46" rx="6" fill="#ffffff" stroke="#ffcc80" stroke-width="1.2"/>
+  <g font-size="10.5" fill="#5d4037" text-anchor="middle">
+    <rect x="952" y="758" width="54" height="18" fill="#ffe0b2" stroke="#fb8c00" stroke-width="0.8"/>
+    <text x="979" y="771">2026-04</text>
+    <rect x="1010" y="758" width="54" height="18" fill="#ffe0b2" stroke="#fb8c00" stroke-width="0.8"/>
+    <text x="1037" y="771">2026-05</text>
+    <rect x="1068" y="758" width="54" height="18" fill="#ffe0b2" stroke="#fb8c00" stroke-width="0.8"/>
+    <text x="1095" y="771">2026-06</text>
+    <rect x="1126" y="758" width="54" height="18" fill="#ffe0b2" stroke="#fb8c00" stroke-width="0.8"/>
+    <text x="1153" y="771">2026-07</text>
+    <rect x="1184" y="758" width="54" height="18" fill="#ffe0b2" stroke="#fb8c00" stroke-width="0.8"/>
+    <text x="1211" y="771">2026-08</text>
+    <rect x="1242" y="758" width="54" height="18" fill="#ffe0b2" stroke="#fb8c00" stroke-width="0.8"/>
+    <text x="1269" y="771">2026-09</text>
+    <rect x="1300" y="758" width="58" height="18" fill="#ffffff" stroke="#fb8c00" stroke-width="0.8" stroke-dasharray="3 2"/>
+    <text x="1329" y="771">10 预建</text>
+  </g>
+  <text x="952" y="792" font-size="11" fill="#5d4037">月分区：可识别 6 个月 → 假名化 Parquet 归档 → 第 13 个月删除（R2-31）</text>
+
+  <!-- 聚合闸 -->
+  <rect x="944" y="806" width="422" height="66" rx="6" fill="#fffde7" stroke="#fbc02d" stroke-width="1.5"/>
+  <path d="M962,826 L974,839 L962,852 L950,839 Z" fill="#fbc02d" stroke="#f57f17" stroke-width="1"/>
+  <text x="984" y="826" font-size="12" font-weight="bold" fill="#f57f17">聚合闸（k_cf 5 · k_reason 5 · k_show 10，06 初值 ⚠）</text>
+  <text x="984" y="845" font-size="11" fill="#5d4037">推荐用只见 agg_eligible；指标另设角色，切片 ≥ k_show</text>
+  <text x="984" y="864" font-size="11" fill="#5d4037" font-family="Menlo, Consolas, 'Courier New', monospace">→ agg_work_exposure · agg_cooccur · agg_route_eta …</text>
+
+  <!-- evt → usr（标签处理） -->
+  <line x1="1100" y1="600" x2="1100" y2="560" stroke="#ef6c00" stroke-width="2.5" marker-end="url(#arrAmber)"/>
+  <text x="1112" y="584" font-size="11" fill="#e65100">rec_update → interaction_label / user_model</text>
+
+  <!-- ops → evt（保留与擦除作业） -->
+  <line x1="832" y1="760" x2="926" y2="760" stroke="#6a1b9a" stroke-width="2" stroke-dasharray="7 4" marker-end="url(#arrPurple)"/>
+  <text x="879" y="748" font-size="10.5" fill="#6a1b9a" text-anchor="middle">擦除 / 保留</text>
+  <text x="875" y="778" font-size="9.5" fill="#6a1b9a" text-anchor="middle" font-family="Menlo, Consolas, 'Courier New', monospace">pc_sys_privacy</text>
+  <text x="875" y="790" font-size="9.5" fill="#6a1b9a" text-anchor="middle" font-family="Menlo, Consolas, 'Courier New', monospace">pc_sys_retention</text>
+
+  <!-- ops.route_decision → 聚合闸（去标识路由日志 → η） -->
+  <line x1="832" y1="839" x2="946" y2="839" stroke="#6a1b9a" stroke-width="2" stroke-dasharray="7 4" marker-end="url(#arrPurple)"/>
+  <text x="875" y="829" font-size="9.5" fill="#6a1b9a" text-anchor="middle" font-family="Menlo, Consolas, 'Courier New', monospace">route_decision</text>
+  <text x="875" y="856" font-size="10.5" fill="#6a1b9a" text-anchor="middle">去标识 → η</text>
+
+  <!-- ===================== 客户端 ===================== -->
+  <rect x="1410" y="100" width="166" height="780" rx="10" fill="#fce4ec" stroke="#d81b60" stroke-width="2"/>
+  <rect x="1410" y="100" width="166" height="32" rx="10" fill="#f8bbd0"/>
+  <rect x="1410" y="118" width="166" height="14" fill="#f8bbd0"/>
+  <text x="1493" y="122" font-size="14" font-weight="bold" fill="#880e4f" text-anchor="middle">客户端</text>
+  <g font-size="11.5" fill="#37474f">
+    <text x="1422" y="154">PWA · 浏览器扩展</text>
+    <text x="1422" y="172">· 本地代理</text>
+    <text x="1422" y="204">API（pc_app）</text>
+    <text x="1422" y="222">每个事务设置</text>
+    <text x="1422" y="240">app.user_id（事务级）</text>
+    <text x="1422" y="300">受限全文在用户侧</text>
+    <text x="1422" y="318">逐篇取回（HC-32）</text>
+    <text x="1422" y="350">凭证本地加密</text>
+    <text x="1422" y="368">（D-023 AES-GCM）</text>
+    <text x="1422" y="386">多设备只同步密文</text>
+    <text x="1422" y="404">（VK 按设备封装）</text>
+    <text x="1422" y="660">事件缓冲 + 重试</text>
+    <text x="1422" y="678">event_id = UUIDv7</text>
+    <text x="1422" y="696">（客户端生成，幂等）</text>
+    <text x="1422" y="726">窗口外拒收：</text>
+    <text x="1422" y="744">[−7 天, +5 分钟]</text>
+    <text x="1422" y="780">私有 PDF 默认存本机</text>
+    <text x="1422" y="798">可选 E2E 同步</text>
+  </g>
+  <line x1="1410" y1="252" x2="1384" y2="252" stroke="#1565c0" stroke-width="2.5" marker-end="url(#arrBlue)"/>
+  <line x1="1410" y1="708" x2="1384" y2="708" stroke="#ef6c00" stroke-width="2.5" marker-end="url(#arrAmber)"/>
+
+  <!-- ===================== 对象存储 ===================== -->
+  <rect x="24" y="910" width="370" height="96" rx="8" fill="#f1f8e9" stroke="#43a047" stroke-width="1.5"/>
+  <text x="36" y="930" font-size="12.5" font-weight="bold" fill="#1b5e20">共享 OA 前缀 oa-shared/</text>
+  <g font-size="11" fill="#37474f">
+    <text x="36" y="950">按内容寻址，可跨用户复用；附许可旁注</text>
+    <text x="36" y="967">仅可再分发许可 · LRU 预算 · 撤稿/改许可即删</text>
+    <text x="36" y="984">← corpus.oa_asset（pc_ingest / pc_enrich 写）</text>
+  </g>
+
+  <rect x="418" y="910" width="370" height="96" rx="8" fill="#e3f2fd" stroke="#1e88e5" stroke-width="1.5"/>
+  <text x="430" y="930" font-size="12.5" font-weight="bold" fill="#0d47a1">private/{user_id}/ · exports/{user_id}/</text>
+  <g font-size="11" fill="#37474f">
+    <text x="430" y="950">platform：仅用户开启同步后的 E2E 密文</text>
+    <text x="430" y="967">每文件随机密钥，由 VK 封装；删封装即加密粉碎</text>
+    <text x="430" y="984">personal 且本机：server_envelope · exports/ 7 天</text>
+  </g>
+
+  <rect x="812" y="910" width="370" height="96" rx="8" fill="#fff8e1" stroke="#fb8c00" stroke-width="1.5"/>
+  <text x="824" y="930" font-size="12.5" font-weight="bold" fill="#e65100">归档 archive/evt/{表}/{yyyy}/{mm}/</text>
+  <g font-size="11" fill="#37474f">
+    <text x="824" y="950">Parquet；主体键 = HMAC(k_user, 季度‖user_id)</text>
+    <text x="824" y="967">注销：销毁 k_user + 30 天内物理压实</text>
+    <text x="824" y="984">← evt 月分区（可识别 6 个月后）；至第 13 个月删除</text>
+  </g>
+
+  <rect x="1206" y="910" width="370" height="96" rx="8" fill="#f3e5f5" stroke="#8e24aa" stroke-width="1.5"/>
+  <text x="1218" y="930" font-size="12.5" font-weight="bold" fill="#4a148c">备份与运维 backup/ · ops/ · snapshots/</text>
+  <g font-size="11" fill="#37474f">
+    <text x="1218" y="950">本地仓库 + 异地拉取 WAL 流与基础备份（R2-37）</text>
+    <text x="1218" y="967">PITR 14 天 · 全量 5 周 · 擦除账本副本随拉取</text>
+    <text x="1218" y="984">snapshots/tsrg/ · 合规文档与审核证据（WORM）</text>
+  </g>
+
+  <!-- evt → 归档 -->
+  <line x1="1000" y1="880" x2="1000" y2="906" stroke="#ef6c00" stroke-width="2" stroke-dasharray="5 3" marker-end="url(#arrAmber)"/>
+
+  <!-- ===================== 图例 ===================== -->
+  <text x="24" y="1034" font-size="12" font-weight="bold" fill="#263238">图例</text>
+  <!-- 第一行 -->
+  <line x1="70" y1="1030" x2="118" y2="1030" stroke="#2e7d32" stroke-width="2.5" marker-end="url(#arrGreen)"/>
+  <text x="126" y="1034" font-size="11" fill="#37474f">允许的数据流（来源→共享、共享→私有）</text>
+  <line x1="440" y1="1030" x2="488" y2="1030" stroke="#c62828" stroke-width="2.5" stroke-dasharray="7 4" marker-end="url(#arrRed)"/>
+  <line x1="458" y1="1023" x2="470" y2="1037" stroke="#c62828" stroke-width="2.5"/>
+  <line x1="470" y1="1023" x2="458" y2="1037" stroke="#c62828" stroke-width="2.5"/>
+  <text x="496" y="1034" font-size="11" fill="#37474f">禁止方向：私有→共享（HC-01）</text>
+  <line x1="810" y1="1030" x2="858" y2="1030" stroke="#ef6c00" stroke-width="2.5" marker-end="url(#arrAmber)"/>
+  <text x="866" y="1034" font-size="11" fill="#37474f">事件流（客户端 → evt → 画像；分区归档）</text>
+  <line x1="1150" y1="1030" x2="1198" y2="1030" stroke="#6a1b9a" stroke-width="2" stroke-dasharray="7 4" marker-end="url(#arrPurple)"/>
+  <text x="1206" y="1034" font-size="11" fill="#37474f">系统作业（调度 / 保留 / 擦除 / 聚合）</text>
+  <!-- 第二行 -->
+  <rect x="70" y="1052" width="48" height="18" rx="4" fill="none" stroke="#c62828" stroke-width="2" stroke-dasharray="6 4"/>
+  <text x="126" y="1066" font-size="11" fill="#37474f">RLS 边界（FORCE RLS；上下文 = app.user_id，事务级）</text>
+  <path d="M464,1052 L474,1061 L464,1070 L454,1061 Z" fill="#fbc02d" stroke="#f57f17" stroke-width="1"/>
+  <text x="496" y="1066" font-size="11" fill="#37474f">聚合闸（k 匿名；只进 evt.agg_*）</text>
+  <line x1="810" y1="1061" x2="858" y2="1061" stroke="#1565c0" stroke-width="2.5" marker-end="url(#arrBlue)"/>
+  <text x="866" y="1066" font-size="11" fill="#37474f">用户写入（API，RLS 内）</text>
+  <line x1="1150" y1="1061" x2="1198" y2="1061" stroke="#455a64" stroke-width="2" marker-end="url(#arrGrey)"/>
+  <text x="1206" y="1066" font-size="11" fill="#37474f">控制面（频道 → WatchKey；兴趣并集，仅键与计数）</text>
+
+  <text x="1576" y="1092" font-size="10.5" fill="#78909c" text-anchor="end">设计草案 · 表名与参数以 05-data-platform.md 为准 · k 初值见 06 §14.2（⚠，R0 下限 5）· 事件留存按 R2-31，其余按 08 §6.2 · 容量见 05 §8</text>
+</svg>

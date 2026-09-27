@@ -1,0 +1,301 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1280" height="950" viewBox="0 0 1280 950" font-family="-apple-system, BlinkMacSystemFont, 'PingFang SC', 'Hiragino Sans GB', 'Microsoft YaHei', 'Noto Sans CJK SC', 'Segoe UI', Helvetica, Arial, sans-serif">
+  <title>TSRG：主题—来源路由图的结构与四种用途</title>
+  <desc>对应 docs/plan/v2/04-retrieval-and-routing.md §5。主题骨架（OpenAlex Topics）挂学科原生叶子与 usr 覆盖层；route_stat 边把主题节点连到 Source 端点；端点经 supports 边连到能力；同一张图服务查询路由、收割调度、兴趣挂点与论文→读者反向路由。设计草案，2026-09-27。</desc>
+  <defs>
+    <marker id="arB" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="#2f6fbf"/></marker>
+    <marker id="arG" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="#4f9a55"/></marker>
+    <marker id="arP" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="#7c5cb5"/></marker>
+    <marker id="arO" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="#d08a2e"/></marker>
+    <marker id="arK" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="#546e7a"/></marker>
+  </defs>
+
+  <rect x="0" y="0" width="1280" height="950" fill="#ffffff"/>
+
+  <!-- ===== 标题 ===== -->
+  <text x="24" y="38" font-size="22" font-weight="700" fill="#1f2d3d">TSRG：主题—来源路由图（Topic–Source Routing Graph）</text>
+  <text x="24" y="60" font-size="12" fill="#6b7a89">对应 docs/plan/v2/04-retrieval-and-routing.md §5 · 设计草案 2026-09-27 · 规模为量级、非实测 · PG 表为真值，路由读只读内存快照</text>
+
+  <!-- ===== ① 主题骨架 ===== -->
+  <rect x="24" y="76" width="420" height="368" rx="10" fill="#f7fafd" stroke="#c5d6ea" stroke-width="1.2"/>
+  <text x="36" y="98" font-size="13" font-weight="700" fill="#1f3b5c">① 主题骨架：OpenAlex Topics（CC0）</text>
+  <text x="84" y="118" font-size="10.5" text-anchor="middle" fill="#6b7a89">domain ×4</text>
+  <text x="200" y="118" font-size="10.5" text-anchor="middle" fill="#6b7a89">field ×26</text>
+  <text x="316" y="118" font-size="10.5" text-anchor="middle" fill="#6b7a89">subfield ×252</text>
+  <text x="406" y="118" font-size="10.5" text-anchor="middle" fill="#6b7a89">topic ×4,516</text>
+
+  <!-- 分支 1：Physical Sciences → Computer Science → Artificial Intelligence -->
+  <rect x="36" y="128" width="96" height="36" rx="6" fill="#e8f1fb" stroke="#4a7fc1"/>
+  <text x="84" y="143" font-size="10.5" text-anchor="middle" fill="#1f3b5c">Physical</text>
+  <text x="84" y="157" font-size="10.5" text-anchor="middle" fill="#1f3b5c">Sciences</text>
+  <rect x="144" y="128" width="112" height="36" rx="6" fill="#e8f1fb" stroke="#4a7fc1"/>
+  <text x="200" y="143" font-size="10.5" text-anchor="middle" fill="#1f3b5c">Computer</text>
+  <text x="200" y="157" font-size="10.5" text-anchor="middle" fill="#1f3b5c">Science</text>
+  <rect x="268" y="128" width="96" height="36" rx="6" fill="#e8f1fb" stroke="#4a7fc1" stroke-width="1.6"/>
+  <text x="316" y="143" font-size="10.5" text-anchor="middle" fill="#1f3b5c">Artificial</text>
+  <text x="316" y="157" font-size="10.5" text-anchor="middle" fill="#1f3b5c">Intelligence</text>
+  <rect x="376" y="124" width="60" height="22" rx="5" fill="#e8f1fb" stroke="#4a7fc1"/>
+  <text x="406" y="139" font-size="10" text-anchor="middle" fill="#1f3b5c">topic …</text>
+  <rect x="376" y="150" width="60" height="22" rx="5" fill="#e8f1fb" stroke="#4a7fc1"/>
+  <text x="406" y="165" font-size="10" text-anchor="middle" fill="#1f3b5c">topic …</text>
+  <g stroke="#7a8ea8" stroke-width="1.4" fill="none">
+    <line x1="132" y1="146" x2="144" y2="146"/>
+    <line x1="256" y1="146" x2="268" y2="146"/>
+    <line x1="364" y1="146" x2="376" y2="135"/>
+    <line x1="364" y1="146" x2="376" y2="161"/>
+  </g>
+  <!-- 分支 1 的原生叶子（maps_to） -->
+  <rect x="150" y="190" width="100" height="20" rx="4" fill="#fff4e5" stroke="#d08a2e"/>
+  <text x="200" y="204" font-size="10" text-anchor="middle" fill="#6b4212">arXiv 类目 cs.LG</text>
+  <rect x="262" y="190" width="100" height="20" rx="4" fill="#fff4e5" stroke="#d08a2e"/>
+  <text x="312" y="204" font-size="10" text-anchor="middle" fill="#6b4212">ACM CCS 概念</text>
+  <g stroke="#d08a2e" stroke-width="1.3" stroke-dasharray="4,3" fill="none">
+    <line x1="210" y1="190" x2="298" y2="165" marker-end="url(#arO)"/>
+    <line x1="318" y1="190" x2="324" y2="165" marker-end="url(#arO)"/>
+  </g>
+  <text x="96" y="204" font-size="9.5" text-anchor="middle" fill="#b06f1a">maps_to（conf）</text>
+
+  <!-- 分支 2：Social Sciences → Economics, Econometrics &amp; Finance → Finance -->
+  <rect x="36" y="222" width="96" height="36" rx="6" fill="#e8f1fb" stroke="#4a7fc1"/>
+  <text x="84" y="237" font-size="10.5" text-anchor="middle" fill="#1f3b5c">Social</text>
+  <text x="84" y="251" font-size="10.5" text-anchor="middle" fill="#1f3b5c">Sciences</text>
+  <rect x="144" y="222" width="112" height="36" rx="6" fill="#e8f1fb" stroke="#4a7fc1"/>
+  <text x="200" y="237" font-size="10" text-anchor="middle" fill="#1f3b5c">Econ., Econometrics</text>
+  <text x="200" y="251" font-size="10" text-anchor="middle" fill="#1f3b5c">&amp; Finance</text>
+  <rect x="268" y="222" width="96" height="36" rx="6" fill="#e8f1fb" stroke="#4a7fc1" stroke-width="1.6"/>
+  <text x="316" y="244" font-size="10.5" text-anchor="middle" fill="#1f3b5c">Finance</text>
+  <rect x="376" y="216" width="60" height="22" rx="5" fill="#e8f1fb" stroke="#4a7fc1"/>
+  <text x="406" y="231" font-size="10" text-anchor="middle" fill="#1f3b5c">topic …</text>
+  <rect x="376" y="242" width="60" height="22" rx="5" fill="#e8f1fb" stroke="#4a7fc1"/>
+  <text x="406" y="257" font-size="10" text-anchor="middle" fill="#1f3b5c">topic …</text>
+  <g stroke="#7a8ea8" stroke-width="1.4" fill="none">
+    <line x1="132" y1="240" x2="144" y2="240"/>
+    <line x1="256" y1="240" x2="268" y2="240"/>
+    <line x1="364" y1="240" x2="376" y2="227"/>
+    <line x1="364" y1="240" x2="376" y2="253"/>
+  </g>
+  <text x="138" y="272" font-size="9.5" text-anchor="middle" fill="#7a8ea8">is_a</text>
+  <!-- 分支 2 的原生叶子 -->
+  <rect x="262" y="280" width="100" height="20" rx="4" fill="#fff4e5" stroke="#d08a2e"/>
+  <text x="312" y="294" font-size="10" text-anchor="middle" fill="#6b4212">JEL G12</text>
+  <line x1="312" y1="280" x2="314" y2="259" stroke="#d08a2e" stroke-width="1.3" stroke-dasharray="4,3" marker-end="url(#arO)"/>
+
+  <!-- 说明 -->
+  <text x="36" y="324" font-size="10.5" fill="#34495e">• 路由主分辨率 = subfield（topic 级标注噪声大）</text>
+  <text x="36" y="342" font-size="10.5" fill="#34495e">• 节点质心（与查询同一嵌入空间）→ P(t|q)；统计按层级收缩</text>
+  <text x="36" y="360" font-size="10.5" fill="#34495e">• 约 12% 无 topic 的作品由本地分类器补标</text>
+
+  <!-- usr 覆盖层 -->
+  <rect x="36" y="372" width="396" height="62" rx="8" fill="#fdecef" stroke="#c2185b" stroke-width="1.2" stroke-dasharray="5,4"/>
+  <text x="48" y="390" font-size="11" font-weight="700" fill="#8e1446">usr 覆盖层（RLS）· 不入共享快照、不参与全局统计</text>
+  <text x="48" y="407" font-size="10.5" fill="#8e1446">• 兴趣权重 w_long / w_short · 用户标签 → 共享节点</text>
+  <text x="48" y="424" font-size="10.5" fill="#8e1446">• 频道锚点 · WatchKey 引用（05：channel_watch）</text>
+  <line x1="406" y1="372" x2="406" y2="266" stroke="#c2185b" stroke-width="1.3" stroke-dasharray="2,3"/>
+  <text x="412" y="322" font-size="9.5" fill="#c2185b">挂点</text>
+
+  <!-- ===== ② 原生分类体系一览 ===== -->
+  <rect x="24" y="456" width="420" height="128" rx="10" fill="#fffaf2" stroke="#efd3a8" stroke-width="1.2"/>
+  <text x="36" y="478" font-size="13" font-weight="700" fill="#6b4212">② 学科原生叶子（默认约 3.8 万，经 maps_to 挂骨架）</text>
+  <g font-size="10" text-anchor="middle" fill="#6b4212">
+    <rect x="36" y="488" width="128" height="24" rx="4" fill="#fff4e5" stroke="#d08a2e"/>
+    <text x="100" y="504">arXiv 类目 155（CC0）</text>
+    <rect x="172" y="488" width="124" height="24" rx="4" fill="#fff4e5" stroke="#d08a2e"/>
+    <text x="234" y="504">JEL 1,015（AEA ⚠）</text>
+    <rect x="304" y="488" width="128" height="24" rx="4" fill="#fff4e5" stroke="#d08a2e"/>
+    <text x="368" y="504">MeSH 30,594（年度版）</text>
+    <rect x="36" y="518" width="128" height="24" rx="4" fill="#fff4e5" stroke="#d08a2e"/>
+    <text x="100" y="534">PhySH 3,882（CC0）</text>
+    <rect x="172" y="518" width="124" height="24" rx="4" fill="#fff4e5" stroke="#d08a2e"/>
+    <text x="234" y="534">ACM CCS 2,299（⚠）</text>
+    <rect x="304" y="518" width="128" height="24" rx="4" fill="#fff4e5" stroke="#d08a2e"/>
+    <text x="368" y="534">MSC2020（插件·默认关）</text>
+  </g>
+  <text x="36" y="560" font-size="10.5" fill="#6b4212">DAG：MeSH 多树号，ACM CCS 有多父节点</text>
+  <text x="36" y="576" font-size="10.5" fill="#6b4212">MSC2020 为可选插件、默认不加载（R2-22）；APA 分类码不内置</text>
+
+  <!-- ===== route_stat 标签 ===== -->
+  <rect x="462" y="80" width="202" height="52" rx="6" fill="#eef4fc" stroke="#2f6fbf" stroke-width="1.2"/>
+  <text x="563" y="96" font-size="11" font-weight="700" text-anchor="middle" fill="#1d4f91">route_stat(n, s, win)</text>
+  <text x="563" y="111" font-size="10" text-anchor="middle" fill="#1d4f91">cov · lag · λ · uniq · fidelity</text>
+  <text x="563" y="125" font-size="10" text-anchor="middle" fill="#1d4f91">+ 素描（M=256，独立抽样，含本地位）</text>
+
+  <!-- route_stat 边：主题节点 → 源端点 -->
+  <g stroke="#2f6fbf" stroke-width="2.4" fill="none" opacity="0.85">
+    <path d="M436,135 C560,135 580,213 690,213" marker-end="url(#arB)"/>
+    <path d="M436,161 C560,161 580,293 690,293" marker-end="url(#arB)"/>
+    <path d="M436,227 C560,227 580,173 690,173" marker-end="url(#arB)"/>
+    <path d="M436,253 C560,253 580,293 690,293" marker-end="url(#arB)"/>
+    <path d="M436,253 C560,253 610,333 690,333" marker-end="url(#arB)"/>
+  </g>
+
+  <!-- ===== ③ Venue ===== -->
+  <rect x="466" y="344" width="190" height="240" rx="10" fill="#f4fbf4" stroke="#b9dcb9" stroke-width="1.2"/>
+  <text x="478" y="366" font-size="13" font-weight="700" fill="#1f4d24">③ Venue</text>
+  <text x="478" y="382" font-size="10.5" fill="#4f7a52">多键归一 + 演化边（03/05）</text>
+  <rect x="478" y="392" width="166" height="26" rx="5" fill="#eaf6ea" stroke="#4f9a55"/>
+  <text x="561" y="409" font-size="10.5" text-anchor="middle" fill="#1f4d24">NeurIPS（会议）</text>
+  <rect x="478" y="424" width="166" height="26" rx="5" fill="#eaf6ea" stroke="#4f9a55"/>
+  <text x="561" y="441" font-size="10.5" text-anchor="middle" fill="#1f4d24">JFE（期刊）</text>
+  <rect x="478" y="456" width="166" height="26" rx="5" fill="#eaf6ea" stroke="#4f9a55"/>
+  <text x="561" y="473" font-size="10.5" text-anchor="middle" fill="#1f4d24">NBER WP（系列）</text>
+  <text x="478" y="500" font-size="10.5" font-weight="700" fill="#2e6b33">served_by（role · lag）</text>
+  <text x="478" y="516" font-size="10" fill="#2e6b33">JFE → crossref.journal_works</text>
+  <text x="478" y="532" font-size="10" fill="#2e6b33">NeurIPS → arXiv、会议 OA 页</text>
+  <text x="478" y="550" font-size="10" fill="#2e6b33">venue_topic → 主题（share）</text>
+  <text x="478" y="570" font-size="10" fill="#2e6b33">键：ISSN 集 · ISSN-L · DBLP key …</text>
+  <!-- venue_topic 边 -->
+  <path d="M478,437 C455,420 448,300 438,262" stroke="#4f9a55" stroke-width="1.5" stroke-dasharray="1.5,3" fill="none" marker-end="url(#arG)"/>
+
+  <!-- ===== ④ Source 端点 ===== -->
+  <rect x="680" y="76" width="250" height="508" rx="10" fill="#f8f5fc" stroke="#d3c6ea" stroke-width="1.2"/>
+  <text x="692" y="98" font-size="13" font-weight="700" fill="#3b2366">④ Source 端点（SCD；≤50）</text>
+  <g font-size="10.5" fill="#3b2366">
+    <rect x="692" y="118" width="226" height="30" rx="5" fill="#e9e3f7" stroke="#7c5cb5" stroke-width="1.6"/>
+    <text x="805" y="137" text-anchor="middle" font-weight="700">local.bm25 · local.ann（恒参与）</text>
+    <rect x="692" y="158" width="226" height="30" rx="5" fill="#f1ebfa" stroke="#7c5cb5"/>
+    <text x="805" y="177" text-anchor="middle">crossref.journal_works</text>
+    <rect x="692" y="198" width="226" height="30" rx="5" fill="#f1ebfa" stroke="#7c5cb5"/>
+    <text x="805" y="217" text-anchor="middle">arxiv.oai_list_records</text>
+    <rect x="692" y="238" width="226" height="30" rx="5" fill="#f1ebfa" stroke="#7c5cb5"/>
+    <text x="805" y="257" text-anchor="middle">openalex.works_list</text>
+    <rect x="692" y="278" width="226" height="30" rx="5" fill="#f1ebfa" stroke="#7c5cb5"/>
+    <text x="805" y="297" text-anchor="middle">openalex.works_search</text>
+    <rect x="692" y="318" width="226" height="30" rx="5" fill="#f1ebfa" stroke="#7c5cb5"/>
+    <text x="805" y="337" text-anchor="middle">s2.search · s2.search_bulk</text>
+    <rect x="692" y="358" width="226" height="30" rx="5" fill="#f1ebfa" stroke="#7c5cb5"/>
+    <text x="805" y="377" text-anchor="middle">europe_pmc.search（≤1 次/10 s）</text>
+  </g>
+  <text x="692" y="414" font-size="11.5" font-weight="700" fill="#3b2366">端点属性（快照 + 在线状态）</text>
+  <g font-size="10.5" fill="#4a3a6b">
+    <text x="692" y="434">cost：$/次、翻页模型、影子价格</text>
+    <text x="692" y="452">politeness：书面并发 / 速率上限</text>
+    <text x="692" y="470">health：成功率 EWMA、p95、熔断态</text>
+    <text x="692" y="488">budget：配额账本余量（出站网关）</text>
+    <text x="692" y="506">policy_mode · exec_side（user 不参与）</text>
+    <text x="692" y="524">η ~ Beta：端点×节点，聚合区日载入</text>
+    <text x="692" y="542">λ ~ Gamma：新作到达率（篇/天）</text>
+    <text x="692" y="566" font-weight="700">SCD 是路由与健全放宽的唯一输入</text>
+  </g>
+
+  <!-- ===== ⑤ 能力 ===== -->
+  <rect x="950" y="76" width="306" height="508" rx="10" fill="#f7f7f7" stroke="#cfcfcf" stroke-width="1.2"/>
+  <text x="962" y="98" font-size="13" font-weight="700" fill="#333333">⑤ 能力（SCD 词表）</text>
+  <g font-size="10.5" text-anchor="middle" fill="#333333">
+    <rect x="962" y="112" width="138" height="26" rx="5" fill="#f0f0f0" stroke="#8a8a8a"/><text x="1031" y="129">filter.date</text>
+    <rect x="962" y="146" width="138" height="26" rx="5" fill="#f0f0f0" stroke="#8a8a8a"/><text x="1031" y="163">incr.since</text>
+    <rect x="962" y="180" width="138" height="26" rx="5" fill="#f0f0f0" stroke="#8a8a8a"/><text x="1031" y="197">kw.bool</text>
+    <rect x="962" y="214" width="138" height="26" rx="5" fill="#f0f0f0" stroke="#8a8a8a"/><text x="1031" y="231">kw.phrase</text>
+    <rect x="962" y="248" width="138" height="26" rx="5" fill="#f0f0f0" stroke="#8a8a8a"/><text x="1031" y="265">sem.search</text>
+    <rect x="962" y="282" width="138" height="26" rx="5" fill="#f0f0f0" stroke="#8a8a8a"/><text x="1031" y="299">id.lookup.doi</text>
+    <rect x="1110" y="112" width="134" height="26" rx="5" fill="#f0f0f0" stroke="#8a8a8a"/><text x="1177" y="129">filter.topic</text>
+    <rect x="1110" y="146" width="134" height="26" rx="5" fill="#f0f0f0" stroke="#8a8a8a"/><text x="1177" y="163">filter.venue</text>
+    <rect x="1110" y="180" width="134" height="26" rx="5" fill="#f0f0f0" stroke="#8a8a8a"/><text x="1177" y="197">kw.near</text>
+    <rect x="1110" y="214" width="134" height="26" rx="5" fill="#f0f0f0" stroke="#8a8a8a"/><text x="1177" y="231">kw.field.title</text>
+    <rect x="1110" y="248" width="134" height="26" rx="5" fill="#f0f0f0" stroke="#8a8a8a"/><text x="1177" y="265">rec.pos_neg</text>
+    <rect x="1110" y="282" width="134" height="26" rx="5" fill="#f0f0f0" stroke="#8a8a8a"/><text x="1177" y="299">rel.cites</text>
+  </g>
+  <!-- supports 边：端点 → 能力 -->
+  <g stroke="#7c5cb5" stroke-width="1.3" fill="none">
+    <line x1="918" y1="173" x2="960" y2="126" marker-end="url(#arP)"/>
+    <line x1="918" y1="213" x2="960" y2="160" marker-end="url(#arP)"/>
+    <line x1="918" y1="293" x2="960" y2="194" marker-end="url(#arP)"/>
+    <line x1="918" y1="373" x2="960" y2="228" marker-end="url(#arP)"/>
+  </g>
+  <text x="962" y="330" font-size="11" font-weight="700" fill="#333333">支持等级（03 的 SCD 口径）</text>
+  <text x="962" y="348" font-size="10.5" fill="#4a4a4a">native · native_approx（带 analyzer）</text>
+  <text x="962" y="364" font-size="10.5" fill="#4a4a4a">emulated（如 OR 拆分）· none</text>
+  <text x="962" y="382" font-size="10.5" fill="#4a4a4a">健全放宽：NNF 后不支持的文字 → true</text>
+  <text x="962" y="398" font-size="10.5" fill="#4a4a4a">负文字只能用"更强原子"取反来弱化</text>
+
+  <!-- 边图例 -->
+  <line x1="962" y1="414" x2="1244" y2="414" stroke="#dddddd"/>
+  <text x="962" y="432" font-size="11" font-weight="700" fill="#333333">边</text>
+  <line x1="966" y1="448" x2="1006" y2="448" stroke="#7a8ea8" stroke-width="1.4"/>
+  <text x="1014" y="452" font-size="10.5" fill="#333333">is_a（层级；整体为 DAG）</text>
+  <line x1="966" y1="470" x2="1006" y2="470" stroke="#d08a2e" stroke-width="1.3" stroke-dasharray="4,3"/>
+  <text x="1014" y="474" font-size="10.5" fill="#333333">maps_to（05 记作 crosswalk，带 conf）</text>
+  <line x1="966" y1="492" x2="1006" y2="492" stroke="#2f6fbf" stroke-width="2.4"/>
+  <text x="1014" y="496" font-size="10.5" fill="#333333">route_stat（主题节点 → 端点）</text>
+  <line x1="966" y1="514" x2="1006" y2="514" stroke="#4f9a55" stroke-width="1.5" stroke-dasharray="1.5,3"/>
+  <text x="1014" y="518" font-size="10.5" fill="#333333">venue_topic / served_by</text>
+  <line x1="966" y1="536" x2="1006" y2="536" stroke="#7c5cb5" stroke-width="1.3"/>
+  <text x="1014" y="540" font-size="10.5" fill="#333333">supports（端点 → 能力）</text>
+  <line x1="966" y1="558" x2="1006" y2="558" stroke="#c2185b" stroke-width="1.3" stroke-dasharray="2,3"/>
+  <text x="1014" y="562" font-size="10.5" fill="#333333">usr 覆盖层挂点（RLS）</text>
+
+  <!-- ===== TSRG 快照条 ===== -->
+  <rect x="24" y="598" width="1232" height="28" rx="6" fill="#eef3fb" stroke="#9db6d8"/>
+  <text x="640" y="617" font-size="11.5" text-anchor="middle" fill="#1d4f91">TSRG 快照：只读、版本化（tsrg_version），约 45–55 MB（不含叶子质心），周更；健康、熔断、余量在路由时从出站网关合并；η、素描本地位与范围完整区间每日载入</text>
+  <g stroke="#546e7a" stroke-width="1.4" fill="none">
+    <line x1="172" y1="626" x2="172" y2="648" marker-end="url(#arK)"/>
+    <line x1="482" y1="626" x2="482" y2="648" marker-end="url(#arK)"/>
+    <line x1="792" y1="626" x2="792" y2="648" marker-end="url(#arK)"/>
+    <line x1="1102" y1="626" x2="1102" y2="648" marker-end="url(#arK)"/>
+  </g>
+
+  <!-- ===== 四种用途 ===== -->
+  <!-- 用途 1 -->
+  <rect x="24" y="652" width="298" height="216" rx="10" fill="#fbfcfe" stroke="#9db6d8" stroke-width="1.2"/>
+  <text x="36" y="676" font-size="13" font-weight="700" fill="#1d4f91">① 查询路由（§6）</text>
+  <g font-size="10.8" fill="#2c3e50">
+    <text x="36" y="700">q → P(t|q)：过滤 ⊕ 质心 ⊕ 本地命中</text>
+    <text x="36" y="722">范围完整，或 cov_local≥0.9 且命中≥10 → 仅本地</text>
+    <text x="36" y="744">否则在覆盖素描上求 f(S)（单调次模）</text>
+    <text x="36" y="766">比值贪心 + 最佳单源 + 事后剪枝（增益 ≥0.405）</text>
+    <text x="36" y="788">放宽先于选源；n≤10 且规模闸内：精确枚举</text>
+    <text x="36" y="810">Thompson：按端点×节点采样 η，探索 ≤10%</text>
+    <text x="36" y="832">标注日志 ≥2 万条 → GBDT pairwise</text>
+    <text x="36" y="854" fill="#6b7a89">不用个人数据：可复现、可共享缓存</text>
+  </g>
+  <!-- 用途 2 -->
+  <rect x="334" y="652" width="298" height="216" rx="10" fill="#fbfdfb" stroke="#b9dcb9" stroke-width="1.2"/>
+  <text x="346" y="676" font-size="13" font-weight="700" fill="#2e6b33">② 收割调度（§11）</text>
+  <g font-size="10.8" fill="#2c3e50">
+    <text x="346" y="700">频道 → WatchKey（引用计数，同键一次）</text>
+    <text x="346" y="722">日历型：arXiv 公告后 22:30 ET 轮询</text>
+    <text x="346" y="744">连续型：λ̂ ~ Gamma(γα+n, γβ+Δt)</text>
+    <text x="346" y="766">礼貌预算内平方根注水 f ∝ √(wλ/c)</text>
+    <text x="346" y="788">主题频道：本地位覆盖 &lt;0.9 才补选端点</text>
+    <text x="346" y="810">不漏不重：水位 + 重叠窗 + ID 去重</text>
+    <text x="346" y="832" fill="#6b7a89">同一频道集复制给 N 人：收割量不变（P-04）</text>
+    <text x="346" y="854" fill="#6b7a89">作者/引文细粒度键：≥k_cf 人共有才建（R2-19）</text>
+  </g>
+  <!-- 用途 3 -->
+  <rect x="644" y="652" width="298" height="216" rx="10" fill="#fefafb" stroke="#e3a5bd" stroke-width="1.2"/>
+  <text x="656" y="676" font-size="13" font-weight="700" fill="#8e1446">③ 兴趣建模挂点（06）</text>
+  <g font-size="10.8" fill="#2c3e50">
+    <text x="656" y="700">画像 = 节点权重（长期 / 短期）</text>
+    <text x="656" y="722">存 usr 覆盖层（RLS），不入共享快照</text>
+    <text x="656" y="744">层级平滑：稀疏反馈向父节点收缩</text>
+    <text x="656" y="766">兄弟节点 = 探索臂（Thompson）</text>
+    <text x="656" y="788">节点路径 = why-this 解释</text>
+    <text x="656" y="810">学习与使用归 06；TSRG 只给结构</text>
+  </g>
+  <!-- 用途 4 -->
+  <rect x="954" y="652" width="298" height="216" rx="10" fill="#fcfbfe" stroke="#c8b8e6" stroke-width="1.2"/>
+  <text x="966" y="676" font-size="13" font-weight="700" fill="#3b2366">④ 论文→读者反向路由（§12）</text>
+  <g font-size="10.8" fill="#2c3e50">
+    <text x="966" y="700">新论文 → 节点标注 T(w) + 嵌入</text>
+    <text x="966" y="722">节点倒排：兴趣权重 ≥ θ 的用户</text>
+    <text x="966" y="744">∪ 质心点积 E·Cᵀ（CPU 批处理）</text>
+    <text x="966" y="766">∪ 锚点倒排 → AST 谓词求值</text>
+    <text x="966" y="788">频道命中：近线微批 → 写 FeedInbox</text>
+    <text x="966" y="810">节点 / 质心：日批候选 → 06 分配</text>
+    <text x="966" y="832" fill="#6b7a89">（每用户日预算 + 资格集合曝光下限）</text>
+  </g>
+
+  <!-- ===== 节点图例 ===== -->
+  <text x="24" y="900" font-size="11" font-weight="700" fill="#333333">节点：</text>
+  <rect x="64" y="890" width="18" height="12" rx="2" fill="#e8f1fb" stroke="#4a7fc1"/>
+  <text x="88" y="900" font-size="10.5" fill="#333333">TopicNode</text>
+  <rect x="160" y="890" width="18" height="12" rx="2" fill="#fff4e5" stroke="#d08a2e"/>
+  <text x="184" y="900" font-size="10.5" fill="#333333">原生叶子</text>
+  <rect x="248" y="890" width="18" height="12" rx="2" fill="#eaf6ea" stroke="#4f9a55"/>
+  <text x="272" y="900" font-size="10.5" fill="#333333">Venue</text>
+  <rect x="320" y="890" width="18" height="12" rx="2" fill="#f1ebfa" stroke="#7c5cb5"/>
+  <text x="344" y="900" font-size="10.5" fill="#333333">Source 端点</text>
+  <rect x="428" y="890" width="18" height="12" rx="2" fill="#f0f0f0" stroke="#8a8a8a"/>
+  <text x="452" y="900" font-size="10.5" fill="#333333">能力</text>
+  <rect x="496" y="890" width="18" height="12" rx="2" fill="#fdecef" stroke="#c2185b" stroke-dasharray="3,2"/>
+  <text x="520" y="900" font-size="10.5" fill="#333333">usr 覆盖层（私有）</text>
+  <text x="24" y="926" font-size="10.5" fill="#6b7a89">数值为量级或设计参数，非实测；表结构以 05 为准，SCD 字段以 03 为准；主题节点名为示例，topic 级只画占位。</text>
+</svg>

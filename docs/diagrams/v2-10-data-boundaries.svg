@@ -1,0 +1,295 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1480" height="1190" viewBox="0 0 1480 1190" font-family="-apple-system, BlinkMacSystemFont, 'PingFang SC', 'Hiragino Sans GB', 'Microsoft YaHei', 'Noto Sans CJK SC', 'Source Han Sans SC', 'Helvetica Neue', Arial, sans-serif">
+  <!-- Paper Crawler v2 · 数据边界：共享 / 私有 / 用户侧 / 上游 · 对应 docs/plan/v2/08-compliance-security-privacy.md · 2026-09-27 -->
+  <defs>
+    <marker id="ag" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M 0 0 L 10 5 L 0 10 z" fill="#15803d"/>
+    </marker>
+    <marker id="aa" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M 0 0 L 10 5 L 0 10 z" fill="#b45309"/>
+    </marker>
+    <marker id="ar" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M 0 0 L 10 5 L 0 10 z" fill="#dc2626"/>
+    </marker>
+    <marker id="ap" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M 0 0 L 10 5 L 0 10 z" fill="#7e22ce"/>
+    </marker>
+    <marker id="ai" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M 0 0 L 10 5 L 0 10 z" fill="#4338ca"/>
+    </marker>
+  </defs>
+
+  <!-- 背景 -->
+  <rect x="0" y="0" width="1480" height="1190" fill="#ffffff"/>
+
+  <!-- 标题 -->
+  <text x="40" y="42" font-size="22" font-weight="bold" fill="#111827">v2 数据边界：共享 / 私有 / 用户侧 / 上游</text>
+  <text x="40" y="66" font-size="12.5" fill="#6b7280">允许的数据流（实线）· 有条件（琥珀虚线）· 禁止路径（红色虚线 + ✕）· 对应 docs/plan/v2/08-compliance-security-privacy.md · 2026-09-27</text>
+
+  <!-- ===================== 区 1：上游（平台侧可访问的第三方） ===================== -->
+  <rect x="24" y="86" width="1432" height="176" rx="10" fill="#f8fafc" stroke="#94a3b8" stroke-width="1.2"/>
+  <text x="40" y="106" font-size="13" font-weight="bold" fill="#334155">上游（第三方 · 平台侧通道）</text>
+
+  <!-- U1 开放元数据与 OA -->
+  <rect x="40" y="118" width="330" height="128" rx="8" fill="#ffffff" stroke="#475569" stroke-width="1.3"/>
+  <text x="56" y="142" font-size="14" font-weight="bold" fill="#0f172a">开放元数据与 OA 上游</text>
+  <text x="56" y="166" font-size="12" fill="#1f2937">Crossref（polite 池）· OpenAlex 季度快照</text>
+  <text x="56" y="186" font-size="12" fill="#1f2937">arXiv OAI · Europe PMC REST · DOAJ</text>
+  <text x="56" y="206" font-size="12" fill="#1f2937">PMC Cloud（S3）· DROPS dblp 快照</text>
+  <text x="56" y="226" font-size="12" fill="#1f2937">CC 许可 OA 全文（按篇许可）</text>
+
+  <!-- U2 needs_confirmation -->
+  <rect x="392" y="118" width="330" height="128" rx="8" fill="#fffbeb" stroke="#d97706" stroke-width="1.3"/>
+  <text x="408" y="142" font-size="14" font-weight="bold" fill="#92400e">needs_confirmation 通道</text>
+  <text x="408" y="166" font-size="12" fill="#1f2937">NCBI eutils / ftp.ncbi · ftp.ebi</text>
+  <text x="408" y="186" font-size="12" fill="#1f2937">api.osf.io · api.elifesciences.org …</text>
+  <text x="408" y="206" font-size="12" fill="#1f2937">书面确认前：仅按需 / 用户触发（须 ADR 例外）</text>
+  <text x="408" y="226" font-size="12" fill="#1f2937">无后台批量（简报 Q4 默认 · HC-31）</text>
+
+  <!-- U3 禁止来源 -->
+  <rect x="744" y="118" width="300" height="128" rx="8" fill="#fef2f2" stroke="#dc2626" stroke-width="1.3"/>
+  <text x="760" y="142" font-size="14" font-weight="bold" fill="#991b1b">禁止来源 · 零请求</text>
+  <text x="760" y="166" font-size="12" fill="#1f2937">盗版源 · Google Scholar 自动化</text>
+  <text x="760" y="186" font-size="12" fill="#1f2937">SSRN / ACM DL / ACS 站点自动化</text>
+  <text x="760" y="206" font-size="12" fill="#1f2937">挑战门之后的任何内容</text>
+  <text x="760" y="228" font-size="11" fill="#6b7280">HC-26 · HC-27 · AC-0.1 / 0.2</text>
+  <g transform="translate(1022,140)">
+    <circle r="10" fill="#ffffff" stroke="#dc2626" stroke-width="1.8"/>
+    <path d="M -4.5 -4.5 L 4.5 4.5 M 4.5 -4.5 L -4.5 4.5" stroke="#dc2626" stroke-width="2.2" stroke-linecap="round"/>
+  </g>
+
+  <!-- U4 LLM 提供方 -->
+  <rect x="1066" y="118" width="374" height="128" rx="8" fill="#ffffff" stroke="#475569" stroke-width="1.3"/>
+  <text x="1082" y="142" font-size="14" font-weight="bold" fill="#0f172a">LLM 提供方</text>
+  <text x="1082" y="166" font-size="12" fill="#1f2937">第三方 API：不训练 · 零保留配置</text>
+  <text x="1082" y="186" font-size="12" fill="#1f2937">CN 单元：已备案模型（公示模型名与备案号）</text>
+  <text x="1082" y="206" font-size="12" fill="#1f2937">只接收 LLM 网关放行的输入</text>
+  <text x="1082" y="228" font-size="11" fill="#6b7280">HC-11 · HC-12 · HC-22</text>
+
+  <!-- ===================== 区 2：平台服务端 ===================== -->
+  <rect x="24" y="300" width="1432" height="500" rx="10" fill="#f5f9ff" stroke="#60a5fa" stroke-width="1.2"/>
+  <text x="760" y="322" font-size="13" font-weight="bold" fill="#1e3a8a">平台服务端（platform 部署 · 多租户 · Pool + RLS）</text>
+
+  <!-- 出口闸 -->
+  <rect x="40" y="340" width="262" height="200" rx="8" fill="#eef2ff" stroke="#4f46e5" stroke-width="1.4"/>
+  <text x="56" y="364" font-size="14" font-weight="bold" fill="#3730a3">出站网关 Egress Gateway</text>
+  <text x="56" y="388" font-size="12" fill="#1f2937">唯一公网出口 · robots 先行</text>
+  <text x="56" y="408" font-size="12" fill="#1f2937">挑战即停 · 不求解 · 域冷却</text>
+  <text x="56" y="428" font-size="12" fill="#1f2937">单一平台身份 · 诚实 UA</text>
+  <text x="56" y="448" font-size="12" fill="#1f2937">全局令牌桶（按上游；多 IP 不叠加）</text>
+  <text x="56" y="468" font-size="12" fill="#1f2937">needs_confirmation：拦截后台批量</text>
+  <text x="56" y="488" font-size="12" fill="#1f2937">SSRF：拒绝私网 / 元数据地址</text>
+  <text x="56" y="516" font-size="11" fill="#6b7280">HC-06 · HC-10 · HC-26 · HC-29</text>
+
+  <!-- Policy Engine -->
+  <rect x="40" y="556" width="262" height="114" rx="8" fill="#ffffff" stroke="#4f46e5" stroke-width="1.3"/>
+  <text x="56" y="580" font-size="13.5" font-weight="bold" fill="#3730a3">Policy Engine · 漂移探针</text>
+  <text x="56" y="602" font-size="12" fill="#1f2937">五通道取最严（P-05）</text>
+  <text x="56" y="622" font-size="12" fill="#1f2937">确认函登记 → 放行范围</text>
+  <text x="56" y="642" font-size="12" fill="#1f2937">漂移即降级为仅元数据</text>
+  <text x="56" y="661" font-size="11" fill="#6b7280">HC-28 · HC-31</text>
+
+  <!-- ops -->
+  <rect x="40" y="686" width="262" height="98" rx="8" fill="#ffffff" stroke="#64748b" stroke-width="1.2"/>
+  <text x="56" y="710" font-size="13.5" font-weight="bold" fill="#334155">ops · 运维域</text>
+  <text x="56" y="732" font-size="12" fill="#1f2937">审计日志（只追加 · 哈希链）</text>
+  <text x="56" y="752" font-size="12" fill="#1f2937">策略快照 · 确认函 · 配额账本</text>
+  <text x="56" y="773" font-size="11" fill="#6b7280">HC-14 · HC-28</text>
+
+  <!-- corpus -->
+  <rect x="342" y="340" width="400" height="260" rx="6" fill="#eff6ff" stroke="#2563eb" stroke-width="1.5"/>
+  <path d="M 342 346 A 6 6 0 0 1 348 340 L 736 340 A 6 6 0 0 1 742 346 L 742 372 L 342 372 Z" fill="#fef9c3" stroke="#ca8a04" stroke-width="1.2"/>
+  <text x="542" y="361" font-size="11.5" font-weight="bold" text-anchor="middle" fill="#854d0e">许可闸 Rights Engine：未知=拒绝 · 按篇白名单 · 派生继承最严</text>
+  <text x="358" y="395" font-size="14" font-weight="bold" fill="#1e3a8a">corpus · 共享层（public_shared）</text>
+  <text x="358" y="419" font-size="12" fill="#1f2937">M1/M2 书目元数据 · 引文（DL2）</text>
+  <text x="358" y="439" font-size="12" fill="#1f2937">M4 A 类摘要（DL4）· M7 S2 TLDR（DL3，署名）</text>
+  <text x="358" y="459" font-size="12" fill="#1f2937">M5 B 类摘要：仅 ≤DL3 摘录 + 原文链接</text>
+  <text x="358" y="479" font-size="12" fill="#1f2937">M11/M13 CC 许可的图与全文（按篇许可）</text>
+  <text x="358" y="499" font-size="12" fill="#1f2937">共享派生：嵌入 / TL;DR / 主题（仅可共享输入）</text>
+  <text x="358" y="519" font-size="12" fill="#1f2937">全局模型：共享底座 + 聚合去标识行为</text>
+  <text x="358" y="543" font-size="12" fill="#dc2626">✕ M5 → 共享 TL;DR / 翻译（LQ-05 结论前）</text>
+  <text x="358" y="563" font-size="12" fill="#dc2626">✕ M6 / M15 / M16 的内容不入本层</text>
+  <text x="358" y="587" font-size="11" fill="#6b7280">HC-05 · HC-07 · HC-08 · HC-09 · HC-24</text>
+
+  <!-- evt -->
+  <rect x="342" y="636" width="400" height="148" rx="8" fill="#f8fafc" stroke="#64748b" stroke-width="1.3"/>
+  <text x="358" y="660" font-size="13.5" font-weight="bold" fill="#334155">evt · 事件层（只追加 · 按月分区）</text>
+  <text x="358" y="684" font-size="12" fill="#1f2937">训练用反馈一律绑定 impression；撤销 = 追加事件</text>
+  <text x="358" y="704" font-size="12" fill="#1f2937">event_id 幂等 · 可识别 6 个月，假名化归档至 13 个月</text>
+  <text x="358" y="728" font-size="12" fill="#dc2626">✕ 个体行为 / open_fulltext / 取回回执 → 公共热度</text>
+  <text x="358" y="748" font-size="12" fill="#dc2626">    或全局特征（HC-02 · HC-30）</text>
+  <text x="358" y="772" font-size="11" fill="#6b7280">HC-14 · HC-20</text>
+
+  <!-- usr -->
+  <rect x="802" y="460" width="298" height="324" rx="8" fill="#f0fdf4" stroke="#16a34a" stroke-width="1.5"/>
+  <text x="818" y="484" font-size="13.5" font-weight="bold" fill="#14532d">usr · 私有层（RLS · per_user_only）</text>
+  <text x="818" y="508" font-size="12" fill="#1f2937">画像 / 兴趣标签 / 频道（Query AST）</text>
+  <text x="818" y="528" font-size="12" fill="#1f2937">反馈 · 评分 · 笔记 · FeedInbox · 已见位图</text>
+  <text x="818" y="548" font-size="12" fill="#1f2937">私有派生与私有速读（自托管 LLM）：仅本人</text>
+  <text x="818" y="568" font-size="12" fill="#1f2937">凭证密文（E2E，服务端不可解密）</text>
+  <text x="818" y="588" font-size="12" fill="#1f2937">私有 PDF 密文（可选同步，E2E）</text>
+  <text x="818" y="608" font-size="12" fill="#1f2937">取回回执：仅状态，不含内容</text>
+  <text x="818" y="628" font-size="12" fill="#1f2937">同意记录 · 导出 / 删除请求</text>
+  <text x="818" y="656" font-size="12" fill="#1f2937">RLS：应用角色非 owner · 无 BYPASSRLS</text>
+  <text x="818" y="676" font-size="12" fill="#1f2937">每个事务 SET LOCAL app.user_id</text>
+  <text x="818" y="704" font-size="11" fill="#6b7280">HC-01 · HC-02 · HC-04 · HC-16</text>
+  <text x="818" y="722" font-size="11" fill="#6b7280">HC-18 · HC-20</text>
+
+  <!-- LLM 网关 -->
+  <rect x="1140" y="340" width="300" height="160" rx="8" fill="#faf5ff" stroke="#9333ea" stroke-width="1.4"/>
+  <text x="1156" y="364" font-size="13" font-weight="bold" fill="#6b21a8">LLM 网关（Egress · model_provider）</text>
+  <text x="1156" y="388" font-size="12" fill="#1f2937">按 data_class 路由（不进交互热路径）</text>
+  <text x="1156" y="408" font-size="12" fill="#1f2937">共享生成：输入须过许可闸（不含 B 类）</text>
+  <text x="1156" y="428" font-size="12" fill="#1f2937">三道闸：规则 · NLI · 抽样裁判</text>
+  <text x="1156" y="448" font-size="12" fill="#1f2937">AI 标识：显式角标 + 隐式元数据</text>
+  <text x="1156" y="468" font-size="12" fill="#dc2626">✕ 非 shareable 数据 → 第三方 API</text>
+  <text x="1156" y="488" font-size="11" fill="#6b7280">个人数据、B 类 → 自托管；私有全文 → 用户本地</text>
+
+  <!-- 服务端红线 -->
+  <rect x="1140" y="520" width="300" height="190" rx="8" fill="#fef2f2" stroke="#dc2626" stroke-width="1.4"/>
+  <text x="1156" y="544" font-size="14" font-weight="bold" fill="#991b1b">服务端红线</text>
+  <text x="1156" y="568" font-size="12" fill="#1f2937">不以平台出口访问出版商受限全文</text>
+  <text x="1156" y="588" font-size="12" fill="#1f2937">不持有可用的出版商会话</text>
+  <text x="1156" y="608" font-size="12" fill="#1f2937">不收机构口令 · 不解密用户凭证</text>
+  <text x="1156" y="628" font-size="12" fill="#1f2937">私有全文不跨用户去重或复用</text>
+  <text x="1156" y="648" font-size="12" fill="#1f2937">不向他人暴露『有权限』信号</text>
+  <text x="1156" y="676" font-size="11" fill="#6b7280">HC-02 · HC-03 · HC-04 · HC-32</text>
+
+  <!-- ===================== 区 3a：用户侧 ===================== -->
+  <rect x="24" y="880" width="1056" height="220" rx="10" fill="#f0fdf4" stroke="#22c55e" stroke-width="1.2"/>
+  <text x="310" y="902" font-size="13" font-weight="bold" fill="#166534">用户侧（exec_side = user）与其他用户</text>
+
+  <!-- 其他用户 -->
+  <rect x="40" y="914" width="250" height="144" rx="8" fill="#ffffff" stroke="#64748b" stroke-width="1.3"/>
+  <text x="56" y="938" font-size="14" font-weight="bold" fill="#0f172a">其他用户</text>
+  <text x="56" y="962" font-size="12" fill="#1f2937">只见 public_shared 与 link_only 链接</text>
+  <text x="56" y="982" font-size="12" fill="#1f2937">（按 V 级上限展示，自动署名）</text>
+  <text x="56" y="1008" font-size="12" fill="#dc2626">✕ 他人私有内容</text>
+  <text x="56" y="1028" font-size="12" fill="#dc2626">✕『有权限』信号（HC-02）</text>
+
+  <!-- 本地代理 / personal -->
+  <rect x="310" y="914" width="330" height="144" rx="8" fill="#ffffff" stroke="#16a34a" stroke-width="1.3"/>
+  <text x="326" y="938" font-size="14" font-weight="bold" fill="#14532d">pc-agent（本机代理）/ personal</text>
+  <text x="326" y="962" font-size="12" fill="#1f2937">复用 v1 AuthProvider · 人在回路登录</text>
+  <text x="326" y="982" font-size="12" fill="#1f2937">串行 · 每域 ≥6 s · 日上限 · 冷却 · 挑战即停</text>
+  <text x="326" y="1002" font-size="12" fill="#1f2937">本机网络出口；本地模型做私有派生</text>
+  <text x="326" y="1022" font-size="12" fill="#1f2937">personal 仅当 host_is_user_device = true</text>
+  <text x="326" y="1044" font-size="11" fill="#6b7280">D-006 · D-023 · HC-32</text>
+
+  <!-- 浏览器 + 扩展 -->
+  <rect x="660" y="914" width="400" height="144" rx="8" fill="#ffffff" stroke="#16a34a" stroke-width="1.5"/>
+  <text x="676" y="938" font-size="14" font-weight="bold" fill="#14532d">用户浏览器 + Companion Extension</text>
+  <text x="676" y="962" font-size="12" fill="#1f2937">用户本人会话 · 用户网络出口 · 每次显式触发</text>
+  <text x="676" y="982" font-size="12" fill="#1f2937">最小权限：按域可选 host 权限；无 cookies 权限</text>
+  <text x="676" y="1002" font-size="12" fill="#1f2937">凭证库解密只在扩展内（不在 PWA）；cookie 不上云</text>
+  <text x="676" y="1022" font-size="12" fill="#1f2937">挑战页 → 停止并交给用户本人（不求解）</text>
+  <text x="676" y="1044" font-size="11" fill="#6b7280">HC-03 · HC-04 · HC-26 · HC-29 · HC-32</text>
+
+  <!-- ===================== 区 3b：上游（仅用户侧可访问） ===================== -->
+  <rect x="1100" y="880" width="356" height="220" rx="10" fill="#f8fafc" stroke="#94a3b8" stroke-width="1.2"/>
+  <text x="1116" y="902" font-size="13" font-weight="bold" fill="#334155">上游 · 仅用户侧可访问</text>
+  <rect x="1116" y="914" width="324" height="144" rx="8" fill="#ffffff" stroke="#475569" stroke-width="1.3"/>
+  <text x="1132" y="938" font-size="14" font-weight="bold" fill="#0f172a">出版商 auth-gated 全文</text>
+  <text x="1132" y="962" font-size="12" fill="#1f2937">ScienceDirect · Wiley · SN · OUP …</text>
+  <text x="1132" y="982" font-size="12" fill="#1f2937">机构 IdP / EZproxy（用户人工登录）</text>
+  <text x="1132" y="1002" font-size="12" fill="#1f2937">用户 TDM API key（official_tdm_api）</text>
+  <text x="1132" y="1026" font-size="11" fill="#6b7280">授权对象 = 用户本人（SERU）</text>
+  <text x="1132" y="1044" font-size="11" fill="#6b7280">HC-03 · HC-25 · HC-27</text>
+
+  <!-- ===================== 连线：上游 → 平台 ===================== -->
+  <!-- U1 → 出口闸（收割） -->
+  <path d="M 171 246 L 171 338" fill="none" stroke="#15803d" stroke-width="2" marker-end="url(#ag)"/>
+  <text x="180" y="292" font-size="11" fill="#15803d">收割</text>
+  <!-- U2 → 出口闸（有条件） -->
+  <path d="M 557 246 L 557 280 L 250 280 L 250 338" fill="none" stroke="#b45309" stroke-width="2" stroke-dasharray="7 5" marker-end="url(#aa)"/>
+  <text x="404" y="274" font-size="10.5" text-anchor="middle" fill="#b45309">条件：低频 / 按需 / 用户触发</text>
+  <!-- 出口闸 → corpus（ingest） -->
+  <path d="M 302 356 L 340 356" fill="none" stroke="#15803d" stroke-width="2" marker-end="url(#ag)"/>
+  <text x="321" y="350" font-size="9.5" text-anchor="middle" fill="#15803d">ingest</text>
+  <!-- Policy Engine → 出口闸 -->
+  <path d="M 171 555 L 171 543" fill="none" stroke="#4338ca" stroke-width="2" marker-end="url(#ai)"/>
+  <!-- LLM 网关 ↔ LLM 提供方 -->
+  <path d="M 1290 338 L 1290 249" fill="none" stroke="#7e22ce" stroke-width="2" marker-start="url(#ap)" marker-end="url(#ap)"/>
+  <text x="1300" y="287" font-size="11" fill="#7e22ce">调用（经网关路由）</text>
+
+  <!-- ===================== 连线：平台内部 ===================== -->
+  <!-- corpus → usr（下行 ✓） -->
+  <path d="M 742 520 L 800 520" fill="none" stroke="#15803d" stroke-width="2" marker-end="url(#ag)"/>
+  <text x="772" y="512" font-size="11" text-anchor="middle" fill="#15803d">下行 ✓</text>
+  <!-- usr → corpus（禁止） -->
+  <path d="M 802 572 L 745 572" fill="none" stroke="#dc2626" stroke-width="2" stroke-dasharray="6 4" marker-end="url(#ar)"/>
+  <g transform="translate(772,572)">
+    <circle r="9" fill="#ffffff" stroke="#dc2626" stroke-width="1.6"/>
+    <path d="M -4 -4 L 4 4 M 4 -4 L -4 4" stroke="#dc2626" stroke-width="2" stroke-linecap="round"/>
+  </g>
+  <text x="772" y="597" font-size="10.5" text-anchor="middle" fill="#dc2626">私有→共享</text>
+  <text x="772" y="611" font-size="10.5" text-anchor="middle" fill="#dc2626">HC-01</text>
+  <!-- corpus ↔ LLM 网关 -->
+  <path d="M 742 384 L 1137 384" fill="none" stroke="#15803d" stroke-width="2" marker-end="url(#ag)"/>
+  <text x="940" y="377" font-size="11" text-anchor="middle" fill="#15803d">可共享输入（A 类 / CC；HC-11a）</text>
+  <path d="M 1140 424 L 745 424" fill="none" stroke="#15803d" stroke-width="2" marker-end="url(#ag)"/>
+  <text x="940" y="417" font-size="11" text-anchor="middle" fill="#15803d">过三道闸的共享 TL;DR（带 AI 标识）</text>
+  <!-- evt → corpus 全局模型（仅聚合） -->
+  <path d="M 542 634 L 542 603" fill="none" stroke="#15803d" stroke-width="2" marker-end="url(#ag)"/>
+  <text x="552" y="624" font-size="11" fill="#15803d">仅聚合去标识（k ≥ k_cf / k_show · 用户可退出）</text>
+
+  <!-- LLM 网关 → usr（私有速读：自托管模型生成，结果只归本人） -->
+  <path d="M 1138 486 L 1104 486" fill="none" stroke="#7e22ce" stroke-width="2" marker-end="url(#ap)"/>
+  <text x="1120" y="478" font-size="9.5" text-anchor="middle" fill="#7e22ce">仅本人</text>
+
+  <!-- ===================== 连线：平台 ↔ 用户侧 ===================== -->
+  <!-- corpus → 其他用户（展示闸） -->
+  <path d="M 342 590 L 322 590 L 322 850 L 165 850 L 165 911" fill="none" stroke="#15803d" stroke-width="2" marker-end="url(#ag)"/>
+  <text x="172" y="843" font-size="10.5" fill="#15803d">展示闸 ≤V 级</text>
+  <!-- ① 取回意图 usr → 扩展 -->
+  <path d="M 860 786 L 860 911" fill="none" stroke="#15803d" stroke-width="2" marker-end="url(#ag)"/>
+  <text x="866" y="834" font-size="13" fill="#15803d">①</text>
+  <!-- ② 回执 扩展 → usr -->
+  <path d="M 920 913 L 920 788" fill="none" stroke="#15803d" stroke-width="2" marker-end="url(#ag)"/>
+  <text x="926" y="834" font-size="13" fill="#15803d">②</text>
+  <!-- ③ E2E 密文（可选） -->
+  <path d="M 980 913 L 980 788" fill="none" stroke="#b45309" stroke-width="2" stroke-dasharray="7 5" marker-end="url(#aa)"/>
+  <text x="986" y="834" font-size="13" fill="#b45309">③</text>
+  <!-- ④ 机构口令 / 明文凭证（禁止） -->
+  <path d="M 1040 913 L 1040 790" fill="none" stroke="#dc2626" stroke-width="2" stroke-dasharray="6 4" marker-end="url(#ar)"/>
+  <g transform="translate(1040,850)">
+    <circle r="9" fill="#ffffff" stroke="#dc2626" stroke-width="1.6"/>
+    <path d="M -4 -4 L 4 4 M 4 -4 L -4 4" stroke="#dc2626" stroke-width="2" stroke-linecap="round"/>
+  </g>
+  <text x="1052" y="828" font-size="13" fill="#dc2626">④</text>
+  <!-- ①–④ 图例文字 -->
+  <text x="380" y="818" font-size="11" fill="#15803d">① RetrievalIntent：DOI + 候选方式（签名、≤5 min、绑定用户与执行器，不含凭证）</text>
+  <text x="380" y="834" font-size="11" fill="#15803d">② 取回回执：仅状态（ok / no_entitlement / challenge …），按 intent_id 幂等</text>
+  <text x="380" y="850" font-size="11" fill="#b45309">③ 可选：E2E 密文同步（凭证 · 私有 PDF）</text>
+  <text x="380" y="866" font-size="11" fill="#dc2626">④ ✕ 机构口令 / 明文凭证 / 会话 cookie 上传（HC-04）</text>
+
+  <!-- 平台出口代取（禁止） -->
+  <path d="M 1290 710 L 1290 911" fill="none" stroke="#dc2626" stroke-width="2" stroke-dasharray="6 4" marker-end="url(#ar)"/>
+  <g transform="translate(1290,842)">
+    <circle r="9" fill="#ffffff" stroke="#dc2626" stroke-width="1.6"/>
+    <path d="M -4 -4 L 4 4 M 4 -4 L -4 4" stroke="#dc2626" stroke-width="2" stroke-linecap="round"/>
+  </g>
+  <text x="1304" y="846" font-size="11" fill="#dc2626">平台出口代取（HC-03）</text>
+
+  <!-- 用户侧 → 出版商 -->
+  <path d="M 1060 986 L 1113 986" fill="none" stroke="#15803d" stroke-width="2" marker-end="url(#ag)"/>
+  <text x="1087" y="978" font-size="10.5" text-anchor="middle" fill="#15803d">单篇</text>
+  <path d="M 475 1058 L 475 1074 L 1278 1074 L 1278 1061" fill="none" stroke="#15803d" stroke-width="2" marker-end="url(#ag)"/>
+  <text x="870" y="1092" font-size="11" text-anchor="middle" fill="#15803d">本机取回（用户网络出口 · 单篇 · 显式触发）</text>
+
+  <!-- ===================== 图例 ===================== -->
+  <line x1="40" y1="1132" x2="84" y2="1132" stroke="#15803d" stroke-width="2.2"/>
+  <text x="92" y="1136" font-size="12" fill="#1f2937">允许的数据流</text>
+  <line x1="210" y1="1132" x2="254" y2="1132" stroke="#b45309" stroke-width="2.2" stroke-dasharray="7 5"/>
+  <text x="262" y="1136" font-size="12" fill="#1f2937">有条件（needs_confirmation · 用户选择加入）</text>
+  <line x1="560" y1="1132" x2="604" y2="1132" stroke="#dc2626" stroke-width="2.2" stroke-dasharray="6 4"/>
+  <g transform="translate(582,1132)">
+    <circle r="8" fill="#ffffff" stroke="#dc2626" stroke-width="1.5"/>
+    <path d="M -3.5 -3.5 L 3.5 3.5 M 3.5 -3.5 L -3.5 3.5" stroke="#dc2626" stroke-width="1.8" stroke-linecap="round"/>
+  </g>
+  <text x="614" y="1136" font-size="12" fill="#1f2937">禁止路径（标注 HC 编号）</text>
+  <line x1="820" y1="1132" x2="864" y2="1132" stroke="#7e22ce" stroke-width="2.2"/>
+  <text x="872" y="1136" font-size="12" fill="#1f2937">LLM 调用（经网关按 data_class 路由）</text>
+  <line x1="1150" y1="1132" x2="1194" y2="1132" stroke="#4338ca" stroke-width="2.2"/>
+  <text x="1202" y="1136" font-size="12" fill="#1f2937">策略 / 控制</text>
+  <text x="40" y="1164" font-size="11.5" fill="#6b7280">地区单元（DI-09）：CN 单元与全球单元各自部署、各自构建共享底座；usr 与个人信息不跨单元（HC-21 · HC-22）。DL0–DL4 × M1–M25 × display_scope 的映射见 08 §3.3。</text>
+</svg>

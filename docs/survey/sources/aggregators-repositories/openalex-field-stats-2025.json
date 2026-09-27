@@ -1,0 +1,221 @@
+{
+ "source": "OpenAlex API (LIVE 2026-09-26, anonymous)",
+ "queries": [
+  "works?filter=publication_year:2025,type:article&group_by=primary_topic.field.id",
+  "works?filter=publication_year:2025,type:article,has_abstract:true&group_by=primary_topic.field.id",
+  "works?filter=publication_year:2025,type:article,is_oa:true&group_by=primary_topic.field.id",
+  "works?filter=publication_year:2025,type:article,has_doi:true&group_by=primary_topic.field.id",
+  "works?filter=publication_year:2025,type:preprint&group_by=primary_topic.field.id"
+ ],
+ "note": "field = OpenAlex primary_topic.field (machine-assigned); percentages relative to 2025 type:article count; corpus=core (default)",
+ "rows": [
+  {
+   "field": "Medicine",
+   "articles_2025": 1320135,
+   "has_abstract_pct": 76.1,
+   "is_oa_pct": 71.6,
+   "has_doi_pct": 97.5,
+   "preprints_2025": 81418
+  },
+  {
+   "field": "Social Sciences",
+   "articles_2025": 1078487,
+   "has_abstract_pct": 85.3,
+   "is_oa_pct": 78.0,
+   "has_doi_pct": 90.1,
+   "preprints_2025": 64690
+  },
+  {
+   "field": "Engineering",
+   "articles_2025": 968137,
+   "has_abstract_pct": 72.7,
+   "is_oa_pct": 58.9,
+   "has_doi_pct": 97.3,
+   "preprints_2025": 106094
+  },
+  {
+   "field": "Computer Science",
+   "articles_2025": 401895,
+   "has_abstract_pct": 83.1,
+   "is_oa_pct": 71.2,
+   "has_doi_pct": 95.7,
+   "preprints_2025": 119499
+  },
+  {
+   "field": "Environmental Science",
+   "articles_2025": 359428,
+   "has_abstract_pct": 78.2,
+   "is_oa_pct": 71.0,
+   "has_doi_pct": 95.4,
+   "preprints_2025": 35361
+  },
+  {
+   "field": "Agricultural and Biological Sciences",
+   "articles_2025": 348737,
+   "has_abstract_pct": 85.0,
+   "is_oa_pct": 77.8,
+   "has_doi_pct": 96.2,
+   "preprints_2025": 23804
+  },
+  {
+   "field": "Arts and Humanities",
+   "articles_2025": 324391,
+   "has_abstract_pct": 71.2,
+   "is_oa_pct": 74.5,
+   "has_doi_pct": 86.2,
+   "preprints_2025": 9804
+  },
+  {
+   "field": "Biochemistry, Genetics and Molecular Biology",
+   "articles_2025": 309111,
+   "has_abstract_pct": 78.0,
+   "is_oa_pct": 71.2,
+   "has_doi_pct": 97.8,
+   "preprints_2025": 43981
+  },
+  {
+   "field": "Business, Management and Accounting",
+   "articles_2025": 252562,
+   "has_abstract_pct": 87.9,
+   "is_oa_pct": 76.1,
+   "has_doi_pct": 94.7,
+   "preprints_2025": 24068
+  },
+  {
+   "field": "Psychology",
+   "articles_2025": 237318,
+   "has_abstract_pct": 84.1,
+   "is_oa_pct": 74.1,
+   "has_doi_pct": 92.4,
+   "preprints_2025": 32356
+  },
+  {
+   "field": "Materials Science",
+   "articles_2025": 201590,
+   "has_abstract_pct": 65.6,
+   "is_oa_pct": 45.8,
+   "has_doi_pct": 98.4,
+   "preprints_2025": 25455
+  },
+  {
+   "field": "Health Professions",
+   "articles_2025": 188562,
+   "has_abstract_pct": 82.2,
+   "is_oa_pct": 75.0,
+   "has_doi_pct": 94.3,
+   "preprints_2025": 10883
+  },
+  {
+   "field": "Economics, Econometrics and Finance",
+   "articles_2025": 171507,
+   "has_abstract_pct": 75.6,
+   "is_oa_pct": 73.1,
+   "has_doi_pct": 92.4,
+   "preprints_2025": 28309
+  },
+  {
+   "field": "Physics and Astronomy",
+   "articles_2025": 146091,
+   "has_abstract_pct": 81.5,
+   "is_oa_pct": 66.7,
+   "has_doi_pct": 96.7,
+   "preprints_2025": 68197
+  },
+  {
+   "field": "Neuroscience",
+   "articles_2025": 93046,
+   "has_abstract_pct": 79.7,
+   "is_oa_pct": 72.7,
+   "has_doi_pct": 97.0,
+   "preprints_2025": 23861
+  },
+  {
+   "field": "Earth and Planetary Sciences",
+   "articles_2025": 88696,
+   "has_abstract_pct": 77.9,
+   "is_oa_pct": 67.1,
+   "has_doi_pct": 96.3,
+   "preprints_2025": 13452
+  },
+  {
+   "field": "Chemistry",
+   "articles_2025": 86214,
+   "has_abstract_pct": 75.2,
+   "is_oa_pct": 49.6,
+   "has_doi_pct": 98.1,
+   "preprints_2025": 10212
+  },
+  {
+   "field": "Mathematics",
+   "articles_2025": 82378,
+   "has_abstract_pct": 75.8,
+   "is_oa_pct": 66.0,
+   "has_doi_pct": 97.3,
+   "preprints_2025": 32319
+  },
+  {
+   "field": "Decision Sciences",
+   "articles_2025": 67635,
+   "has_abstract_pct": 79.8,
+   "is_oa_pct": 73.2,
+   "has_doi_pct": 94.6,
+   "preprints_2025": 14970
+  },
+  {
+   "field": "Immunology and Microbiology",
+   "articles_2025": 62642,
+   "has_abstract_pct": 80.0,
+   "is_oa_pct": 75.2,
+   "has_doi_pct": 97.8,
+   "preprints_2025": 5707
+  },
+  {
+   "field": "Energy",
+   "articles_2025": 60803,
+   "has_abstract_pct": 64.7,
+   "is_oa_pct": 47.4,
+   "has_doi_pct": 97.7,
+   "preprints_2025": 6714
+  },
+  {
+   "field": "Dentistry",
+   "articles_2025": 37911,
+   "has_abstract_pct": 84.5,
+   "is_oa_pct": 79.1,
+   "has_doi_pct": 96.7,
+   "preprints_2025": 1429
+  },
+  {
+   "field": "Nursing",
+   "articles_2025": 37386,
+   "has_abstract_pct": 81.0,
+   "is_oa_pct": 72.3,
+   "has_doi_pct": 96.7,
+   "preprints_2025": 2533
+  },
+  {
+   "field": "Pharmacology, Toxicology and Pharmaceutics",
+   "articles_2025": 27237,
+   "has_abstract_pct": 78.5,
+   "is_oa_pct": 68.2,
+   "has_doi_pct": 96.4,
+   "preprints_2025": 1619
+  },
+  {
+   "field": "Chemical Engineering",
+   "articles_2025": 19708,
+   "has_abstract_pct": 66.8,
+   "is_oa_pct": 44.8,
+   "has_doi_pct": 97.9,
+   "preprints_2025": 2400
+  },
+  {
+   "field": "Veterinary",
+   "articles_2025": 10271,
+   "has_abstract_pct": 83.7,
+   "is_oa_pct": 77.1,
+   "has_doi_pct": 95.7,
+   "preprints_2025": 645
+  }
+ ]
+}

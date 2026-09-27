@@ -1,0 +1,18 @@
+provider	model_or_plan	std_input_usd_per_1M_tok	std_output_usd_per_1M_tok	batch_input	batch_output	notes	source_url	checked_utc
+OpenAI	gpt-5-nano	0.05	0.40	0.025	0.20	cached input 0.005	https://developers.openai.com/api/docs/pricing	2026-09-26
+OpenAI	gpt-6-luna	0.10	0.50	0.05	0.25	cached input 0.01; cache write 0.125	https://developers.openai.com/api/docs/pricing	2026-09-26
+OpenAI	gpt-5.4-nano	0.20	1.25	0.10	0.625	cached input 0.02	https://developers.openai.com/api/docs/pricing	2026-09-26
+OpenAI	gpt-5.4-mini	0.75	4.50	0.375	2.25	cached input 0.075	https://developers.openai.com/api/docs/pricing	2026-09-26
+Google	gemini-2.5-flash-lite	0.10	0.40	0.05	0.20	paid tier; free-tier data used to improve products	https://ai.google.dev/gemini-api/docs/pricing	2026-09-26 (page updated 2026-09-24)
+Google	gemini-3.1-flash-lite	0.25	1.50	0.125	0.75	text/image/video input price	https://ai.google.dev/gemini-api/docs/pricing	2026-09-26
+Google	gemini-3.8-flash	0.75	3.75	0.375	1.875	through 2026-12-31; 1.50/7.50 from 2027-01-01	https://ai.google.dev/gemini-api/docs/pricing	2026-09-26
+DeepSeek	deepseek-flash (DeepSeek-V4.1-Flash)	0.30 peak / 0.15 off-peak	1.20 peak / 0.60 off-peak	-	-	cache hit 0.006/0.003; peak 01-04 & 06-10 UTC weekdays	https://api-docs.deepseek.com/quick_start/pricing	2026-09-26
+Alibaba Cloud	qwen3.8-flash (International/Singapore)	0.15	0.47	-	-	0<Token<=1M	https://www.alibabacloud.com/help/en/model-studio/model-pricing	2026-09-26 (page updated 2026-09-24)
+Alibaba Cloud	qwen3.8-flash (China/Beijing)	0.113	0.382	50% off	50% off	batch inference discount listed	https://www.alibabacloud.com/help/en/model-studio/model-pricing	2026-09-26
+Alibaba Cloud	qwen-mt-flash (Beijing / International)	0.101 / 0.16	0.280 / 0.49	-	-	translation model; qwen-mt-plus 0.259/0.775 (Beijing), 2.46/7.37 (Intl)	https://www.alibabacloud.com/help/en/model-studio/model-pricing	2026-09-26
+Anthropic	Claude Haiku 4.5	1.00	5.00	0.50	2.50	cache hit 0.10	https://platform.claude.com/docs/en/about-claude/pricing	2026-09-26
+Anthropic	Claude Sonnet 5	2.00	10.00	1.00	5.00	cache hit 0.20; Claude 4.7+ tokenizer ~30% more tokens	https://platform.claude.com/docs/en/about-claude/pricing	2026-09-26
+DeepL	API Growth (DE page, EUR)	EUR 22.00 per 1M characters	-	-	-	base EUR 29.75/month; API Developer plan free 1M chars/month	https://www.deepl.com/en/pro-api	2026-09-26
+Google Cloud	Translation NMT	USD 20 per 1M characters (>500k/month)	-	-	-	first 500k chars/month free ($10 credit)	https://cloud.google.com/translate/pricing	2026-09-26
+Google Cloud	Translation LLM (TextTranslation)	USD 10 per 1M input chars	USD 10 per 1M output chars	-	-	Adaptive translation 25/25	https://cloud.google.com/translate/pricing	2026-09-26
+RunPod	H100 SXM / H100 PCIe / B200 / L4 (on-demand pod)	3.49 / 2.89 / 6.79 / 0.49 USD per hour	-	-	-	GPU rental reference for local-model estimates	https://www.runpod.io/pricing	2026-09-26

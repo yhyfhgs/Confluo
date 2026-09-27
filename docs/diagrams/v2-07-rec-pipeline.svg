@@ -1,0 +1,251 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1440" height="1010" viewBox="0 0 1440 1010" font-family="'PingFang SC','Hiragino Sans GB','Microsoft YaHei','Noto Sans CJK SC','Source Han Sans SC',sans-serif">
+  <!-- Paper Crawler v2 · 图 v2-07 · 推荐 Candidate Pipeline（R0）与学习闭环 · 对应 docs/plan/v2/06-recommendation-and-matching.md §2、§7、§8 · 2026-09-27 -->
+  <defs>
+    <marker id="arrDark" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M 0 0 L 10 5 L 0 10 z" fill="#334155"/>
+    </marker>
+    <marker id="arrPurple" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M 0 0 L 10 5 L 0 10 z" fill="#7c3aed"/>
+    </marker>
+  </defs>
+
+  <rect x="0" y="0" width="1440" height="1010" fill="#ffffff"/>
+  <text x="30" y="38" font-size="22" font-weight="bold" fill="#1f2937">图 v2-07 · 推荐 Candidate Pipeline（R0）与学习闭环</text>
+  <text x="30" y="62" font-size="12" fill="#6b7280">对应 docs/plan/v2/06-recommendation-and-matching.md §2、§7、§8 · 实线 = 候选管线与取批路径（零 LLM 调用）· 紫色虚线 = 异步 / 学习闭环 · 2026-09-27</text>
+
+  <!-- ================= 候选管线 ================= -->
+  <rect x="20" y="80" width="1400" height="540" rx="12" fill="#f8fafc" stroke="#cbd5e1" stroke-width="1.2"/>
+  <text x="36" y="104" font-size="13" font-weight="bold" fill="#334155">候选管线 · deck_build 近线预构建每个批块（02 P4）；取批请求只读批块、轻重排、补全卡片，并在下发事务内写 serve 记录（p95 ≤ 300 ms）</text>
+
+  <!-- 前端 -->
+  <rect x="36" y="120" width="150" height="178" rx="8" fill="#eef2ff" stroke="#6366f1" stroke-width="1.5"/>
+  <text x="111" y="144" font-size="13.5" font-weight="bold" text-anchor="middle" fill="#312e81">前端 Deck / 发现</text>
+  <text x="48" y="168" font-size="12" fill="#374151">按批块请求（10 张一块）</text>
+  <text x="48" y="186" font-size="12" fill="#374151">B = 25（可选 15/35）</text>
+  <text x="48" y="204" font-size="12" fill="#374151">今日已看完 → 结束态</text>
+  <text x="48" y="222" font-size="12" fill="#374151">强负反馈：本地即时</text>
+  <text x="48" y="240" font-size="12" fill="#374151">移除已下载的同类卡</text>
+  <text x="48" y="258" font-size="12" fill="#374151">按钮 / 键盘等价操作</text>
+  <text x="48" y="284" font-size="11" fill="#4338ca">凭证态 OA 只在此计算</text>
+
+  <!-- ① Query Hydration -->
+  <rect x="206" y="120" width="180" height="210" rx="8" fill="#ecfeff" stroke="#06b6d4" stroke-width="1.5"/>
+  <text x="296" y="144" font-size="14" font-weight="bold" text-anchor="middle" fill="#155e75">① Query Hydration</text>
+  <text x="218" y="168" font-size="12" fill="#374151">显式画像 · 频道 · 屏蔽</text>
+  <text x="218" y="186" font-size="12" fill="#374151">兴趣树权重（长期 / 短期）</text>
+  <text x="218" y="204" font-size="12" fill="#374151">多质心 ≤5 + 会话质心</text>
+  <text x="218" y="222" font-size="12" fill="#374151">每用户 LR 头 + 倾向 ρ</text>
+  <text x="218" y="240" font-size="12" fill="#374151">已见位图（Roaring）</text>
+  <text x="218" y="258" font-size="12" fill="#374151">会话抑制 · 模式 · 分桶</text>
+  <text x="218" y="276" font-size="12" fill="#374151">今日已下发计数</text>
+  <text x="218" y="314" font-size="11" fill="#0e7490">读取预算 ≈ 20 ms</text>
+
+  <!-- ② Source 召回 -->
+  <rect x="406" y="112" width="252" height="470" rx="10" fill="#f0fdf4" stroke="#22c55e" stroke-width="1.5"/>
+  <text x="532" y="136" font-size="14" font-weight="bold" text-anchor="middle" fill="#14532d">② Source 召回（并行）</text>
+  <text x="532" y="154" font-size="11" text-anchor="middle" fill="#166534">单源超时即跳过 · 候选带来源归因</text>
+
+  <rect x="418" y="166" width="228" height="46" rx="6" fill="#dcfce7" stroke="#86efac" stroke-width="1"/>
+  <text x="428" y="185" font-size="12.5" font-weight="600" fill="#14532d">S1 频道 / 关注 → FeedInbox</text>
+  <text x="428" y="202" font-size="11" fill="#166534">in-network · ≤250</text>
+
+  <rect x="418" y="217" width="228" height="46" rx="6" fill="#dcfce7" stroke="#86efac" stroke-width="1"/>
+  <text x="428" y="236" font-size="12.5" font-weight="600" fill="#14532d">S2 长期多质心 ANN</text>
+  <text x="428" y="253" font-size="11" fill="#166534">首见 30 天窗 · 按质心质量 ≤200</text>
+
+  <rect x="418" y="268" width="228" height="46" rx="6" fill="#dcfce7" stroke="#86efac" stroke-width="1"/>
+  <text x="428" y="287" font-size="12.5" font-weight="600" fill="#14532d">S3 会话质心 ANN</text>
+  <text x="428" y="304" font-size="11" fill="#166534">会话 ≥2 个正反馈 · ≤60</text>
+
+  <rect x="418" y="319" width="228" height="46" rx="6" fill="#dcfce7" stroke="#86efac" stroke-width="1"/>
+  <text x="428" y="338" font-size="12.5" font-weight="600" fill="#14532d">S4 文献耦合 · 引用我的库</text>
+  <text x="428" y="355" font-size="11" fill="#166534">夜间预计算 · ≤80</text>
+
+  <rect x="418" y="370" width="228" height="46" rx="6" fill="#dcfce7" stroke="#86efac" stroke-width="1"/>
+  <text x="428" y="389" font-size="12.5" font-weight="600" fill="#14532d">S5 兴趣树邻近节点（探索臂）</text>
+  <text x="428" y="406" font-size="11" fill="#166534">Thompson 抽样 · ≤60</text>
+
+  <rect x="418" y="421" width="228" height="46" rx="6" fill="#dcfce7" stroke="#86efac" stroke-width="1"/>
+  <text x="428" y="440" font-size="12.5" font-weight="600" fill="#14532d">S6 同簇热门 · 开放热度</text>
+  <text x="428" y="457" font-size="11" fill="#166534">k 匿名 · 热度封顶 · ≤60</text>
+
+  <rect x="418" y="472" width="228" height="46" rx="6" fill="#dcfce7" stroke="#86efac" stroke-width="1"/>
+  <text x="428" y="491" font-size="12.5" font-weight="600" fill="#14532d">S7 新论文分级曝光池</text>
+  <text x="428" y="508" font-size="11" fill="#166534">按受众环准入 · ≤60</text>
+
+  <rect x="418" y="523" width="228" height="46" rx="6" fill="#f7fee7" stroke="#84cc16" stroke-width="1" stroke-dasharray="5 3"/>
+  <text x="428" y="542" font-size="12.5" font-weight="600" fill="#3f6212">S8 协同过滤（R1 起）</text>
+  <text x="428" y="559" font-size="11" fill="#4d7c0f">item-kNN · 支持度 ≥ k_cf · ≤100</text>
+
+  <!-- ③ Hydrator -->
+  <rect x="678" y="120" width="176" height="204" rx="8" fill="#fefce8" stroke="#eab308" stroke-width="1.5"/>
+  <text x="766" y="144" font-size="14" font-weight="bold" text-anchor="middle" fill="#713f12">③ Hydrator</text>
+  <text x="690" y="168" font-size="12" fill="#374151">卡片字段（缓存引用）</text>
+  <text x="690" y="186" font-size="12" fill="#374151">主题分布 π · 嵌入 e</text>
+  <text x="690" y="204" font-size="12" fill="#374151">作者簇 · 新作者标记</text>
+  <text x="690" y="222" font-size="12" fill="#374151">撤稿 · 评审状态 · 许可</text>
+  <text x="690" y="240" font-size="12" fill="#374151">字段级 display_scope</text>
+  <text x="690" y="258" font-size="12" fill="#374151">OA 公共态</text>
+  <text x="690" y="276" font-size="12" fill="#374151">（凭证态只在客户端）</text>
+  <text x="690" y="308" font-size="11" fill="#a16207">≈ 40 ms</text>
+
+  <!-- ④ Filter -->
+  <rect x="874" y="120" width="178" height="258" rx="8" fill="#fff1f2" stroke="#f43f5e" stroke-width="1.5"/>
+  <text x="963" y="144" font-size="14" font-weight="bold" text-anchor="middle" fill="#881337">④ Filter（可见性）</text>
+  <text x="963" y="162" font-size="11" text-anchor="middle" fill="#9f1239">与排序分离 · 记丢弃原因</text>
+  <text x="886" y="184" font-size="12" fill="#374151">跨源去重（cluster_id）</text>
+  <text x="886" y="202" font-size="12" fill="#374151">撤稿 / 下架</text>
+  <text x="886" y="220" font-size="12" fill="#374151">已见 · 已在库 · 另一版本</text>
+  <text x="886" y="238" font-size="12" fill="#374151">本会话已下发</text>
+  <text x="886" y="256" font-size="12" fill="#374151">屏蔽作者/主题/venue/词</text>
+  <text x="886" y="274" font-size="12" fill="#374151">会话强负抑制</text>
+  <text x="886" y="292" font-size="12" fill="#374151">展示闸 · 商用开关</text>
+  <text x="886" y="310" font-size="12" fill="#374151">语言 · 地区开关</text>
+  <text x="886" y="328" font-size="12" fill="#374151">时间窗 · 库存留出</text>
+  <text x="886" y="360" font-size="11" fill="#be123c">≈ 10 ms</text>
+
+  <!-- ⑤ Scorer -->
+  <rect x="1072" y="120" width="162" height="258" rx="8" fill="#fff7ed" stroke="#f97316" stroke-width="1.5"/>
+  <text x="1153" y="144" font-size="14" font-weight="bold" text-anchor="middle" fill="#7c2d12">⑤ Scorer</text>
+  <text x="1084" y="168" font-size="12" fill="#374151">s = 校准(α·LR</text>
+  <text x="1084" y="186" font-size="12" fill="#374151">    + (1−α)·先验)</text>
+  <text x="1084" y="204" font-size="12" fill="#374151">正向 P_a = s·ρ_a</text>
+  <text x="1084" y="222" font-size="12" fill="#374151">负向 P_a = (1−s)·ρ_a</text>
+  <text x="1084" y="240" font-size="12" fill="#374151">Σ V_a · P_a（vm 配置）</text>
+  <text x="1084" y="258" font-size="12" fill="#374151">× 新鲜度 × 质量</text>
+  <text x="1084" y="276" font-size="12" fill="#374151">净负分沉底</text>
+  <text x="1084" y="294" font-size="12" fill="#374151">（offset，同 X）</text>
+  <text x="1084" y="324" font-size="11" fill="#9a3412">候选隔离 · 可缓存</text>
+  <text x="1084" y="360" font-size="11" fill="#9a3412">≈ 20 ms</text>
+
+  <!-- ⑥ Selector -->
+  <rect x="1254" y="120" width="150" height="298" rx="8" fill="#faf5ff" stroke="#a855f7" stroke-width="1.5"/>
+  <text x="1329" y="144" font-size="14" font-weight="bold" text-anchor="middle" fill="#581c87">⑥ Selector</text>
+  <text x="1266" y="168" font-size="12" fill="#374151">作者衰减</text>
+  <text x="1266" y="186" font-size="12" fill="#374151">venue / 主题配额</text>
+  <text x="1266" y="204" font-size="12" fill="#374151">兴趣校准（次要兴趣）</text>
+  <text x="1266" y="222" font-size="12" fill="#374151">DPP θ=0.5，窗口 8</text>
+  <text x="1266" y="240" font-size="12" fill="#374151">探索槽 15%（标注）</text>
+  <text x="1266" y="258" font-size="12" fill="#374151">随机探针 ≈ 2%</text>
+  <text x="1266" y="276" font-size="12" fill="#374151">新作者下限位 ≤1</text>
+  <text x="1266" y="294" font-size="12" fill="#374151">有限批次 · 分块</text>
+  <text x="1266" y="312" font-size="12" fill="#374151">10 / 10 / 5</text>
+  <text x="1266" y="342" font-size="11" fill="#7e22ce">净负候选不补位</text>
+  <text x="1266" y="358" font-size="11" fill="#7e22ce">不足则批块变短</text>
+  <text x="1266" y="396" font-size="11" fill="#7e22ce">≈ 15 ms</text>
+
+  <!-- ⑦ SideEffect -->
+  <rect x="1254" y="436" width="150" height="148" rx="8" fill="#f1f5f9" stroke="#64748b" stroke-width="1.5"/>
+  <text x="1329" y="458" font-size="13" font-weight="bold" text-anchor="middle" fill="#1e293b">⑦ 下发与 SideEffect</text>
+  <text x="1264" y="480" font-size="11.5" fill="#374151">同一事务（同步）：</text>
+  <text x="1264" y="497" font-size="11.5" fill="#374151">铸造 impression_id</text>
+  <text x="1264" y="514" font-size="11.5" fill="#374151">serve 记录 · 每日计数</text>
+  <text x="1264" y="531" font-size="11.5" fill="#374151">异步：预取 · 快照</text>
+  <text x="1264" y="548" font-size="11.5" fill="#374151">曝光计数由聚合作业</text>
+  <text x="1264" y="570" font-size="11" fill="#475569">从 serve 记录统计</text>
+
+  <!-- 热路径箭头 -->
+  <line x1="186" y1="200" x2="203" y2="200" stroke="#334155" stroke-width="1.6" marker-end="url(#arrDark)"/>
+  <line x1="386" y1="200" x2="403" y2="200" stroke="#334155" stroke-width="1.6" marker-end="url(#arrDark)"/>
+  <line x1="658" y1="200" x2="675" y2="200" stroke="#334155" stroke-width="1.6" marker-end="url(#arrDark)"/>
+  <line x1="854" y1="200" x2="871" y2="200" stroke="#334155" stroke-width="1.6" marker-end="url(#arrDark)"/>
+  <line x1="1052" y1="200" x2="1069" y2="200" stroke="#334155" stroke-width="1.6" marker-end="url(#arrDark)"/>
+  <line x1="1234" y1="200" x2="1251" y2="200" stroke="#334155" stroke-width="1.6" marker-end="url(#arrDark)"/>
+  <line x1="1329" y1="418" x2="1329" y2="433" stroke="#334155" stroke-width="1.6" marker-end="url(#arrDark)"/>
+  <!-- 返回批块 -->
+  <path d="M 1254 400 L 1244 400 L 1244 600 L 111 600 L 111 302" fill="none" stroke="#334155" stroke-width="1.6" marker-end="url(#arrDark)"/>
+  <text x="700" y="593" font-size="11.5" fill="#334155">返回批块：卡片 · impression_id · 主/次理由码 · 探索标注</text>
+
+  <!-- ================= 学习闭环 ================= -->
+  <rect x="20" y="636" width="1400" height="206" rx="12" fill="#fdf4ff" stroke="#e9d5ff" stroke-width="1.2"/>
+  <text x="84" y="660" font-size="13" font-weight="bold" fill="#6b21a8">学习闭环：秒级 → 近线 → 夜间</text>
+
+  <rect x="36" y="672" width="200" height="158" rx="8" fill="#ffffff" stroke="#c084fc" stroke-width="1.5"/>
+  <text x="136" y="694" font-size="13" font-weight="bold" text-anchor="middle" fill="#581c87">事件契约（§5）</text>
+  <text x="48" y="716" font-size="11.5" fill="#374151">evt 只追加 · 月分区</text>
+  <text x="48" y="734" font-size="11.5" fill="#374151">event_id 幂等</text>
+  <text x="48" y="752" font-size="11.5" fill="#374151">训练反馈绑定 impression_id</text>
+  <text x="48" y="770" font-size="11.5" fill="#374151">撤回 = 追加事件</text>
+  <text x="48" y="788" font-size="11.5" fill="#374151">会话后段左滑降权</text>
+  <text x="48" y="806" font-size="11.5" fill="#374151">敏感事件不聚合</text>
+
+  <rect x="256" y="672" width="270" height="158" rx="8" fill="#ffffff" stroke="#c084fc" stroke-width="1.5"/>
+  <text x="391" y="694" font-size="13" font-weight="bold" text-anchor="middle" fill="#581c87">逐事件增量更新（p95 ≤ 2 s）</text>
+  <text x="268" y="716" font-size="11.5" fill="#374151">标签表 upsert → 每用户 LR 去抖重训</text>
+  <text x="268" y="734" font-size="11.5" fill="#374151">兴趣树证据 A/B（长期 120 天 / 短期 3 天）</text>
+  <text x="268" y="752" font-size="11.5" fill="#374151">会话质心 · 会话抑制 · 批块标记 stale</text>
+  <text x="268" y="770" font-size="11.5" fill="#374151">兴趣树臂 Beta（与兴趣树证据同源）</text>
+  <text x="268" y="788" font-size="11.5" fill="#374151">倾向 ρ 计数 · 已见位图</text>
+  <text x="268" y="806" font-size="11.5" fill="#374151">乱序与撤回按事件时间折算（§6.2）</text>
+
+  <rect x="546" y="672" width="250" height="158" rx="8" fill="#ffffff" stroke="#c084fc" stroke-width="1.5"/>
+  <text x="671" y="694" font-size="13" font-weight="bold" text-anchor="middle" fill="#581c87">近线任务</text>
+  <text x="558" y="716" font-size="11.5" fill="#374151">Percolator：频道硬命中 → FeedInbox</text>
+  <text x="558" y="734" font-size="11.5" fill="#374151">（04 负责匹配，06 消费）</text>
+  <text x="558" y="752" font-size="11.5" fill="#374151">聚合作业：曝光后验 · k 匿名聚合</text>
+  <text x="558" y="770" font-size="11.5" fill="#374151">懒生成解释（R1，仅自托管模型）</text>
+  <text x="558" y="788" font-size="11.5" fill="#374151">LLM 只在近线与夜间（P-07）</text>
+  <text x="558" y="806" font-size="11.5" fill="#374151">deck_build：重选 / 按需重召回</text>
+
+  <rect x="816" y="672" width="340" height="158" rx="8" fill="#ffffff" stroke="#c084fc" stroke-width="1.5"/>
+  <text x="986" y="694" font-size="13" font-weight="bold" text-anchor="middle" fill="#581c87">夜间批处理</text>
+  <text x="828" y="716" font-size="11.5" fill="#374151">多质心重聚类 · 随机负例重采样 · 校准器重拟合</text>
+  <text x="828" y="734" font-size="11.5" fill="#374151">反向推送规划：贪心 / 资格集最小费用流</text>
+  <text x="828" y="752" font-size="11.5" fill="#374151">R1：多头 GBDT · item-kNN · 读者向量（≥ k_cf）</text>
+  <text x="828" y="770" font-size="11.5" fill="#374151">LLM 批（R1，仅自托管）：top-K 重排 · 周更画像</text>
+  <text x="828" y="788" font-size="11.5" fill="#374151">离线评测 · OPE · 隐私审计 · 护栏报表</text>
+  <text x="828" y="806" font-size="11.5" fill="#374151">用户态由标签表全量重建</text>
+
+  <rect x="1176" y="672" width="228" height="158" rx="8" fill="#ffffff" stroke="#c084fc" stroke-width="1.5"/>
+  <text x="1290" y="694" font-size="13" font-weight="bold" text-anchor="middle" fill="#581c87">模型与配置登记</text>
+  <text x="1188" y="716" font-size="11.5" fill="#374151">vm 配置 + 变更日志（≥3 年）</text>
+  <text x="1188" y="734" font-size="11.5" fill="#374151">shadow → canary → active</text>
+  <text x="1188" y="752" font-size="11.5" fill="#374151">排序器变更先做 interleaving</text>
+  <text x="1188" y="770" font-size="11.5" fill="#374151">护栏越界 5 分钟内回滚</text>
+  <text x="1188" y="788" font-size="11.5" fill="#374151">每用户头健康检查</text>
+  <text x="1188" y="806" font-size="11.5" fill="#374151">全局非个性化兜底</text>
+
+  <!-- 学习闭环箭头 -->
+  <line x1="70" y1="298" x2="70" y2="669" stroke="#7c3aed" stroke-width="1.6" stroke-dasharray="6 4" marker-end="url(#arrPurple)"/>
+  <text x="78" y="632" font-size="11" fill="#6b21a8">UI 事件批量上报</text>
+  <line x1="236" y1="750" x2="253" y2="750" stroke="#7c3aed" stroke-width="1.6" stroke-dasharray="6 4" marker-end="url(#arrPurple)"/>
+  <line x1="526" y1="750" x2="543" y2="750" stroke="#7c3aed" stroke-width="1.6" stroke-dasharray="6 4" marker-end="url(#arrPurple)"/>
+  <line x1="796" y1="750" x2="813" y2="750" stroke="#7c3aed" stroke-width="1.6" stroke-dasharray="6 4" marker-end="url(#arrPurple)"/>
+  <line x1="1156" y1="750" x2="1173" y2="750" stroke="#7c3aed" stroke-width="1.6" stroke-dasharray="6 4" marker-end="url(#arrPurple)"/>
+  <line x1="330" y1="672" x2="330" y2="334" stroke="#7c3aed" stroke-width="1.6" stroke-dasharray="6 4" marker-end="url(#arrPurple)"/>
+  <text x="337" y="632" font-size="11" fill="#6b21a8">用户态更新</text>
+  <line x1="600" y1="672" x2="600" y2="586" stroke="#7c3aed" stroke-width="1.6" stroke-dasharray="6 4" marker-end="url(#arrPurple)"/>
+  <text x="607" y="632" font-size="11" fill="#6b21a8">FeedInbox · k 匿名聚合 · 曝光池</text>
+  <line x1="1190" y1="672" x2="1190" y2="382" stroke="#7c3aed" stroke-width="1.6" stroke-dasharray="6 4" marker-end="url(#arrPurple)"/>
+  <text x="1197" y="632" font-size="11" fill="#6b21a8">新版本（灰度）</text>
+
+  <!-- ================= 数据域 ================= -->
+  <rect x="20" y="858" width="1400" height="136" rx="12" fill="#f9fafb" stroke="#e5e7eb" stroke-width="1.2"/>
+  <text x="36" y="882" font-size="13" font-weight="bold" fill="#374151">数据域（简报 P-02；表由 05 定稿）</text>
+  <text x="560" y="882" font-size="11.5" fill="#b91c1c">红线：私有派生只进 usr · open_fulltext 不进入任何公共信号（HC-02）· 热路径零 LLM（P-07）</text>
+
+  <rect x="36" y="896" width="264" height="84" rx="8" fill="#eff6ff" stroke="#93c5fd" stroke-width="1.2"/>
+  <text x="168" y="918" font-size="12.5" font-weight="bold" text-anchor="middle" fill="#1e3a8a">corpus（共享，只读）</text>
+  <text x="168" y="940" font-size="11.5" text-anchor="middle" fill="#374151">公开元数据 · 共享嵌入 · 主题树</text>
+  <text x="168" y="960" font-size="11.5" text-anchor="middle" fill="#374151">写入只经 ingest 角色</text>
+
+  <rect x="312" y="896" width="264" height="84" rx="8" fill="#ecfdf5" stroke="#6ee7b7" stroke-width="1.2"/>
+  <text x="444" y="918" font-size="12.5" font-weight="bold" text-anchor="middle" fill="#065f46">usr（RLS，本人）</text>
+  <text x="444" y="940" font-size="11.5" text-anchor="middle" fill="#374151">画像 · 兴趣权重 · LR 头 · 质心</text>
+  <text x="444" y="960" font-size="11.5" text-anchor="middle" fill="#374151">标签 · 种子 · FeedInbox · 已见位图</text>
+
+  <rect x="588" y="896" width="264" height="84" rx="8" fill="#fefce8" stroke="#fde047" stroke-width="1.2"/>
+  <text x="720" y="918" font-size="12.5" font-weight="bold" text-anchor="middle" fill="#713f12">evt（只追加）</text>
+  <text x="720" y="940" font-size="11.5" text-anchor="middle" fill="#374151">事件 · serve 日志（含倾向分）</text>
+  <text x="720" y="960" font-size="11.5" text-anchor="middle" fill="#374151">可识别 6 个月 · 假名化至 13 个月（R2-31）</text>
+
+  <rect x="864" y="896" width="264" height="84" rx="8" fill="#fdf4ff" stroke="#e9d5ff" stroke-width="1.2"/>
+  <text x="996" y="918" font-size="12.5" font-weight="bold" text-anchor="middle" fill="#6b21a8">evt.agg_*（k 匿名聚合表）</text>
+  <text x="996" y="940" font-size="11.5" text-anchor="middle" fill="#374151">曝光后验 · 同簇热门 · 共现（R1）</text>
+  <text x="996" y="960" font-size="11.5" text-anchor="middle" fill="#374151">pc_sys_aggregator 独写 · 展示与解释类 ≥k</text>
+
+  <rect x="1140" y="896" width="264" height="84" rx="8" fill="#f1f5f9" stroke="#cbd5e1" stroke-width="1.2"/>
+  <text x="1272" y="918" font-size="12.5" font-weight="bold" text-anchor="middle" fill="#1e293b">ops</text>
+  <text x="1272" y="940" font-size="11.5" text-anchor="middle" fill="#374151">vm 配置 · 模型登记 · 任务队列</text>
+  <text x="1272" y="960" font-size="11.5" text-anchor="middle" fill="#374151">变更与审计留痕 ≥3 年</text>
+</svg>

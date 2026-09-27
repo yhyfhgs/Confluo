@@ -1,0 +1,226 @@
+utc_time	request	http_status	channel
+2026-09-26T19:25:40Z	https://export.arxiv.org/api/query?search_query=cat%3Acs.CL+AND+submittedDate%3A%5B202603010000+TO+202603312359%5D&start=0&max_results=40&sortBy=submittedDate&sortOrder=descending	200	arXiv Query API
+2026-09-26T19:25:44Z	https://export.arxiv.org/api/query?search_query=cat%3Acs.CV+AND+submittedDate%3A%5B202603010000+TO+202603312359%5D&start=0&max_results=40&sortBy=submittedDate&sortOrder=descending	200	arXiv Query API
+2026-09-26T19:25:48Z	https://export.arxiv.org/api/query?search_query=cat%3Aecon.GN+AND+submittedDate%3A%5B202603010000+TO+202603312359%5D&start=0&max_results=40&sortBy=submittedDate&sortOrder=descending	200	arXiv Query API
+2026-09-26T19:25:53Z	https://export.arxiv.org/api/query?search_query=cat%3Aq-fin.ST+AND+submittedDate%3A%5B202603010000+TO+202603312359%5D&start=0&max_results=40&sortBy=submittedDate&sortOrder=descending	200	arXiv Query API
+2026-09-26T19:25:57Z	https://export.arxiv.org/api/query?search_query=cat%3Amath.PR+AND+submittedDate%3A%5B202603010000+TO+202603312359%5D&start=0&max_results=40&sortBy=submittedDate&sortOrder=descending	200	arXiv Query API
+2026-09-26T19:26:01Z	https://export.arxiv.org/api/query?search_query=cat%3Acond-mat.mtrl-sci+AND+submittedDate%3A%5B202603010000+TO+202603312359%5D&start=0&max_results=40&sortBy=submittedDate&sortOrder=descending	200	arXiv Query API
+2026-09-26T19:26:06Z	https://export.arxiv.org/api/query?search_query=cat%3Ahep-th+AND+submittedDate%3A%5B202603010000+TO+202603312359%5D&start=0&max_results=40&sortBy=submittedDate&sortOrder=descending	200	arXiv Query API
+2026-09-26T19:26:10Z	https://export.arxiv.org/api/query?search_query=cat%3Aphysics.chem-ph+AND+submittedDate%3A%5B202603010000+TO+202603312359%5D&start=0&max_results=40&sortBy=submittedDate&sortOrder=descending	200	arXiv Query API
+2026-09-26T19:26:15Z	https://export.arxiv.org/api/query?search_query=cat%3Aq-bio.NC+AND+submittedDate%3A%5B202603010000+TO+202603312359%5D&start=0&max_results=40&sortBy=submittedDate&sortOrder=descending	200	arXiv Query API
+2026-09-26T19:26:20Z	https://export.arxiv.org/api/query?search_query=cat%3Astat.ME+AND+submittedDate%3A%5B202603010000+TO+202603312359%5D&start=0&max_results=40&sortBy=submittedDate&sortOrder=descending	200	arXiv Query API
+2026-09-26T19:26:24Z	https://export.arxiv.org/api/query?search_query=cat%3Acs.CL+AND+submittedDate%3A%5B202609140000+TO+202609242359%5D&start=0&max_results=40&sortBy=submittedDate&sortOrder=descending	200	arXiv Query API
+2026-09-26T19:26:28Z	https://export.arxiv.org/api/query?search_query=cat%3Acs.CV+AND+submittedDate%3A%5B202609140000+TO+202609242359%5D&start=0&max_results=40&sortBy=submittedDate&sortOrder=descending	200	arXiv Query API
+2026-09-26T19:26:32Z	https://export.arxiv.org/api/query?search_query=cat%3Aecon.GN+AND+submittedDate%3A%5B202609140000+TO+202609242359%5D&start=0&max_results=40&sortBy=submittedDate&sortOrder=descending	200	arXiv Query API
+2026-09-26T19:26:37Z	https://export.arxiv.org/api/query?search_query=cat%3Aq-fin.ST+AND+submittedDate%3A%5B202609140000+TO+202609242359%5D&start=0&max_results=40&sortBy=submittedDate&sortOrder=descending	200	arXiv Query API
+2026-09-26T19:26:41Z	https://export.arxiv.org/api/query?search_query=cat%3Amath.PR+AND+submittedDate%3A%5B202609140000+TO+202609242359%5D&start=0&max_results=40&sortBy=submittedDate&sortOrder=descending	200	arXiv Query API
+2026-09-26T19:26:45Z	https://export.arxiv.org/api/query?search_query=cat%3Acond-mat.mtrl-sci+AND+submittedDate%3A%5B202609140000+TO+202609242359%5D&start=0&max_results=40&sortBy=submittedDate&sortOrder=descending	200	arXiv Query API
+2026-09-26T19:26:50Z	https://export.arxiv.org/api/query?search_query=cat%3Ahep-th+AND+submittedDate%3A%5B202609140000+TO+202609242359%5D&start=0&max_results=40&sortBy=submittedDate&sortOrder=descending	200	arXiv Query API
+2026-09-26T19:26:54Z	https://export.arxiv.org/api/query?search_query=cat%3Aphysics.chem-ph+AND+submittedDate%3A%5B202609140000+TO+202609242359%5D&start=0&max_results=40&sortBy=submittedDate&sortOrder=descending	200	arXiv Query API
+2026-09-26T19:26:58Z	https://export.arxiv.org/api/query?search_query=cat%3Aq-bio.NC+AND+submittedDate%3A%5B202609140000+TO+202609242359%5D&start=0&max_results=40&sortBy=submittedDate&sortOrder=descending	200	arXiv Query API
+2026-09-26T19:27:02Z	https://export.arxiv.org/api/query?search_query=cat%3Astat.ME+AND+submittedDate%3A%5B202609140000+TO+202609242359%5D&start=0&max_results=40&sortBy=submittedDate&sortOrder=descending	200	arXiv Query API
+2026-09-26T19:27:29Z	POST /graph/v1/paper/batch	429	Semantic Scholar Graph API (anonymous) (batch of 400 ids)
+2026-09-26T19:27:36Z	POST /graph/v1/paper/batch	200	Semantic Scholar Graph API (anonymous) (batch of 400 ids)
+2026-09-26T19:27:39Z	POST /graph/v1/paper/batch	429	Semantic Scholar Graph API (anonymous) (batch of 330 ids)
+2026-09-26T19:27:45Z	POST /graph/v1/paper/batch	429	Semantic Scholar Graph API (anonymous) (batch of 330 ids)
+2026-09-26T19:27:56Z	POST /graph/v1/paper/batch	200	Semantic Scholar Graph API (anonymous) (batch of 330 ids)
+2026-09-26T19:28:49Z	https://oaipmh.arxiv.org/oai?verb=ListSets	200	arXiv OAI-PMH
+2026-09-26T19:29:07Z	https://oaipmh.arxiv.org/oai?verb=ListRecords&metadataPrefix=arXiv&set=cs&from=2026-09-22&until=2026-09-22	200	arXiv OAI-PMH
+2026-09-26T19:29:13Z	https://oaipmh.arxiv.org/oai?verb=ListRecords&metadataPrefix=arXiv&set=math&from=2026-09-22&until=2026-09-22	200	arXiv OAI-PMH
+2026-09-26T19:29:18Z	https://oaipmh.arxiv.org/oai?verb=ListRecords&metadataPrefix=arXiv&set=physics&from=2026-09-22&until=2026-09-22	200	arXiv OAI-PMH
+2026-09-26T19:29:22Z	https://oaipmh.arxiv.org/oai?verb=ListRecords&metadataPrefix=arXiv&set=q-bio&from=2026-09-22&until=2026-09-22	200	arXiv OAI-PMH
+2026-09-26T19:29:26Z	https://oaipmh.arxiv.org/oai?verb=ListRecords&metadataPrefix=arXiv&set=q-fin&from=2026-09-22&until=2026-09-22	200	arXiv OAI-PMH
+2026-09-26T19:29:30Z	https://oaipmh.arxiv.org/oai?verb=ListRecords&metadataPrefix=arXiv&set=stat&from=2026-09-22&until=2026-09-22	200	arXiv OAI-PMH
+2026-09-26T19:29:34Z	https://oaipmh.arxiv.org/oai?verb=ListRecords&metadataPrefix=arXiv&set=econ&from=2026-09-22&until=2026-09-22	200	arXiv OAI-PMH
+2026-09-26T19:29:39Z	https://oaipmh.arxiv.org/oai?verb=ListRecords&metadataPrefix=arXiv&set=eess&from=2026-09-22&until=2026-09-22	200	arXiv OAI-PMH
+2026-09-26T19:30:11Z	https://arxiv.org/html/2609.30226v1	200	arXiv HTML (robots Allow /html)
+2026-09-26T19:28:12Z	GET /api/papers/2604.00323	404	Hugging Face Papers API
+2026-09-26T19:28:13Z	GET /api/papers/2604.00304	404	Hugging Face Papers API
+2026-09-26T19:28:15Z	GET /api/papers/2604.00291	404	Hugging Face Papers API
+2026-09-26T19:28:17Z	GET /api/papers/2604.00261	404	Hugging Face Papers API
+2026-09-26T19:28:18Z	GET /api/papers/2604.00259	404	Hugging Face Papers API
+2026-09-26T19:28:20Z	GET /api/papers/2604.00248	404	Hugging Face Papers API
+2026-09-26T19:28:22Z	GET /api/papers/2604.00242	404	Hugging Face Papers API
+2026-09-26T19:28:23Z	GET /api/papers/2604.00239	404	Hugging Face Papers API
+2026-09-26T19:28:25Z	GET /api/papers/2604.00228	404	Hugging Face Papers API
+2026-09-26T19:28:26Z	GET /api/papers/2604.00209	200	Hugging Face Papers API
+2026-09-26T19:28:28Z	GET /api/papers/2604.19787	404	Hugging Face Papers API
+2026-09-26T19:28:30Z	GET /api/papers/2604.00174	404	Hugging Face Papers API
+2026-09-26T19:28:31Z	GET /api/papers/2604.19786	404	Hugging Face Papers API
+2026-09-26T19:28:33Z	GET /api/papers/2604.00136	404	Hugging Face Papers API
+2026-09-26T19:28:35Z	GET /api/papers/2604.00131	404	Hugging Face Papers API
+2026-09-26T19:28:36Z	GET /api/papers/2604.00130	404	Hugging Face Papers API
+2026-09-26T19:28:38Z	GET /api/papers/2604.00086	200	Hugging Face Papers API
+2026-09-26T19:28:40Z	GET /api/papers/2604.00085	404	Hugging Face Papers API
+2026-09-26T19:28:41Z	GET /api/papers/2603.30035	404	Hugging Face Papers API
+2026-09-26T19:28:43Z	GET /api/papers/2603.30032	404	Hugging Face Papers API
+2026-09-26T19:28:45Z	GET /api/papers/2603.30025	404	Hugging Face Papers API
+2026-09-26T19:28:46Z	GET /api/papers/2603.30002	404	Hugging Face Papers API
+2026-09-26T19:28:48Z	GET /api/papers/2603.29997	404	Hugging Face Papers API
+2026-09-26T19:28:50Z	GET /api/papers/2604.14186	404	Hugging Face Papers API
+2026-09-26T19:28:51Z	GET /api/papers/2603.29979	404	Hugging Face Papers API
+2026-09-26T19:28:53Z	GET /api/papers/2603.29950	404	Hugging Face Papers API
+2026-09-26T19:28:55Z	GET /api/papers/2603.29937	404	Hugging Face Papers API
+2026-09-26T19:28:56Z	GET /api/papers/2603.29901	404	Hugging Face Papers API
+2026-09-26T19:28:58Z	GET /api/papers/2603.29892	404	Hugging Face Papers API
+2026-09-26T19:28:59Z	GET /api/papers/2603.29861	404	Hugging Face Papers API
+2026-09-26T19:29:01Z	GET /api/papers/2603.29846	200	Hugging Face Papers API
+2026-09-26T19:29:03Z	GET /api/papers/2603.29828	200	Hugging Face Papers API
+2026-09-26T19:29:04Z	GET /api/papers/2603.29801	404	Hugging Face Papers API
+2026-09-26T19:29:06Z	GET /api/papers/2603.29791	404	Hugging Face Papers API
+2026-09-26T19:29:08Z	GET /api/papers/2604.00073	200	Hugging Face Papers API
+2026-09-26T19:29:09Z	GET /api/papers/2603.29765	200	Hugging Face Papers API
+2026-09-26T19:29:11Z	GET /api/papers/2603.29676	200	Hugging Face Papers API
+2026-09-26T19:29:13Z	GET /api/papers/2603.29665	404	Hugging Face Papers API
+2026-09-26T19:29:14Z	GET /api/papers/2603.29661	404	Hugging Face Papers API
+2026-09-26T19:29:16Z	GET /api/papers/2603.29651	404	Hugging Face Papers API
+2026-09-26T19:29:17Z	GET /api/papers/2604.00313	404	Hugging Face Papers API
+2026-09-26T19:29:19Z	GET /api/papers/2604.00298	404	Hugging Face Papers API
+2026-09-26T19:29:21Z	GET /api/papers/2604.03313	404	Hugging Face Papers API
+2026-09-26T19:29:22Z	GET /api/papers/2604.00279	404	Hugging Face Papers API
+2026-09-26T19:29:24Z	GET /api/papers/2604.00276	404	Hugging Face Papers API
+2026-09-26T19:29:26Z	GET /api/papers/2604.00270	404	Hugging Face Papers API
+2026-09-26T19:29:27Z	GET /api/papers/2604.00267	200	Hugging Face Papers API
+2026-09-26T19:29:29Z	GET /api/papers/2604.00265	404	Hugging Face Papers API
+2026-09-26T19:29:31Z	GET /api/papers/2604.00263	404	Hugging Face Papers API
+2026-09-26T19:29:32Z	GET /api/papers/2604.00250	404	Hugging Face Papers API
+2026-09-26T19:29:34Z	GET /api/papers/2604.00243	200	Hugging Face Papers API
+2026-09-26T19:29:35Z	GET /api/papers/2604.00225	404	Hugging Face Papers API
+2026-09-26T19:29:37Z	GET /api/papers/2604.00199	404	Hugging Face Papers API
+2026-09-26T19:29:39Z	GET /api/papers/2604.21936	404	Hugging Face Papers API
+2026-09-26T19:29:40Z	GET /api/papers/2604.00175	404	Hugging Face Papers API
+2026-09-26T19:29:42Z	GET /api/papers/2604.00172	404	Hugging Face Papers API
+2026-09-26T19:29:44Z	GET /api/papers/2604.00161	200	Hugging Face Papers API
+2026-09-26T19:29:45Z	GET /api/papers/2604.00093	200	Hugging Face Papers API
+2026-09-26T19:29:47Z	GET /api/papers/2604.00086	200	Hugging Face Papers API
+2026-09-26T19:29:49Z	GET /api/papers/2603.30045	200	Hugging Face Papers API
+2026-09-26T19:29:50Z	GET /api/papers/2603.30043	200	Hugging Face Papers API
+2026-09-26T19:29:52Z	GET /api/papers/2603.30038	404	Hugging Face Papers API
+2026-09-26T19:29:54Z	GET /api/papers/2603.30008	404	Hugging Face Papers API
+2026-09-26T19:29:55Z	GET /api/papers/2603.29990	404	Hugging Face Papers API
+2026-09-26T19:29:57Z	GET /api/papers/2604.16405	404	Hugging Face Papers API
+2026-09-26T19:29:58Z	GET /api/papers/2603.29968	404	Hugging Face Papers API
+2026-09-26T19:30:00Z	GET /api/papers/2603.29967	404	Hugging Face Papers API
+2026-09-26T19:30:02Z	GET /api/papers/2603.29966	200	Hugging Face Papers API
+2026-09-26T19:30:03Z	GET /api/papers/2603.29962	200	Hugging Face Papers API
+2026-09-26T19:30:05Z	GET /api/papers/2603.29960	404	Hugging Face Papers API
+2026-09-26T19:30:07Z	GET /api/papers/2603.29954	404	Hugging Face Papers API
+2026-09-26T19:30:08Z	GET /api/papers/2603.29943	404	Hugging Face Papers API
+2026-09-26T19:30:10Z	GET /api/papers/2603.29941	404	Hugging Face Papers API
+2026-09-26T19:30:12Z	GET /api/papers/2603.29931	404	Hugging Face Papers API
+2026-09-26T19:30:13Z	GET /api/papers/2603.29927	404	Hugging Face Papers API
+2026-09-26T19:30:15Z	GET /api/papers/2603.29924	404	Hugging Face Papers API
+2026-09-26T19:30:16Z	GET /api/papers/2603.29922	404	Hugging Face Papers API
+2026-09-26T19:30:18Z	GET /api/papers/2603.29917	404	Hugging Face Papers API
+2026-09-26T19:30:20Z	GET /api/papers/2603.29901	404	Hugging Face Papers API
+2026-09-26T19:30:21Z	GET /api/papers/2604.03311	404	Hugging Face Papers API
+2026-09-26T19:30:23Z	GET /api/papers/2604.00325	404	Hugging Face Papers API
+2026-09-26T19:30:25Z	GET /api/papers/2604.00288	404	Hugging Face Papers API
+2026-09-26T19:30:26Z	GET /api/papers/2604.00238	404	Hugging Face Papers API
+2026-09-26T19:30:28Z	GET /api/papers/2604.00233	404	Hugging Face Papers API
+2026-09-26T19:30:30Z	GET /api/papers/2604.06230	404	Hugging Face Papers API
+2026-09-26T19:30:31Z	GET /api/papers/2604.14187	404	Hugging Face Papers API
+2026-09-26T19:30:33Z	GET /api/papers/2604.00115	404	Hugging Face Papers API
+2026-09-26T19:30:34Z	GET /api/papers/2603.30018	404	Hugging Face Papers API
+2026-09-26T19:30:36Z	GET /api/papers/2603.29934	404	Hugging Face Papers API
+2026-09-26T19:30:38Z	GET /api/papers/2603.29891	404	Hugging Face Papers API
+2026-09-26T19:30:39Z	GET /api/papers/2603.29849	404	Hugging Face Papers API
+2026-09-26T19:30:41Z	GET /api/papers/2603.29830	404	Hugging Face Papers API
+2026-09-26T19:30:43Z	GET /api/papers/2603.29814	404	Hugging Face Papers API
+2026-09-26T19:30:44Z	GET /api/papers/2603.29812	404	Hugging Face Papers API
+2026-09-26T19:30:46Z	GET /api/papers/2603.29797	404	Hugging Face Papers API
+2026-09-26T19:30:48Z	GET /api/papers/2603.29745	404	Hugging Face Papers API
+2026-09-26T19:30:49Z	GET /api/papers/2604.00069	404	Hugging Face Papers API
+2026-09-26T19:30:51Z	GET /api/papers/2604.14183	404	Hugging Face Papers API
+2026-09-26T19:30:53Z	GET /api/papers/2603.29547	404	Hugging Face Papers API
+2026-09-26T19:30:54Z	GET /api/papers/2603.29508	404	Hugging Face Papers API
+2026-09-26T19:30:56Z	GET /api/papers/2603.29484	404	Hugging Face Papers API
+2026-09-26T19:30:57Z	GET /api/papers/2603.29476	404	Hugging Face Papers API
+2026-09-26T19:30:59Z	GET /api/papers/2603.29462	404	Hugging Face Papers API
+2026-09-26T19:31:01Z	GET /api/papers/2603.29421	404	Hugging Face Papers API
+2026-09-26T19:31:02Z	GET /api/papers/2603.29402	404	Hugging Face Papers API
+2026-09-26T19:31:04Z	GET /api/papers/2603.29370	404	Hugging Face Papers API
+2026-09-26T19:31:06Z	GET /api/papers/2603.29334	404	Hugging Face Papers API
+2026-09-26T19:31:07Z	GET /api/papers/2603.29298	404	Hugging Face Papers API
+2026-09-26T19:31:09Z	GET /api/papers/2603.29286	404	Hugging Face Papers API
+2026-09-26T19:31:11Z	GET /api/papers/2603.29202	404	Hugging Face Papers API
+2026-09-26T19:31:12Z	GET /api/papers/2603.29198	404	Hugging Face Papers API
+2026-09-26T19:31:14Z	GET /api/papers/2603.29189	404	Hugging Face Papers API
+2026-09-26T19:31:16Z	GET /api/papers/2603.29174	404	Hugging Face Papers API
+2026-09-26T19:31:17Z	GET /api/papers/2603.29138	404	Hugging Face Papers API
+2026-09-26T19:31:19Z	GET /api/papers/2603.29066	404	Hugging Face Papers API
+2026-09-26T19:31:20Z	GET /api/papers/2603.29065	404	Hugging Face Papers API
+2026-09-26T19:31:22Z	GET /api/papers/2603.29037	404	Hugging Face Papers API
+2026-09-26T19:31:24Z	GET /api/papers/2603.29006	404	Hugging Face Papers API
+2026-09-26T19:31:25Z	GET /api/papers/2603.29004	404	Hugging Face Papers API
+2026-09-26T19:31:27Z	GET /api/papers/2603.28991	404	Hugging Face Papers API
+2026-09-26T19:31:29Z	GET /api/papers/2604.00220	404	Hugging Face Papers API
+2026-09-26T19:31:30Z	GET /api/papers/2604.00198	404	Hugging Face Papers API
+2026-09-26T19:31:32Z	GET /api/papers/2604.00133	404	Hugging Face Papers API
+2026-09-26T19:31:33Z	GET /api/papers/2603.29972	404	Hugging Face Papers API
+2026-09-26T19:31:35Z	GET /api/papers/2603.29764	404	Hugging Face Papers API
+2026-09-26T19:31:37Z	GET /api/papers/2603.29647	404	Hugging Face Papers API
+2026-09-26T19:31:38Z	GET /api/papers/2603.29612	404	Hugging Face Papers API
+2026-09-26T19:31:40Z	GET /api/papers/2603.29575	404	Hugging Face Papers API
+2026-09-26T19:31:42Z	GET /api/papers/2604.14182	404	Hugging Face Papers API
+2026-09-26T19:31:43Z	GET /api/papers/2603.29539	404	Hugging Face Papers API
+2026-09-26T19:31:45Z	GET /api/papers/2603.29440	404	Hugging Face Papers API
+2026-09-26T19:31:47Z	GET /api/papers/2603.29436	404	Hugging Face Papers API
+2026-09-26T19:31:48Z	GET /api/papers/2603.29354	404	Hugging Face Papers API
+2026-09-26T19:31:50Z	GET /api/papers/2603.29333	404	Hugging Face Papers API
+2026-09-26T19:31:51Z	GET /api/papers/2603.29215	404	Hugging Face Papers API
+2026-09-26T19:31:53Z	GET /api/papers/2603.29169	404	Hugging Face Papers API
+2026-09-26T19:31:55Z	GET /api/papers/2603.29168	404	Hugging Face Papers API
+2026-09-26T19:31:56Z	GET /api/papers/2603.29134	404	Hugging Face Papers API
+2026-09-26T19:31:58Z	GET /api/papers/2603.29110	200	Hugging Face Papers API
+2026-09-26T19:32:00Z	GET /api/papers/2603.29096	404	Hugging Face Papers API
+2026-09-26T19:32:01Z	GET /api/papers/2603.29058	404	Hugging Face Papers API
+2026-09-26T19:32:03Z	GET /api/papers/2603.29054	404	Hugging Face Papers API
+2026-09-26T19:32:05Z	GET /api/papers/2604.09663	404	Hugging Face Papers API
+2026-09-26T19:32:06Z	GET /api/papers/2603.29003	404	Hugging Face Papers API
+2026-09-26T19:32:08Z	GET /api/papers/2603.28989	404	Hugging Face Papers API
+2026-09-26T19:32:10Z	GET /api/papers/2604.09661	404	Hugging Face Papers API
+2026-09-26T19:32:11Z	GET /api/papers/2603.28656	404	Hugging Face Papers API
+2026-09-26T19:32:13Z	GET /api/papers/2603.28615	404	Hugging Face Papers API
+2026-09-26T19:32:14Z	GET /api/papers/2603.28556	404	Hugging Face Papers API
+2026-09-26T19:32:16Z	GET /api/papers/2603.28470	404	Hugging Face Papers API
+2026-09-26T19:32:18Z	GET /api/papers/2603.28462	404	Hugging Face Papers API
+2026-09-26T19:32:19Z	GET /api/papers/2603.28423	404	Hugging Face Papers API
+2026-09-26T19:32:21Z	GET /api/papers/2603.28359	404	Hugging Face Papers API
+2026-09-26T19:32:23Z	GET /api/papers/2603.28344	404	Hugging Face Papers API
+2026-09-26T19:32:24Z	GET /api/papers/2603.28320	404	Hugging Face Papers API
+2026-09-26T19:32:26Z	GET /api/papers/2604.09656	404	Hugging Face Papers API
+2026-09-26T19:32:28Z	GET /api/papers/2603.28112	404	Hugging Face Papers API
+2026-09-26T19:32:29Z	GET /api/papers/2603.27984	404	Hugging Face Papers API
+2026-09-26T19:32:31Z	GET /api/papers/2603.27916	404	Hugging Face Papers API
+2026-09-26T19:32:32Z	GET /api/papers/2603.27873	404	Hugging Face Papers API
+2026-09-26T19:30:37Z	https://arxiv.org/list/cs.CL/recent?skip=0&show=250	200	arXiv listing (robots Allow /list; Crawl-delay 15)
+2026-09-26T19:30:54Z	https://arxiv.org/list/math.PR/recent?skip=0&show=250	200	arXiv listing (robots Allow /list; Crawl-delay 15)
+2026-09-26T19:31:10Z	https://arxiv.org/list/hep-th/recent?skip=0&show=250	200	arXiv listing (robots Allow /list; Crawl-delay 15)
+2026-09-26T19:31:27Z	https://arxiv.org/list/econ.GN/recent?skip=0&show=250	200	arXiv listing (robots Allow /list; Crawl-delay 15)
+2026-09-26T19:31:44Z	https://arxiv.org/list/q-bio.NC/recent?skip=0&show=250	200	arXiv listing (robots Allow /list; Crawl-delay 15)
+2026-09-26T19:32:01Z	https://arxiv.org/list/cond-mat.mtrl-sci/recent?skip=0&show=250	200	arXiv listing (robots Allow /list; Crawl-delay 15)
+2026-09-26T19:32:18Z	https://arxiv.org/list/q-fin.ST/recent?skip=0&show=250	200	arXiv listing (robots Allow /list; Crawl-delay 15)
+2026-09-26T19:36:14Z	https://export.arxiv.org/api/query?id_list=(27 ids)	200	arXiv Query API
+2026-09-26T19:36:32Z	GET /graph/v1/paper/bbcb64958c280b5abc3c741457effe30a90dea45	429	Semantic Scholar Graph API (anonymous)
+2026-09-26T19:36:39Z	GET /graph/v1/paper/bbcb64958c280b5abc3c741457effe30a90dea45	429	Semantic Scholar Graph API (anonymous)
+2026-09-26T19:36:51Z	GET /graph/v1/paper/bbcb64958c280b5abc3c741457effe30a90dea45	429	Semantic Scholar Graph API (anonymous)
+2026-09-26T19:37:10Z	GET /graph/v1/paper/bbcb64958c280b5abc3c741457effe30a90dea45	429	Semantic Scholar Graph API (anonymous)
+2026-09-26T19:37:34Z	GET /graph/v1/paper/bbcb64958c280b5abc3c741457effe30a90dea45	429	Semantic Scholar Graph API (anonymous)
+2026-09-26T19:38:05Z	GET /graph/v1/paper/bbcb64958c280b5abc3c741457effe30a90dea45	429	Semantic Scholar Graph API (anonymous)
+2026-09-26T19:38:44Z	GET /graph/v1/paper/DOI:10.1145/2910896.2910904	200	Semantic Scholar Graph API (anonymous)
+2026-09-26T19:41:21Z	https://api.openalex.org/sources?search=arxiv	200	OpenAlex API (no key)
+2026-09-26T19:41:36Z	https://api.openalex.org/works?filter=primary_location.source.id:S4306400194,from_publication_date:2026-03-01,to_publication_date:2026-03-31&group_by=best_oa_location.license	200	OpenAlex API (no key)
+2026-09-26T19:41:38Z	https://api.openalex.org/works?filter=from_publication_date:2026-03-01,to_publication_date:2026-03-31,type:article&group_by=best_oa_location.license	200	OpenAlex API (no key)
+2026-09-26T19:41:41Z	https://api.openalex.org/works?filter=from_publication_date:2026-03-01,to_publication_date:2026-03-31,type:article&group_by=open_access.oa_status	200	OpenAlex API (no key)
+2026-09-26T19:42:13Z	https://api.crossref.org/journals/0002-8282/works?filter=from-pub-date:2026-01-01,until-pub-date:2026-06-30,type:journal-article&rows=20&select=DOI,title,abstract,license	200	Crossref REST (public)
+2026-09-26T19:42:17Z	https://api.crossref.org/journals/0022-1082/works?filter=from-pub-date:2026-01-01,until-pub-date:2026-06-30,type:journal-article&rows=20&select=DOI,title,abstract,license	200	Crossref REST (public)
+2026-09-26T19:42:21Z	https://api.crossref.org/journals/0025-1909/works?filter=from-pub-date:2026-01-01,until-pub-date:2026-06-30,type:journal-article&rows=20&select=DOI,title,abstract,license	200	Crossref REST (public)
+2026-09-26T19:42:24Z	https://api.crossref.org/journals/0956-7976/works?filter=from-pub-date:2026-01-01,until-pub-date:2026-06-30,type:journal-article&rows=20&select=DOI,title,abstract,license	200	Crossref REST (public)
+2026-09-26T19:42:28Z	https://api.crossref.org/journals/0002-7863/works?filter=from-pub-date:2026-01-01,until-pub-date:2026-06-30,type:journal-article&rows=20&select=DOI,title,abstract,license	200	Crossref REST (public)
+2026-09-26T19:42:32Z	https://api.crossref.org/journals/0031-9007/works?filter=from-pub-date:2026-01-01,until-pub-date:2026-06-30,type:journal-article&rows=20&select=DOI,title,abstract,license	200	Crossref REST (public)
+2026-09-26T19:42:35Z	https://api.crossref.org/journals/0003-486X/works?filter=from-pub-date:2026-01-01,until-pub-date:2026-06-30,type:journal-article&rows=20&select=DOI,title,abstract,license	200	Crossref REST (public)
+2026-09-26T19:42:39Z	https://api.crossref.org/journals/0092-8674/works?filter=from-pub-date:2026-01-01,until-pub-date:2026-06-30,type:journal-article&rows=20&select=DOI,title,abstract,license	200	Crossref REST (public)
+2026-09-26T19:42:43Z	https://api.crossref.org/journals/0162-8828/works?filter=from-pub-date:2026-01-01,until-pub-date:2026-06-30,type:journal-article&rows=20&select=DOI,title,abstract,license	200	Crossref REST (public)
+2026-09-26T19:42:46Z	POST /graph/v1/paper/batch	200	Semantic Scholar Graph API (anonymous)
+2026-09-26T19:45:30Z	https://arxiv.org/category_taxonomy	200	arXiv taxonomy page

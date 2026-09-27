@@ -1,0 +1,98 @@
+utc_time	category	target	http_status	server_or_note
+2026-09-26T14:59:21Z	robots.txt	https://journals.aps.org/robots.txt	200	cloudflare last-modified 2026-09-23
+2026-09-26T14:59:24Z	robots.txt	https://harvest.aps.org/robots.txt	404	
+2026-09-26T14:59:28Z	robots.txt	https://iopscience.iop.org/robots.txt	200	
+2026-09-26T14:59:35Z	robots.txt	https://pubs.aip.org/robots.txt	200	cloudflare
+2026-09-26T14:59:38Z	robots.txt	https://opg.optica.org/robots.txt	200	
+2026-09-26T14:59:41Z	robots.txt	https://pubs.acs.org/robots.txt	403	cloudflare
+2026-09-26T14:59:45Z	robots.txt	https://pubs.rsc.org/robots.txt	200	cloudflare
+2026-09-26T14:59:49Z	robots.txt	https://link.springer.com/robots.txt	200	Oscar Platform 0.1789.0
+2026-09-26T14:59:52Z	robots.txt	https://www.nature.com/robots.txt	200	Oscar Platform 0.2453.0
+2026-09-26T14:59:56Z	robots.txt	https://www.science.org/robots.txt	200	cloudflare
+2026-09-26T15:00:00Z	robots.txt	https://www.pnas.org/robots.txt	200	cloudflare
+2026-09-26T15:00:04Z	robots.txt	https://www.tandfonline.com/robots.txt	200	cloudflare
+2026-09-26T15:00:07Z	robots.txt	https://www.degruyterbrill.com/robots.txt	200	CloudFront
+2026-09-26T15:00:10Z	robots.txt	https://www.degruyter.com/robots.txt	301	awselb/2.0
+2026-09-26T15:00:14Z	robots.txt	https://www.worldscientific.com/robots.txt	200	cloudflare
+2026-09-26T15:00:21Z	robots.txt	https://epubs.siam.org/robots.txt	200	cloudflare
+2026-09-26T15:00:25Z	robots.txt	https://www.ams.org/robots.txt	403	cloudflare challenge
+2026-09-26T15:00:30Z	robots.txt	https://ems.press/robots.txt	200	
+2026-09-26T15:00:33Z	robots.txt	https://projecteuclid.org/robots.txt	200	Microsoft-IIS/10.0
+2026-09-26T15:00:36Z	robots.txt	https://msp.org/robots.txt	200	Apache
+2026-09-26T15:00:40Z	robots.txt	https://chemrxiv.org/robots.txt	200	cloudflare
+2026-09-26T15:00:43Z	robots.txt	https://www.preprints.org/robots.txt	403	
+2026-09-26T15:00:46Z	robots.txt	https://www.researchsquare.com/robots.txt	200	cloudflare
+2026-09-26T15:00:49Z	robots.txt	https://essopenarchive.org/robots.txt	200	cloudflare
+2026-09-26T15:00:52Z	robots.txt	https://zbmath.org/robots.txt	403	cloudflare challenge
+2026-09-26T15:00:55Z	robots.txt	https://api.zbmath.org/robots.txt	307	uvicorn
+2026-09-26T15:00:58Z	robots.txt	https://mathscinet.ams.org/robots.txt	200	cloudflare
+2026-09-26T15:01:01Z	robots.txt	https://inspirehep.net/robots.txt	200	nginx/1.19.1
+2026-09-26T15:01:04Z	robots.txt	https://ui.adsabs.harvard.edu/robots.txt	202	awselb/2.0
+2026-09-26T15:01:07Z	robots.txt	https://pubchem.ncbi.nlm.nih.gov/robots.txt	200	Apache
+2026-09-26T15:01:10Z	robots.txt	https://scipost.org/robots.txt	200	nginx/1.18.0 (Ubuntu)
+2026-09-26T15:01:13Z	robots.txt	https://quantum-journal.org/robots.txt	200	nginx
+2026-09-26T15:01:17Z	robots.txt	https://pos.sissa.it/robots.txt	200	Apache/2.4.68 (Debian)
+2026-09-26T15:01:23Z	robots.txt	https://www.spiedigitallibrary.org/robots.txt	200	Incapsula challenge page returned instead of robots.txt
+2026-09-26T15:01:29Z	robots.txt	https://www.epj-conferences.org/robots.txt	200	
+2026-09-26T15:01:34Z	robots.txt	https://www.aanda.org/robots.txt	200	
+2026-09-26T15:01:38Z	robots.txt	https://www.numdam.org/robots.txt	200	Apache
+2026-09-26T15:01:41Z	robots.txt	https://annals.math.princeton.edu/robots.txt	200	Apache/2.4.62 (Red Hat Enterprise Linux) OpenSSL/3.5.5
+2026-09-26T15:01:45Z	robots.txt	https://www.intlpress.com/robots.txt	301	cloudflare
+2026-09-26T15:01:48Z	robots.txt	https://eartharxiv.org/robots.txt	200	Apache/2.4.68 (Amazon Linux) OpenSSL/3.5.8 mod_wsgi/5.0.2 Python/3.11
+2026-09-26T15:01:51Z	robots.txt	https://repo.scoap3.org/robots.txt	404	
+2026-09-26T15:01:54Z	robots.txt	https://www.cambridge.org/robots.txt	403	cloudflare challenge
+2026-09-26T15:01:58Z	robots.txt	https://academic.oup.com/robots.txt	200	cloudflare
+2026-09-26T15:02:02Z	robots.txt	https://onlinelibrary.wiley.com/robots.txt	200	cloudflare
+2026-09-26T15:02:05Z	robots.txt	https://pubs.geoscienceworld.org/robots.txt	200	cloudflare
+2026-09-26T15:13:58Z	robots.txt	https://chinaxiv.org/robots.txt	403	nginx
+2026-09-26T15:14:01Z	robots.txt	https://www.sciengine.com/robots.txt	200	openresty
+2026-09-26T15:14:05Z	robots.txt	https://www.chinesechemsoc.org/robots.txt	200	cloudflare
+2026-09-26T15:14:08Z	robots.txt	https://wulixb.iphy.ac.cn/robots.txt	200	nginx/1.24.0
+2026-09-26T15:14:11Z	robots.txt	https://hal.science/robots.txt	302	nginx
+2026-09-26T15:14:16Z	robots.txt	https://www.centre-mersenne.org/robots.txt	200	Apache
+2026-09-26T15:14:20Z	robots.txt	https://discreteanalysisjournal.com/robots.txt	200	Heroku
+2026-09-26T15:14:24Z	robots.txt	https://epiga.episciences.org/robots.txt	200	Apache
+2026-09-26T15:06:29Z	feed/api probe	http://feeds.aps.org/rss/recent/prl.xml	200	application/xml
+2026-09-26T15:06:33Z	feed/api probe	https://iopscience.iop.org/journal/rss/1367-2630	200	application/xml;charset=UTF-8 | NOTE: host robots '*' = Disallow: / (discovered afterwards; deviation disclosed)
+2026-09-26T15:06:38Z	feed/api probe	https://www.nature.com/nphys.rss	200	application/rss+xml; charset=utf-8
+2026-09-26T15:06:42Z	feed/api probe	https://quantum-journal.org/feed/	200	application/rss+xml; charset=UTF-8
+2026-09-26T15:06:47Z	feed/api probe	https://oai.zbmath.org/v1/?verb=Identify	200	text/xml; charset=utf-8
+2026-09-26T15:06:50Z	feed/api probe	https://api.zbmath.org/v1/document/_search?search_string=py%3A2026&page=0&results_per_page=1	200	application/json
+2026-09-26T15:06:54Z	feed/api probe	https://inspirehep.net/api/literature?sort=mostrecent&size=1&q=t%20higgs&fields=titles,dois,arxiv_eprints,created	200	application/json
+2026-09-26T15:06:57Z	feed/api probe	https://ems.press/journals/jems	200	text/html; charset=utf-8
+2026-09-26T15:07:02Z	feed/api probe	https://msp.org/gt/	200	text/html; charset=UTF-8
+2026-09-26T15:07:05Z	feed/api probe	https://scipost.org/api/	200	text/html; charset=utf-8
+2026-09-26T15:07:09Z	feed/api probe	https://pos.sissa.it/	200	text/html; charset=UTF-8
+2026-09-26T15:07:13Z	feed/api probe	https://www.numdam.org/oai/?verb=Identify	200	text/xml; charset=UTF-8
+2026-09-26T15:07:17Z	feed/api probe	https://eartharxiv.org/api/	200	application/json
+2026-09-26T15:03:19Z	landing	https://pubs.rsc.org/	403	cloudflare cf-mitigated: challenge (stop)
+2026-09-26T15:04:2xZ	oai	https://oaipmh.arxiv.org/oai?verb=ListSets	200	183 setSpec; Google Frontend
+2026-09-26T15:04:3xZ	oai	https://oaipmh.arxiv.org/oai?verb=ListIdentifiers&metadataPrefix=oai_dc&set=math:math:AG&from=2026-09-23&until=2026-09-24	200	181 identifiers; category-level set works
+2026-09-26T15:05:44Z	api	https://chemrxiv.org/engage/chemrxiv/public-api/v1/items?limit=1	403	cloudflare cf-mitigated: challenge (stop)
+2026-09-26T15:1xZ	tdmrep	https://www.tandfonline.com/.well-known/tdmrep.json	403	cloudflare challenge
+2026-09-26T15:1xZ	tdmrep	https://onlinelibrary.wiley.com/.well-known/tdmrep.json	403	cloudflare challenge
+2026-09-26T15:1xZ	tdmrep	https://iopscience.iop.org/.well-known/tdmrep.json	302	Radware bot-manager script (uzdbm)
+2026-09-26T15:1xZ	tdmrep	https://link.springer.com/.well-known/tdmrep.json	200	tdm-reservation: 1
+2026-09-26T15:1xZ	tdmrep	https://dev.springernature.com/tdm/SNTDMPolicy.json	200	ODRL policy: tdm:mine requires obtainConsent
+2026-09-26T15:1xZ	tdmrep	https://www.nature.com/.well-known/tdmrep.json	200	tdm-reservation: 1
+2026-09-26T15:1xZ	landing	https://opticaopen.org/	302	IIS redirect to /Account/Login
+2026-09-26T15:1xZ	robots.txt	https://pubs.ams.org/robots.txt	403	cloudflare challenge
+2026-09-26T15:1xZ	landing	https://www.ams.org/journals/jams/all_issues.html	403	cloudflare challenge
+2026-09-26T15:1xZ	docs	https://pubchem.ncbi.nlm.nih.gov/docs/programmatic-access	200	SPA shell; limits not in HTML
+2026-09-26T15:1xZ	api	https://pubchem.ncbi.nlm.nih.gov/rest/pug/compound/name/aspirin/xrefs/PubMedID/JSON	200	X-Throttling-Control present; NOTE: path under robots '*' Disallow /rest/pug/ (deviation disclosed)
+2026-09-26T15:1xZ	api	https://repo.scoap3.org/api/records/?page_size=1	200	count 87667
+2026-09-26T15:2xZ	api	https://harvest.aps.org/v2/journals/articles?from=2026-09-20&until=2026-09-21&set=openaccess&per_page=2	200	no auth; Link rel=next/last
+2026-09-26T15:2xZ	policy page	https://publishing.aip.org/resources/researchers/open-science/publish-for-free-%20through-our-subscribe-to-opens2o-pilot/	200	S2O page
+2026-09-26T17:29Z	robots.txt	http://feeds.aps.org/robots.txt	404	S3 NoSuchKey
+2026-09-26T17:29Z	robots.txt	https://oaipmh.arxiv.org/robots.txt	404	
+2026-09-26T17:29Z	robots.txt	https://api.zbmath.org/v1/robots.txt	404	
+2026-09-26T17:29Z	robots.txt	https://oai.zbmath.org/robots.txt	404	
+2026-09-26T17:29Z	robots.txt	https://preprints.opticaopen.org/robots.txt	202	empty body (suspected WAF)
+2026-09-26T15:0x-15:4xZ	crossref batch	https://api.crossref.org/journals/{ISSN} (109+26+9+3 calls)	200/429/404/500	public pool; X-Rate-Limit-Limit 5 / 1s observed; 429s retried after 6s spacing
+2026-09-26T15:0x-15:3xZ	openalex batch	https://api.openalex.org/sources/issn:{ISSN} (109 calls)	200	anonymous; x-ratelimit-cost-usd 0 for single-entity
+2026-09-26T15:2x-15:4xZ	crossref prefix	https://api.crossref.org/prefixes/{10.26434|10.20944|10.21203|10.22541|10.31223|10.1364|10.21468|10.1117|10.22323|10.1063|10.1088}/works?... (~20 calls)	200/400	first attempt 400 due to invalid select/sort; fixed
+2026-09-26T15:4xZ	datacite	https://api.datacite.org/dois?query=prefix:10.48550&page[size]=1	200	total 3180774
+2026-09-26T16:5xZ	crossref alias	https://api.crossref.org/journals/{2469-9950,2469-9969,1098-0121,1550-235X}/works?filter=from-pub-date:2024-06-01,until-pub-date:2024-06-30&rows=1	200	new ISSN 410 / old ISSN 0
+2026-09-26T16:5xZ	crossref alias	https://api.crossref.org/journals/{1098-0121,2469-9950}/works?filter=from-pub-date:2010-06-01,until-pub-date:2010-06-30&rows=1	200	old ISSN 531 / new ISSN 0
+2026-09-26T17:0xZ	crossref	https://api.crossref.org/journals/{0217-751X,0219-1997,0026-8976}	200	World Scientific x2, T&F x1
+2026-09-26T17:3xZ	crossref	https://api.crossref.org/journals/{0004-637X,0035-8711}/works?sort=created&order=desc&rows=2	200	ApJ prefix 10.3847; MNRAS work-level e-ISSN 1365-2966

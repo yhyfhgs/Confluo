@@ -1,0 +1,326 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1320 944" width="1320" height="944" role="img" aria-labelledby="t d">
+  <title id="t">v2 来源模型：Source · SourceChannel · Venue · Connector · Policy Engine</title>
+  <desc id="d">Venue 独立于 Source；每个 Source 声明 metadata、latest、fulltext 三条 SourceChannel；策略引擎按通道与操作取各上限的最小值，得到 AccessMode；连接器只声明请求，由出站网关 Egress Gateway 执行；执行位置分为平台侧流水线、用户侧与仅外链或拒绝。</desc>
+  <defs>
+    <marker id="arr" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M0,0 L10,5 L0,10 z" fill="#374151"/>
+    </marker>
+    <marker id="arrRed" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M0,0 L10,5 L0,10 z" fill="#B91C1C"/>
+    </marker>
+  </defs>
+  <rect x="0" y="0" width="1320" height="944" fill="#FFFFFF"/>
+  <g font-family="-apple-system, 'PingFang SC', 'Hiragino Sans GB', 'Microsoft YaHei', 'Noto Sans CJK SC', 'Source Han Sans SC', sans-serif" fill="#1f2937">
+
+    <!-- 标题 -->
+    <text x="650" y="36" font-size="20" font-weight="700" text-anchor="middle" fill="#111827">v2 来源模型：Source · SourceChannel · Venue · Connector · Policy Engine</text>
+    <text x="650" y="60" font-size="12" text-anchor="middle" fill="#4B5563">Venue 独立于 Source；每个 Source 有三条 SourceChannel；策略引擎逐通道、逐操作取最严上限得到 AccessMode；连接器只声明请求，HTTP 一律经出站网关</text>
+
+    <!-- ============ 行 A：Venue ============ -->
+    <rect x="20" y="80" width="310" height="330" rx="10" fill="#EEF4FF" stroke="#3B6FD8" stroke-width="1.5"/>
+    <text x="36" y="104" font-size="14" font-weight="700" fill="#1E3A8A">Venue（期刊 / 会议 / WP 系列）</text>
+    <text x="36" y="122" font-size="11" fill="#4B5563">独立于 Source；curated · auto · user_proposed</text>
+
+    <rect x="36" y="134" width="278" height="74" rx="6" fill="#FFFFFF" stroke="#9DB6EA"/>
+    <text x="46" y="152" font-size="12" font-weight="700" fill="#1E3A8A">VenueKey（多键归一）</text>
+    <text x="46" y="169" font-size="10.5" fill="#1f2937">ISSN 集合（带 type、since）· ISSN-L</text>
+    <text x="46" y="184" font-size="10.5" fill="#1f2937">OpenAlex source · DBLP key · OpenReview 前缀</text>
+    <text x="46" y="199" font-size="10.5" fill="#1f2937">Crossref member / owner prefix 史 · container-title</text>
+
+    <rect x="36" y="216" width="278" height="52" rx="6" fill="#FFFFFF" stroke="#9DB6EA"/>
+    <text x="46" y="234" font-size="12" font-weight="700" fill="#1E3A8A">VenueEdge（演化边）</text>
+    <text x="46" y="254" font-size="10.5" fill="#1f2937">renamed_to · journalized_as · co_hosted_on</text>
+
+    <rect x="36" y="278" width="86" height="60" rx="6" fill="#FFFFFF" stroke="#9DB6EA"/>
+    <text x="79" y="296" font-size="10.5" font-weight="700" text-anchor="middle" fill="#1E3A8A">VenueEdition</text>
+    <text x="79" y="313" font-size="10" text-anchor="middle" fill="#1f2937">届 × track</text>
+    <text x="79" y="328" font-size="10" text-anchor="middle" fill="#1f2937">卷 = 会议</text>
+
+    <rect x="132" y="278" width="86" height="60" rx="6" fill="#FFFFFF" stroke="#9DB6EA"/>
+    <text x="175" y="296" font-size="10.5" font-weight="700" text-anchor="middle" fill="#1E3A8A">HostingPeriod</text>
+    <text x="175" y="313" font-size="10" text-anchor="middle" fill="#1f2937">托管平台</text>
+    <text x="175" y="328" font-size="10" text-anchor="middle" fill="#1f2937">随时间变化</text>
+
+    <rect x="228" y="278" width="86" height="60" rx="6" fill="#FFFFFF" stroke="#9DB6EA"/>
+    <text x="271" y="296" font-size="10.5" font-weight="700" text-anchor="middle" fill="#1E3A8A">wp_series</text>
+    <text x="271" y="313" font-size="10" text-anchor="middle" fill="#1f2937">MeetingEvent</text>
+    <text x="271" y="328" font-size="10" text-anchor="middle" fill="#1f2937">presented_at</text>
+
+    <text x="36" y="360" font-size="10.5" fill="#1f2937">学科差异（SI-20）：理科 proceedings_series；</text>
+    <text x="36" y="376" font-size="10.5" fill="#1f2937">CS conference + 届；经管 wp_series + meeting</text>
+    <text x="36" y="396" font-size="10.5" fill="#4B5563">venue 解析：member · container-title · prefix 三方校验</text>
+
+    <!-- ============ 行 A：Source ============ -->
+    <rect x="380" y="80" width="520" height="330" rx="10" fill="#FFF7E6" stroke="#D08A1E" stroke-width="1.5"/>
+    <text x="396" y="104" font-size="14" font-weight="700" fill="#7C4A03">Source（SourceSpec v2 · registry/sources/&lt;id&gt;.yaml）</text>
+    <text x="396" y="122" font-size="11" fill="#1f2937">L1：publisher · preprint · journal_platform · conference_platform</text>
+    <text x="396" y="137" font-size="11" fill="#1f2937">L2：repository · aggregator（带 roles）· hosts[]（每个主机都有 robots 结论）</text>
+    <text x="396" y="152" font-size="11" fill="#1f2937">owner_org · hosting · commercial_gate · attribution · review（证据 ≤90 天）</text>
+
+    <!-- SourceChannel: metadata -->
+    <rect x="396" y="164" width="156" height="234" rx="6" fill="#FFFFFF" stroke="#E0B064"/>
+    <text x="404" y="182" font-size="12" font-weight="700" fill="#7C4A03">metadata</text>
+    <text x="404" y="197" font-size="10" fill="#6B7280">SourceChannel · 元数据</text>
+    <line x1="404" y1="204" x2="544" y2="204" stroke="#F0D9A8"/>
+    <text x="404" y="219" font-size="10" fill="#1f2937">method: crossref_delegated</text>
+    <text x="404" y="232" font-size="10" fill="#1f2937">endpoints → SCD（§4）</text>
+    <text x="404" y="245" font-size="10" fill="#1f2937">auth.kind: contact_email</text>
+    <text x="404" y="258" font-size="10" fill="#1f2937">exec_side: platform</text>
+    <text x="404" y="271" font-size="10" fill="#1f2937">rate：书面上限 + AIMD</text>
+    <text x="404" y="284" font-size="10" fill="#1f2937">robots[]：逐主机、逐路径</text>
+    <text x="404" y="297" font-size="10" fill="#1f2937">tos_automation</text>
+    <text x="404" y="310" font-size="10" fill="#1f2937">tdmrep · content_signal</text>
+    <text x="404" y="323" font-size="10" fill="#1f2937">ai_bot_sensitivity</text>
+    <text x="404" y="336" font-size="10" fill="#1f2937">license_policy</text>
+    <text x="404" y="349" font-size="10" fill="#1f2937">display_scope_default</text>
+    <text x="404" y="362" font-size="10" fill="#1f2937">fallbacks（P0 必填）</text>
+    <text x="404" y="375" font-size="10" fill="#1f2937">evidence{url, verified_at}</text>
+    <text x="404" y="388" font-size="10" fill="#1f2937">state（探针可改写）</text>
+
+    <!-- SourceChannel: latest -->
+    <rect x="562" y="164" width="156" height="234" rx="6" fill="#FFFFFF" stroke="#E0B064"/>
+    <text x="570" y="182" font-size="12" font-weight="700" fill="#7C4A03">latest</text>
+    <text x="570" y="197" font-size="10" fill="#6B7280">SourceChannel · 最新论文</text>
+    <line x1="570" y1="204" x2="710" y2="204" stroke="#F0D9A8"/>
+    <text x="570" y="219" font-size="10" fill="#1f2937">method: xref / oai / feed</text>
+    <text x="570" y="232" font-size="10" fill="#1f2937">incremental.cursor_kind</text>
+    <text x="570" y="245" font-size="10" fill="#1f2937">incremental.overlap</text>
+    <text x="570" y="258" font-size="10" fill="#1f2937">schedule_class · calendar</text>
+    <text x="570" y="271" font-size="10" fill="#1f2937">Crossref：created + 重叠</text>
+    <text x="570" y="284" font-size="10" fill="#1f2937">from-index-date 周补漏</text>
+    <text x="570" y="297" font-size="10" fill="#1f2937">arXiv：OAI 类目级 set</text>
+    <text x="570" y="310" font-size="10" fill="#1f2937">EPMC：FIRST_IDATE</text>
+    <text x="570" y="323" font-size="10" fill="#1f2937">robots · tos · tdmrep</text>
+    <text x="570" y="336" font-size="10" fill="#1f2937">exec_side: platform</text>
+    <text x="570" y="349" font-size="10" fill="#1f2937">fallbacks（P0 必填）</text>
+    <text x="570" y="362" font-size="10" fill="#1f2937">evidence{url, verified_at}</text>
+    <text x="570" y="375" font-size="10" fill="#1f2937">state（探针可改写）</text>
+
+    <!-- SourceChannel: fulltext -->
+    <rect x="728" y="164" width="156" height="234" rx="6" fill="#FFFFFF" stroke="#E0B064"/>
+    <text x="736" y="182" font-size="12" font-weight="700" fill="#7C4A03">fulltext</text>
+    <text x="736" y="197" font-size="10" fill="#6B7280">SourceChannel · 全文</text>
+    <line x1="736" y1="204" x2="876" y2="204" stroke="#F0D9A8"/>
+    <text x="736" y="219" font-size="9.5" fill="#1f2937">method: site_pages / tdm_api /</text>
+    <text x="748" y="232" font-size="10" fill="#1f2937">user_session / link_out</text>
+    <text x="736" y="245" font-size="10" fill="#1f2937">exec_side: user | platform</text>
+    <text x="736" y="258" font-size="10" fill="#1f2937">auth: user_key / session</text>
+    <text x="736" y="271" font-size="10" fill="#1f2937">license_policy（逐篇许可）</text>
+    <text x="736" y="284" font-size="10" fill="#1f2937">tdmrep · AI-UA 敏感度</text>
+    <text x="736" y="297" font-size="10" fill="#1f2937">display_scope_default</text>
+    <text x="748" y="310" font-size="10" fill="#1f2937">per_user_only（用户侧）</text>
+    <text x="748" y="323" font-size="10" fill="#1f2937">public_shared（白名单 OA）</text>
+    <text x="736" y="336" font-size="10" fill="#1f2937">FulltextRecipe（§12.4）</text>
+    <text x="736" y="349" font-size="10" fill="#1f2937">robots · AI-UA（含用户侧）</text>
+    <text x="736" y="362" font-size="10" fill="#1f2937">fallbacks · state</text>
+    <text x="736" y="375" font-size="10" fill="#1f2937">evidence{url, verified_at}</text>
+
+    <!-- ============ 行 A：Policy Engine ============ -->
+    <rect x="950" y="80" width="330" height="330" rx="10" fill="#FDECEC" stroke="#C0392B" stroke-width="1.5"/>
+    <text x="966" y="104" font-size="14" font-weight="700" fill="#7F1D1D">Policy Engine（策略引擎）</text>
+    <text x="966" y="121" font-size="11" fill="#4B5563">逐通道 × 逐操作裁决；取全部上限的最小值</text>
+
+    <rect x="966" y="132" width="298" height="104" rx="6" fill="#FFFFFF" stroke="#E8A1A1"/>
+    <text x="976" y="150" font-size="12" font-weight="700" fill="#7F1D1D">五类信号</text>
+    <text x="976" y="167" font-size="10.5" fill="#1f2937">S1 文档化 API（invites … withdrawn）</text>
+    <text x="976" y="182" font-size="10.5" fill="#1f2937">S2 bulk 通道（open / restricted / license）</text>
+    <text x="976" y="197" font-size="10.5" fill="#1f2937">S3 robots（逐主机、逐路径，RFC 9309）</text>
+    <text x="976" y="212" font-size="10.5" fill="#1f2937">S4 ToS 自动化条款（tos_automation）</text>
+    <text x="976" y="227" font-size="10.5" fill="#1f2937">S5 TDMRep · Content-Signal · AI-UA</text>
+
+    <rect x="966" y="244" width="298" height="74" rx="6" fill="#FFFFFF" stroke="#E8A1A1"/>
+    <text x="976" y="262" font-size="12" font-weight="700" fill="#7F1D1D">结构性上限</text>
+    <text x="976" y="279" font-size="10.5" fill="#1f2937">exec_side · 商用门控 · 许可门控</text>
+    <text x="976" y="294" font-size="10.5" fill="#1f2937">证据 ≤90 天 · 漂移告警 · 挑战冷却 24 h</text>
+    <text x="976" y="309" font-size="10.5" fill="#1f2937">红线：deny，不可覆盖（HC-26）</text>
+
+    <rect x="966" y="326" width="298" height="74" rx="6" fill="#FFFFFF" stroke="#C0392B" stroke-width="1.5"/>
+    <text x="976" y="344" font-size="12" font-weight="700" fill="#7F1D1D">AccessMode = min(上限)</text>
+    <text x="976" y="361" font-size="10.5" fill="#1f2937">deny &lt; link_only &lt; user_side</text>
+    <text x="976" y="376" font-size="10.5" fill="#1f2937">&lt; on_demand &lt; background</text>
+    <text x="976" y="392" font-size="10.5" fill="#1f2937">needs_confirmation → Override（仅 S1–S3，≤12 月）</text>
+
+    <!-- 行 A 之间的箭头 -->
+    <text x="355" y="186" font-size="10.5" text-anchor="middle" fill="#374151">托管</text>
+    <text x="355" y="200" font-size="10.5" text-anchor="middle" fill="#374151">随时间</text>
+    <line x1="333" y1="210" x2="377" y2="210" stroke="#374151" stroke-width="1.4" marker-start="url(#arr)" marker-end="url(#arr)"/>
+
+    <text x="925" y="186" font-size="10.5" text-anchor="middle" fill="#374151">合规字段</text>
+    <text x="925" y="200" font-size="10.5" text-anchor="middle" fill="#374151">+ 证据</text>
+    <line x1="902" y1="210" x2="947" y2="210" stroke="#374151" stroke-width="1.4" marker-end="url(#arr)"/>
+
+    <!-- ============ 行 A2：registry / SCD / DriftProbe ============ -->
+    <rect x="20" y="430" width="310" height="76" rx="8" fill="#F5F5F5" stroke="#6B7280"/>
+    <text x="32" y="450" font-size="12" font-weight="700" fill="#374151">registry/（单一事实来源）</text>
+    <text x="32" y="467" font-size="10.5" fill="#1f2937">sources/ · venues/&lt;discipline&gt;/ · instances/&lt;family&gt;/</text>
+    <text x="32" y="482" font-size="10.5" fill="#1f2937">evidence/ · schema/ → lint（13 条）→ 生成名录</text>
+    <text x="32" y="497" font-size="10.5" fill="#1f2937">v1 的 62 个 VenueSpec 经转换器迁入</text>
+
+    <rect x="380" y="430" width="520" height="76" rx="8" fill="#F3EEFF" stroke="#7C5CC4"/>
+    <text x="392" y="450" font-size="12" font-weight="700" fill="#4C1D95">SCD（Source Capability Descriptor，每端点一份）</text>
+    <text x="392" y="467" font-size="10.5" fill="#1f2937">可下推谓词：native / native_approx / emulated / none · 排序键 · 增量游标 · 分页上限</text>
+    <text x="392" y="482" font-size="10.5" fill="#1f2937">成本：Crossref 请求类分池（single / list）· OpenAlex 美元单价 · 礼貌参数</text>
+    <text x="392" y="497" font-size="10.5" fill="#1f2937">静态部分由 SourceSpec 与 connector.describe() 生成；是 04 路由器的唯一输入</text>
+
+    <rect x="950" y="430" width="330" height="76" rx="8" fill="#FFFFFF" stroke="#C0392B" stroke-dasharray="6 4"/>
+    <text x="962" y="450" font-size="12" font-weight="700" fill="#7F1D1D">DriftProbe（漂移探针，SI-12）</text>
+    <text x="962" y="467" font-size="10.5" fill="#1f2937">robots_hash · tos_hash（无覆盖时宽限 7 天）· tdm_signals</text>
+    <text x="962" y="482" font-size="10.5" fill="#1f2937">challenge_rate · quota_headers · ownership</text>
+    <text x="962" y="497" font-size="10.5" fill="#1f2937">empty_or_drop · deprecation · anon_access → 只降不升</text>
+
+    <!-- 行 A2 的箭头 -->
+    <line x1="175" y1="429" x2="175" y2="413" stroke="#374151" stroke-width="1.4" marker-end="url(#arr)"/>
+    <text x="183" y="424" font-size="10" fill="#374151">venues/</text>
+    <line x1="318" y1="429" x2="392" y2="413" stroke="#374151" stroke-width="1.4" marker-end="url(#arr)"/>
+    <text x="336" y="405" font-size="10" fill="#374151">sources/</text>
+
+    <line x1="640" y1="411" x2="640" y2="427" stroke="#374151" stroke-width="1.4" marker-end="url(#arr)"/>
+    <text x="648" y="423" font-size="10" fill="#374151">endpoints → SCD</text>
+
+    <line x1="1115" y1="429" x2="1115" y2="413" stroke="#B91C1C" stroke-width="1.4" stroke-dasharray="4 3" marker-end="url(#arrRed)"/>
+    <text x="1123" y="424" font-size="10" fill="#B91C1C">漂移 → 降级</text>
+
+    <line x1="640" y1="507" x2="640" y2="527" stroke="#374151" stroke-width="1.4" marker-end="url(#arr)"/>
+    <text x="648" y="522" font-size="10" fill="#374151">describe() · serves</text>
+
+    <!-- ============ 行 B：ConnectorFamily ============ -->
+    <rect x="20" y="530" width="1260" height="170" rx="10" fill="#EAF7EE" stroke="#2E8B57" stroke-width="1.5"/>
+    <text x="36" y="552" font-size="13" font-weight="700" fill="#14532D">ConnectorFamily（9 族，含 bulk_snapshot）：连接器只声明 RequestSpec、解析响应；执行前经 policy.decide()；HTTP 一律经出站网关 Egress Gateway（02 P13，内部客户端库 PoliteHttp；robots-first · 令牌桶 · 挑战检测 · 审计）</text>
+
+    <!-- 第一排 -->
+    <rect x="36" y="564" width="298" height="60" rx="6" fill="#FFFFFF" stroke="#86C9A0"/>
+    <text x="46" y="583" font-size="12" font-weight="700" fill="#14532D">aggregator_api</text>
+    <rect x="262" y="570" width="64" height="16" rx="8" fill="#DCFCE7"/>
+    <text x="294" y="582" font-size="9.5" text-anchor="middle" fill="#166534">platform</text>
+    <text x="46" y="600" font-size="10" fill="#1f2937">文档化 API 与 bulk：crossref（LOOKUP）· openalex · s2</text>
+    <text x="46" y="615" font-size="10" fill="#1f2937">europe_pmc · pubmed · inspire_hep · zbmath_open …</text>
+
+    <rect x="346" y="564" width="298" height="60" rx="6" fill="#FFFFFF" stroke="#86C9A0"/>
+    <text x="356" y="583" font-size="12" font-weight="700" fill="#14532D">oai_pmh</text>
+    <rect x="572" y="570" width="64" height="16" rx="8" fill="#DCFCE7"/>
+    <text x="604" y="582" font-size="9.5" text-anchor="middle" fill="#166534">platform</text>
+    <text x="356" y="600" font-size="10" fill="#1f2937">arXiv · PMC · Numdam · EconStor · Zenodo · DROPS</text>
+    <text x="356" y="615" font-size="10" fill="#1f2937">OJS / DSpace / EPrints 实例（实例零代码）</text>
+
+    <rect x="656" y="564" width="298" height="60" rx="6" fill="#FFFFFF" stroke="#86C9A0"/>
+    <text x="666" y="583" font-size="12" font-weight="700" fill="#14532D">feed</text>
+    <rect x="882" y="570" width="64" height="16" rx="8" fill="#DCFCE7"/>
+    <text x="914" y="582" font-size="9.5" text-anchor="middle" fill="#166534">platform</text>
+    <text x="666" y="600" font-size="10" fill="#1f2937">RSS / Atom / eTOC / CB-RSS；多数只作 signal</text>
+    <text x="666" y="615" font-size="10" fill="#1f2937">ECB · BIS · JMLR 的 feed 是元数据主通道（按源登记的例外）</text>
+
+    <rect x="966" y="564" width="298" height="60" rx="6" fill="#FFFFFF" stroke="#86C9A0"/>
+    <text x="976" y="583" font-size="12" font-weight="700" fill="#14532D">crossref_delegated</text>
+    <rect x="1192" y="570" width="64" height="16" rx="8" fill="#DCFCE7"/>
+    <text x="1224" y="582" font-size="9.5" text-anchor="middle" fill="#166534">platform</text>
+    <text x="976" y="600" font-size="10" fill="#1f2937">多数期刊零代码：/journals/{issn}/works（single 池）</text>
+    <text x="976" y="615" font-size="10" fill="#1f2937">前缀 · member 流；DataCite 变体（LIPIcs 等）</text>
+
+    <!-- 第二排 -->
+    <rect x="36" y="632" width="298" height="60" rx="6" fill="#FFFFFF" stroke="#86C9A0"/>
+    <text x="46" y="651" font-size="12" font-weight="700" fill="#14532D">platform_family</text>
+    <rect x="226" y="638" width="100" height="16" rx="8" fill="#E0E7FF"/>
+    <text x="276" y="650" font-size="9.5" text-anchor="middle" fill="#3730A3">platform / user</text>
+    <text x="46" y="668" font-size="10" fill="#1f2937">Atypon · Silverchair · HighWire（托管族：用户侧配方）</text>
+    <text x="46" y="683" font-size="10" fill="#1f2937">OJS · DSpace · EPrints · InvenioRDM（仓储族：后台 OAI）</text>
+
+    <rect x="346" y="632" width="298" height="60" rx="6" fill="#FFFFFF" stroke="#86C9A0"/>
+    <text x="356" y="651" font-size="12" font-weight="700" fill="#14532D">official_tdm_api</text>
+    <rect x="572" y="638" width="64" height="16" rx="8" fill="#DBEAFE"/>
+    <text x="604" y="650" font-size="9.5" text-anchor="middle" fill="#1E40AF">user</text>
+    <text x="356" y="668" font-size="10" fill="#1f2937">用户本人 key：Elsevier · Wiley · Springer Nature</text>
+    <text x="356" y="683" font-size="10" fill="#1f2937">APS Harvest 全量（用户授权）；只产出配方</text>
+
+    <rect x="656" y="632" width="298" height="60" rx="6" fill="#FFFFFF" stroke="#86C9A0"/>
+    <text x="666" y="651" font-size="12" font-weight="700" fill="#14532D">site_special</text>
+    <rect x="882" y="638" width="64" height="16" rx="8" fill="#DCFCE7"/>
+    <text x="914" y="650" font-size="9.5" text-anchor="middle" fill="#166534">platform</text>
+    <text x="666" y="668" font-size="10" fill="#1f2937">官方 API 或结构化页：OpenReview · PMLR · CVF</text>
+    <text x="666" y="683" font-size="10" fill="#1f2937">ACL Anthology · JMLR · DROPS dblp · World Bank …</text>
+
+    <rect x="966" y="632" width="298" height="60" rx="6" fill="#FFFFFF" stroke="#86C9A0"/>
+    <text x="976" y="651" font-size="12" font-weight="700" fill="#14532D">v1_bridge</text>
+    <rect x="1156" y="638" width="100" height="16" rx="8" fill="#E0E7FF"/>
+    <text x="1206" y="650" font-size="9.5" text-anchor="middle" fill="#3730A3">platform / pc_agent</text>
+    <text x="976" y="668" font-size="10" fill="#1f2937">包装 v1 的 20 个 adapter；去向：bridge · bridge_patch</text>
+    <text x="976" y="683" font-size="10" fill="#1f2937">port · user_side_only · retire_online（§14.1）</text>
+
+    <!-- 策略裁决（虚线，沿右侧边距） -->
+    <polyline points="1265,363 1298,363 1298,712 1175,712 1175,721" fill="none" stroke="#B91C1C" stroke-width="1.4" stroke-dasharray="5 4" marker-end="url(#arrRed)"/>
+    <line x1="1298" y1="610" x2="1283" y2="610" stroke="#B91C1C" stroke-width="1.4" stroke-dasharray="3 2" marker-end="url(#arrRed)"/>
+    <text x="1303" y="470" font-size="10" fill="#B91C1C" transform="rotate(90 1303 470)">AccessMode 裁决</text>
+
+    <!-- 连接器 → 执行位置 -->
+    <line x1="330" y1="701" x2="330" y2="721" stroke="#2E8B57" stroke-width="1.6" marker-end="url(#arr)"/>
+    <text x="338" y="716" font-size="10" fill="#14532D">平台执行：background / on_demand</text>
+    <line x1="855" y1="701" x2="855" y2="721" stroke="#2563EB" stroke-width="1.6" marker-end="url(#arr)"/>
+    <text x="863" y="716" font-size="10" fill="#1E40AF">user_side：配方随取回意图下发</text>
+    <text x="1100" y="719" font-size="10" fill="#B91C1C">仅外链 / 拒绝</text>
+
+    <!-- ============ 行 C：执行位置 ============ -->
+    <rect x="20" y="724" width="620" height="176" rx="10" fill="#F4FBF6" stroke="#2E8B57" stroke-width="1.5"/>
+    <text x="36" y="746" font-size="13" font-weight="700" fill="#14532D">平台侧：语料流水线（每段幂等，段间只经持久化实体通信）</text>
+
+    <rect x="36" y="758" width="88" height="52" rx="6" fill="#FFFFFF" stroke="#86C9A0"/>
+    <text x="80" y="779" font-size="11.5" font-weight="700" text-anchor="middle" fill="#14532D">harvest</text>
+    <text x="80" y="797" font-size="9.5" text-anchor="middle" fill="#1f2937">源记录 + 游标</text>
+    <rect x="136" y="758" width="88" height="52" rx="6" fill="#FFFFFF" stroke="#86C9A0"/>
+    <text x="180" y="779" font-size="11.5" font-weight="700" text-anchor="middle" fill="#14532D">normalize</text>
+    <text x="180" y="797" font-size="9.5" text-anchor="middle" fill="#1f2937">NormRecord</text>
+    <rect x="236" y="758" width="88" height="52" rx="6" fill="#FFFFFF" stroke="#86C9A0"/>
+    <text x="280" y="779" font-size="11.5" font-weight="700" text-anchor="middle" fill="#14532D">identify</text>
+    <text x="280" y="797" font-size="9.5" text-anchor="middle" fill="#1f2937">Work / Version</text>
+    <rect x="336" y="758" width="88" height="52" rx="6" fill="#FFFFFF" stroke="#86C9A0"/>
+    <text x="380" y="779" font-size="11.5" font-weight="700" text-anchor="middle" fill="#14532D">enrich</text>
+    <text x="380" y="797" font-size="9.5" text-anchor="middle" fill="#1f2937">摘要 · 主题 · 嵌入</text>
+    <rect x="436" y="758" width="88" height="52" rx="6" fill="#FFFFFF" stroke="#86C9A0"/>
+    <text x="480" y="779" font-size="11.5" font-weight="700" text-anchor="middle" fill="#14532D">index</text>
+    <text x="480" y="797" font-size="9.5" text-anchor="middle" fill="#1f2937">BM25 · 向量 · 图</text>
+    <rect x="536" y="758" width="88" height="52" rx="6" fill="#FFFFFF" stroke="#86C9A0"/>
+    <text x="580" y="779" font-size="11.5" font-weight="700" text-anchor="middle" fill="#14532D">percolate</text>
+    <text x="580" y="797" font-size="9.5" text-anchor="middle" fill="#1f2937">→ FeedInbox</text>
+    <line x1="124" y1="784" x2="134" y2="784" stroke="#374151" stroke-width="1.2" marker-end="url(#arr)"/>
+    <line x1="224" y1="784" x2="234" y2="784" stroke="#374151" stroke-width="1.2" marker-end="url(#arr)"/>
+    <line x1="324" y1="784" x2="334" y2="784" stroke="#374151" stroke-width="1.2" marker-end="url(#arr)"/>
+    <line x1="424" y1="784" x2="434" y2="784" stroke="#374151" stroke-width="1.2" marker-end="url(#arr)"/>
+    <line x1="524" y1="784" x2="534" y2="784" stroke="#374151" stroke-width="1.2" marker-end="url(#arr)"/>
+
+    <text x="36" y="832" font-size="10.5" fill="#1f2937">background：后台只把许可白名单内的 OA 全文取入共享层（HC-05）；订阅全文不在后台取</text>
+    <text x="36" y="849" font-size="10.5" fill="#1f2937">on_demand：04 的联邦 LOOKUP / SEARCH 结果以 provenance=federated 入库</text>
+    <text x="36" y="866" font-size="10.5" fill="#1f2937">本地底座：OpenAlex 季度快照 · Crossref 年度文件 · DROPS dblp（按兴趣并集导入子集）</text>
+    <text x="36" y="883" font-size="10.5" fill="#4B5563">PubMed baseline 待 robots ADR 取得书面确认（§19 第 1 条）</text>
+
+    <rect x="660" y="724" width="390" height="176" rx="10" fill="#EEF8FF" stroke="#2563EB" stroke-width="1.5"/>
+    <text x="676" y="746" font-size="13" font-weight="700" fill="#1E3A8A">用户侧（user_side）：单篇、显式触发</text>
+    <text x="676" y="768" font-size="10.5" fill="#1f2937">RetrievalIntent（08）+ FulltextRecipe（本文 §12.4）</text>
+    <text x="676" y="786" font-size="10.5" fill="#1f2937">Companion Extension（U2）· pc-agent（U3）</text>
+    <text x="676" y="804" font-size="10.5" fill="#1f2937">oa_link &gt; tdm_api &gt; user_fetch（R16、R11）&gt; open_in_tab</text>
+    <text x="676" y="822" font-size="10.5" fill="#1f2937">用户本人会话、key 与出口；每域 ≥6 s；日上限 200</text>
+    <text x="676" y="840" font-size="10.5" fill="#1f2937">挑战即停、冷却 24 h；自动请求也守 robots（HC-29）</text>
+    <text x="676" y="858" font-size="10.5" fill="#1f2937">产物 per_user_only：私有存储，可选 E2E 上传</text>
+    <text x="676" y="876" font-size="10.5" fill="#1f2937">平台只收不含内容的回执（HC-02、HC-04）</text>
+
+    <rect x="1070" y="724" width="210" height="176" rx="10" fill="#F9FAFB" stroke="#6B7280" stroke-width="1.5"/>
+    <text x="1086" y="746" font-size="13" font-weight="700" fill="#374151">link_only / deny</text>
+    <text x="1086" y="768" font-size="10.5" fill="#1f2937">link_only：只给外链</text>
+    <text x="1086" y="784" font-size="10.5" fill="#1f2937">（在出版社打开）</text>
+    <text x="1086" y="804" font-size="10.5" fill="#1f2937">例：SSRN（ToS 禁止）、</text>
+    <text x="1086" y="820" font-size="10.5" fill="#1f2937">robots 全禁的全文路径</text>
+    <text x="1086" y="842" font-size="10.5" fill="#1f2937">deny：红线（盗版源、</text>
+    <text x="1086" y="858" font-size="10.5" fill="#1f2937">CAPTCHA 求解、Google</text>
+    <text x="1086" y="874" font-size="10.5" fill="#1f2937">Scholar 自动化）</text>
+
+    <!-- 图例 -->
+    <line x1="24" y1="924" x2="52" y2="924" stroke="#374151" stroke-width="1.4" marker-end="url(#arr)"/>
+    <text x="58" y="928" font-size="10.5" fill="#374151">声明或数据的流向</text>
+    <line x1="176" y1="924" x2="204" y2="924" stroke="#B91C1C" stroke-width="1.4" stroke-dasharray="5 4" marker-end="url(#arrRed)"/>
+    <text x="210" y="928" font-size="10.5" fill="#374151">策略裁决与漂移降级</text>
+    <rect x="340" y="917" width="14" height="12" rx="2" fill="#DCFCE7"/>
+    <text x="360" y="928" font-size="10.5" fill="#374151">平台执行</text>
+    <rect x="424" y="917" width="14" height="12" rx="2" fill="#DBEAFE"/>
+    <text x="444" y="928" font-size="10.5" fill="#374151">用户侧执行</text>
+    <rect x="520" y="917" width="14" height="12" rx="2" fill="#E0E7FF"/>
+    <text x="540" y="928" font-size="10.5" fill="#374151">两侧皆有</text>
+    <text x="1280" y="928" font-size="10.5" text-anchor="end" fill="#6B7280">设计示意，非部署拓扑；详见 docs/plan/v2/03-sources-and-corpus-pipeline.md §2–§6、§10、§12</text>
+  </g>
+</svg>

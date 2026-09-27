@@ -1,0 +1,308 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" width="1500" height="1030" viewBox="0 0 1500 1030" font-family="-apple-system, BlinkMacSystemFont, 'PingFang SC', 'Hiragino Sans GB', 'Microsoft YaHei', 'Noto Sans CJK SC', 'Source Han Sans SC', 'Helvetica Neue', Arial, sans-serif">
+  <!-- Paper Crawler v2 · 主数据流与合规边界 · 对应 docs/plan/v2/02-architecture.md §2.7 · 2026-09-27 · 设计草案 -->
+  <defs>
+    <marker id="d-gray" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0 L10 5 L0 10 z" fill="#546e7a"/></marker>
+    <marker id="d-grn" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0 L10 5 L0 10 z" fill="#43a047"/></marker>
+    <marker id="d-red" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0 L10 5 L0 10 z" fill="#d32f2f"/></marker>
+    <marker id="d-amb" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0 L10 5 L0 10 z" fill="#f9a825"/></marker>
+    <marker id="d-brn" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0 L10 5 L0 10 z" fill="#8d6e63"/></marker>
+  </defs>
+
+  <rect x="0" y="0" width="1500" height="1030" fill="#ffffff"/>
+  <text x="24" y="38" font-size="22" font-weight="bold" fill="#1f2d3d">Paper Crawler v2 · 主数据流与合规边界</text>
+  <text x="24" y="60" font-size="12" fill="#607d8b">收割 → 入库 → 增益/索引 → percolate → feed → 事件 → 学习 · 对应 docs/plan/v2/02-architecture.md §2.3–§2.7 · 设计草案 2026-09-27</text>
+
+  <!-- ===================== 带 1：共享域 ===================== -->
+  <rect x="20" y="76" width="1460" height="262" rx="10" fill="#eef5ff" stroke="#90b4e8"/>
+  <text x="34" y="98" font-size="13" font-weight="bold" fill="#1a4f9c">共享域 · corpus（公开元数据 · 可再分发内容及其派生物；平台侧执行）</text>
+
+  <g text-anchor="middle">
+    <!-- ① 上游来源 -->
+    <rect x="40" y="120" width="160" height="120" rx="6" fill="#eceff1" stroke="#90a4ae"/>
+    <text x="120" y="142" font-size="12" font-weight="bold" fill="#263238">① 上游来源</text>
+    <text x="120" y="162" font-size="10.5" fill="#455a64">L1 出版商 · 预印本</text>
+    <text x="120" y="180" font-size="10.5" fill="#455a64">期刊 · 会议平台</text>
+    <text x="120" y="198" font-size="10.5" fill="#455a64">L2 仓储 · 聚合器</text>
+    <text x="120" y="216" font-size="10.5" fill="#455a64">Bulk 快照（季度/月度）</text>
+
+    <!-- ② Egress -->
+    <rect x="220" y="120" width="160" height="120" rx="6" fill="#fff3e0" stroke="#ef6c00" stroke-width="2"/>
+    <text x="300" y="142" font-size="12" font-weight="bold" fill="#4e342e">② Egress Gateway</text>
+    <text x="300" y="162" font-size="10.5" fill="#455a64">主机白名单 · robots 先行闸</text>
+    <text x="300" y="180" font-size="10.5" fill="#455a64">策略引擎：五通道取最严</text>
+    <text x="300" y="198" font-size="10.5" fill="#455a64">五元组令牌桶 · AIMD</text>
+    <text x="300" y="216" font-size="10.5" fill="#455a64">熔断 · 挑战即停 · FetchLog</text>
+
+    <!-- ③ Harvest -->
+    <rect x="400" y="120" width="160" height="120" rx="6" fill="#ffffff" stroke="#7aa7e6"/>
+    <text x="480" y="142" font-size="12" font-weight="bold" fill="#263238">③ Harvest</text>
+    <text x="480" y="162" font-size="10.5" fill="#455a64">WatchKey（引用计数）</text>
+    <text x="480" y="180" font-size="10.5" fill="#455a64">日历窗 · λ 注水调度</text>
+    <text x="480" y="198" font-size="10.5" fill="#455a64">Connector 平台侧通道</text>
+    <text x="480" y="216" font-size="10.5" fill="#455a64">watermark 推进 / 提交</text>
+
+    <!-- ④ Ingest -->
+    <rect x="580" y="120" width="160" height="120" rx="6" fill="#ffffff" stroke="#7aa7e6"/>
+    <text x="660" y="142" font-size="12" font-weight="bold" fill="#263238">④ Ingest</text>
+    <text x="660" y="162" font-size="10.5" fill="#455a64">normalize（v1 ids.py）</text>
+    <text x="660" y="180" font-size="10.5" fill="#455a64">权利标注 display_scope</text>
+    <text x="660" y="198" font-size="10.5" fill="#455a64">identify：union-find</text>
+    <text x="660" y="216" font-size="10.5" fill="#455a64">cluster_id · 候审对</text>
+
+    <!-- ⑤ corpus -->
+    <rect x="760" y="120" width="160" height="120" rx="6" fill="#e3f2fd" stroke="#1e88e5" stroke-width="2"/>
+    <text x="840" y="142" font-size="12" font-weight="bold" fill="#0d47a1">⑤ corpus</text>
+    <text x="840" y="162" font-size="10.5" fill="#37474f">三层身份 · cluster_id</text>
+    <text x="840" y="180" font-size="10.5" fill="#37474f">摘要（abstract_rights）</text>
+    <text x="840" y="198" font-size="10.5" fill="#37474f">共享 card_field</text>
+    <text x="840" y="216" font-size="10.5" fill="#37474f">向量 · 引文 · TSRG</text>
+
+    <!-- ⑥ Enrich -->
+    <rect x="940" y="120" width="160" height="120" rx="6" fill="#ffffff" stroke="#7aa7e6"/>
+    <text x="1020" y="142" font-size="12" font-weight="bold" fill="#263238">⑥ Enrich</text>
+    <text x="1020" y="162" font-size="10.5" fill="#455a64">摘要补齐（按出版方路由）</text>
+    <text x="1020" y="180" font-size="10.5" fill="#455a64">主题 · 嵌入（版本化）</text>
+    <text x="1020" y="198" font-size="10.5" fill="#455a64">可共享 TL;DR（三道闸）</text>
+    <text x="1020" y="216" font-size="10.5" fill="#c62828">LLM 仅可共享输入</text>
+
+    <!-- ⑦ Index -->
+    <rect x="1120" y="120" width="160" height="120" rx="6" fill="#ffffff" stroke="#7aa7e6"/>
+    <text x="1200" y="142" font-size="12" font-weight="bold" fill="#263238">⑦ Index</text>
+    <text x="1200" y="162" font-size="10.5" fill="#455a64">BM25（pg_textsearch）</text>
+    <text x="1200" y="180" font-size="10.5" fill="#455a64">halfvec HNSW</text>
+    <text x="1200" y="198" font-size="10.5" fill="#455a64">图邻接 · 夜间 CSR</text>
+    <text x="1200" y="216" font-size="10.5" fill="#455a64">route_stat（周更）</text>
+
+    <!-- ⑧ Percolate -->
+    <rect x="1300" y="120" width="160" height="120" rx="6" fill="#ffffff" stroke="#7aa7e6"/>
+    <text x="1380" y="142" font-size="12" font-weight="bold" fill="#263238">⑧ Percolate · 反向推送</text>
+    <text x="1380" y="162" font-size="10.5" fill="#455a64">近线：频道 AST 硬命中</text>
+    <text x="1380" y="180" font-size="10.5" fill="#455a64">夜间：兴趣倒排 + 质心点积</text>
+    <text x="1380" y="198" font-size="10.5" fill="#455a64">日预算 · 曝光下限（06）</text>
+    <text x="1380" y="216" font-size="10.5" fill="#455a64">只读 usr 所需列</text>
+  </g>
+
+  <!-- 带 1 横向数据流 -->
+  <g stroke="#546e7a" stroke-width="1.8">
+    <line x1="200" y1="180" x2="218" y2="180" marker-end="url(#d-gray)"/>
+    <line x1="380" y1="180" x2="398" y2="180" marker-end="url(#d-gray)"/>
+    <line x1="560" y1="180" x2="578" y2="180" marker-end="url(#d-gray)"/>
+    <line x1="740" y1="180" x2="758" y2="180" marker-end="url(#d-gray)"/>
+    <line x1="920" y1="180" x2="938" y2="180" marker-end="url(#d-gray)"/>
+    <line x1="1100" y1="180" x2="1118" y2="180" marker-end="url(#d-gray)"/>
+    <line x1="1280" y1="180" x2="1298" y2="180" marker-end="url(#d-gray)"/>
+  </g>
+
+  <!-- 平台出站边界 -->
+  <line x1="210" y1="112" x2="210" y2="248" stroke="#ef6c00" stroke-width="1.6" stroke-dasharray="6,4"/>
+  <text x="214" y="262" font-size="10" fill="#e65100">← 平台出站边界：只有 Egress 可达公网（INV-03）</text>
+
+  <!-- ⑨ 全局聚合信号 -->
+  <g text-anchor="middle">
+    <rect x="460" y="252" width="340" height="64" rx="6" fill="#fffde7" stroke="#f9a825"/>
+    <text x="630" y="272" font-size="11.5" font-weight="bold" fill="#5d4037">⑨ evt.agg_*（去标识 · k 匿名闸）</text>
+    <text x="630" y="290" font-size="10.5" fill="#455a64">同簇热度 · 路由监督 · 全局模型的假名化抽取</text>
+    <text x="630" y="307" font-size="10.5" fill="#455a64">不写 corpus；不含 open_fulltext（INV-06）</text>
+  </g>
+  <path d="M800 284 L1150 284 L1150 402" fill="none" stroke="#f9a825" stroke-width="1.8" marker-end="url(#d-amb)"/>
+
+  <!-- 下行到私有域（绿色实线） -->
+  <line x1="1200" y1="240" x2="1200" y2="402" stroke="#43a047" stroke-width="1.8" marker-end="url(#d-grn)"/>
+  <text x="1206" y="290" font-size="10" fill="#2e7d32">读共享表示</text>
+  <text x="1206" y="305" font-size="10" fill="#2e7d32">（下行）</text>
+  <line x1="1380" y1="240" x2="1380" y2="402" stroke="#43a047" stroke-width="2.2" marker-end="url(#d-grn)"/>
+  <text x="1386" y="290" font-size="10" fill="#2e7d32">只写</text>
+  <text x="1386" y="305" font-size="10" fill="#2e7d32">usr.feed_inbox</text>
+
+  <!-- ===================== 共享/私有边界 ===================== -->
+  <line x1="20" y1="350" x2="1480" y2="350" stroke="#e53935" stroke-width="1.6" stroke-dasharray="8,5"/>
+  <rect x="520" y="341" width="460" height="18" fill="#ffffff"/>
+  <text x="750" y="354" font-size="11" font-weight="bold" fill="#c62828" text-anchor="middle">共享 ⇣ 私有：只允许下行（HC-01 · P-02 派生继承最严 · INV-01）</text>
+
+  <!-- ===================== 带 2：私有域 ===================== -->
+  <rect x="20" y="362" width="1460" height="238" rx="10" fill="#fff5f5" stroke="#e8a0a0"/>
+  <text x="560" y="384" font-size="13" font-weight="bold" fill="#b71c1c">私有域 · usr（全表 RLS）· evt（只追加）</text>
+
+  <g text-anchor="middle">
+    <!-- ⑰ 私有资产 -->
+    <rect x="40" y="404" width="160" height="120" rx="6" fill="#fce4ec" stroke="#d81b60" stroke-dasharray="5,3"/>
+    <text x="120" y="426" font-size="12" font-weight="bold" fill="#880e4f">⑰ 私有资产</text>
+    <text x="120" y="446" font-size="10.5" fill="#37474f">private/{user_id}/</text>
+    <text x="120" y="464" font-size="10.5" fill="#37474f">E2E 密文 · 无明文哈希</text>
+    <text x="120" y="482" font-size="10.5" fill="#37474f">不跨用户去重（HC-02）</text>
+    <text x="120" y="500" font-size="10.5" fill="#37474f">注销即删（HC-20）</text>
+
+    <!-- ⑯ usr 画像与模型 -->
+    <rect x="220" y="404" width="160" height="120" rx="6" fill="#fce4ec" stroke="#d81b60"/>
+    <text x="300" y="426" font-size="12" font-weight="bold" fill="#880e4f">⑯ usr 画像与模型</text>
+    <text x="300" y="446" font-size="10.5" fill="#37474f">兴趣树权重（长/短期）</text>
+    <text x="300" y="464" font-size="10.5" fill="#37474f">用户频道 Query AST</text>
+    <text x="300" y="482" font-size="10.5" fill="#37474f">已见 / 已下发位图</text>
+    <text x="300" y="500" font-size="10.5" fill="#37474f">文献库 · 私有评分</text>
+
+    <!-- ⑮ 学习 -->
+    <rect x="400" y="404" width="160" height="120" rx="6" fill="#ffffff" stroke="#e57373"/>
+    <text x="480" y="426" font-size="12" font-weight="bold" fill="#263238">⑮ 学习与聚合</text>
+    <text x="480" y="446" font-size="10.5" fill="#455a64">rec_update：每用户 LR</text>
+    <text x="480" y="464" font-size="10.5" fill="#455a64">长 / 短期画像（≤2 s 生效）</text>
+    <text x="480" y="482" font-size="10.5" fill="#455a64">k 匿名聚合作业（夜间）</text>
+    <text x="480" y="500" font-size="10.5" fill="#455a64">算法由 06 定义</text>
+
+    <!-- ⑭ evt -->
+    <rect x="580" y="404" width="160" height="120" rx="6" fill="#ede7f6" stroke="#5e35b1"/>
+    <text x="660" y="426" font-size="12" font-weight="bold" fill="#311b92">⑭ evt</text>
+    <text x="660" y="446" font-size="10.5" fill="#37474f">下发记录 · UI 事件</text>
+    <text x="660" y="464" font-size="10.5" fill="#37474f">只追加 · 月分区</text>
+    <text x="660" y="482" font-size="10.5" fill="#37474f">倾向分 · 实验桶</text>
+    <text x="660" y="500" font-size="10.5" fill="#37474f">热存 6 个月 + 冷归档</text>
+
+    <!-- ⑬ 事件接入 -->
+    <rect x="760" y="404" width="160" height="120" rx="6" fill="#ffffff" stroke="#e57373"/>
+    <text x="840" y="426" font-size="12" font-weight="bold" fill="#263238">⑬ 事件接入</text>
+    <text x="840" y="446" font-size="10.5" fill="#455a64">POST /events（批）</text>
+    <text x="840" y="464" font-size="10.5" fill="#455a64">event_id 幂等</text>
+    <text x="840" y="482" font-size="10.5" fill="#455a64">绑定下发记录校验</text>
+    <text x="840" y="500" font-size="10.5" fill="#455a64">强负反馈 → 同步屏蔽</text>
+
+    <!-- ⑫ Feed Assembler -->
+    <rect x="940" y="404" width="160" height="120" rx="6" fill="#ffffff" stroke="#e57373"/>
+    <text x="1020" y="426" font-size="12" font-weight="bold" fill="#263238">⑫ Feed Assembler</text>
+    <text x="1020" y="446" font-size="10.5" fill="#455a64">有限批次 · 按批块下发</text>
+    <text x="1020" y="464" font-size="10.5" fill="#455a64">探索槽 · why-this</text>
+    <text x="1020" y="482" font-size="10.5" fill="#455a64">下发记录 impression_id</text>
+    <text x="1020" y="500" font-size="10.5" fill="#455a64">非个性化模式兜底</text>
+
+    <!-- ⑪ Rec Service -->
+    <rect x="1120" y="404" width="160" height="120" rx="6" fill="#ffffff" stroke="#e57373"/>
+    <text x="1200" y="426" font-size="12" font-weight="bold" fill="#263238">⑪ Rec Service</text>
+    <text x="1200" y="446" font-size="10.5" fill="#455a64">召回 → Hydrate → Filter</text>
+    <text x="1200" y="464" font-size="10.5" fill="#455a64">→ Score（ΣV·P̂）→ Select</text>
+    <text x="1200" y="482" font-size="10.5" fill="#455a64">R0 每用户 LR</text>
+    <text x="1200" y="500" font-size="10.5" fill="#455a64">预计算批块 · 在线管线</text>
+
+    <!-- ⑩ FeedInbox -->
+    <rect x="1300" y="404" width="160" height="120" rx="6" fill="#fce4ec" stroke="#d81b60"/>
+    <text x="1380" y="426" font-size="12" font-weight="bold" fill="#880e4f">⑩ FeedInbox（usr）</text>
+    <text x="1380" y="446" font-size="10.5" fill="#37474f">每用户候选 · 理由码</text>
+    <text x="1380" y="464" font-size="10.5" fill="#37474f">来源归因 · TTL</text>
+    <text x="1380" y="482" font-size="10.5" fill="#37474f">日预算内写入</text>
+    <text x="1380" y="500" font-size="10.5" fill="#37474f">触发 deck.stale</text>
+  </g>
+
+  <!-- 带 2 数据流（右 → 左） -->
+  <g stroke="#546e7a" stroke-width="1.8">
+    <line x1="1300" y1="464" x2="1282" y2="464" marker-end="url(#d-gray)"/>
+    <line x1="1120" y1="464" x2="1102" y2="464" marker-end="url(#d-gray)"/>
+    <line x1="760" y1="464" x2="742" y2="464" marker-end="url(#d-gray)"/>
+    <line x1="580" y1="464" x2="562" y2="464" marker-end="url(#d-gray)"/>
+    <line x1="400" y1="464" x2="382" y2="464" marker-end="url(#d-gray)"/>
+  </g>
+
+  <!-- 闭环：画像/模型 → 召回与打分 -->
+  <path d="M300 524 L300 556 L1200 556 L1200 527" fill="none" stroke="#8d6e63" stroke-width="1.8" marker-end="url(#d-brn)"/>
+  <text x="750" y="574" font-size="10.5" fill="#6d4c41" text-anchor="middle">闭环：画像 / 模型 → 召回与打分（算法见 06）</text>
+
+  <!-- 受闸控的上行聚合（琥珀色） -->
+  <line x1="480" y1="404" x2="480" y2="318" stroke="#f9a825" stroke-width="2" marker-end="url(#d-amb)"/>
+  <text x="474" y="380" font-size="10" fill="#f57f17" text-anchor="end">聚合去标识 · k 匿名闸</text>
+
+  <!-- 禁止：私有内容上行 -->
+  <line x1="120" y1="404" x2="120" y2="300" stroke="#d32f2f" stroke-width="2" marker-end="url(#d-red)"/>
+  <text x="120" y="356" font-size="16" font-weight="bold" fill="#d32f2f" text-anchor="middle">✕</text>
+  <text x="130" y="318" font-size="10" font-weight="bold" fill="#c62828">✕ 私有内容 / 派生不得上行</text>
+
+  <!-- ===================== 平台/用户侧边界 ===================== -->
+  <line x1="20" y1="612" x2="1480" y2="612" stroke="#43a047" stroke-width="1.6" stroke-dasharray="8,5"/>
+  <rect x="1100" y="603" width="370" height="18" fill="#ffffff"/>
+  <text x="1285" y="616" font-size="11" font-weight="bold" fill="#33691e" text-anchor="middle">平台 ⇣ 用户侧：用户会话 · 用户 key · 用户网络出口（P-03）</text>
+
+  <!-- ===================== 带 3：用户侧 ===================== -->
+  <rect x="20" y="624" width="1460" height="252" rx="10" fill="#f1f8e9" stroke="#9ccc65"/>
+  <text x="34" y="646" font-size="13" font-weight="bold" fill="#33691e">用户侧（用户设备）</text>
+
+  <g text-anchor="middle">
+    <!-- ㉑ 出版商 -->
+    <rect x="40" y="690" width="170" height="120" rx="6" fill="#eceff1" stroke="#90a4ae"/>
+    <text x="125" y="712" font-size="11.5" font-weight="bold" fill="#263238">㉑ 出版商全文 / TDM</text>
+    <text x="125" y="732" font-size="10.5" fill="#455a64">fulltext 来源通道</text>
+    <text x="125" y="750" font-size="10.5" fill="#455a64">用户网络出口访问</text>
+    <text x="125" y="768" font-size="10.5" fill="#455a64">EZproxy/SSO 用户完成</text>
+    <text x="125" y="790" font-size="10.5" font-weight="bold" fill="#c62828">平台出口不代取 ✕</text>
+
+    <!-- ⑲ Extension -->
+    <rect x="240" y="658" width="210" height="96" rx="6" fill="#ffffff" stroke="#7cb342"/>
+    <text x="345" y="678" font-size="11.5" font-weight="bold" fill="#263238">⑲ Companion Extension</text>
+    <text x="345" y="696" font-size="10.5" fill="#455a64">验签 RetrievalIntent（≤5 min）</text>
+    <text x="345" y="712" font-size="10.5" fill="#455a64">oa_link &gt; tdm_api &gt; user_fetch</text>
+    <text x="345" y="728" font-size="10.5" fill="#455a64">不满足 R16 → 可见标签页</text>
+    <text x="345" y="744" font-size="10.5" fill="#455a64">端侧限速/日配额 · 遇挑战即停</text>
+
+    <!-- ⑳ pc-agent -->
+    <rect x="240" y="766" width="210" height="96" rx="6" fill="#ffffff" stroke="#7cb342"/>
+    <text x="345" y="788" font-size="11.5" font-weight="bold" fill="#263238">⑳ pc-agent（本机，独立安装）</text>
+    <text x="345" y="808" font-size="10.5" fill="#455a64">用户级 TDM API（本人 key）</text>
+    <text x="345" y="826" font-size="10.5" fill="#455a64">v1 AuthProvider · 凭证库</text>
+    <text x="345" y="844" font-size="10.5" fill="#455a64">T3 本地模型派生</text>
+
+    <!-- ⑱ PWA -->
+    <rect x="880" y="680" width="180" height="120" rx="6" fill="#ffffff" stroke="#7cb342"/>
+    <text x="970" y="702" font-size="12" font-weight="bold" fill="#263238">⑱ PWA</text>
+    <text x="970" y="722" font-size="10.5" fill="#455a64">Deck 分拣 · 手势/按钮/键盘</text>
+    <text x="970" y="740" font-size="10.5" fill="#455a64">IndexedDB 事件队列</text>
+    <text x="970" y="758" font-size="10.5" fill="#455a64">撤销 = 追加撤回事件</text>
+    <text x="970" y="776" font-size="10.5" fill="#455a64">OA 第四态端侧计算</text>
+  </g>
+
+  <!-- 用户侧边界规则 -->
+  <rect x="1090" y="666" width="370" height="196" rx="6" fill="#ffffff" stroke="#9ccc65"/>
+  <text x="1275" y="688" font-size="12" font-weight="bold" fill="#33691e" text-anchor="middle">用户侧边界规则</text>
+  <g font-size="10.5" fill="#37474f">
+    <text x="1106" y="710">• 平台只下发签名 RetrievalIntent 与元数据</text>
+    <text x="1106" y="730">• 只收回执：ok / no_entitlement / challenge / error</text>
+    <text x="1106" y="750">• PDF 默认留在本机；可选 E2E 加密同步 ⑰</text>
+    <text x="1106" y="770">• open_fulltext 只计本人模型与北极星</text>
+    <text x="1106" y="790">• 用户级凭证端侧加密（E2E），平台不可解密</text>
+    <text x="1106" y="810">• personal 仅在本人设备上可执行用户侧通道</text>
+    <text x="1106" y="830">• 未装扩展：平台默认“在出版社打开”</text>
+  </g>
+
+  <!-- 平台 ↔ 用户侧数据流 -->
+  <line x1="1010" y1="524" x2="1010" y2="678" stroke="#546e7a" stroke-width="1.8" marker-end="url(#d-gray)"/>
+  <text x="1016" y="640" font-size="10" fill="#37474f">批次 + impression_id</text>
+  <line x1="900" y1="680" x2="900" y2="526" stroke="#546e7a" stroke-width="1.8" marker-end="url(#d-gray)"/>
+  <text x="894" y="660" font-size="10" fill="#37474f" text-anchor="end">事件批（幂等）</text>
+
+  <!-- 用户侧内部与出版商 -->
+  <line x1="880" y1="706" x2="452" y2="706" stroke="#546e7a" stroke-width="1.8" marker-end="url(#d-gray)"/>
+  <text x="666" y="698" font-size="10" fill="#37474f" text-anchor="middle">RetrievalIntent（用户点击）</text>
+  <line x1="240" y1="706" x2="212" y2="706" stroke="#43a047" stroke-width="1.8" stroke-dasharray="6,4" marker-end="url(#d-grn)"/>
+  <line x1="240" y1="800" x2="212" y2="800" stroke="#43a047" stroke-width="1.8" stroke-dasharray="6,4" marker-end="url(#d-grn)"/>
+
+  <!-- 可选：私有上传 -->
+  <line x1="300" y1="658" x2="152" y2="527" stroke="#43a047" stroke-width="1.6" stroke-dasharray="6,4" marker-end="url(#d-grn)"/>
+  <text x="40" y="596" font-size="10" fill="#2e7d32">E2E 密文同步（可选）</text>
+
+  <!-- ===================== 图例 ===================== -->
+  <rect x="20" y="888" width="1460" height="130" rx="8" fill="#ffffff" stroke="#b0bec5"/>
+  <text x="34" y="910" font-size="12" font-weight="bold" fill="#263238">图例</text>
+  <g font-size="11" fill="#37474f">
+    <line x1="34" y1="928" x2="84" y2="928" stroke="#546e7a" stroke-width="1.8" marker-end="url(#d-gray)"/>
+    <text x="94" y="932">数据流（平台内，或平台与 PWA 之间）</text>
+    <line x1="34" y1="950" x2="84" y2="950" stroke="#43a047" stroke-width="2" marker-end="url(#d-grn)"/>
+    <text x="94" y="954">允许的跨域下行：共享 → 私有，只写 usr</text>
+    <line x1="34" y1="972" x2="84" y2="972" stroke="#43a047" stroke-width="1.8" stroke-dasharray="6,4" marker-end="url(#d-grn)"/>
+    <text x="94" y="976">用户侧执行：用户会话 / key / 网络出口</text>
+    <line x1="34" y1="994" x2="84" y2="994" stroke="#ef6c00" stroke-width="1.6" stroke-dasharray="6,4"/>
+    <text x="94" y="998">平台出站边界：只有 Egress 可达公网</text>
+
+    <line x1="560" y1="928" x2="610" y2="928" stroke="#d32f2f" stroke-width="2" marker-end="url(#d-red)"/>
+    <text x="620" y="932">✕ 禁止：私有内容与派生上行；平台出口代取全文</text>
+    <line x1="560" y1="950" x2="610" y2="950" stroke="#f9a825" stroke-width="2" marker-end="url(#d-amb)"/>
+    <text x="620" y="954">受闸控的聚合：去标识、k 匿名，只写 evt.agg_*、不写 corpus（参数由 06 / 08 定）</text>
+    <line x1="560" y1="972" x2="610" y2="972" stroke="#8d6e63" stroke-width="1.8" marker-end="url(#d-brn)"/>
+    <text x="620" y="976">学习闭环：画像与模型回到召回和打分</text>
+    <text x="560" y="998">编号 ①–㉑ 对应 02 §2.3–§2.7 的组件与时序；算法与参数分属 03 / 04 / 05 / 06 / 08</text>
+    <text x="560" y="1014" font-size="10" fill="#78909c">P-01 先收割后联邦：卡片流只读本地语料；联邦检索见 02 §2.7(d)，本图未画</text>
+  </g>
+</svg>

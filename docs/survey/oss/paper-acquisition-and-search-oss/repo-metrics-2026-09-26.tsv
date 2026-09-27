@@ -1,0 +1,199 @@
+full_name	stars	license_spdx	pushed_at	archived	created_at	description	latest_release_tag	latest_release_date	last_commit_default_branch
+jannisborn/paperscraper	542	MIT	2026-09-23	false	2020-07-01	A bibliometrics tool for publication metadata (pubmed, arxiv, medrxiv, biorxiv, chemrxiv) and citation analyse	v1.0.0	2026-06-16	2026-09-22
+lukasschwab/arxiv.py	1548	MIT	2026-09-01	false	2015-11-25	Python wrapper for the arXiv API	4.0.1	2026-07-31	2026-07-31
+ferru97/PyPaperBot	655	MIT	2024-12-08	false	2020-06-05	PyPaperBot is a Python tool for downloading scientific papers using Google Scholar, Crossref, SciHub, and SciD	v1.4.1	2024-12-08	2024-12-08
+scholarly-python-package/scholarly	1880	Unlicense	2026-03-24	false	2014-12-02	Retrieve author and publication information from Google Scholar in a friendly, Pythonic way without having to 	v1.7.11	2023-01-16	2026-03-24
+danielnsilva/semanticscholar	481	MIT	2026-08-01	false	2019-08-02	Unofficial Python client library for Semantic Scholar APIs.	v0.12.0	2026-03-29	2026-07-03
+J535D165/pyalex	417	MIT	2026-07-06	false	2022-10-25	A Python library for OpenAlex (openalex.org)	v0.21	2026-02-23	2026-02-23
+sckott/habanero	251	MIT	2026-09-25	false	2015-10-05	Python client for Crossref search API	v2.9.2	2026-06-17	2026-09-25
+openreview/openreview-py	268	MIT	2026-09-26	false	2016-08-03	Official Python client library for the OpenReview API	v2.6.3	2026-09-23	2026-09-26
+pybliometrics-dev/pybliometrics	500	NOASSERTION	2026-02-27	false	2016-02-19	Python-based API-Wrapper to access Scopus	-	-	2026-02-27
+karpathy/arxiv-sanity-lite	1696	MIT	2023-06-19	false	2021-11-13	arxiv-sanity lite: tag arxiv papers of interest get recommendations of similar papers in a nice UI using SVMs 	-	-	2022-02-14
+zotero/translators	1704	none	2026-09-02	false	2011-07-03	Zotero Translators	-	-	2026-09-02
+neuml/paperetl	697	Apache-2.0	2025-12-07	false	2020-07-10	📄 ⚙️ ETL processes for medical and scientific papers	v2.5.2	2025-12-07	2025-12-07
+jonatasgrosman/findpapers	405	MIT	2026-08-18	false	2020-08-07	Findpapers: A tool for helping researchers who are looking for related works	v0.6.7	2022-11-09	2026-08-18
+monk1337/resp	491	Apache-2.0	2026-07-07	false	2022-07-15	Fetch Academic Research Papers from different sources	v0.1.2	2025-12-24	2026-07-07
+george-gca/ai_papers_scrapper	53	MIT	2026-09-15	false	2022-10-17	Download papers pdfs and other info from main AI conferences	-	-	2026-03-03
+pranftw/openreview_scraper	69	none	2025-03-03	false	2023-02-09	Scrape papers from OpenReview using OpenReview API	-	-	2025-03-03
+paperswithcode/paperswithcode-client	191	Apache-2.0	2024-05-10	false	2020-07-27	API Client for paperswithcode.com	-	-	2024-05-10
+Mahdisadjadi/arxivscraper	339	MIT	2026-05-06	false	2017-06-07	A python module to scrape arxiv.org for a date range and category	v0.0.6	2026-01-19	2026-02-19
+titipata/pubmed_parser	738	MIT	2025-07-31	false	2015-03-05	:clipboard: A Python Parser for PubMed Open-Access XML Subset and MEDLINE XML Dataset	0.5	2024-08-12	2025-07-31
+mattbierbaum/arxiv-public-datasets	483	MIT	2024-05-20	false	2019-01-29	A set of scripts to grab public datasets from resources related to arXiv	v0.2.0	2019-04-29	2022-07-15
+metapub/metapub	160	Apache-2.0	2026-09-24	false	2019-08-20	Python toolkit for NCBI metadata (via eutils) and pubmed article text mining -- official primary repo.	v0.7.5	2026-09-24	2026-09-24
+fabiobatalha/crossrefapi	349	BSD-2-Clause	2025-07-07	false	2017-05-23	A python library that implements the Crossref API.	1.7.0	2025-07-03	2025-07-07
+ropensci/openalexR	146	NOASSERTION	2026-09-02	false	2022-02-08	Getting bibliographic records from OpenAlex	v3.1.0	2026-07-06	2026-09-02
+NLeSC/litstudy	223	Apache-2.0	2025-05-27	false	2019-09-04	LitStudy: Using the power of Python to automate scientific literature analysis from the comfort of a Jupyter n	v1.0.6	2023-10-05	2025-05-27
+asreview/asreview	1019	Apache-2.0	2026-09-21	false	2019-01-09	Active learning for systematic reviews	v3.0.8	2026-06-18	2026-08-31
+urschrei/pyzotero	1421	NOASSERTION	2026-09-26	false	2011-02-28	Pyzotero: a Python client for the Zotero API	v1.15.2	2026-09-18	2026-09-26
+papis/papis	1781	GPL-3.0	2026-09-19	false	2017-02-21	Powerful and highly extensible command-line based document and bibliography manager.	v0.16.1	2026-09-13	2026-09-19
+unpywall/unpywall	36	MIT	2024-02-19	false	2020-03-08	Interfacing the Unpaywall Database with Python	v0.2	2020-12-16	2024-02-19
+Tishacy/SciDownl	325	MIT	2024-02-11	false	2019-04-11	An unofficial api for downloading papers from SciHub via DOI, PMID, title	-	-	2024-02-11
+ourresearch/oadoi	398	MIT	2026-09-18	false	2016-05-20	The backend code that powers Unpaywall. support@unpaywall.org	-	-	2026-09-18
+allenai/s2-folks	278	NOASSERTION	2025-01-24	true	2023-03-01	Public space for the user community of Semantic Scholar APIs to share scripts, report issues, and make suggest	-	-	2025-01-24
+allenai/S2AND	116	NOASSERTION	2026-09-05	false	2021-03-09	Semantic Scholar's Author Disambiguation Algorithm & Evaluation Suite 	v1.1_no_refs	2021-11-15	2026-07-01
+allenai/s2_fos	34	Apache-2.0	2024-01-02	false	2021-08-06		-	-	2024-01-02
+moj-analytical-services/splink	2434	MIT	2026-09-25	false	2019-11-22	Fast, accurate and scalable probabilistic data linkage with support for multiple SQL backends	v4.0.17	2026-09-03	2026-09-22
+dedupeio/dedupe	4516	MIT	2025-07-29	false	2012-04-20	:id: A python library for accurate and scalable fuzzy matching, record deduplication and entity-resolution.	-	-	2025-07-29
+inukshuk/anystyle	1292	NOASSERTION	2025-05-11	false	2011-08-31	Fast citation reference parsing	-	-	2025-05-11
+CeON/CERMINE	512	AGPL-3.0	2022-06-30	false	2012-10-08	Content ExtRactor and MINEr	cermine-parent-1.13	2017-04-28	2018-02-04
+openreview/openreview-expertise	51	MIT	2026-09-09	false	2018-08-02	Expertise modeling for the OpenReview matching system	v2.3.3	2026-08-31	2026-08-31
+openreview/openreview-matcher	23	none	2026-08-26	false	2017-03-02		v2.0.7	2026-03-04	2026-08-26
+arXiv/arxiv-search	160	NOASSERTION	2026-08-20	false	2017-08-23	arXiv Search UI & APIs	0.5.6	2020-02-24	2026-08-20
+arXiv/arxiv-browse	192	NOASSERTION	2026-09-24	false	2017-08-02	Flask app for article abstract and listing pages	0.3.2.5	2020-07-27	2026-08-24
+allenai/s2search	113	Apache-2.0	2020-10-26	false	2020-05-29	The Semantic Scholar Search Reranker	-	-	2020-10-26
+WDscholia/scholia	257	GPL-3.0	2026-07-12	false	2016-10-09	Wikidata-based scholarly profiles 	v0.3	2021-11-30	2026-05-12
+OpenKnowledgeMaps/Headstart	222	MIT	2026-09-23	false	2014-01-15	A framework for creating web-based knowledge maps	v7	2021-11-25	2026-09-23
+ourresearch/openalex-gui	48	MIT	2026-09-25	false	2021-06-16	Frontend for OpenAlex	-	-	2026-09-24
+ourresearch/openalex-elastic-api	42	MIT	2026-09-25	false	2021-12-08	All the OpenAlex API endpoints that are backed by Elasticsearch	-	-	2026-09-24
+ourresearch/openalex-guts	157	MIT	2026-03-06	false	2021-10-06	The guts for computing data for OpenAlex.  For more, see https://openalex.org/.	-	-	2026-03-06
+Future-Scholars/paperlib	2295	GPL-3.0	2026-04-01	false	2021-01-11	An open-source academic paper management tool.	release-electron-3.1.12	2025-09-28	2025-11-08
+whiskyechobravo/kerko	381	GPL-3.0	2026-06-29	false	2019-07-16	A web application component that provides a faceted search interface for bibliographies managed with Zotero.	-	-	2026-06-29
+vict0rsch/PaperMemory	578	MIT	2026-09-16	false	2019-10-16	Your browser's reference manager: automatic paper detection (Arxiv, OpenReview & more), publication venue matc	1.0.3	2025-11-15	2026-04-20
+binary-husky/gpt_academic	71385	GPL-3.0	2026-01-25	false	2023-03-20	为GPT/GLM等LLM大语言模型提供实用化交互接口，特别优化论文阅读/润色/写作体验，模块化设计，支持自定义快捷按钮&函数插件，支持Python和C++等项目剖析&自译解功能，PDF/LaTex论文翻译&总结功能，支持	version3.91	2024-12-19	2026-01-25
+PDFMathTranslate/PDFMathTranslate	37201	AGPL-3.0	2026-09-26	false	2024-09-06	[EMNLP 2025 Demo] PDF scientific paper translation with preserved formats - 基于 AI 完整保留排版的 PDF 文档全文双语翻译，支持 Goog	v1.9.11	2025-07-11	2026-09-26
+funstory-ai/BabelDOC	9610	AGPL-3.0	2026-08-05	false	2024-11-13	Yet Another Document Translator	v0.6.4	2026-07-16	2026-08-05
+kaixindelele/ChatPaper	19872	NOASSERTION	2026-03-02	false	2023-03-08	Use ChatGPT to summarize the arXiv papers. 全流程加速科研，利用chatgpt进行论文全文总结+专业翻译+润色+审稿+审稿回复	-	-	2025-11-19
+blazickjp/arxiv-mcp-server	3175	Apache-2.0	2026-08-26	false	2024-11-29	A local MCP server for agent literature work. Original-LaTeX section reads, BibTeX from arXiv metadata, and to	v0.7.2	2026-08-24	2026-08-26
+openags/paper-search-mcp	2705	MIT	2026-09-22	false	2025-04-06	MCP, CLI, Skills for searching and downloading academic papers from multiple sources like arXiv, PubMed, bioRx	-	-	2026-09-22
+54yyyu/zotero-mcp	5167	MIT	2026-09-24	false	2025-03-22	Zotero MCP: Connects your Zotero research library with Claude and other AI assistants via the Model Context Pr	v0.13.1	2026-09-24	2026-09-24
+cookjohn/zotero-mcp	1185	MIT	2026-09-09	false	2025-08-14	It's a plugin extension in Zotero.  Zotero MCP Plugin enables integration between AI assistants and Zotero thr	v1.6.0	2026-09-02	2026-09-09
+takashiishida/arxiv-latex-mcp	146	MIT	2026-09-19	false	2025-04-07	MCP server that uses arxiv-to-prompt to fetch and process arXiv LaTeX sources for precise interpretation of ma	v0.2.2	2026-03-18	2026-09-19
+zongmin-yu/semantic-scholar-fastmcp-mcp-server	165	MIT	2026-03-20	false	2024-12-25	A FastMCP server implementation for the Semantic Scholar API, providing comprehensive access to academic paper	-	-	2026-03-20
+oksure/openalex-research-mcp	54	MIT	2026-06-22	false	2025-10-05	MCP server for the OpenAlex API — search 240M+ scholarly works, analyze citations, track research trends, and 	v0.5.0	2026-06-22	2026-06-22
+drAbreu/alex-mcp	56	MIT	2025-08-11	false	2025-06-16	MCP server for OpenAlex	-	-	2025-08-11
+adityak74/mcp-scholarly	186	MIT	2026-08-25	false	2025-01-01	A MCP server to search for accurate academic articles.	-	-	2026-08-25
+JackKuo666/Google-Scholar-MCP-Server	409	none	2025-03-25	false	2025-03-19	A MCP Server for Google Scholar: 🔍 Enable AI assistants to search and access Google Scholar papers through a s	-	-	2025-03-25
+JackKuo666/Sci-Hub-MCP-Server	161	none	2025-04-04	false	2025-03-24	🔍 Enable AI assistants to search, access, and analyze academic papers through Sci-Hub using a simple MCP inter	-	-	2025-04-04
+jmrplens/libgen-mcp	16	MIT	2026-09-25	false	2026-07-18	MCP server in Go to search, download and read books, papers, comics and more from Library Genesis — plus keyle	v2.0.1	2026-09-23	2026-09-25
+genomoncology/biomcp	643	MIT	2026-09-26	false	2025-04-01	BioMCP: Biomedical Model Context Protocol	v0.9.0	2026-09-17	2026-09-26
+huggingface/hf-mcp-server	299	MIT	2026-09-23	false	2025-05-06	Hugging Face MCP Server	v0.4.23	2026-09-22	2026-09-23
+Galaxy-Dawn/claude-scholar	5635	MIT	2026-09-23	false	2026-01-27	Semi-automated research assistant for academic research and software development. Supports Claude Code, Codex 	v1.0.0	2026-02-25	2026-09-23
+cookjohn/cnki-skills	960	none	2026-03-13	false	2026-02-28	CNKI (中国知网) skills for Claude Code — search, browse journals, download PDFs, export to Zotero via Chrome DevTo	-	-	2026-03-13
+cookjohn/gs-skills	515	MIT	2026-03-13	false	2026-03-04	Google Scholar skills for Claude Code — search, citation tracking, full-text access, and Zotero export via Chr	-	-	2026-03-13
+wp-a/nature-academic-search	276	MIT	2026-09-16	false	2026-06-11	Academic Paper Search：中文科研用户的 Codex / Claude Code / DeepSeek Harness Skill + MCP；跨 CrossRef、PubMed、arXiv、OpenA	v0.3.1	2026-09-09	2026-09-16
+Hylouis233/bibverify	100	MIT	2026-09-24	false	2025-10-11	Cross-platform BibTeX verification for researchers and AI assistants — CLI, Python API, MCP server, and explai	v0.3.0	2026-08-13	2026-09-11
+andybrandt/mcp-simple-pubmed	172	MIT	2026-03-19	false	2024-12-11	MCP server for searching and querying PubMed medical papers/research database	-	-	2026-03-19
+Dianel555/paper-search-mcp-nodejs	186	MIT	2026-09-20	false	2025-08-05	A Node.js implementation of the Model Context Protocol (MCP) server for searching and downloading academic pap	0.3.2	2026-09-18	2026-09-20
+Future-House/paper-qa	9251	Apache-2.0	2026-09-25	false	2023-02-05	High accuracy RAG for answering questions from scientific documents with citations	v2026.08.12	2026-08-12	2026-08-12
+AkariAsai/OpenScholar	1605	Apache-2.0	2025-08-13	false	2024-11-15	This repository includes the official implementation of OpenScholar: Synthesizing Scientific Literature with R	-	-	2025-08-13
+stanford-oval/storm	31507	MIT	2025-09-30	false	2024-03-24	An LLM-powered knowledge curation system that researches a topic and generates a full-length report with citat	v1.1.0	2025-01-23	2025-09-30
+assafelovic/gpt-researcher	29634	Apache-2.0	2026-09-26	false	2023-05-12	An autonomous agent that conducts deep research on any data using any LLM providers	v3.6.1	2026-08-24	2026-09-26
+allenai/ai2-scholarqa-lib	282	Apache-2.0	2026-06-25	false	2025-02-06	Repo housing the open sourced code for the ai2 scholar qa app and also the corresponding library	-	-	2026-03-19
+allenai/asta-paper-finder	245	Apache-2.0	2026-03-17	false	2025-08-19	frozen-in-time version of our  Paper Finder agent for reproducing evaluation results	-	-	2026-03-17
+allenai/asta-bench	138	Apache-2.0	2026-09-03	false	2025-03-21		-	-	2026-09-03
+bytedance/pasa	1661	Apache-2.0	2025-05-27	false	2024-12-23	PaSa -- an advanced paper search agent powered by large language models. It can autonomously make a series of 	-	-	2025-05-27
+langchain-ai/open_deep_research	12680	MIT	2026-08-10	true	2024-11-20		-	-	2026-08-10
+LearningCircuit/local-deep-research	9132	MIT	2026-09-26	false	2025-02-09	 ~95% on SimpleQA (e.g. Qwen3.6-27B on a 3090). Supports all local and cloud LLMs (llama.cpp, Ollama, Google, 	v1.10.7	2026-08-28	2026-09-26
+ScholarXIV/OpenScholarXIV	1189	GPL-3.0	2026-08-29	false	2024-08-03	OpenScholarXIV is an open-source, aesthetic, minimal and AI powered app that allows users to search, read, boo	v4.2.0	2026-08-29	2026-08-29
+Alibaba-NLP/DeepResearch	19989	Apache-2.0	2026-02-27	false	2025-01-09	Tongyi Deep Research, the Leading Open-source Deep Research Agent	-	-	2026-02-27
+AutoSurveys/AutoSurvey	476	none	2025-02-07	false	2024-06-10		-	-	2025-02-07
+TideDra/zotero-arxiv-daily	5991	AGPL-3.0	2026-09-01	false	2024-11-23	Recommend new arxiv papers of your interest daily according to your Zotero libarary.	v1.1.0	2026-04-14	2026-09-01
+AutoLLM/ArxivDigest	467	MIT	2024-05-26	false	2023-05-18	ArXiv Digest and Personalized Recommendations using Large Language Models	-	-	2023-07-13
+tatsu-lab/gpt_paper_assistant	551	Apache-2.0	2024-03-26	false	2023-11-13	GPT4 based personalized ArXiv paper assistant bot	-	-	2024-03-26
+dw-dengwei/daily-arXiv-ai-enhanced	3012	NOASSERTION	2026-09-08	false	2025-03-20	Automatically crawl arXiv papers daily and summarize them using AI. Illustrating them using GitHub Pages.	-	-	2026-09-08
+Vincentqyw/cv-arxiv-daily	1500	Apache-2.0	2026-09-21	false	2021-10-08	🎓Automatically Update CV Papers Daily using Github Actions	-	-	2026-09-21
+ziwenhahaha/daily-paper-reader	928	MIT	2026-09-12	false	2025-12-16	开源的每日 arXiv / OpenReview 论文推荐与 AI 阅读平台，支持 GitHub Actions 自动更新、GitHub Pages 部署与论文问答。	-	-	2026-09-12
+JoeLeelyf/customize-arxiv-daily	160	MIT	2025-09-24	false	2025-02-20	Customize your arXiv recommendation every day.	-	-	2025-09-24
+OpenRaiser/PaperFlow	167	MIT	2026-08-22	false	2026-05-26	📚 PaperFlow: Dynamic personalized scientific-paper recommendation, reading, and reporting	-	-	2026-08-22
+karpathy/arxiv-sanity-preserver	5794	MIT	2021-11-27	false	2015-11-28	Web interface for browsing, search and filtering recent arxiv submissions	-	-	2021-11-27
+gaoxin492/PaperFeeder	138	none	2026-06-02	false	2025-12-16	A research intelligence agent pipeline for daily paper and blog triage to your email inbox.	-	-	2026-06-02
+iai-group/arXivDigest	28	MIT	2026-02-20	false	2018-02-20		-	-	2025-12-13
+mugar123/papertok	27	MIT	2026-09-26	false	2026-06-14	Open-source personalized scientific discovery feed powered by arXiv, OpenAlex, PubMed and more.	v0.2.0	2026-08-27	2026-09-26
+Miguel07Alm/arxivtok	91	MIT	2025-02-07	false	2025-02-05	ArxivTok 📚: Browse ArXiv papers with a TikTok-style vertical swipe interface. 	-	-	2025-02-07
+cookiegg/flopap	7	none	2026-01-15	false	2026-01-15	像刷抖音一样刷论文。Swipe papers, TikTok-style. 在线体验: 	-	-	2026-01-15
+khuynh22/paper-deck	15	MIT	2026-09-20	false	2026-06-07	Your AI/ML research, on one deck — aggregate arXiv/HF/Semantic Scholar papers, star them, and read in-app with	v0.4.0	2026-07-12	2026-09-20
+a1henu/arxiv-daily-scroll	26	GPL-3.0	2026-09-26	false	2025-10-13	Daily arXiv updates focused on the categories in tags.json, with AI-generated Chinese highlights with DeepSeek	-	-	2026-09-26
+yzr278892/arxiv-daily-researcher	318	AGPL-3.0	2026-09-26	false	2026-02-04	每天早上打开通知，高质量论文摘要已经为你准备好 Ciallo～(∠・ω< )⌒☆	v4.7	2026-09-26	2026-09-26
+zotero/zotero	15400	NOASSERTION	2026-09-25	false	2011-10-27	Zotero is a free, easy-to-use tool to help you collect, organize, annotate, cite, and share your research sour	-	-	2026-09-25
+retorquere/zotero-better-bibtex	7157	MIT	2026-09-21	false	2013-09-20	Make Zotero effective for us LaTeX holdouts	v9.0.64	2026-09-09	2026-09-16
+windingwind/zotero-plugin-template	846	AGPL-3.0	2026-03-09	false	2022-08-19	A plugin template for Zotero.	v3.1.0	2025-03-29	2025-12-16
+windingwind/zotero-pdf-translate	11919	AGPL-3.0	2026-09-21	false	2022-03-09	Translate PDF, EPub, webpage, metadata, annotations, notes to the target language. Support 20+ translate servi	v2.4.7	2026-08-18	2026-09-21
+windingwind/zotero-better-notes	8260	AGPL-3.0	2026-08-24	false	2022-04-27	Everything about note management. All in Zotero.	v3.3.3	2026-08-24	2026-08-24
+MuiseDestiny/zotero-gpt	7436	AGPL-3.0	2026-05-01	false	2023-03-28	GPT Meet Zotero.	3.1.4	2026-05-01	2026-04-20
+yilewang/llm-for-zotero	3155	AGPL-3.0	2026-09-20	false	2026-01-29	An open-source research agent system for your Zotero library.	v3.9.9	2026-09-20	2026-09-20
+papersgpt/papersgpt-for-zotero	2654	AGPL-3.0	2026-09-24	false	2024-11-22	A powerful Zotero AI and MCP plugin with ChatGPT, Gemini 3.7, Claude Fable 5, Claude Opus 5, DeepSeek V4, Grok	papersgpt-v1.6.0	2026-09-24	2026-09-21
+JabRef/jabref	4766	MIT	2026-09-26	false	2014-03-11	Desktop app for managing BibTeX and BibLaTeX (.bib) libraries	v5.15	2024-07-10	2026-09-26
+introfini/ZotSeek	214	none	2026-09-24	false	2025-12-26	AI semantic search for Zotero, with a built-in MCP server for AI agents (Claude Code, Codex). Find papers by m	v1.22.4	2026-09-24	2026-09-24
+grobidOrg/grobid	5143	Apache-2.0	2026-09-22	false	2012-09-13	A machine learning software for extracting information from scholarly documents	0.9.1	2026-08-04	2026-09-22
+grobidOrg/grobid-client-python	416	Apache-2.0	2026-08-22	false	2018-09-28	Python client for GROBID Web services	v0.2.0	2026-08-22	2026-08-22
+facebookresearch/nougat	10079	MIT	2025-02-21	false	2023-06-07	Implementation of Nougat Neural Optical Understanding for Academic Documents	0.1.0-base	2023-08-22	2025-02-21
+datalab-to/marker	39983	Apache-2.0	2026-09-13	false	2023-10-30	Convert PDF to markdown + JSON quickly with high accuracy	v2.0.0	2026-07-20	2026-09-13
+datalab-to/surya	21418	Apache-2.0	2026-09-11	false	2024-01-10	OCR, layout analysis, reading order, table recognition in 90+ languages	v0.22.1	2026-07-20	2026-09-11
+datalab-to/chandra	12327	Apache-2.0	2026-06-26	false	2025-10-08	OCR model that handles complex tables, forms, handwriting with full layout.	v0.2.0	2026-03-18	2026-06-26
+opendatalab/MinerU	80671	NOASSERTION	2026-09-24	false	2024-02-29	Transforms complex documents like PDFs and Office docs into LLM-ready markdown/JSON for your Agentic workflows	mineru-4.0.7-released	2026-09-23	2026-09-23
+docling-project/docling	67985	MIT	2026-09-25	false	2024-07-09	Get your documents ready for gen AI	v2.130.0	2026-09-22	2026-09-25
+allenai/olmocr	19663	Apache-2.0	2026-03-25	false	2024-09-17	Toolkit for linearizing PDFs for LLM datasets/training	v0.4.27	2026-03-12	2026-03-25
+studio-dots-ai/dots.ocr	9153	MIT	2026-03-24	false	2025-07-30	Multilingual Document Layout Parsing in a Single Vision-Language Model	-	-	2026-03-24
+deepseek-ai/DeepSeek-OCR	23911	MIT	2026-01-27	false	2025-10-17	Contexts Optical Compression	-	-	2026-01-27
+PaddlePaddle/PaddleOCR	90243	Apache-2.0	2026-09-16	false	2020-05-08	Turn any PDF or image document into structured data for your AI. A powerful, lightweight OCR toolkit that brid	v3.7.0	2026-06-11	2026-09-16
+allenai/papermage	803	Apache-2.0	2024-11-08	false	2023-01-14	library supporting NLP and CV research on scientific papers	v0.18.0	2024-03-17	2024-11-08
+allenai/science-parse	706	Apache-2.0	2024-05-26	false	2015-08-19	Science Parse parses scientific papers (in PDF form) and returns them in structured form.	v2.0.3	2018-12-05	2019-10-07
+allenai/pdffigures2	759	Apache-2.0	2024-03-10	false	2016-05-09	Given a scholarly PDF, extract figures, tables, captions, and section titles.	-	-	2023-11-27
+bytedance/Dolphin	9053	NOASSERTION	2026-03-25	false	2025-05-13	The official repo for “Dolphin: Document Image Parsing via Heterogeneous Anchor Prompting”, ACL, 2025.	-	-	2026-03-25
+Yuliang-Liu/MonkeyOCR	6652	Apache-2.0	2026-07-20	false	2025-06-03	A lightweight LMM-based Document Parsing Model	-	-	2026-07-20
+Unstructured-IO/unstructured	15501	Apache-2.0	2026-09-25	false	2022-09-26	Convert documents to structured data effortlessly. Unstructured is open-source ETL solution for transforming c	0.27.8	2026-09-22	2026-09-25
+pymupdf/pymupdf4llm	2216	AGPL-3.0	2026-09-23	false	2024-03-21	PyMuPDF4LLM	v0.3.4	2026-02-14	2026-09-09
+allenai/s2orc-doc2json	477	Apache-2.0	2024-04-11	false	2020-12-10	Parsers for scientific papers (PDF2JSON, TEX2JSON, JATS2JSON)	-	-	2023-08-22
+meilisearch/meilisearch	59413	NOASSERTION	2026-09-24	false	2018-04-23	A lightning-fast search engine API bringing AI-powered hybrid search to your sites and applications.	v1.54.0	2026-09-21	2026-09-24
+typesense/typesense	26597	GPL-3.0	2026-09-24	false	2017-01-18	Open Source alternative to Algolia + Pinecone and an Easier-to-Use alternative to ElasticSearch ⚡ 🔍 ✨ Fast, ty	v30.2	2026-04-19	2026-09-24
+quickwit-oss/tantivy	16144	MIT	2026-09-25	false	2016-01-11	Tantivy is a full-text search engine library inspired by Apache Lucene and written in Rust	0.26.1	2026-05-10	2026-09-23
+quickwit-oss/quickwit	11678	Apache-2.0	2026-09-25	false	2021-04-13	Cloud-native OSS search engine for observability	v0.9.1	2026-09-23	2026-09-24
+quickwit-oss/tantivy-py	427	MIT	2026-09-23	false	2019-06-04	Python bindings for Tantivy	0.26.2	2026-09-17	2026-09-23
+vespa-engine/vespa	7110	Apache-2.0	2026-09-26	false	2016-06-03	The AI search platform	v8.753.16	2026-09-16	2026-09-26
+opensearch-project/OpenSearch	13776	Apache-2.0	2026-09-25	false	2021-01-29	🔎 Open source distributed and RESTful search engine.	3.8.0	2026-08-05	2026-09-25
+qdrant/qdrant	34834	Apache-2.0	2026-09-26	false	2020-05-30	Qdrant - High-performance, massive-scale Vector Database and Vector Search Engine for the next generation of A	v1.19.1	2026-09-04	2026-09-03
+lancedb/lancedb	11535	Apache-2.0	2026-09-26	false	2023-02-28	Developer-friendly OSS embedded retrieval library for multimodal AI. Search More; Manage Less.	v0.39.0	2026-09-17	2026-09-25
+lance-format/lance	7116	Apache-2.0	2026-09-26	false	2022-07-07	Open Lakehouse Format for Multimodal AI. Convert from Parquet in 2 lines of code for 100x faster random access	v12.0.0	2026-09-17	2026-09-26
+pgvector/pgvector	23161	NOASSERTION	2026-09-26	false	2021-04-20	Open-source vector similarity search for Postgres	-	-	2026-09-22
+timescale/pgvectorscale	3135	PostgreSQL	2026-09-07	false	2023-07-01	Postgres extension for vector search (DiskANN), complements pgvector for performance and scale. Postgres OSS l	0.9.1	2026-09-04	2026-09-07
+duckdb/duckdb-vss	267	MIT	2026-09-25	false	2024-01-12		-	-	2026-09-25
+asg017/sqlite-vec	8137	Apache-2.0	2026-05-18	false	2024-04-20	A vector search SQLite extension that runs anywhere!	v0.1.9	2026-03-31	2026-05-18
+paradedb/paradedb	9308	AGPL-3.0	2026-09-26	false	2023-06-30	One Postgres for your application data, full-text search, vector retrieval, and aggregations. Home of the pg_s	v0.25.10	2026-09-23	2026-09-26
+elastic/elasticsearch	77998	NOASSERTION	2026-09-26	false	2010-02-08	Free and Open Source, Distributed, RESTful Search Engine	v9.5.4	2026-09-15	2026-09-26
+milvus-io/milvus	46255	Apache-2.0	2026-09-26	false	2019-09-16	Milvus is a high-performance, cloud-native vector database built for scalable vector ANN search	v3.0.2	2026-09-20	2026-09-26
+weaviate/weaviate	16850	NOASSERTION	2026-09-26	false	2016-03-30	Weaviate is an open-source vector database that stores both objects and vectors, allowing for the combination 	v1.39.7	2026-09-25	2026-09-24
+chroma-core/chroma	29386	Apache-2.0	2026-09-26	false	2022-10-05	Search infrastructure for AI	1.5.9	2026-05-05	2026-09-24
+supervc-stack/VectorChord	1802	NOASSERTION	2026-08-06	false	2024-09-03	Scalable, fast, and disk-friendly vector search in Postgres, the successor of pgvecto.rs.	1.1.1	2026-02-28	2026-04-23
+allenai/SPECTER2	144	Apache-2.0	2026-02-24	false	2023-02-17		-	-	2025-10-24
+kermitt2/biblio-glutton	152	none	2026-09-23	false	2017-08-11	A high performance bibliographic information service: https://biblio-glutton.readthedocs.io	0.2	2022-04-14	2026-09-22
+zotero/translation-server	165	NOASSERTION	2026-07-31	false	2018-06-11	A Node.js-based server to run Zotero translators	-	-	2026-07-31
+DSpace/DSpace	1098	BSD-3-Clause	2026-09-17	false	2012-03-16	(Official) The DSpace digital asset management system that powers your Institutional Repository	dspace-10.1	2026-09-14	2026-09-17
+pkp/pkp-lib	349	GPL-3.0	2026-09-26	false	2009-09-24	The library used by PKP's applications OJS, OMP and OPS, open source software for scholarly publishing.	-	-	2026-09-26
+inveniosoftware/invenio-app-rdm	181	MIT	2026-09-23	false	2019-05-22	Turn-key research data management platform.	-	-	2026-09-23
+eprints/eprints3.4	44	LGPL-3.0	2026-09-25	false	2018-03-19	EPrints 3.4 core and releases	v3.4.7	2025-08-29	2026-09-25
+mloesch/sickle	117	NOASSERTION	2023-07-29	false	2013-02-18	Sickle: OAI-PMH for Humans	0.7.0	2020-05-17	2020-05-17
+miku/metha	133	GPL-3.0	2026-09-17	false	2016-04-16	Command line OAI-PMH harvester and client with built-in cache.	v0.7.1	2026-09-07	2026-09-17
+scrapy/protego	94	BSD-3-Clause	2026-09-22	false	2019-06-19	A pure-Python robots.txt parser with support for modern conventions. 	0.6.2	2026-06-25	2026-09-22
+larsgw/citation.js	241	MIT	2026-09-18	false	2015-10-30	Citation.js converts formats like BibTeX, Wikidata JSON and ContentMine JSON to CSL-JSON to convert to other f	v0.3.4	2018-01-10	2026-09-18
+huggingface/text-embeddings-inference	5063	Apache-2.0	2026-09-23	false	2023-10-13	A blazing fast inference solution for text embeddings models	v1.9.4	2026-09-15	2026-09-23
+FlagOpen/FlagEmbedding	12196	MIT	2026-08-24	false	2023-08-02	Retrieval and Retrieval-augmented LLMs	v1.4.2	2026-08-24	2026-08-24
+QwenLM/Qwen3-Embedding	2040	none	2025-09-30	false	2025-06-05		-	-	2025-09-30
+huggingface/sentence-transformers	19123	Apache-2.0	2026-09-24	false	2019-07-24	State-of-the-Art Embeddings, Retrieval, and Reranking	v6.1.0	2026-09-18	2026-09-21
+facebookresearch/faiss	40985	MIT	2026-09-26	false	2017-02-07	A library for efficient similarity search and clustering of dense vectors.	v1.15.1	2026-09-16	2026-09-25
+nmslib/hnswlib	5334	Apache-2.0	2026-09-15	false	2017-07-06	Header-only C++/python library for fast approximate nearest neighbors	v0.9.0	2026-03-28	2026-09-14
+microsoft/DiskANN	1936	MIT	2026-09-26	false	2020-06-18	A vector indexing library to bring fast, fresh and filtered search to your database	v0.59.0	2026-09-11	2026-09-26
+unum-cloud/USearch	4320	Apache-2.0	2026-08-31	false	2023-02-22	Fast Open-Source Search & Clustering engine × for Vectors & Arbitrary Objects × in C++, C, Python, JavaScript,	v2.26.2	2026-08-31	2026-08-31
+kuzudb/kuzu	4025	MIT	2025-10-10	true	2020-09-26	Embedded property graph database built for speed. Vector search and full-text search built in. Implements Cyph	v0.11.3	2025-10-10	2025-10-10
+apache/age	4852	Apache-2.0	2026-09-19	false	2020-07-01	Graph database optimized for fast analysis and real-time data processing. It is provided as an extension to Po	PG18/v1.8.0-rc0	2026-07-09	2026-09-18
+neo4j/neo4j	17256	GPL-3.0	2026-09-22	false	2012-11-12	Graphs for Everyone	3.2.0-alpha08	2017-04-11	2026-09-14
+FalkorDB/FalkorDB	6316	NOASSERTION	2026-09-26	false	2023-07-20	A super fast Graph Database uses GraphBLAS under the hood for its sparse adjacency matrix graph representation	v4.20.7	2026-09-24	2026-09-24
+memgraph/memgraph	4581	NOASSERTION	2026-09-26	false	2020-09-21	High-performance open-source in-memory graph database for GraphRAG, AI memory, agentic AI, and real-time graph	v3.13.1	2026-09-14	2026-09-25
+cwida/duckpgq-extension	499	MIT	2026-09-17	false	2023-04-05	DuckDB extension that adds support for SQL/PGQ and graph algorithms	-	-	2026-09-17
+bojone/papers.cool	809	none	2026-07-06	false	2024-01-02	Cool Papers - Immersive Paper Discovery	-	-	2026-07-06
+ourresearch/openalex-mcp-server	0	MIT	2026-09-21	false	2026-09-19	Official OpenAlex MCP server: scholarly literature search, citations, authors and institutions for Claude and 	-	-	2026-09-21
+ourresearch/openalex-official	35	MIT	2026-09-19	false	2026-02-02	Bulk download PDFs and TEI XML files from OpenAlex	v0.3.3	2026-03-18	2026-09-19
+ourresearch/openalex-walden	22	MIT	2026-09-26	false	2025-05-22	Data pipelines for OpenAlex	-	-	2026-09-26
+Scriptbash/Wispar	214	GPL-3.0	2026-09-25	false	2023-12-15	Stay up-to-date with academic journals and the latest research articles!	v0.10.5+41	2026-06-07	2026-09-21
+colonelwatch/abstracts-search	105	Apache-2.0	2026-06-19	false	2023-05-02	Semantic search engine indexing 200+ million academic publications	-	-	2026-06-19
+khoj-ai/openpaper	482	AGPL-3.0	2026-09-03	false	2025-03-22	Open Paper is a workbench for managing your research library. Read, annotate, and understand your papers all i	-	-	2026-09-03
+LocalCitationNetwork/LocalCitationNetwork.github.io	148	GPL-3.0	2026-05-08	false	2019-10-28	This web app aims to help scientists with their literature review using metadata from OpenAlex (OA), Semantic 	-	-	2026-05-08
+CitationGecko/gecko-react	167	none	2023-03-09	false	2019-01-27	Rewrite of Citation Gecko as a React app	v0.1.0	2022-09-11	2023-03-09
+mrapplexz/arxiv-at-home	53	Apache-2.0	2026-02-09	false	2026-02-07	Mom, we have arXiv at home! Self-hosted search engine for academic papers	v0.2.0	2026-02-09	2026-02-09
+allenai/s2orc	1088	none	2024-04-26	false	2019-11-04	S2ORC: The Semantic Scholar Open Research Corpus:  https://www.aclweb.org/anthology/2020.acl-main.447/	-	-	2024-04-26
+allenai/citeomatic	197	Apache-2.0	2020-01-22	false	2017-05-10	A citation recommendation system that allows users to find relevant citations for their paper drafts. The tool	-	-	2020-01-22
+vitorfs/parsifal	520	MIT	2026-05-05	false	2013-07-25	Parsifal is a tool to assist researchers to perform Systematic Literature Reviews	v2.2.1	2026-02-08	2026-02-08
+searxng/searxng	37654	AGPL-3.0	2026-09-25	false	2021-04-12	SearXNG is a free internet metasearch engine which aggregates results from various search services and databas	-	-	2026-09-25
+mozilla/pdf.js	53947	Apache-2.0	2026-09-25	false	2011-04-26	PDF Reader in JavaScript	v6.3.289	2026-08-29	2026-09-25
+meilisearch/charabia	360	MIT	2026-08-13	false	2020-10-06	Library used by Meilisearch to tokenize queries and documents	-	-	2026-08-13
+gitlab:TIBHannover/orkg/orkg-backend	9	MIT	2026-09-25	false	-	ORKG backend (GitLab star_count)	-	-	2026-09-25
+gitlab:TIBHannover/orkg/orkg-frontend	17	MIT	2026-09-25	false	-	ORKG frontend (GitLab star_count)	-	-	2026-09-25

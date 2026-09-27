@@ -1,0 +1,412 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1480" height="1150" viewBox="0 0 1480 1150" font-family="-apple-system, 'PingFang SC', 'Hiragino Sans GB', 'Microsoft YaHei', 'Noto Sans CJK SC', 'Source Han Sans SC', 'Helvetica Neue', Arial, sans-serif">
+  <!-- Paper Crawler v2 · 论文卡片解剖（Deck 分拣卡字段、版式变体与标注）· 对应 docs/plan/v2/07-frontend-interaction.md §8 · 2026-09-27 -->
+  <!-- 所有标题、作者、数据均为示例；图区为"许可图位置"示意，不是任何论文的原图 -->
+  <defs>
+    <clipPath id="phoneClip"><rect x="60" y="96" width="390" height="844" rx="44"/></clipPath>
+    <clipPath id="cardClip"><rect x="76" y="199" width="358" height="550" rx="20"/></clipPath>
+    <clipPath id="clipB"><rect x="1044" y="120" width="164" height="252" rx="12"/></clipPath>
+    <clipPath id="clipC"><rect x="1236" y="120" width="164" height="252" rx="12"/></clipPath>
+    <clipPath id="clipF1"><rect x="1044" y="776" width="164" height="190" rx="10"/></clipPath>
+    <clipPath id="clipF2"><rect x="1236" y="776" width="164" height="200" rx="10"/></clipPath>
+    <linearGradient id="fadeR" x1="0" x2="1" y1="0" y2="0">
+      <stop offset="0" stop-color="#ffffff" stop-opacity="0"/>
+      <stop offset="1" stop-color="#ffffff" stop-opacity="1"/>
+    </linearGradient>
+  </defs>
+
+  <rect x="0" y="0" width="1480" height="1150" fill="#ffffff"/>
+
+  <!-- ===== 标题 ===== -->
+  <text x="40" y="40" font-size="22" font-weight="700" fill="#17181b">论文卡片解剖：Deck 分拣卡的字段、版式变体与标注</text>
+  <text x="40" y="64" font-size="12" fill="#62666f">对应 docs/plan/v2/07-frontend-interaction.md §8（卡片信息架构）· 参考机型 390×844 pt · 亮色主题 · 2026-09-27 · 标题、作者与数据均为示例</text>
+  <text x="60" y="88" font-size="12" font-weight="700" fill="#17181b">（a）标准分拣卡：CC BY 论文，关键图通过许可闸</text>
+
+  <!-- ===== 手机框架 ===== -->
+  <rect x="60" y="96" width="390" height="844" rx="44" fill="#f5f4f0" stroke="#c9c7c1" stroke-width="2"/>
+  <!-- 状态栏 -->
+  <text x="96" y="128" font-size="14" font-weight="600" fill="#17181b">9:41</text>
+  <rect x="352" y="120" width="3" height="6" rx="1" fill="#17181b"/>
+  <rect x="357" y="118" width="3" height="8" rx="1" fill="#17181b"/>
+  <rect x="362" y="116" width="3" height="10" rx="1" fill="#17181b"/>
+  <rect x="392" y="116" width="24" height="11" rx="3" fill="none" stroke="#17181b" stroke-width="1.2"/>
+  <rect x="394" y="118" width="17" height="7" rx="1.5" fill="#17181b"/>
+  <!-- 顶栏：进度 + 搜索 + 模式开关（显示当前模式，一次点击切换）+ 独立的 ▾ 面板按钮，二者间隔 8pt -->
+  <text x="76" y="173" font-size="18" font-weight="700" fill="#17181b">今日</text>
+  <text x="120" y="173" font-size="13" fill="#62666f" font-family="ui-monospace, 'SF Mono', Menlo, Consolas, monospace">7/25</text>
+  <circle cx="298" cy="164" r="7" fill="none" stroke="#45484f" stroke-width="2"/>
+  <line x1="303" y1="169" x2="308" y2="174" stroke="#45484f" stroke-width="2" stroke-linecap="round"/>
+  <rect x="322" y="151" width="78" height="26" rx="13" fill="#ffffff" stroke="#e3e1dc"/>
+  <circle cx="335" cy="164" r="3.5" fill="#17181b"/>
+  <text x="344" y="169" font-size="12" fill="#45484f">个性化</text>
+  <rect x="408" y="151" width="26" height="26" rx="13" fill="#ffffff" stroke="#e3e1dc"/>
+  <text x="421" y="168.5" font-size="11" fill="#45484f" text-anchor="middle">▾</text>
+
+  <!-- ===== 叠层：第三张 / 次卡（缩放原点为底边中点）===== -->
+  <rect x="93.9" y="274" width="322.2" height="495" rx="19" fill="#ffffff" stroke="#e3e1dc" opacity="0.6"/>
+  <rect x="84.95" y="236.5" width="340.1" height="522.5" rx="19.5" fill="#ffffff" stroke="#e3e1dc"/>
+  <!-- 顶卡静态阴影 -->
+  <rect x="76" y="203" width="358" height="550" rx="20" fill="#17181b" opacity="0.06"/>
+  <!-- ===== 顶卡 ===== -->
+  <rect x="76" y="199" width="358" height="550" rx="20" fill="#ffffff" stroke="#e3e1dc"/>
+  <g clip-path="url(#cardClip)">
+    <rect x="76" y="199" width="358" height="140" fill="#e1f2ff"/>
+    <rect x="76" y="199" width="358" height="4" fill="#2a78d6"/>
+  </g>
+  <!-- 元数据行 -->
+  <circle cx="100" cy="227" r="4" fill="#2a78d6"/>
+  <text x="110" y="231" font-size="12" font-weight="600" fill="#45484f">计算机</text>
+  <text x="152" y="231" font-size="12" fill="#62666f" font-family="ui-monospace, 'SF Mono', Menlo, Consolas, monospace">cs.CL · ACL 2026 · 3 天前</text>
+  <!-- ⋯ 更多 -->
+  <circle cx="404" cy="226" r="2" fill="#45484f"/>
+  <circle cx="411" cy="226" r="2" fill="#45484f"/>
+  <circle cx="418" cy="226" r="2" fill="#45484f"/>
+  <!-- 标题（衬线，≤3 行）-->
+  <text font-family="Georgia, 'Times New Roman', 'Songti SC', serif" font-size="21" fill="#17181b">
+    <tspan x="96" y="265">Chunked Retrieval for Long-</tspan>
+    <tspan x="96" y="293">Context Scientific Question</tspan>
+    <tspan x="96" y="321">Answering（示例）</tspan>
+  </text>
+  <!-- AI TL;DR -->
+  <rect x="96" y="351" width="24" height="16" rx="4" fill="#efecff"/>
+  <text x="101.5" y="363" font-size="10" font-weight="700" fill="#5a3fd0">AI</text>
+  <text font-size="15" fill="#17181b">
+    <tspan x="128" y="364">在 3 个科学问答基准上对比 5 种检索</tspan>
+    <tspan x="96" y="386">配置：分段召回在长文档上更稳健，</tspan>
+    <tspan x="96" y="408">但对公式密集的论文提升有限（示例）。</tspan>
+  </text>
+  <!-- 关键图（许可图位置示意）-->
+  <rect x="96" y="422" width="318" height="179" rx="12" fill="#f0efeb"/>
+  <text x="112" y="446" font-size="11" fill="#62666f">图 1 · 许可图位置（示意，非论文原图）</text>
+  <line x1="116" y1="458" x2="116" y2="580" stroke="#c9c7c1" stroke-width="1.2"/>
+  <line x1="116" y1="580" x2="398" y2="580" stroke="#c9c7c1" stroke-width="1.2"/>
+  <polyline points="120,560 160,542 200,531 240,507 280,496 320,473 360,464 392,452" fill="none" stroke="#2a78d6" stroke-width="2.5" stroke-linejoin="round"/>
+  <polyline points="120,566 160,561 200,553 240,549 280,541 320,537 360,531 392,528" fill="none" stroke="#8a8d94" stroke-width="2.5" stroke-dasharray="6 4"/>
+  <rect x="338" y="581" width="68" height="16" rx="8" fill="#ffffff" stroke="#e3e1dc"/>
+  <text x="347" y="593" font-size="10" fill="#45484f">CC BY 4.0</text>
+  <!-- 作者·机构 -->
+  <text x="96" y="625" font-size="13" fill="#45484f">W. Zhang, L. Chen, … M. Rossi · 示例大学</text>
+  <!-- 评审状态 + OA 状态 -->
+  <rect x="96" y="637" width="52" height="22" rx="6" fill="#f0efeb"/>
+  <text x="104" y="652" font-size="12" fill="#45484f">预印本</text>
+  <rect x="154" y="637" width="88" height="22" rx="6" fill="#f0efeb"/>
+  <rect x="162" y="645" width="10" height="8" rx="1.5" fill="#11843a"/>
+  <path d="M164.5 645 v-3.2 a3 3 0 0 1 6 0" fill="none" stroke="#11843a" stroke-width="1.6"/>
+  <text x="178" y="652" font-size="12" fill="#45484f">开放获取</text>
+  <!-- 主题标签（单行、不可横滑、溢出渐隐）-->
+  <rect x="96" y="667" width="96" height="22" rx="11" fill="#ffffff" stroke="#e3e1dc"/>
+  <text x="106" y="682" font-size="12" fill="#45484f">检索增强生成</text>
+  <rect x="198" y="667" width="72" height="22" rx="11" fill="#ffffff" stroke="#e3e1dc"/>
+  <text x="208" y="682" font-size="12" fill="#45484f">科学问答</text>
+  <rect x="276" y="667" width="96" height="22" rx="11" fill="#ffffff" stroke="#e3e1dc"/>
+  <text x="286" y="682" font-size="12" fill="#45484f">长上下文建模</text>
+  <rect x="340" y="664" width="76" height="28" fill="url(#fadeR)"/>
+  <line x1="96" y1="701" x2="414" y2="701" stroke="#efeeea"/>
+  <!-- why-this -->
+  <rect x="97.5" y="719" width="7" height="7" transform="rotate(45 101 722.5)" fill="#2a78d6"/>
+  <text x="112" y="727" font-size="13" fill="#45484f">与你收藏的《长文档检索的分段策略》相近</text>
+  <circle cx="408" cy="722" r="8" fill="none" stroke="#62666f" stroke-width="1.4"/>
+  <text x="408" y="726.5" font-size="11" font-weight="700" fill="#62666f" text-anchor="middle">i</text>
+
+  <!-- ===== 动作行：↺ 44pt · ✕ ☆ ♥ 56pt；按钮下常显文字标签（88pt 动作行区：6 + 56 + 4 + 16 + 6）===== -->
+  <circle cx="135" cy="803" r="22" fill="#ffffff" stroke="#e3e1dc"/>
+  <path d="M128 796 a9 9 0 1 1 -2 9" fill="none" stroke="#45484f" stroke-width="2" stroke-linecap="round"/>
+  <path d="M123 792 l5 4.5 l-6.5 2" fill="none" stroke="#45484f" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+  <circle cx="209" cy="803" r="28" fill="#ffffff" stroke="#e3e1dc"/>
+  <path d="M200 794 l18 18 M218 794 l-18 18" stroke="#4f5561" stroke-width="2.6" stroke-linecap="round"/>
+  <circle cx="289" cy="803" r="28" fill="#ffffff" stroke="#e3e1dc"/>
+  <path d="M289 792 L291.7 799.28 L299.46 799.6 L293.37 804.42 L295.47 811.9 L289 807.6 L282.53 811.9 L284.63 804.42 L278.54 799.6 L286.3 799.28 Z" fill="none" stroke="#a86400" stroke-width="2" stroke-linejoin="round"/>
+  <circle cx="369" cy="803" r="28" fill="#ffffff" stroke="#e3e1dc"/>
+  <path d="M369 813 C360 806 357 801 357 797 C357 793 360 790 363.5 790 C366 790 368 791.5 369 793.5 C370 791.5 372 790 374.5 790 C378 790 381 793 381 797 C381 801 378 806 369 813 Z" fill="none" stroke="#d23a5c" stroke-width="2" stroke-linejoin="round"/>
+  <g font-size="11" fill="#62666f" text-anchor="middle">
+    <text x="135" y="848">撤回</text>
+    <text x="209" y="848">不感兴趣</text>
+    <text x="289" y="848">收藏</text>
+    <text x="369" y="848">想读</text>
+  </g>
+
+  <!-- ===== 底部导航（3 个一级入口）===== -->
+  <g clip-path="url(#phoneClip)">
+    <rect x="60" y="857" width="390" height="83" fill="#ffffff"/>
+  </g>
+  <line x1="60" y1="857" x2="450" y2="857" stroke="#e3e1dc"/>
+  <rect x="115" y="867" width="15" height="19" rx="3" fill="none" stroke="#17181b" stroke-width="1.8"/>
+  <rect x="120" y="871" width="15" height="19" rx="3" fill="#17181b"/>
+  <text x="125" y="907" text-anchor="middle" font-size="11" font-weight="700" fill="#17181b">今日</text>
+  <path d="M248 868 h14 v20 l-7 -5 l-7 5 z" fill="none" stroke="#62666f" stroke-width="1.8" stroke-linejoin="round"/>
+  <text x="255" y="907" text-anchor="middle" font-size="11" fill="#62666f">收藏</text>
+  <circle cx="385" cy="873" r="5" fill="none" stroke="#62666f" stroke-width="1.8"/>
+  <path d="M376 890 a9 7 0 0 1 18 0" fill="none" stroke="#62666f" stroke-width="1.8"/>
+  <text x="385" y="907" text-anchor="middle" font-size="11" fill="#62666f">我</text>
+  <rect x="190" y="924" width="130" height="5" rx="2.5" fill="#17181b"/>
+
+  <!-- ===== 标注引线（左侧）===== -->
+  <g stroke="#8a8d94" stroke-width="1">
+    <line x1="47" y1="231" x2="92" y2="231"/>
+    <line x1="47" y1="293" x2="92" y2="293"/>
+    <line x1="47" y1="386" x2="92" y2="386"/>
+    <line x1="47" y1="510" x2="92" y2="510"/>
+    <line x1="47" y1="621" x2="92" y2="621"/>
+    <line x1="47" y1="648" x2="92" y2="648"/>
+    <line x1="47" y1="678" x2="92" y2="678"/>
+    <line x1="47" y1="722" x2="92" y2="722"/>
+    <line x1="47" y1="803" x2="110" y2="803"/>
+    <line x1="47" y1="896" x2="100" y2="896"/>
+  </g>
+  <g fill="#17181b">
+    <circle cx="92" cy="231" r="2.5"/><circle cx="92" cy="293" r="2.5"/><circle cx="92" cy="386" r="2.5"/>
+    <circle cx="92" cy="510" r="2.5"/><circle cx="92" cy="621" r="2.5"/><circle cx="92" cy="648" r="2.5"/>
+    <circle cx="92" cy="678" r="2.5"/><circle cx="92" cy="722" r="2.5"/><circle cx="110" cy="803" r="2.5"/>
+    <circle cx="100" cy="896" r="2.5"/>
+  </g>
+  <!-- ===== 标注引线（右侧）===== -->
+  <g stroke="#8a8d94" stroke-width="1">
+    <line x1="434" y1="164" x2="461" y2="164"/>
+    <line x1="424" y1="226" x2="461" y2="226"/>
+    <line x1="434" y1="300" x2="461" y2="300"/>
+    <line x1="242" y1="648" x2="461" y2="648"/>
+    <line x1="421" y1="764" x2="461" y2="764"/>
+  </g>
+  <g fill="#17181b">
+    <circle cx="434" cy="164" r="2.5"/><circle cx="424" cy="226" r="2.5"/><circle cx="434" cy="300" r="2.5"/>
+    <circle cx="242" cy="648" r="2.5"/><circle cx="421" cy="764" r="2.5"/>
+  </g>
+  <!-- 编号圆（左）-->
+  <g font-size="12" font-weight="700" text-anchor="middle">
+    <circle cx="36" cy="231" r="11" fill="#17181b"/><text x="36" y="235" fill="#ffffff">2</text>
+    <circle cx="36" cy="293" r="11" fill="#17181b"/><text x="36" y="297" fill="#ffffff">3</text>
+    <circle cx="36" cy="386" r="11" fill="#17181b"/><text x="36" y="390" fill="#ffffff">4</text>
+    <circle cx="36" cy="510" r="11" fill="#17181b"/><text x="36" y="514" fill="#ffffff">5</text>
+    <circle cx="36" cy="621" r="11" fill="#17181b"/><text x="36" y="625" fill="#ffffff">6</text>
+    <circle cx="36" cy="648" r="11" fill="#17181b"/><text x="36" y="652" fill="#ffffff">7</text>
+    <circle cx="36" cy="678" r="11" fill="#17181b"/><text x="36" y="682" fill="#ffffff">9</text>
+    <circle cx="36" cy="722" r="11" fill="#17181b"/><text x="36" y="726" fill="#ffffff">10</text>
+    <circle cx="36" cy="803" r="11" fill="#17181b"/><text x="36" y="807" fill="#ffffff">13</text>
+    <circle cx="36" cy="896" r="11" fill="#17181b"/><text x="36" y="900" fill="#ffffff">15</text>
+  <!-- 编号圆（右）-->
+    <circle cx="472" cy="164" r="11" fill="#17181b"/><text x="472" y="168" fill="#ffffff">14</text>
+    <circle cx="472" cy="226" r="11" fill="#17181b"/><text x="472" y="230" fill="#ffffff">11</text>
+    <circle cx="472" cy="300" r="11" fill="#17181b"/><text x="472" y="304" fill="#ffffff">1</text>
+    <circle cx="472" cy="648" r="11" fill="#17181b"/><text x="472" y="652" fill="#ffffff">8</text>
+    <circle cx="472" cy="764" r="11" fill="#17181b"/><text x="472" y="768" fill="#ffffff">12</text>
+  </g>
+
+  <!-- ===== 图例：字段与规则 ===== -->
+  <text x="520" y="112" font-size="15" font-weight="700" fill="#17181b">字段与规则（P0 = 分拣卡必备；P1 = 空间允许时显示）</text>
+  <!-- 行距：单行规则 52，双行规则 68 -->
+  <g font-size="12" font-weight="700" text-anchor="middle">
+    <circle cx="532" cy="141" r="11" fill="#17181b"/><text x="532" y="145" fill="#ffffff">1</text>
+    <circle cx="532" cy="209" r="11" fill="#17181b"/><text x="532" y="213" fill="#ffffff">2</text>
+    <circle cx="532" cy="261" r="11" fill="#17181b"/><text x="532" y="265" fill="#ffffff">3</text>
+    <circle cx="532" cy="313" r="11" fill="#17181b"/><text x="532" y="317" fill="#ffffff">4</text>
+    <circle cx="532" cy="381" r="11" fill="#17181b"/><text x="532" y="385" fill="#ffffff">5</text>
+    <circle cx="532" cy="449" r="11" fill="#17181b"/><text x="532" y="453" fill="#ffffff">6</text>
+    <circle cx="532" cy="501" r="11" fill="#17181b"/><text x="532" y="505" fill="#ffffff">7</text>
+    <circle cx="532" cy="553" r="11" fill="#17181b"/><text x="532" y="557" fill="#ffffff">8</text>
+    <circle cx="532" cy="605" r="11" fill="#17181b"/><text x="532" y="609" fill="#ffffff">9</text>
+    <circle cx="532" cy="657" r="11" fill="#17181b"/><text x="532" y="661" fill="#ffffff">10</text>
+    <circle cx="532" cy="709" r="11" fill="#17181b"/><text x="532" y="713" fill="#ffffff">11</text>
+    <circle cx="532" cy="761" r="11" fill="#17181b"/><text x="532" y="765" fill="#ffffff">12</text>
+    <circle cx="532" cy="813" r="11" fill="#17181b"/><text x="532" y="817" fill="#ffffff">13</text>
+    <circle cx="532" cy="865" r="11" fill="#17181b"/><text x="532" y="869" fill="#ffffff">14</text>
+    <circle cx="532" cy="917" r="11" fill="#17181b"/><text x="532" y="921" fill="#ffffff">15</text>
+  </g>
+  <g font-size="13" font-weight="700" fill="#17181b">
+    <text x="552" y="146">封面带（排版封面）</text>
+    <text x="552" y="214">元数据行（P0：venue · 年份）</text>
+    <text x="552" y="266">标题（P0）</text>
+    <text x="552" y="318">AI TL;DR（P0）</text>
+    <text x="552" y="386">关键图（P1，许可门控）</text>
+    <text x="552" y="454">作者 · 机构（P1）</text>
+    <text x="552" y="506">评审状态（P0）</text>
+    <text x="552" y="558">OA 状态（P0，四态）</text>
+    <text x="552" y="610">主题标签（P1）</text>
+    <text x="552" y="662">why-this（P0）</text>
+    <text x="552" y="714">⋯ 更多</text>
+    <text x="552" y="766">叠层</text>
+    <text x="552" y="818">动作行</text>
+    <text x="552" y="870">顶栏</text>
+    <text x="552" y="922">底部导航</text>
+  </g>
+  <g font-size="12" fill="#62666f">
+    <text x="552" y="163">领域色浅底 + 顶部 4pt 色条，承载元数据与标题；无许可图时它就是主视觉</text>
+    <text x="552" y="178">学科 → 色族见底部图例；颜色始终与文字标签同现（WCAG 1.4.1）</text>
+    <text x="552" y="231">等宽 12/16：领域 · 分类 · venue 年份 · 新鲜度；缺失即不显示，不猜</text>
+    <text x="552" y="283">衬线 21/28，≤3 行省略；带 lang 属性；中文模式显示 AI 译名并标"译"</text>
+    <text x="552" y="335">"AI"角标 + 读屏前缀；≤3 行（中文 ≤60 字、英文 ≤100 字符）</text>
+    <text x="552" y="350">可全局关闭；永不替代作者摘要；只由可共享来源生成（P-02），否则回退首句</text>
+    <text x="552" y="403">仅 CC BY / BY-SA / CC0 通过许可闸时显示；16:9、≤38% 卡高、不裁切</text>
+    <text x="552" y="418">角标给出许可，详情页展开 TASL 署名；否则图区让给作者摘要摘录</text>
+    <text x="552" y="471">13/18，1 行："第一作者 等 · 首个机构"</text>
+    <text x="552" y="523">预印本 / 已接收 / 已发表·venue；未知不显示；撤稿论文不进入 Deck</text>
+    <text x="552" y="575">开放获取 / 有开放版本 / 订阅 / 未知不显示；"可用你的权限"仅在本地计算</text>
+    <text x="552" y="627">≤3 个受控标签；单行、不可横滑（避让横向决策手势），溢出渐隐</text>
+    <text x="552" y="679">1 行理由 + i 按钮（44pt 热区）；探索槽标"探索"；协同类理由须满足 k 匿名</text>
+    <text x="552" y="731">与长按等价（WCAG 2.5.1）：不感兴趣原因 · 屏蔽 · 跳过 · 收藏到… · 复制引用</text>
+    <text x="552" y="783">次卡 0.95 / +10pt；第三张 0.90 / +20pt / 不透明度 0.6；缩放原点为底边中点</text>
+    <text x="552" y="835">↺ 撤回 44pt · ✕ 不感兴趣 · ☆ 收藏 · ♥ 想读 56pt；常显文字标签；按下上色</text>
+    <text x="552" y="887">进度 7/25 · 搜索 · "● 个性化"一键切换 + 独立 ▾ 面板（DSA 27(3)）</text>
+    <text x="552" y="939">今日 · 收藏 · 我：只有 3 个一级入口；搜索在顶栏，不单设"发现"页签</text>
+  </g>
+
+  <!-- ===== 版式变体 (b) 无许可图卡 ===== -->
+  <rect x="1044" y="120" width="164" height="252" rx="12" fill="#ffffff" stroke="#e3e1dc"/>
+  <g clip-path="url(#clipB)">
+    <rect x="1044" y="120" width="164" height="66" fill="#feedd7"/>
+    <rect x="1044" y="120" width="164" height="3" fill="#c27800"/>
+  </g>
+  <circle cx="1053" cy="132" r="2.5" fill="#c27800"/>
+  <text x="1059" y="135.5" font-size="9" fill="#62666f">经管 · q-fin · 1 天前</text>
+  <g fill="#17181b" opacity="0.78">
+    <rect x="1054" y="145" width="140" height="7" rx="3.5"/>
+    <rect x="1054" y="157" width="122" height="7" rx="3.5"/>
+    <rect x="1054" y="169" width="80" height="7" rx="3.5"/>
+  </g>
+  <rect x="1054" y="194" width="16" height="11" rx="3" fill="#efecff"/>
+  <text x="1056.5" y="202.5" font-size="7.5" font-weight="700" fill="#5a3fd0">AI</text>
+  <g fill="#45484f" opacity="0.55">
+    <rect x="1074" y="196" width="120" height="5" rx="2.5"/>
+    <rect x="1054" y="207" width="140" height="5" rx="2.5"/>
+  </g>
+  <text x="1054" y="226" font-size="9" font-weight="700" fill="#45484f">作者摘要（摘录 · CC0）</text>
+  <g fill="#8a8d94" opacity="0.5">
+    <rect x="1054" y="232" width="144" height="4.5" rx="2"/>
+    <rect x="1054" y="241" width="144" height="4.5" rx="2"/>
+    <rect x="1054" y="250" width="144" height="4.5" rx="2"/>
+    <rect x="1054" y="259" width="100" height="4.5" rx="2"/>
+  </g>
+  <rect x="1054" y="274" width="100" height="5" rx="2.5" fill="#bdc0c7"/>
+  <rect x="1054" y="286" width="34" height="12" rx="3" fill="#f0efeb"/>
+  <text x="1058" y="295" font-size="7.5" fill="#45484f">预印本</text>
+  <rect x="1092" y="286" width="42" height="12" rx="3" fill="#f0efeb"/>
+  <text x="1096" y="295" font-size="7.5" fill="#45484f">开放获取</text>
+  <line x1="1054" y1="310" x2="1198" y2="310" stroke="#efeeea"/>
+  <rect x="1055" y="319" width="5" height="5" transform="rotate(45 1057.5 321.5)" fill="#c27800"/>
+  <text x="1064" y="325" font-size="8.5" fill="#45484f">命中你的频道「资产定价」</text>
+  <text x="1044" y="392" font-size="12" font-weight="700" fill="#17181b">（b）无许可图卡</text>
+  <text x="1044" y="408" font-size="10.5" fill="#62666f">图区让给作者摘要摘录</text>
+
+  <!-- ===== 版式变体 (c) 缺摘要降级卡 ===== -->
+  <rect x="1236" y="120" width="164" height="252" rx="12" fill="#ffffff" stroke="#e3e1dc"/>
+  <g clip-path="url(#clipC)">
+    <rect x="1236" y="120" width="164" height="112" fill="#ffe9df"/>
+    <rect x="1236" y="120" width="164" height="3" fill="#e2602b"/>
+  </g>
+  <circle cx="1245" cy="132" r="2.5" fill="#e2602b"/>
+  <text x="1251" y="135.5" font-size="9" fill="#62666f">化学 · JACS · 2026</text>
+  <g fill="#17181b" opacity="0.78">
+    <rect x="1246" y="146" width="144" height="9" rx="4.5"/>
+    <rect x="1246" y="161" width="144" height="9" rx="4.5"/>
+    <rect x="1246" y="176" width="130" height="9" rx="4.5"/>
+    <rect x="1246" y="191" width="90" height="9" rx="4.5"/>
+  </g>
+  <rect x="1246" y="246" width="140" height="5" rx="2.5" fill="#bdc0c7"/>
+  <rect x="1246" y="256" width="90" height="5" rx="2.5" fill="#bdc0c7"/>
+  <rect x="1246" y="270" width="120" height="5" rx="2.5" fill="#8a8d94" opacity="0.5"/>
+  <rect x="1246" y="284" width="40" height="12" rx="6" fill="#ffffff" stroke="#e3e1dc"/>
+  <rect x="1290" y="284" width="40" height="12" rx="6" fill="#ffffff" stroke="#e3e1dc"/>
+  <rect x="1334" y="284" width="30" height="12" rx="6" fill="#ffffff" stroke="#e3e1dc"/>
+  <text x="1246" y="314" font-size="8.5" fill="#62666f">暂无可展示的摘要 · 在出版社查看 ↗</text>
+  <line x1="1246" y1="326" x2="1390" y2="326" stroke="#efeeea"/>
+  <rect x="1246" y="334" width="26" height="12" rx="6" fill="#ffffff" stroke="#5a3fd0"/>
+  <text x="1251" y="343" font-size="7.5" fill="#5a3fd0">探索</text>
+  <text x="1277" y="343" font-size="8.5" fill="#45484f">与你兴趣相邻的催化</text>
+  <text x="1236" y="392" font-size="12" font-weight="700" fill="#17181b">（c）缺摘要降级卡</text>
+  <text x="1236" y="408" font-size="10.5" fill="#62666f">标题 + venue + 作者 + 分类码</text>
+
+  <!-- ===== 版式变体 (d) 结束态卡 ===== -->
+  <rect x="1044" y="440" width="164" height="252" rx="12" fill="#ffffff" stroke="#e3e1dc"/>
+  <circle cx="1126" cy="492" r="17" fill="#e3f7e1" stroke="#11843a" stroke-width="1.5"/>
+  <path d="M1118 492 l6 6 l11 -12" fill="none" stroke="#11843a" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"/>
+  <text x="1126" y="532" font-size="12" font-weight="700" fill="#17181b" text-anchor="middle">今日 25 篇已看完</text>
+  <text x="1126" y="550" font-size="8.5" fill="#62666f" text-anchor="middle">想读 6 · 收藏 2</text>
+  <rect x="1058" y="564" width="136" height="22" rx="11" fill="#17181b"/>
+  <text x="1126" y="579" font-size="9.5" fill="#ffffff" text-anchor="middle">查看想读（6）</text>
+  <rect x="1058" y="592" width="136" height="22" rx="11" fill="#ffffff" stroke="#e3e1dc"/>
+  <text x="1126" y="607" font-size="9.5" fill="#17181b" text-anchor="middle">探索与频道</text>
+  <rect x="1058" y="620" width="136" height="22" rx="11" fill="#ffffff" stroke="#e3e1dc"/>
+  <text x="1126" y="635" font-size="9.5" fill="#17181b" text-anchor="middle">再看跳过的 8 篇</text>
+  <text x="1126" y="657" font-size="8.5" fill="#45484f" text-anchor="middle" text-decoration="underline">再来 10 篇（用户触发，有每日上限）</text>
+  <text x="1126" y="671" font-size="8" fill="#62666f" text-anchor="middle">下一批：明天 08:00</text>
+  <text x="1126" y="684" font-size="8" fill="#62666f" text-anchor="middle">↓ / ↺ 可撤回最后一张</text>
+  <text x="1044" y="712" font-size="12" font-weight="700" fill="#17181b">（d）结束态卡</text>
+  <text x="1044" y="728" font-size="10.5" fill="#62666f">有限批次的自然终点</text>
+
+  <!-- ===== 版式变体 (e) 拖拽中（→ 想读）===== -->
+  <rect x="1240" y="446" width="156" height="244" rx="11" fill="#ffffff" stroke="#e3e1dc"/>
+  <g transform="translate(16 0) rotate(5.6 1318 692)">
+    <rect x="1236" y="440" width="164" height="252" rx="12" fill="#ffffff" stroke="#c9c7c1"/>
+    <path d="M1236 452 a12 12 0 0 1 12 -12 h140 a12 12 0 0 1 12 12 v58 h-164 z" fill="#e1f2ff"/>
+    <g fill="#17181b" opacity="0.78">
+      <rect x="1246" y="486" width="140" height="7" rx="3.5"/>
+      <rect x="1246" y="498" width="96" height="7" rx="3.5"/>
+    </g>
+    <g fill="#45484f" opacity="0.5">
+      <rect x="1246" y="524" width="144" height="5" rx="2.5"/>
+      <rect x="1246" y="535" width="144" height="5" rx="2.5"/>
+      <rect x="1246" y="546" width="110" height="5" rx="2.5"/>
+    </g>
+    <rect x="1246" y="562" width="144" height="80" rx="8" fill="#f0efeb"/>
+    <rect x="1246" y="654" width="100" height="5" rx="2.5" fill="#bdc0c7"/>
+    <rect x="1246" y="668" width="120" height="5" rx="2.5" fill="#bdc0c7"/>
+    <rect x="1248" y="455" width="48" height="22" rx="5" fill="#ffffff" stroke="#d23a5c" stroke-width="2"/>
+    <text x="1272" y="470.5" font-size="12" font-weight="700" fill="#d23a5c" text-anchor="middle">想读</text>
+  </g>
+  <text x="1236" y="712" font-size="12" font-weight="700" fill="#17181b">（e）拖拽中（→ 想读）</text>
+  <text x="1236" y="728" font-size="10.5" fill="#62666f">跟手 + 旋转 16°/W（≤12°）</text>
+
+  <!-- ===== 版式变体 (f) 瀑布流小卡 ===== -->
+  <text x="1044" y="764" font-size="12" font-weight="700" fill="#17181b">（f）双列瀑布流小卡：发现、窄屏收藏库（不显示社交计数）</text>
+  <rect x="1044" y="776" width="164" height="190" rx="10" fill="#ffffff" stroke="#e3e1dc"/>
+  <g clip-path="url(#clipF1)">
+    <rect x="1044" y="776" width="164" height="123" fill="#f0efeb"/>
+  </g>
+  <polyline points="1060,880 1085,862 1110,866 1135,842 1160,836 1190,812" fill="none" stroke="#009f6b" stroke-width="2"/>
+  <rect x="1142" y="884" width="58" height="12" rx="6" fill="#ffffff" stroke="#e3e1dc"/>
+  <text x="1149" y="893" font-size="7.5" fill="#45484f">CC BY 4.0</text>
+  <text font-size="11" fill="#17181b"><tspan x="1052" y="916">Graph Neural Networks for</tspan><tspan x="1052" y="931">Protein Docking（示例）</tspan></text>
+  <text x="1052" y="952" font-size="9" fill="#62666f">bioRxiv · 2026 · 开放获取</text>
+  <rect x="1236" y="776" width="164" height="200" rx="10" fill="#ffffff" stroke="#e3e1dc"/>
+  <g clip-path="url(#clipF2)">
+    <rect x="1236" y="776" width="164" height="142" fill="#eceeff"/>
+    <rect x="1236" y="776" width="164" height="3" fill="#4a3aa7"/>
+  </g>
+  <text x="1246" y="796" font-size="8.5" fill="#62666f">数学 · math.PR</text>
+  <text font-family="Georgia, 'Times New Roman', 'Songti SC', serif" font-size="14" fill="#17181b"><tspan x="1246" y="822">On the Spectral Gap</tspan><tspan x="1246" y="840">of Random Regular</tspan><tspan x="1246" y="858">Graphs（示例）</tspan></text>
+  <text x="1244" y="938" font-size="9.5" fill="#45484f">A. Novak, K. Ito</text>
+  <text x="1244" y="956" font-size="9" fill="#62666f">arXiv · 2026 · 开放获取</text>
+
+  <!-- ===== 底部说明带 ===== -->
+  <rect x="40" y="1000" width="480" height="128" rx="10" fill="#f7f7f5" stroke="#e3e1dc"/>
+  <text x="56" y="1026" font-size="13" font-weight="700" fill="#17181b">手势映射 A（默认）</text>
+  <text x="56" y="1050" font-size="12" fill="#17181b">→ 想读　 ← 不感兴趣　 ↑ 跳过（中性下一篇）　 ↓ 撤回上一张</text>
+  <text x="56" y="1072" font-size="12" fill="#17181b">点按 → 详情 Sheet　 长按 ≥400 ms → 原因菜单　 不绑定双击</text>
+  <text x="56" y="1094" font-size="11.5" fill="#62666f">判定：proj = d + v·0.1 s；横 0.35W / 纵 0.2H；逃逸 800 pt/s</text>
+  <text x="56" y="1114" font-size="11.5" fill="#62666f">轴锁 10 pt；左右边缘 24 pt 让给系统手势；每个手势都有按钮与键盘等价</text>
+
+  <rect x="540" y="1000" width="460" height="128" rx="10" fill="#f7f7f5" stroke="#e3e1dc"/>
+  <text x="556" y="1026" font-size="13" font-weight="700" fill="#17181b">学科色族（8 族 + 中性；颜色从不单独传达信息）</text>
+  <g font-size="11.5" fill="#17181b">
+    <circle cx="562" cy="1046" r="6" fill="#2a78d6"/><text x="574" y="1050">计算机与 AI</text>
+    <circle cx="712" cy="1046" r="6" fill="#e2602b"/><text x="724" y="1050">化学与材料</text>
+    <circle cx="862" cy="1046" r="6" fill="#009f6b"/><text x="874" y="1050">生命科学</text>
+    <circle cx="562" cy="1070" r="6" fill="#c27800"/><text x="574" y="1074">经济·金融·管理</text>
+    <circle cx="712" cy="1070" r="6" fill="#d0658f"/><text x="724" y="1074">心理学</text>
+    <circle cx="862" cy="1070" r="6" fill="#008300"/><text x="874" y="1074">地球·环境·工程</text>
+    <circle cx="562" cy="1094" r="6" fill="#4a3aa7"/><text x="574" y="1098">数学与物理</text>
+    <circle cx="712" cy="1094" r="6" fill="#e34948"/><text x="724" y="1098">医学与健康</text>
+    <circle cx="862" cy="1094" r="6" fill="#6b6f78"/><text x="874" y="1098">其他 / 未知</text>
+  </g>
+  <text x="556" y="1119" font-size="10.5" fill="#62666f">亮色强调色对白色表面与领域浅底均 ≥3:1；正文 ≥4.5:1；暗色另有一套（§14.2）</text>
+
+  <rect x="1020" y="1000" width="420" height="128" rx="10" fill="#f7f7f5" stroke="#e3e1dc"/>
+  <text x="1036" y="1026" font-size="13" font-weight="700" fill="#17181b">分拣卡上刻意不出现</text>
+  <g font-size="12" fill="#17181b">
+    <text x="1036" y="1050">× 社交计数（赞、评论、阅读数）</text>
+    <text x="1036" y="1072">× 许可未知或非 CC 许可的图</text>
+    <text x="1036" y="1094">× AI 生成的图片或封面</text>
+    <text x="1036" y="1116">× 可横滑的标签行 / 图集</text>
+    <text x="1250" y="1050">× 替代作者摘要的 AI 文本</text>
+    <text x="1250" y="1072">× 双击手势</text>
+    <text x="1250" y="1094">× "他人有访问权"类提示</text>
+  </g>
+</svg>

@@ -1,0 +1,124 @@
+# 合规调研访问台账（2026-09-26 UTC）。method: curl=单次 curl（UA "PaperCrawler-survey/0.1 (compliance research; personal research)"）；cache=同日早先抓取进会话缓存后重读；webfetch=WebFetch；search=WebSearch 检索摘要；gh=gh api；api=官方 API。result: HTTP 状态或处理结论；未绕过任何挑战门。
+url	method	result	ref
+https://www.crossref.org/documentation/retrieve-metadata/	curl	200	C1
+https://www.crossref.org/documentation/retrieve-metadata/rest-api/access-and-authentication/	curl	200	C2
+https://help.openalex.org/access/pricing/	curl	200	C3
+https://help.openalex.org/data/works/attributes/	curl	200	C4
+https://help.openalex.org/access/fulltext/	curl	200	C5
+https://help.openalex.org/api-reference/authentication	curl	200 (→ /api/authentication/)	C6
+https://help.openalex.org/api/deprecations/	curl	200	C7
+https://help.openalex.org/access/example-costs/	curl	200	C8
+https://help.openalex.org/access/unpaywall/	curl	200	C35
+https://www.semanticscholar.org/product/api/license	cache	200	C9
+https://www.semanticscholar.org/product/api	cache	200	C10
+https://api.semanticscholar.org/graph/v1/swagger.json	cache	200	C11
+https://api.semanticscholar.org/datasets/v1/release/latest	cache	200 (release 2026-09-22)	C12
+https://opendatacommons.org/licenses/by/1-0/	curl	200	C13
+https://info.arxiv.org/help/api/tou.html	cache	200	C14
+https://info.arxiv.org/help/license/index.html	cache	200	C15
+https://info.arxiv.org/help/license/reuse.html	curl	200	C16
+https://blog.arxiv.org/2026/04/02/arxiv-is-becoming-an-independent-nonprofit/	webfetch	200	C17
+https://www.nlm.nih.gov/databases/download/terms_and_conditions.html	curl	200	C18
+https://www.nlm.nih.gov/databases/download.html	curl	200	C19
+https://www.ncbi.nlm.nih.gov/home/about/policies/	curl	200	C20
+https://ncbiinsights.ncbi.nlm.nih.gov/2017/11/02/new-api-keys-for-the-e-utilities/	curl	200	C21
+https://pmc.ncbi.nlm.nih.gov/about/copyright/	curl	200	C22
+https://pmc.ncbi.nlm.nih.gov/tools/openftlist/	curl	200	C23
+https://www.ebi.ac.uk/about/terms-of-use	cache	200	C24
+https://europepmc.org/Copyright	webfetch	403 (Cloudflare; not bypassed)	C25
+https://europepmc.org/downloads/openaccess	search	snippet only	C25
+https://www.biorxiv.org/tdm	curl	429 (not retried)	C26
+https://www.biorxiv.org/tdm	webfetch	200	C26
+https://www.biorxiv.org/about/FAQ	search	snippet only	C27
+https://api.biorxiv.org/	cache	200	C28
+https://www.dagstuhl.de/en/institute/news/2019/license-change-to-cc0	webfetch	200	C29
+https://dblp.org/robots.txt	curl	200 (User-agent: * Disallow: /)	C30
+https://info.orcid.org/public-client-terms-of-service/	curl	200	C31
+https://info.orcid.org/public-data-file-use-policy/	curl	200	C32
+https://opencitations.net/about	curl	200 (→ /governance/)	C33
+https://core.ac.uk/terms	curl	200	C34
+https://unpaywall.org/products/api	webfetch	SPA, no content	C35
+https://unpaywall.org/legal/terms-of-service	webfetch	SPA, no content	C35
+https://scholar.google.com/robots.txt	curl	200	C36
+https://i4oa.org/	curl	200	C37
+https://i4oa.org/js/table.js	curl	200	C38
+https://i4oa.org/data/publ.txt	curl	200 (112 publishers)	C38
+https://dev.springernature.com/terms-conditions/	curl	200	C39
+https://dev.springernature.com/tdm-reservation-policy/	curl	200	C40
+https://creativecommons.org/licenses/by/4.0/legalcode.en	curl	200	C41
+https://creativecommons.org/licenses/by-nc/4.0/legalcode.en	cache	200	C42
+https://www.copyright.gov/ai/Copyright-and-Artificial-Intelligence-Part-3-Generative-AI-Training-Report-Pre-Publication-Version.pdf	search	snippet only	C43
+https://law.justia.com/cases/federal/district-courts/new-york/nysdce/1:2025cv01305/636920/59/	search	snippet only	C44
+https://www.courtlistener.com/docket/70622297/thomson-reuters-enterprise-centre-gmbh-v-ross-intelligence-inc/	search	snippet only	C45
+https://www.21jingji.com/article/20240226/herald/133a6c2f9c0b045899e4dea10c5778eb.html	search	snippet only	C46
+https://contentsignals.org/	curl	200 (JS shell, no text)	C47
+https://blog.cloudflare.com/content-signals-policy/	webfetch	200	C47
+https://www.w3.org/community/reports/tdmrep/CG-FINAL-tdmrep-20240510/	search	snippet only	C48
+https://datatracker.ietf.org/doc/draft-ietf-aipref-vocab/04/	search	snippet only	C49
+https://www.elsevier.com/about/open-science/research-data/text-and-data-mining	webfetch+curl	200	C50
+https://www.elsevier.com/about/policies-and-standards/text-and-data-mining	curl	200	C50
+https://www.elsevier.com/about/policies-and-standards/text-and-data-mining/faq	curl	200	C51
+https://dev.elsevier.com/api_service_agreement.html	curl	200	C52
+https://onlinelibrary.wiley.com/library-info/resources/text-and-datamining	curl+webfetch	403 (Cloudflare; not bypassed)	C53
+https://wolsupport.wiley.com/s/article/text-data-mining-tdm	webfetch	TLS error	C53
+repos/WileyLabs/tdm-client	gh	28 stars / MIT / pushed 2026-07-02 / not archived	C53
+https://libguides.hkust.edu.hk/tdm	webfetch	200 (updated 2026-09-25)	C54
+https://www.springernature.com/gp/researchers/text-and-data-mining	curl	200	C55
+https://taylorandfrancis.com/our-policies/textanddatamining/	curl	200	C56
+https://pubs.acs.org/page/policy/termsofuse.html	curl+webfetch	403 (not bypassed)	C57
+https://solutions.acs.org/solutions/text-and-data-mining/	curl	200	C57
+https://developer.ieee.org/API_Terms_of_Use2	curl	200	C58
+https://libraries.acm.org/digital-library/policies	curl+webfetch	403 (not bypassed)	C59
+https://www.acm.org/publications/policies/dl_use_policies	curl	403 (not bypassed)	C59
+https://pro.kb.dk/en/licensing/oa-publication-guidelines/acm-open-agreement-document/acm-open-agreement-document.pdf	curl	200 (PDF, pdftotext)	C60
+https://eur-lex.europa.eu/eli/dir/2019/790/oj/eng	cache	200 (earlier same day); curl now 202 empty (WAF)	C61
+https://openfuture.eu/blog/laion-round-2-machine-readable-but-still-not-actionable/	webfetch	200	C62
+https://www.dlapiper.com/en/insights/blogs/mse-today/2025/robert-kneschke-v-laion	webfetch	200 (excerpt only)	C62
+https://www.twobirds.com/en/insights/2025/germany/higher-regional-court-hamburg-confirms-ai-training-was-permitted-(kneschke-v,-d-,-laion)	webfetch	402	C62
+https://www.insidetechlaw.com/blog/2025/12/machine-readable-opt-outs-and-ai-training-hamburg-court-clarifies-copyright-exceptions	webfetch	TLS error	C62
+https://www.legislation.gov.uk/ukpga/1988/48/section/29A	cache	200	C63
+https://www.law.cornell.edu/uscode/text/17/107	curl	200	C64
+https://www.law.cornell.edu/uscode/text/17/1201	curl	200	C65
+https://law.justia.com/cases/federal/appellate-courts/ca2/12-4547/12-4547-2014-06-10.html	search	snippet only	C66
+https://law.justia.com/cases/federal/appellate-courts/ca2/13-4829/13-4829-2015-10-16.html	search	snippet only	C67
+https://copyrightalliance.org/wp-content/uploads/2025/06/Bartz-v.-Anthropic-Order.pdf	search	snippet only	C68
+https://zscqj.beijing.gov.cn/zscqj/zwgk/flfg18/436481084/index.html	curl	200	C69
+https://www.cac.gov.cn/2013-02/18/c_126468776.htm	curl	200	C70
+https://www.niso.org/publications/rp/RP-7-2012_SERU.pdf	curl	200 (PDF, pdftotext)	C71
+https://lib.umich.edu/about-us/policies/statement-appropriate-use-electronic-resources	curl	200	C72
+https://help.oclc.org/Library_Management/EZproxy/Troubleshooting/OCLC_EZproxy_security_rules_explained	curl	200	C73
+https://help.oclc.org/Library_Management/EZproxy/Configure_resources/UsageLimit	search	snippet only	C74
+https://cen.acs.org/policy/publishing/Science-publishers-settle-lawsuits-ResearchGate/101/web/2023/09	search	snippet only	C75
+https://www.cac.gov.cn/2022-01/04/c_1642894606364259.htm	curl	200	C76
+https://www.cac.gov.cn/2018-11/15/c_1123716072.htm	curl	200	C77
+https://www.gov.cn/xinwen/2021-08/20/content_5632486.htm	curl	404	C78
+https://nmca.miit.gov.cn/zwgk/zcwj/flfg/art/2021/art_0bb3c8d9e620423fb4deeb85e1b751c5.html	curl	200	C78
+https://www.cac.gov.cn/2024-03/22/c_1712776611775634.htm	search	snippet only	C79
+https://wtgdlyj.trs.gov.cn/zfxxgk/fdzdgknr/zcwj_5764834/202511/t20251128_88997302.html	curl	200	C80
+https://www.civillaw.com.cn/t/?id=40241	webfetch	encoding garbled	C80
+https://www.cac.gov.cn/2022-11/16/c_1670253725725039.htm	curl	200	C81
+https://www.cac.gov.cn/2022-06/26/c_1657868775042841.htm	curl	200	C82
+https://www.cac.gov.cn/2023-07/13/c_1690898327029107.htm	curl	200	C83
+https://www.cac.gov.cn/2022-12/11/c_1672221949354811.htm	curl	200	C84
+https://www.cac.gov.cn/2025-03/14/c_1743654684782215.htm	curl	200	C85
+https://std.samr.gov.cn/gb/search/gbDetailed?id=301E0388CB75788DE06397BE0A0AE1B4	search	snippet only	C86
+https://www.cac.gov.cn/2026-01/09/c_1769688009588554.htm	curl	200	C87
+https://www.cac.gov.cn/2014-08/19/c_1112138363.htm	search	snippet only	C88
+https://eur-lex.europa.eu/legal-content/EN/TXT/HTML/?uri=CELEX:32016R0679	webfetch	empty (WAF)	C89
+https://gdpr-info.eu/art-8-gdpr/	curl	403 (NinjaFirewall; not bypassed)	C89
+https://gdpr-info.eu/art-3-gdpr/	webfetch	200	C89
+https://gdpr-info.eu/art-8-gdpr/	webfetch	200	C89
+https://gdpr-info.eu/art-22-gdpr/	webfetch	200	C89
+https://gdpr-info.eu/art-27-gdpr/	webfetch	200	C89
+https://gdpr-info.eu/art-35-gdpr/	webfetch	200	C89
+https://eur-lex.europa.eu/eli/reg/2022/2065/oj/eng	cache	200 (earlier same day); curl now 202 empty (WAF)	C90
+https://eur-lex.europa.eu/legal-content/EN/TXT/HTML/?uri=CELEX%3A32003H0361	search	snippet only	C91
+https://artificialintelligenceact.eu/article/50/	webfetch	200	C92
+https://www.law.cornell.edu/uscode/text/15/6501	curl	200	C93
+https://www.law.cornell.edu/uscode/text/15/6502	curl	200	C93
+https://www.federalregister.gov/documents/2025/04/22/2025-05904/childrens-online-privacy-protection-rule	curl	redirect to unblock page	C94
+https://www.federalregister.gov/api/v1/documents/2025-05904.json	api	200 (effective_on 2025-06-23; 90 FR 16918)	C94
+https://www.law.cornell.edu/uscode/text/47/230	cache	200	C95
+https://www.copyright.gov/dmca-directory/	curl	200	C96
+https://www.copyright.gov/dmca-directory/faq.html	curl	200	C96
+https://www.courts.michigan.gov/4a4c21/siteassets/case-documents/uploads/opinions/final/coa/20161206_c326667(125)_rptr_180o-326667-final-i.pdf	search	snippet only	C97
