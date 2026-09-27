@@ -4,36 +4,42 @@ credentials/
 *.secret
 storage_state*.json
 auth_profiles/
-.env
-.env.*
-
-# ---- 认证框架（Phase 4；绝不入库）----
 auth/state/
 *.enc
 .filekey
 profiles.toml
-
-# ---- 项目级配置（D-025；仅非敏感键，敏感键有启动护栏，此为双保险防误提交）----
 paper-crawler.toml
+.env
+.env.*
 
-# ---- 下载产物（体积大且有版权，绝不入库）----
+# ---- 本地运行目录：凭证、数据库、日志与报告都在这里，整目录绝不追踪 ----
+/.paper-crawler/
+
+# ---- 数据与下载产物（体积大且有版权，绝不入库）----
 data/
 downloads/
 *.pdf
-!docs/**/*.pdf-placeholder
-
-# ---- 运行时 ----
-# watch 日报（design/05 §7 落 docs/reports/watch/；plan §4 T5 裁决③：运行产物不入 git）
-docs/reports/watch/
-*.log
 *.sqlite
 *.sqlite3
+*.sqlite-wal
+*.sqlite-shm
 *.db
-__pycache__/
-*.pyc
+*.log
+
+# ---- 开发工具与缓存 ----
 .venv/
 venv/
+__pycache__/
+*.pyc
+.coverage
+.coverage.*
+htmlcov/
+.mypy_cache/
+.ruff_cache/
+.pytest_cache/
+.hypothesis/
 node_modules/
+.superpowers/
 
 # ---- 系统与编辑器 ----
 .DS_Store
@@ -41,25 +47,3 @@ Thumbs.db
 .idea/
 .vscode/
 *.swp
-
-# ---- 测试快照的临时重录区（正式 fixtures 会入库）----
-tests/fixtures/_staging/
-# 每 adapter 的重录暂存区（如 arxiv 的 scripts/record_arxiv_fixtures.py 落 _staging）
-tests/fixtures/*/_staging/
-
-# ---- Phase 1 实现阶段增补（工具产物，绝不入库）----
-.coverage
-.coverage.*
-htmlcov/
-# SQLite WAL 副本文件（journal_mode=WAL）
-*.sqlite-wal
-*.sqlite-shm
-# 质量工具缓存
-.mypy_cache/
-.ruff_cache/
-.pytest_cache/
-# subagent 工作目录
-.superpowers/
-
-# ---- config-home（D-032：迁入仓库根——凭证/DB/数据/日志全在内，整目录绝不追踪）----
-/.paper-crawler/
