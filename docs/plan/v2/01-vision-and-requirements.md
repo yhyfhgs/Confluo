@@ -696,7 +696,7 @@ FR-17…FR-87、NFR-9…NFR-27（§6、§7）── 优先级 Must / Should / Co
 
 ### 10.3 变更控制
 
-- 本文按 [status-workflow](../../process/status-workflow.md) 流转。进入 review 前，全部 `AC-V?.n` 占位须由 09 替换为正式编号（review 状态不允许占位符）；该替换已于 2026-09-27 完成（09 附录 A）。
+- 本文按 [status-workflow](../../archive-v1.md#docs-process-status-workflow-md) 流转。进入 review 前，全部 `AC-V?.n` 占位须由 09 替换为正式编号（review 状态不允许占位符）；该替换已于 2026-09-27 完成（09 附录 A）。
 - 本文 approved 后，FR/NFR 的语义变更须先降回 review 或走 ADR；编号不复用；废弃的需求标注 deprecated 并指向替代条目；新增需求接续编号。
 - 画像与场景属于解释性内容，G-01 调研后可在 draft/review 期间修订，不影响 FR 编号。
 
@@ -1235,7 +1235,7 @@ v1 的六类测试（单元、契约、fixture 回放、集成、在线冒烟与
 - [acceptance-criteria](../../archive-v1.md#docs-testing-acceptance-criteria-md)（AC-0…AC-8、AC-BF 与 FR→AC 映射）
 - [decision-log](../decision-log.md)（D-001…D-039）
 - [progress](../progress.md)（Phase 0–7 状态，2026-07-27 快照）与仓库 [README](../../../README.md)
-- [GLOSSARY](../../GLOSSARY.md)、[status-workflow](../../process/status-workflow.md)、[doc-conventions](../../process/doc-conventions.md)
+- [GLOSSARY](../../GLOSSARY.md)、[status-workflow](../../archive-v1.md#docs-process-status-workflow-md)、[doc-conventions](../../archive-v1.md#docs-process-doc-conventions-md)
 
 **v2 同批设计文档**
 

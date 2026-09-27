@@ -114,7 +114,7 @@ docs/survey/
 
 ## 5. 后续维护方式
 
-1. **状态流转**：本目录文档目前均为 `draft`，按 [status-workflow](../process/status-workflow.md) 流转。
+1. **状态流转**：本目录文档目前均为 `draft`，按 [status-workflow](../archive-v1.md#docs-process-status-workflow-md) 流转。
    - 主 agent 复核后可提升为 `approved`，作为证据基线；
    - 调研文档不进入 `implemented`；
    - 被新调研替代的文档改为 `deprecated`，在顶部注明替代者，文件保留。
@@ -156,4 +156,4 @@ docs/survey/
 
 - [00-survey-synthesis.md](00-survey-synthesis.md)——综合与设计输入
 - [v2 设计决策简报](../plan/v2/00-design-brief.md)——上游架构裁决
-- [文档写作与目录规范](../process/doc-conventions.md)、[状态流程](../process/status-workflow.md)——本目录遵循的写作与状态规则
+- [文档写作与目录规范](../archive-v1.md#docs-process-doc-conventions-md)、[状态流程](../archive-v1.md#docs-process-status-workflow-md)——本目录遵循的写作与状态规则

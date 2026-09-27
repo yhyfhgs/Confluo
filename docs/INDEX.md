@@ -1,7 +1,7 @@
 # 文档索引（唯一权威清单）
 
-> 本表是 main 上全部文档的单一事实来源：新增、改名或废弃文档时，在同一提交内更新本表。status 取值与流转见 [process/status-workflow.md](process/status-workflow.md)。
-> **最后盘点：2026-09-27（v2 重新开始）**：main 只保留 v2 的调研、计划与 demo，均为 draft、待评审；v1 的实现与文档已归档到分支 `archive/v1`（标签 `v1-final`），路径索引见 [archive-v1.md](archive-v1.md)。
+> 本表是 main 上全部文档的单一事实来源：新增、改名或废弃文档时，在同一提交内更新本表。status 取值与流转沿用 v1 的 status-workflow（已归档，见 [archive-v1](archive-v1.md#docs-process-status-workflow-md)；摘要见 [AGENTS.md](../AGENTS.md)）。
+> **最后盘点：2026-09-27（第二次清理）**：main 只保留 v2 的调研、计划、demo 与入口文档，v2 文档均为 draft、待评审。v1 的实现与全部文档，包括流程规范、状态机配图与 ADR D-001…D-039 的正文，都在分支 `archive/v1`（标签 `v1-final`），路径索引见 [archive-v1.md](archive-v1.md)。
 
 ## 按意图导航
 
@@ -14,7 +14,7 @@
 | 理解推荐与双向匹配 | [plan/v2/06](plan/v2/06-recommendation-and-matching.md) → [图 v2-07](diagrams/v2-07-rec-pipeline.svg)、[图 v2-08](diagrams/v2-08-bidirectional-matching.svg) |
 | 理解合规边界 | [plan/v2/08](plan/v2/08-compliance-security-privacy.md) → [图 v2-10](diagrams/v2-10-data-boundaries.svg) |
 | 开始实施（V0） | [plan/v2/09 路线图](plan/v2/09-roadmap-and-milestones.md) → [adr-proposals](plan/v2/adr-proposals.md) |
-| 查"为什么这样设计" | [plan/decision-log.md](plan/decision-log.md)（D-001…D-039 为 v1 历史；D-040…D-071 为 v2 proposed） |
+| 查"为什么这样设计" | [plan/decision-log.md](plan/decision-log.md)（D-001…D-039 只留 v1 编号索引，正文在 `archive/v1`；D-040…D-071 为 v2 proposed） |
 | 查 v1 的某个文件 | [archive-v1.md](archive-v1.md) |
 
 ## 根文档
@@ -82,19 +82,10 @@
 | [survey/ux/card-feed-interaction.md](survey/ux/card-feed-interaction.md) | UX 调研：卡片流与滑动交互（抖音/小红书/Tinder 式）及实现技术 | draft | 2026-09-26 |
 | [survey/compliance/multi-user-platform-compliance.md](survey/compliance/multi-user-platform-compliance.md) | 合规调研：从单用户本地工具到多用户平台的许可、ToS 与监管边界 | draft | 2026-09-26 |
 
-## process/ — 流程规范（沿用 v1）
-
-| 路径 | 标题 | status | updated |
-|---|---|---|---|
-| [process/git-workflow.md](process/git-workflow.md) | Git 工作流程规范 | approved | 2026-07-20 |
-| [process/status-workflow.md](process/status-workflow.md) | 文档与代码状态流程 | approved | 2026-07-20 |
-| [process/doc-conventions.md](process/doc-conventions.md) | 文档写作与目录规范 | approved | 2026-07-20 |
-
 ## diagrams/ — SVG 图（源文件即交付物）
 
 | 文件 | 内容 | 对应文档 |
 |---|---|---|
-| [diagrams/06-status-machine.svg](diagrams/06-status-machine.svg) | 双状态机与联动（v1 沿用的流程图） | process/status-workflow |
 | [diagrams/v2-01-architecture.svg](diagrams/v2-01-architecture.svg) | v2 分层组件与四个数据域 | plan/v2/02 |
 | [diagrams/v2-02-dataflow.svg](diagrams/v2-02-dataflow.svg) | v2 主数据流与合规边界 | plan/v2/02 |
 | [diagrams/v2-03-source-model.svg](diagrams/v2-03-source-model.svg) | Source / SourceChannel / Venue / Connector / Policy 关系 | plan/v2/03 |
@@ -113,4 +104,5 @@
 |---|---|
 | [logs/2026-09-27-session-011.md](logs/2026-09-27-session-011.md) | v2 调研与设计 session（含 v1 归档与 main 清理的追加记录）。v1 的 session 001–010 与阶段报告见 [archive-v1](archive-v1.md) |
 | [logs/2026-09-27-session-012.md](logs/2026-09-27-session-012.md) | 来源汇流宣传概念图 v2-11（数据驱动生成、口径与对账） |
+| [logs/2026-09-27-session-013.md](logs/2026-09-27-session-013.md) | 第二次清理：v1 流程规范、状态机配图与 ADR D-001…D-039 正文移出 main（均已在 `archive/v1`） |
 | reports/ | v2 里程碑报告（待 V0 起产生） |

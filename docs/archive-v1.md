@@ -8,12 +8,14 @@ updated: 2026-09-27
 # v1 归档说明与路径索引
 
 > 2026-09-27 起，main 只保留 v2 的调研、计划与 demo。v1 的全部代码、测试、VenueSpec、配置、脚本与设计文档，完整保留在分支 **`archive/v1`** 与附注标签 **`v1-final`**，二者都指向提交 `b1175f8`，即原 `fix/audit-2026-07` 分支末端（main 的 Phase 0–7 + 2026-07 审计修复 R1–R4）。
+> 同日第二次清理（[session 013](logs/2026-09-27-session-013.md)）把 main 上沿用的 v1 治理件也移出了 main，清单见 §4。它们在 `archive/v1` 上原样保存，所以这次没有新建分支，`archive/v1` 与 `v1-final` 也没有改动。
 > v2 文档中凡是指向 v1 文件的链接，都会跳到本页对应路径的锚点；链接文字保持原样。
 
 ## 1. 怎么查看 v1
 
 ```bash
 git show archive/v1:docs/design/06-data-model.md      # 只看某个文件
+git show archive/v1:docs/plan/decision-log.md         # v1 ADR D-001…D-039 全文
 git switch archive/v1                                  # 切换到 v1（回到 v2：git switch main）
 git worktree add ../paper-crawler-v1 archive/v1        # 并排对照：另开一个工作树
 ```
@@ -24,7 +26,7 @@ git worktree add ../paper-crawler-v1 archive/v1        # 并排对照：另开�
 
 - **实现**：Python 3.12 单用户 CLI，六阶段 pipeline（discover → enumerate → resolve → fetch → extract → ingest）；21 个平台 adapter、62 个 VenueSpec；SQLite + FTS5；订阅 DSL + watermark + 日报；认证框架（cookie、EZproxy、SSO、API key）。
 - **里程碑**：Phase 0–7 全部完成（标签 `phase-0` … `phase-7`）；Phase 7 收官门禁为 4617 passed / 31 skipped，覆盖率 98.98%；之后是 2026-07 终审审计修复批 R1–R4。
-- **ADR**：D-001…D-039 仍保留在 main 的 [decision-log](plan/decision-log.md) 中作为历史；v2 草案 D-040 起会点名修订或取代其中的相关条目。
+- **ADR**：D-001…D-039 的全文在 `archive/v1` 的 `docs/plan/decision-log.md`；main 的 [decision-log](plan/decision-log.md) 只保留它们的编号索引，v2 草案 D-040 起会点名修订或取代其中的相关条目。
 - **归档规模**：776 个受控文件：`tests` 431、`src` 134、`docs` 123、`venues` 62、`subscriptions` 10、`scripts` 7、`config` 3、`.gitignore` 1、`AGENTS.md` 1、`Makefile` 1、`README.md` 1、`pyproject.toml` 1、`uv.lock` 1。
 
 ## 3. 路径索引
@@ -216,3 +218,18 @@ v1 的全部文档按目录列出；另外单列 v2 文档引用到的 v1 代码
 | <a id="docs-diagrams-04-auth-flow-svg"></a>`docs/diagrams/04-auth-flow.svg` | v1 配图 | — |
 | <a id="docs-diagrams-05-data-model-svg"></a>`docs/diagrams/05-data-model.svg` | v1 配图 | — |
 | <a id="docs-diagrams-06-status-machine-svg"></a>`docs/diagrams/06-status-machine.svg` | v1 配图 | — |
+
+## 4. 第二次清理（2026-09-27）
+
+第一次清理后，main 仍沿用了几份 v1 治理件。按用户要求"main 只保留最新的文档"，本次把它们移出 main。下表是移出的全部内容；前四项与 `archive/v1` 上的文件逐字节相同。
+
+| main 上移出的内容 | 在 `archive/v1` 上的位置 | 说明 |
+|---|---|---|
+| `docs/process/git-workflow.md` | [同路径](#docs-process-git-workflow-md) | v1 流程规范（D-009） |
+| `docs/process/status-workflow.md` | [同路径](#docs-process-status-workflow-md) | v1 流程规范（D-010） |
+| `docs/process/doc-conventions.md` | [同路径](#docs-process-doc-conventions-md) | v1 流程规范 |
+| `docs/diagrams/06-status-machine.svg` | [同路径](#docs-diagrams-06-status-machine-svg) | status-workflow 的配图 |
+| `docs/plan/decision-log.md` 中 D-001…D-039 的正文 | [同路径](#docs-plan-decision-log-md) | main 上的版本只把指向 v1 文档的链接改指本页锚点，正文与 `archive/v1` 一致；main 的 decision-log 保留编号索引与 v2 登记节 |
+
+- **规则仍然有效**：09 路线图 §14 写明三份规范在 v2 中"原样适用"，D-040 草案也把 D-008、D-009、D-010 列为继承；移出 main 只改变存放位置。[AGENTS.md](../AGENTS.md) 给出摘要，09 路线图 V0-T4 的修订提案会把 v2 版本写回 main 的 `docs/process/`。
+- **链接**：v2 文档中指向这三份规范的链接已改指本页锚点，链接文字不变。

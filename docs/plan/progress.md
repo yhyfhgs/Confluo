@@ -16,8 +16,8 @@ updated: 2026-09-27
   - [docs/survey/](../survey/README.md)：14 个主题的调研，逐篇对抗核验，另有一篇综合；
   - [plan/v2/](v2/README.md)：简报与三轮裁决、01–08 设计、09 路线图、32 条 ADR 草案 D-040…D-071、设计过程记录、交互 demo；
   - [支持名录](../catalog/source-directory.md)：187 条；
-  - 10 张 v2 配图。
-- **v1**：Phase 0–7 与 2026-07 审计修复已完成，完整归档在分支 `archive/v1`（标签 `v1-final`），见 [archive-v1](../archive-v1.md)。v1 的 ADR D-001…D-039 保留在 [decision-log](decision-log.md) 中作为历史，由 v2 ADR 点名修订或取代。
+  - 11 张 v2 配图。
+- **v1**：Phase 0–7 与 2026-07 审计修复已完成，完整归档在分支 `archive/v1`（标签 `v1-final`），见 [archive-v1](../archive-v1.md)。v1 的流程规范、状态机配图与 ADR D-001…D-039 的正文也只在该分支上（2026-09-27 第二次清理移出 main）；[decision-log](decision-log.md) 保留 v1 编号索引，由 v2 ADR 点名修订或取代。
 - **待用户决定**：
   - Q1 是否商业化；
   - Q2 是否面向中国大陆公众运营；

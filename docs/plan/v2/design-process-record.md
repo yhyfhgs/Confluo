@@ -1179,7 +1179,7 @@ updated: 2026-09-27
 
 ## 9. 与 v1 的关系与迁移
 
-- **前例**：v1 的过程证据放在 `docs/logs/`（session 日志）与 `docs/reports/`（阶段报告与审计），例如 [2026-07-20 一致性评审](../../archive-v1.md#docs-reports-2026-07-20-consistency-review-md)、[2026-07-21 第二轮审计](../../archive-v1.md#docs-reports-2026-07-21-audit-round2-md)、[Phase 7 报告](../../archive-v1.md#docs-reports-2026-07-27-phase7-report-md)。本文是 v2 设计阶段的对应物。v2 延续了 v1 的三个做法："一致性评审 → 审计"、"取代旧 ADR 须由新 ADR 点名"，以及 draft → review → approved 的[状态流程](../../process/status-workflow.md)。
+- **前例**：v1 的过程证据放在 `docs/logs/`（session 日志）与 `docs/reports/`（阶段报告与审计），例如 [2026-07-20 一致性评审](../../archive-v1.md#docs-reports-2026-07-20-consistency-review-md)、[2026-07-21 第二轮审计](../../archive-v1.md#docs-reports-2026-07-21-audit-round2-md)、[Phase 7 报告](../../archive-v1.md#docs-reports-2026-07-27-phase7-report-md)。本文是 v2 设计阶段的对应物。v2 延续了 v1 的三个做法："一致性评审 → 审计"、"取代旧 ADR 须由新 ADR 点名"，以及 draft → review → approved 的[状态流程](../../archive-v1.md#docs-process-status-workflow-md)。
 - **v1 维护冻结**：v1 处于维护冻结状态（简报 B-03）。本文不修改任何 v1 文档、代码或 ADR；D-001…D-039 保持原样，v2 的新 ADR 由 09 从 D-040 起草。
 - **迁移由各文档承担**：v1 模块、文档与 ADR 在 v2 中的去向，见各文档的"与 v1 的关系与迁移"节：01 §13、02 §6、03 §14、04 §18、05 §14、06 §23、07 §21、08 §13、名录 §10。
 - **本文自身**：本文没有迁移动作。是否在 `docs/reports/` 为本文放阶段报告指针，由主 agent 决定（§10 第 1 条、DPR-55）。
@@ -1321,8 +1321,8 @@ def check_process_record(record, round1, resume_counts, brief_r2_ids):
 **仓库规范与 v1 文档**
 
 - [AGENTS.md](../../../AGENTS.md)
-- [文档写作与目录规范](../../process/doc-conventions.md)
-- [状态流程](../../process/status-workflow.md)
+- [文档写作与目录规范](../../archive-v1.md#docs-process-doc-conventions-md)
+- [状态流程](../../archive-v1.md#docs-process-status-workflow-md)
 - [决策日志](../decision-log.md)（D-001…D-039）
 - [progress](../progress.md)
 - [INDEX](../../INDEX.md)

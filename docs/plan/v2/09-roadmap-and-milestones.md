@@ -146,7 +146,7 @@ updated: 2026-09-27
 | `extension/`（TypeScript） | Companion Extension（MV3） | V3 |
 | pc-agent | 以 v1 包加 `[agent]`、`[auth]`、`[auth-browser]` extras 打包，复用 v1 的 AuthProvider、`CredentialStore`、`RateLimiter`、冷却与 `%PDF` 校验（02 §2.4 U3；08 §13） | V3；对 v1 代码只做"被导入"，不改其语义 |
 
-**v1 缺陷修复流程**：v1 缺陷照 [git-workflow](../../process/git-workflow.md) 开 `fix/v1-<issue>` 分支，`make check` 覆盖 v1 与 v2 两套测试；修复若触及 pc-agent 复用的模块，须同时跑 pc-agent 的契约测试。v1 不接新功能请求；新需求一律登记为 v2 FR。
+**v1 缺陷修复流程**：v1 缺陷照 [git-workflow](../../archive-v1.md#docs-process-git-workflow-md) 开 `fix/v1-<issue>` 分支，`make check` 覆盖 v1 与 v2 两套测试；修复若触及 pc-agent 复用的模块，须同时跑 pc-agent 的契约测试。v1 不接新功能请求；新需求一律登记为 v2 FR。
 
 **并行期的数据关系**：v1 库（`.paper-crawler/catalog.sqlite`，D-032）在迁移前后都只读访问；v2 的 ETL 以 `mode=ro` 打开（05 §10.1），任何一步都不写 v1 库（§6）。
 
@@ -154,11 +154,11 @@ updated: 2026-09-27
 
 | 既有流程 | v2 的用法 |
 |---|---|
-| 文档先行与双状态机（D-008、D-010；[status-workflow](../../process/status-workflow.md)） | 模块进入 `in_dev` 的前置条件是承接设计文档 `approved`；V0-T2 把 01–09 与名录推进到 approved。里程碑出口时，已 `stable` 的模块所对应的设计章节转 `implemented`（文档级状态在全部章节落地后才转） |
-| Git 流程（D-009；[git-workflow](../../process/git-workflow.md)） | trunk-based；v2 实现一律短分支 + 自查清单 + controller 合并（§10）。Conventional Commits 的 scope 表增补：`egress`、`policy`、`registry`、`connector:<id>`、`corpus`、`retrieval`、`rec`、`events`、`db`、`web`、`ext`、`agent`（V0-T4 写入 git-workflow 的修订提案） |
+| 文档先行与双状态机（D-008、D-010；[status-workflow](../../archive-v1.md#docs-process-status-workflow-md)） | 模块进入 `in_dev` 的前置条件是承接设计文档 `approved`；V0-T2 把 01–09 与名录推进到 approved。里程碑出口时，已 `stable` 的模块所对应的设计章节转 `implemented`（文档级状态在全部章节落地后才转） |
+| Git 流程（D-009；[git-workflow](../../archive-v1.md#docs-process-git-workflow-md)） | trunk-based；v2 实现一律短分支 + 自查清单 + controller 合并（§10）。Conventional Commits 的 scope 表增补：`egress`、`policy`、`registry`、`connector:<id>`、`corpus`、`retrieval`、`rec`、`events`、`db`、`web`、`ext`、`agent`（V0-T4 写入 git-workflow 的修订提案） |
 | 门禁 `make check`（AGENTS.md；D-017） | 保持为提交门禁，覆盖 v1 与 v2：lint、format、strict mypy、离线测试（v2 另含 TypeScript 的 lint、类型检查与单测），核心覆盖率 ≥80%。断网可跑（AC-V0.12）；数据库测试使用本机临时 PG 实例，不访问外网（§5.2） |
 | 在线验证 `make smoke` | 沿用"只在显式命令下执行、需联系邮箱、走生产同款限速"的门控；v2 的在线冒烟与 canary 并入漂移探针的只读样本（03 §15.10） |
-| Phase 报告与验收记录（[doc-conventions](../../process/doc-conventions.md) §5；[test-plan](../../archive-v1.md#docs-testing-test-plan-md) §7） | 每个里程碑出口写 `docs/reports/YYYY-MM-DD-v2-v<m>-report.md`（目标回顾、交付清单、验收汇总、偏差、风险更新、下一里程碑建议）与 `docs/testing/records/YYYY-MM-DD-v2-v<m>-acceptance.md`（逐条 AC 判定与证据）；每个工作 session 写 `docs/logs/` 日志 |
+| Phase 报告与验收记录（[doc-conventions](../../archive-v1.md#docs-process-doc-conventions-md) §5；[test-plan](../../archive-v1.md#docs-testing-test-plan-md) §7） | 每个里程碑出口写 `docs/reports/YYYY-MM-DD-v2-v<m>-report.md`（目标回顾、交付清单、验收汇总、偏差、风险更新、下一里程碑建议）与 `docs/testing/records/YYYY-MM-DD-v2-v<m>-acceptance.md`（逐条 AC 判定与证据）；每个工作 session 写 `docs/logs/` 日志 |
 | progress 与 INDEX | progress.md 增设"v2 里程碑"与"v2 模块状态"两张表；新增、改名、废弃文档同一提交内更新 INDEX（AGENTS.md） |
 | acceptance-criteria | V0-T2 在 [acceptance-criteria](../../archive-v1.md#docs-testing-acceptance-criteria-md) 增补 v2 区：AC-0.6…AC-0.18 与 AC-V0.1…AC-V7.7 的判据摘要、FR-17…FR-87 与 NFR-9…NFR-27 的映射（即本文 §4） |
 | ADR（decision-log） | D-040…D-071 在 V0-T1 由用户裁决后以 accepted 追加进 decision-log；实现期新决策从 D-072 起 |
@@ -1168,7 +1168,7 @@ assert all(max(ac.milestone for ac in r.acs) <= 5 for r in must)   # Must 都在
 | [progress](../progress.md) | 增设 v2 区（里程碑表、模块状态表、决策门状态） | V0-T2 由主 agent 更新 |
 | [acceptance-criteria](../../archive-v1.md#docs-testing-acceptance-criteria-md) | AC-0.1…AC-0.5 继承并扩展作用域；新增 AC-0.6…AC-0.18 与 AC-V 区；AC-1…AC-8、AC-BF 保持为 v1 验收，其中 AC-4.1…AC-4.6 与 AC-BF.1 在 personal 本机取回上复验（AC-V3.21） | V0-T2 增补 v2 区与 FR→AC 映射 |
 | [test-plan](../../archive-v1.md#docs-testing-test-plan-md) | T1–T6 沿用；T7–T14 新增 | V0-T12 起草 test-plan 修订（新增类型与 v2 门禁），走 status-workflow |
-| [git-workflow](../../process/git-workflow.md)、[status-workflow](../../process/status-workflow.md)、[doc-conventions](../../process/doc-conventions.md) | 原样适用；scope 表与 tag 规则增补 | V0-T4 提交修订提案 |
+| [git-workflow](../../archive-v1.md#docs-process-git-workflow-md)、[status-workflow](../../archive-v1.md#docs-process-status-workflow-md)、[doc-conventions](../../archive-v1.md#docs-process-doc-conventions-md) | 原样适用；scope 表与 tag 规则增补 | V0-T4 提交修订提案 |
 | v1 ADR D-001…D-039 | 在 v2 中的适用范围由 D-040 总则逐条列明（继承、修订、取代、不适用） | 见 [adr-proposals](adr-proposals.md) |
 | v1 Phase 报告与验收记录惯例 | 改名为里程碑报告与里程碑验收记录，模板不变 | §2.4 |
 | v1 代码与库 | 维护冻结；只读 ETL 源；pc-agent 复用库 | §2.3、§6 |
@@ -1228,7 +1228,7 @@ assert all(max(ac.milestone for ac in r.acs) <= 5 for r in must)   # Must 都在
 
 **仓库流程与 v1 文档**
 
-- [AGENTS.md](../../../AGENTS.md)、[git-workflow](../../process/git-workflow.md)、[status-workflow](../../process/status-workflow.md)、[doc-conventions](../../process/doc-conventions.md)
+- [AGENTS.md](../../../AGENTS.md)、[git-workflow](../../archive-v1.md#docs-process-git-workflow-md)、[status-workflow](../../archive-v1.md#docs-process-status-workflow-md)、[doc-conventions](../../archive-v1.md#docs-process-doc-conventions-md)
 - [test-plan](../../archive-v1.md#docs-testing-test-plan-md)（T1–T6、§5 在线礼貌预算、§7 记录规范）、[acceptance-criteria](../../archive-v1.md#docs-testing-acceptance-criteria-md)（AC-0…AC-8、AC-BF）
 - [decision-log](../decision-log.md)（D-001…D-039）、[development-plan](../../archive-v1.md#docs-plan-development-plan-md)、[progress](../progress.md)
 
