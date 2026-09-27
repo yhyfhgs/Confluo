@@ -9,7 +9,7 @@
 |---|---|
 | 5 分钟了解 v2 | [plan/v2/README](plan/v2/README.md) → [简报](plan/v2/00-design-brief.md) → [demo](plan/v2/demo/paper-feed-demo.html) |
 | 看调研证据 | [survey/README](survey/README.md) → [调研综合](survey/00-survey-synthesis.md) → 各主题 |
-| 看支持哪些来源 | [catalog/source-directory](catalog/source-directory.md) → [plan/v2/03](plan/v2/03-sources-and-corpus-pipeline.md) |
+| 看支持哪些来源 | [catalog/source-directory](catalog/source-directory.md) → [plan/v2/03](plan/v2/03-sources-and-corpus-pipeline.md)；一图概览见 [图 v2-11](diagrams/v2-11-source-confluence.svg) |
 | 理解检索、路由与 TSRG | [plan/v2/04](plan/v2/04-retrieval-and-routing.md) → [图 v2-04](diagrams/v2-04-tsrg.svg) |
 | 理解推荐与双向匹配 | [plan/v2/06](plan/v2/06-recommendation-and-matching.md) → [图 v2-07](diagrams/v2-07-rec-pipeline.svg)、[图 v2-08](diagrams/v2-08-bidirectional-matching.svg) |
 | 理解合规边界 | [plan/v2/08](plan/v2/08-compliance-security-privacy.md) → [图 v2-10](diagrams/v2-10-data-boundaries.svg) |
@@ -105,10 +105,12 @@
 | [diagrams/v2-08-bidirectional-matching.svg](diagrams/v2-08-bidirectional-matching.svg) | 三层双向匹配 | plan/v2/06 |
 | [diagrams/v2-09-card-anatomy.svg](diagrams/v2-09-card-anatomy.svg) | 论文卡片解剖 | plan/v2/07 |
 | [diagrams/v2-10-data-boundaries.svg](diagrams/v2-10-data-boundaries.svg) | 共享、私有、用户侧与上游之间的数据流与禁止路径 | plan/v2/08 |
+| [diagrams/v2-11-source-confluence.svg](diagrams/v2-11-source-confluence.svg) | 宣传概念图：一级、二级来源汇入统一语料，再合并为一个 Work；每条细线对应名录 §3 的一行 | catalog/source-directory、plan/v2/03 |
 
 ## logs/ · reports/ — 留痕（无 front matter 义务）
 
 | 路径 | 内容 |
 |---|---|
 | [logs/2026-09-27-session-011.md](logs/2026-09-27-session-011.md) | v2 调研与设计 session（含 v1 归档与 main 清理的追加记录）。v1 的 session 001–010 与阶段报告见 [archive-v1](archive-v1.md) |
+| [logs/2026-09-27-session-012.md](logs/2026-09-27-session-012.md) | 来源汇流宣传概念图 v2-11（数据驱动生成、口径与对账） |
 | reports/ | v2 里程碑报告（待 V0 起产生） |
