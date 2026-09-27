@@ -1,8 +1,0 @@
-<?xml version="1.0" encoding="UTF-8"?>
-<!-- SYNTHETIC (design/adapters/aaai-ojs.md §7 T3 ⑥). GetRecord idDoesNotExist -> GONE
-     (single-id canary miss). Shared core _oai.raise_if_oai_error (reused by parse_get_record). -->
-<OAI-PMH xmlns="http://www.openarchives.org/OAI/2.0/">
-<responseDate>2026-07-21T17:41:30Z</responseDate>
-<request verb="GetRecord" identifier="oai:ojs.aaai.org:article/999999999" metadataPrefix="oai_dc">https://ojs.aaai.org/index.php/AAAI/oai</request>
-<error code="idDoesNotExist">No matching identifier in this repository.</error>
-</OAI-PMH>

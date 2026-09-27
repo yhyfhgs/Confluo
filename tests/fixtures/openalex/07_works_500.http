@@ -1,5 +1,0 @@
-# T6 synthetic OpenAlex 500 internal error response.
-HTTP-STATUS: 500
-Content-Type: application/json
-
-{"error": "internal_server_error"}

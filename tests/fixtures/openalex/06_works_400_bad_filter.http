@@ -1,5 +1,0 @@
-# T6 synthetic OpenAlex 400 malformed filter syntax response.
-HTTP-STATUS: 400
-Content-Type: application/json
-
-{"error": "invalid_query_parameters", "message": "filter value malformed"}

@@ -1,9 +1,0 @@
-# [synthetic][DOCS] Wiley TDM 429（双窗口触顶：3 req/s 或 60/10min）封套。
-# 出处等级：⚠ [DOCS] 依官方 TDM 文档形态合成——无 token 未取过真实 429 体。
-# 核验计划：token 到位后须审计实际 429 触发行为（wiley.md §7），据以校准 Retry-After 与稳态限速。
-# 断言面：HttpClient 冻结映射 429 → ErrorClass.RATE_LIMITED，Retry-After=30 → detail retry_after_s=30。
-HTTP-STATUS: 429
-Content-Type: application/json
-Retry-After: 30
-
-{"error": "Too Many Requests", "message": "TDM rate limit exceeded; retry after 30s"}

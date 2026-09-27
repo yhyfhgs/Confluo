@@ -1,9 +1,0 @@
-<?xml version="1.0" encoding="ISO-8859-1"?>
-<!-- SYNTHETIC fixture (Phase 3 T4, dblp adapter). Deliberately truncated/malformed
-     XML (unclosed <title>/<inproceedings>/<dblp> elements) to exercise the
-     ErrorClass.PARSE path
-     (docs/design/adapters/aggregators.md §5.2 error table: "XML 解析失败/
-     非法结构 — parse（canary 标红）"). -->
-<dblp>
-<inproceedings key="conf/icml/Broken23">
-<title>A Deliberately Truncated Record

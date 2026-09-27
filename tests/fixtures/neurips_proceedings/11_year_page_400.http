@@ -1,6 +1,0 @@
-# SYNTHETIC fixture (T3 fixture #11). HTTP 400 -> CONFIG (request-construction defect,
-# loud stop rather than a resource-terminal state).
-HTTP-STATUS: 400
-Content-Type: text/html; charset=utf-8
-
-<h1>Bad Request</h1>

@@ -1,8 +1,0 @@
-# SYNTHETIC (Phase 2, no user token). 400 Bad Request (malformed query params).
-# HttpClient maps other-4xx (400/405/...) -> config: a request-construction defect
-# that should halt loudly (CONFIG -> pipeline BLOCKED), not be mistaken for a
-# resource terminal state. Shape synthesized.
-HTTP-STATUS: 400
-Content-Type: application/json
-
-{"name":"BadRequestError","message":"Invalid query parameter","status":400}

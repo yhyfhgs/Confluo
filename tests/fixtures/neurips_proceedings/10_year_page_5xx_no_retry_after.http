@@ -1,5 +1,0 @@
-# SYNTHETIC fixture (T3 fixture #10). HTTP 500, no Retry-After -> TRANSIENT.
-HTTP-STATUS: 500
-Content-Type: text/html; charset=utf-8
-
-<h1>Internal Server Error</h1>

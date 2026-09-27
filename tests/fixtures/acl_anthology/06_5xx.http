@@ -1,9 +1,0 @@
-# SYNTHETIC (Phase 2). Not observed live (research/site-survey/acl-anthology.md §7: all
-# 24 survey requests returned 2xx/404, no 5xx sampled). Shape synthesized: a plain 503
-# with no Retry-After header -> HttpClient maps 5xx -> transient (503 WOULD map to
-# rate_limited if it carried Retry-After, per http.py's _error_for_status; this fixture
-# intentionally omits it to exercise the plain-transient branch, design §6 row 5).
-HTTP-STATUS: 503
-Content-Type: text/html; charset=utf-8
-
-<html><body><h1>503 Service Unavailable</h1></body></html>

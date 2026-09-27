@@ -1,8 +1,0 @@
-<?xml version="1.0" encoding="UTF-8"?>
-<!-- SYNTHETIC fixture (Phase 2 T5). OAI-PMH badResumptionToken error → ErrorClass.TRANSIENT
-     (token expires daily; task-level rerun rebuilds from/until from the monthly bucket). -->
-<OAI-PMH xmlns="http://www.openarchives.org/OAI/2.0/">
-<responseDate>2024-02-02T00:00:00Z</responseDate>
-<request verb="ListRecords" resumptionToken="cs|2024-01|1000">https://oaipmh.arxiv.org/oai</request>
-<error code="badResumptionToken">The value of the resumptionToken argument is invalid or expired.</error>
-</OAI-PMH>

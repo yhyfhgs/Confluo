@@ -1,9 +1,0 @@
-<?xml version="1.0" encoding="UTF-8"?>
-<!-- SYNTHETIC (design/adapters/aaai-ojs.md §7 T3 ③). noRecordsMatch = legal empty state,
-     NOT an error (empty datestamp window / empty edition); shared core _oai absorbs it into an
-     empty page. survey §5.2 [LIVE]: set=AAAI:2023-11 single-filter returned noRecordsMatch. -->
-<OAI-PMH xmlns="http://www.openarchives.org/OAI/2.0/">
-<responseDate>2026-07-21T17:41:00Z</responseDate>
-<request verb="ListRecords" metadataPrefix="oai_dc" from="2026-07-01">https://ojs.aaai.org/index.php/AAAI/oai</request>
-<error code="noRecordsMatch">The combination of the values of the from, until, set and metadataPrefix arguments results in an empty list.</error>
-</OAI-PMH>

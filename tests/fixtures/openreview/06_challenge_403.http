@@ -1,9 +1,0 @@
-# SYNTHETIC (Phase 2, no user token). Anonymous /notes 403 ChallengeRequiredError,
-# per site-survey §★ [LIVE] (the head-line finding). HttpClient maps 403 ->
-# no_entitlement; the openreview adapter context-reclassifies it to auth_expired
-# (§6) -> whole-batch BLOCKED(auth). Body shape per observed JSON envelope.
-HTTP-STATUS: 403
-Content-Type: application/json
-x-ratelimit-remaining: 59
-
-{"name":"ChallengeRequiredError","message":"You do not have permission; a challenge is required.","status":403,"details":{"path":"notes"}}

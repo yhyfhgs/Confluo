@@ -1,9 +1,0 @@
-<?xml version="1.0" encoding="ISO-8859-1"?>
-<!-- SYNTHETIC fixture (Phase 3 T4, dblp adapter). A syntactically valid but
-     empty dblp volume document (zero <inproceedings>/<proceedings> children),
-     a legal empty state and not an error
-     (docs/design/adapters/aggregators.md §5.2 error table: "空卷（合法无记录）
-     — 非错误（沿 arxiv noRecordsMatch 先例）"). -->
-<!DOCTYPE dblp SYSTEM "https://dblp.org/xml/dblp.dtd">
-<dblp>
-</dblp>

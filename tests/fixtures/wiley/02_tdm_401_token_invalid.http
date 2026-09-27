@@ -1,8 +1,0 @@
-# [synthetic][DOCS] Wiley TDM 401（token 失效/无效）封套。
-# 出处等级：⚠ [DOCS] 依官方 TDM 文档形态合成——无 token 未取过真实 401 体。
-# 核验计划：token 到位后按 tests/manual/wiley_runbook.md「token 失效演练」重录真实响应。
-# 断言面：HttpClient 冻结映射 401 → ErrorClass.AUTH_EXPIRED（wiley.md §5，不依赖 body 文本）。
-HTTP-STATUS: 401
-Content-Type: application/json
-
-{"error": "Unauthorized", "message": "Invalid or expired Wiley-TDM-Client-Token"}

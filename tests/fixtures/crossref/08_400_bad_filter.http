@@ -1,7 +1,0 @@
-# SYNTHETIC (Phase 3 T3). 400 Bad Request for an illegal filter / ISSN syntax.
-# HttpClient maps other-4xx -> config (请求构造缺陷，响亮停机不重试). Per
-# aggregators.md §5.1 error table (4xx filter 语法/ISSN 非法 -> config) + §8 fixture ⑤.
-HTTP-STATUS: 400
-Content-Type: application/json
-
-{"status":"failed","message-type":"validation-failure","message":[{"type":"parameter-not-allowed","value":"filter=from-pub-date:not-a-date"}]}

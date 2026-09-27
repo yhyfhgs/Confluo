@@ -1,5 +1,0 @@
-{
-  "_synthetic": "SYNTHETIC. Syntactically valid JSON but missing the required `is_oa` key entirely (defensive parse coverage beyond JSON-syntax errors -- e.g. an unannounced upstream schema change) -> parse.parse_response raises PARSE.",
-  "doi": "10.9999/synthetic.missing-is-oa",
-  "oa_status": "gold"
-}

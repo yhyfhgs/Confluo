@@ -1,6 +1,0 @@
-# T6 synthetic S2 429 rate-limited response (有 key 超速，1 req/s).
-HTTP-STATUS: 429
-Retry-After: 2
-Content-Type: application/json
-
-{"error": "Too Many Requests"}

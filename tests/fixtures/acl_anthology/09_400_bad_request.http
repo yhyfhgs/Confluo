@@ -1,8 +1,0 @@
-# SYNTHETIC (Phase 2). Not observed live. HttpClient maps other-4xx (400/405/...) ->
-# config: a request-construction defect that should halt loudly (CONFIG -> pipeline
-# BLOCKED), not be mistaken for a resource terminal state. Shape synthesized after
-# GitHub's generic malformed-request envelope.
-HTTP-STATUS: 400
-Content-Type: application/json; charset=utf-8
-
-{"message": "Problems parsing JSON", "documentation_url": "https://docs.github.com/rest"}

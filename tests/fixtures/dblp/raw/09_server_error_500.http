@@ -1,6 +1,0 @@
-# SYNTHETIC fixture (Phase 3 T4, dblp adapter). 5xx -> ErrorClass.TRANSIENT
-# (docs/design/adapters/aggregators.md §5.2 error table).
-HTTP-STATUS: 500
-Content-Type: text/plain; charset=UTF-8
-
-Internal Server Error
