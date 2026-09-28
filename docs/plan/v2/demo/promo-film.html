@@ -3,14 +3,14 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<title>Paper Crawler 宣传片</title>
-<meta name="description" content="Paper Crawler v2 产品宣传片：以个性化推荐为主线，演示设计阶段交互样机 paper-feed-demo.html 的核心流程。">
+<title>Confluo 宣传片</title>
+<meta name="description" content="Confluo v2 产品宣传片：以个性化推荐为主线，演示设计阶段交互样机 paper-feed-demo.html 的核心流程。">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&family=Noto+Serif+SC:wght@500;600;700&family=Source+Serif+4:opsz,wght@8..60,400;8..60,600&display=swap">
 <style>
 /* =====================================================================
-   Paper Crawler 宣传片 — 1920×1080 定帧舞台，Web Animations 时间轴驱动，可暂停、拖动、逐章跳转。
+   Confluo 宣传片 — 1920×1080 定帧舞台，Web Animations 时间轴驱动，可暂停、拖动、逐章跳转。
    产品色值与 paper-feed-demo.html（07 §14.2 亮色列）一致；舞台为片场暗色，不随系统主题切换。
    ===================================================================== */
 :root {
@@ -363,7 +363,7 @@ html[data-published] #bar, html[data-published] #script { display: none !importa
 </head>
 <body>
 <div id="viewport">
-<div id="stage" aria-label="Paper Crawler 宣传片画面" role="img">
+<div id="stage" aria-label="Confluo 宣传片画面" role="img">
 
   <!-- scene 1 -->
   <div id="flood"></div>
@@ -667,7 +667,7 @@ const CARDS = {
 /* ---------- scene plan: times (s), captions, VO ---------- */
 const SCENES = [
   { t: 0, id: 's1', name: '开场 · 信息洪流', vo: '每天都有上万篇新论文发表。真正和你有关的，可能只有几篇。', sc: '论文标题像潮水一样往上涌，其中三篇亮起来，聚成一叠卡片。' },
-  { t: 8, id: 's2', name: '品牌', vo: 'Paper Crawler：每天一小叠，只挑你该读的论文。', sc: '卡叠标志升起，字标逐字浮现。' },
+  { t: 8, id: 's2', name: '品牌', vo: 'Confluo：每天一小叠，只挑你该读的论文。', sc: '卡叠标志升起，字标逐字浮现。' },
   { t: 13.4, id: 'c1', name: '01 · 从你开始', acc: '#7aa7ff', eb: '01 · 从你开始', h: ['先告诉我们，', '你在研究什么。'], p: '选几个感兴趣的领域，或者导入你在 ORCID、Zotero 里的论文。<b>从第一张卡片开始，推荐就跟着你的方向走。</b>', sc: '手机入画：首次引导选中 4 个领域，导入 ORCID 作品 12 篇，点“开始今日分拣”。' },
   { t: 23.6, id: 'c2', name: '02 · 从上万篇到 25 张', acc: '#f0b341', eb: '02 · 从上万篇到 25 张', h: ['不追热度，', '只挑对你有用的。'], p: '先按你的兴趣找出候选，再逐篇估计你会不会<b>想读、收藏、打高分或引用</b>它。另外留几个位置给相邻方向，免得越推越窄。', sc: '右侧漏斗：新论文 → 兴趣召回 → 价值打分 → 打散与探索 → 今日 25 张；手机里卡叠落定。' },
   { t: 33, id: 'c3', name: '03 · 越滑越懂你', acc: '#ff8fa8', eb: '03 · 越滑越懂你', h: ['滑一下，', '它就更懂你。'], p: '喜欢就右滑，没兴趣就左滑。反馈 <b>2 秒内生效</b>，下一张卡片会跟着你调整。', sc: '三次滑动：想读 / 不感兴趣 / 想读；右侧兴趣画像实时增减；第 4 张的理由变为“与你刚标记想读的论文相近”。' },
@@ -675,7 +675,7 @@ const SCENES = [
   { t: 55.4, id: 'c5', name: '05 · 你说了算', acc: '#7ee2a8', eb: '05 · 你说了算', h: ['推荐什么，', '由你决定。'], p: '兴趣标签随时可以查看、调整或删除，也能一键关闭个性化。<b>你的偏好、评分和笔记，只保存在你自己的空间里。</b>', sc: '“我”页：资产定价调为少推；删除推断标签“社会态度”；切到“按时间”再切回。' },
   { t: 65, id: 'c6', name: '06 · 看完即止', acc: '#7ee2a8', eb: '06 · 看完即止', h: ['每天一叠，', '看完就结束。'], p: '每天默认 25 张，看完就停。我们在意的是<b>你读到了多少有用的论文</b>，而不是你在这里待了多久。', sc: '快进分拣到 25/25，结束卡：想读 6 · 收藏 2 · 下一批明天 08:00。' },
   { t: 72.4, id: 'c7', name: '07 · 收进书架', acc: '#f0b341', eb: '07 · 收进书架', h: ['想读的论文，', '自动收进书架。'], p: '标记想读和收藏的论文会自动整理好，随时翻看，也能<b>一键导出 BibTeX</b>。从计算机、物理到经济金融，都在同一叠卡片里。', sc: '收藏库瀑布流逐张落下；点“导出 BibTeX”。右侧 8 个学科色族。' },
-  { t: 79, id: 'end', name: '结尾', vo: '今天值得读的论文，就这几篇。Paper Crawler。', sc: '标志回到画面中央，下方出现“打开交互样机”。' },
+  { t: 79, id: 'end', name: '结尾', vo: '今天值得读的论文，就这几篇。Confluo。', sc: '标志回到画面中央，下方出现“打开交互样机”。' },
 ];
 const T_END = 88;
 
@@ -714,7 +714,7 @@ function capOut(id, t) { tw(CAPS[id], [{ opacity: 1, translate: '0 0' }, { opaci
 
 /* wordmark letters */
 const word = $('#word');
-'Paper Crawler'.split('').forEach((ch) => { const s = el('span'); s.textContent = ch === ' ' ? ' ' : ch; word.append(s); });
+'Confluo'.split('').forEach((ch) => { const s = el('span'); s.textContent = ch === ' ' ? ' ' : ch; word.append(s); });
 
 /* onboarding capsules */
 function cap(label) { return el('span', 'cp', `<i class="fill"></i><span class="ck"><span class="n">${I.plus}</span><span class="y">${I.check}</span></span><span class="lb">${label}</span>`); }

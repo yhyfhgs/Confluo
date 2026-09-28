@@ -1,4 +1,6 @@
-# Paper Crawler
+# Confluo
+
+原名 Paper Crawler，现归属 [ActionMesh AI](https://github.com/ActionMesh-AI)。项目仓库：[ActionMesh-AI/Confluo](https://github.com/ActionMesh-AI/Confluo)。
 
 面向研究者的跨学科论文发现平台。它从合法来源持续收割论文，用可解释、可学习的个性化推荐，把"今天值得看的论文"做成一叠有限的卡片，由用户滑动分拣。用户自己的机构权限只用于本人在用户侧取回全文。
 

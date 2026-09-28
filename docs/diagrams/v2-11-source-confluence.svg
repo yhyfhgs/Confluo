@@ -13,7 +13,7 @@
 <circle cx="1334" cy="552" r="132" fill="none" stroke="#17181b" stroke-opacity="0.1" stroke-width="1"/>
 <circle cx="1334" cy="552" r="196" fill="none" stroke="#17181b" stroke-opacity="0.07" stroke-width="1"/>
 <circle cx="1334" cy="552" r="270" fill="none" stroke="#17181b" stroke-opacity="0.05" stroke-width="1"/>
-<text x="96.0" y="54.0" font-size="14" fill="#62666f" font-weight="600" letter-spacing="2.4">PAPER CRAWLER · v2 来源模型 · 概念图</text>
+<text x="96.0" y="54.0" font-size="14" fill="#62666f" font-weight="600" letter-spacing="2.4">CONFLUO · v2 来源模型 · 概念图</text>
 <text x="94.0" y="104.0" font-size="44" fill="#17181b" font-weight="700" font-family="'Songti SC', 'STSong', 'Noto Serif CJK SC', 'Source Han Serif SC', 'SimSun', serif">百川归一：一级、二级来源，汇成每篇论文的完整视图</text>
 <text x="96.0" y="138.0" font-size="17" fill="#45484f">一级来源是论文的出处，二级来源负责登记、汇总与补全。两路并接、逐通道合规放行，同一篇论文的各个版本合并为一个 Work。</text>
 <path d="M1500,42 h26" stroke="#c2452d" stroke-width="1.6" stroke-linecap="round"/>

@@ -2,10 +2,10 @@
 title: v2 方案总览
 status: draft
 owner: opus5.5-primary
-updated: 2026-09-27
+updated: 2026-09-28
 ---
 
-# Paper Crawler v2 方案总览
+# Confluo v2 方案总览
 
 > 只读一篇的话，读这篇：v2 做什么、怎么做、分几步做，以及需要你拍板的事。各分篇是同一方案的展开，全部为 draft，等你评审。
 

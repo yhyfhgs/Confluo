@@ -1,9 +1,9 @@
-<title>Paper Crawler Deck</title>
+<title>Confluo Deck</title>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <style>
 /* =====================================================================
-   Paper Crawler Deck — design-phase demo for docs/plan/v2/07-frontend-interaction.md
+   Confluo Deck — design-phase demo for docs/plan/v2/07-frontend-interaction.md
    Product tokens = 07 §14.2–§14.5 (unchanged). Review-layer ("pg-") tokens are demo chrome only.
    ===================================================================== */
 :root {
@@ -837,7 +837,7 @@ html[data-standalone] .stage-left { position: static; }
 
     <div class="stage-right" id="stage-right">
       <header class="intro" id="intro">
-        <p class="eyebrow">Paper Crawler v2 · 设计阶段样机 · 07 §20</p>
+        <p class="eyebrow">Confluo v2 · 设计阶段样机 · 07 §20</p>
         <h1><span class="zh">今日分拣</span> Deck</h1>
         <p class="lead">
           这是 <code>docs/plan/v2/07-frontend-interaction.md</code> 的可交互样机：一天一叠有限的论文卡片，逐张决定想读、不感兴趣或跳过，看完就结束。
@@ -1830,7 +1830,7 @@ function progress() {
   }
   if (S.mapping !== 'C') el.textContent = txt;
   if (deck) deck.setAttribute('aria-label', Q.queue.length ? `今日分拣，第 ${num} 篇，共 ${denom} 篇` : '今日分拣，已看完');
-  if (S.tab === 'today' && S.overlay !== 'sheet') document.title = `今日分拣 · ${num}/${denom} — Paper Crawler Deck`;
+  if (S.tab === 'today' && S.overlay !== 'sheet') document.title = `今日分拣 · ${num}/${denom} — Confluo Deck`;
   ActionRow.sync();
 }
 
@@ -2882,7 +2882,7 @@ const Sheet = {
       if (o.why) { const w = $('#sec-why'); if (w) { this.body.scrollTop = w.offsetTop - 8; } }
       const t = $('#sheet-title'); if (t) t.focus({ preventScroll: true });
     }, 30);
-    document.title = `${truncW(inst.vm.title, 40)} — Paper Crawler Deck`;
+    document.title = `${truncW(inst.vm.title, 40)} — Confluo Deck`;
   },
   close(o = {}) {
     if (S.overlay !== 'sheet') return;
@@ -3542,7 +3542,7 @@ const Dialog = {
       this.conversion(true);
     } }, t));
     age.addEventListener('change', () => btns.forEach((b) => (b.disabled = !age.checked)));
-    d.append(h('h3', { id: 'dlg-h' }, '登录 Paper Crawler'), h('p', {}, '登录后，刚才的选择可以放进你的文献库，推荐也会按你的兴趣定制。'),
+    d.append(h('h3', { id: 'dlg-h' }, '登录 Confluo'), h('p', {}, '登录后，刚才的选择可以放进你的文献库，推荐也会按你的兴趣定制。'),
       h('label', { class: 'check', for: 'age-ok' }, age, '我已年满 16 岁'),
       h('div', { class: 'stack-btns', style: 'max-width:none' }, ...btns, h('button', { class: 'pbtn ghost', type: 'button', onclick: () => this.close() }, '暂不登录')),
       h('p', { class: 'dsub' }, '样机不连接真实账号：登录过程在本页模拟完成，不收集任何信息。'));
@@ -3781,7 +3781,7 @@ const Exporter = {
       b.disabled = true;
       const data = await API.exportData((p) => { b.textContent = `生成中 ${p}%`; });
       const url = URL.createObjectURL(new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' }));
-      const a = h('a', { class: 'tlink', href: url, download: `paper-crawler-export-${new Date().toISOString().slice(0, 10)}.json` }, '下载 JSON');
+      const a = h('a', { class: 'tlink', href: url, download: `confluo-export-${new Date().toISOString().slice(0, 10)}.json` }, '下载 JSON');
       b.replaceWith(a);
       emit('data_export', null, { format: 'json' }, 'button', 'settings');
       toast('导出已完成', [{ t: '下载', f: () => a.click() }], 5000);
@@ -3797,7 +3797,7 @@ const Exporter = {
     b.dataset.armed = '2'; b.disabled = true; b.textContent = '清除中…';
     const n = await API.clearRecent(7);
     Panel.sync();
-    b.textContent = '已清除'; 
+    b.textContent = '已清除';
     toast(`已清除最近 7 天的 ${n} 条行为记录`, [], 3000);
   },
 };
@@ -3910,7 +3910,7 @@ const Tabs = {
     if (tab === 'library') { if (seg) S.libSeg = seg; Lib.dirty = true; Lib.render(); }
     if (tab === 'me') Me.render();
     if (tab === 'today') { layout(); if (S.mapping === 'C') FeedC.enter(); else Impr.check(); progress(); }
-    document.title = tab === 'today' ? document.title : `${tab === 'library' ? '收藏' : '我'} — Paper Crawler Deck`;
+    document.title = tab === 'today' ? document.title : `${tab === 'library' ? '收藏' : '我'} — Confluo Deck`;
     const hd = tab === 'today' ? $('#h-today') : tab === 'library' ? $('#h-lib') : $('#h-me');
     if (hd) hd.focus({ preventScroll: true });
     Panel.status();

@@ -1,4 +1,6 @@
-# Paper Crawler
+# Confluo
+
+The project is owned by ActionMesh AI: `https://github.com/ActionMesh-AI/Confluo` (formerly Paper Crawler). Historical archive names and the local `.paper-crawler/` / `PAPER_CRAWLER_HOME` contract remain unchanged.
 
 `AGENTS.md` is the shared instruction source. The repository is at the start of the v2 restart and has no implementation yet. `main` holds only current, condensed documents: the v2 plan, the source directory, a research summary and the interaction demo. Everything older lives in two archives; read them with `git show <ref>:<path>` or a separate worktree, and treat them as reference material, not as the current system:
 
