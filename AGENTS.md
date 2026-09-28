@@ -9,6 +9,14 @@ The project is owned by ActionMesh AI: `https://github.com/ActionMesh-AI/Confluo
 
 Read `README.md`, `docs/INDEX.md`, `docs/plan/progress.md` and `docs/plan/v2/README.md` first; `docs/archive.md` explains both archives.
 
+## Ownership and ActionMesh workspace
+
+- Primary owner: fhgs (`yhyfhgs`). Confluo is the owner's core active project and belongs to the default initialization and synchronization scope. Reuse this checkout; preserve local changes, untracked configuration and archive refs.
+- Before workspace operations, read `../AGENTS.md`. For team collaboration, use `../team-hub/AI维护/README.md` to select the relevant current guide; repository scope is defined by `../team-hub/AI维护/工作区.json`, and project ownership by `../team-hub/开发/项目索引.md`. Standalone clones can read the [published guide index](https://github.com/ActionMesh-AI/team-hub/blob/main/AI维护/README.md).
+- Git, PR and release operations follow the current [team collaboration rules](https://github.com/ActionMesh-AI/team-hub/blob/main/AI维护/协作规范.md): use a task branch and PR, preserve existing work, do not push directly to `main` or rewrite shared history, and validate the complete diff before merging. Archived v1 guidance permitting direct commits to `main` does not override the current workflow. Production releases require their own authorization.
+- The `collab` branch and Obsidian plugin workflow apply to `team-hub`, not to this product repository. Product designs, source and detailed documentation remain here; team-hub holds shared rules and navigation. Product implementation still requires the applicable approved design.
+- Synchronizing another repository does not confer maintenance authority. `dsh-whale` and `wechat-clawbot` are Alphainfix projects mirrored into the organization; `homework-grading` is maintained by `MistyHuang03`. Do not edit their files or submit changes as part of Confluo or routine workspace maintenance without explicit authorization for those projects.
+
 ## Layout and design authority
 
 - `docs/plan/v2/` holds the v2 plan: the overview `README.md`, designs 01–08, the roadmap 09 and `demo/`. `docs/catalog/` holds the supported-source directory `source-directory.md`, the seven-class source taxonomy and status table `source-taxonomy.md`, unlisted research candidates `source-candidates.md`, the venue ranking systems `venue-rankings.md` and the per-discipline venue catalog `venues/`; `docs/survey/README.md` summarizes the research, and `docs/plan/decision-log.md` is the ADR log: an index of the v1 decisions plus the v2 proposals D-040 onward. Diagrams go in `docs/diagrams/`, session records in `docs/logs/` and milestone reports in `docs/reports/`.
