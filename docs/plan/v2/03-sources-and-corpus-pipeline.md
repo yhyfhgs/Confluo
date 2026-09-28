@@ -23,10 +23,11 @@ updated: 2026-09-27
 
 配图：[来源模型](../../diagrams/v2-03-source-model.svg)（Source、通道、Venue、连接器与策略引擎的关系）、[来源汇流](../../diagrams/v2-11-source-confluence.svg)（一级、二级来源经策略引擎汇入统一语料）。支持名录：[source-directory](../../catalog/source-directory.md)。
 
-- **Source**：可对接的来源，分两层。
-  - L1：`publisher`、`preprint`、`journal_platform`、`conference_platform`；
-  - L2：`repository`、`aggregator`、`registry`（ORCID、ROR、DataCite 等注册表）。
-- **Venue**：期刊、会议或 WP 系列，独立于 Source。理由：一个平台承载多刊，一本刊也会换平台；分开后多数期刊只需登记。
+- **Source**：可对接的来源，按七类分层（定义、判定规则与现状见[来源分层](../../catalog/source-taxonomy.md)，D-072 草案）。每个来源一个主类，可带兼角色，如 Crossref 为 M2、兼 L2b 元数据 API。
+  - 元层：M1 出版与托管主体（出版商、学会、公开托管平台、国家与公共机构），M2 标识与注册（DOI 注册机构、ORCID、ROR、ISSN 等）；
+  - 一级：L1a 期刊与会议，L1b 预印本与工作论文，L1c 长尾一级产出（技术报告、学位论文、JMP）；
+  - 二级：L2a 文献库与学科仓储，L2b 检索引擎与聚合项目。
+- **Venue**：期刊、会议或 WP 系列，即 L1a 与 L1b 中的系列，仍独立于 Source 建模。理由：一个平台承载多刊，一本刊也会换平台；分开后多数期刊只需登记。只有自有站点与通道的 venue 才另写 SourceSpec，其余由所在 M1 平台或 Crossref 委托承接。按学科的 venue 详表与评级标签见 [venue 名录](../../catalog/venues/README.md)。
 - **多键归一**：ISSN 集合（含历代）、ISSN-L、OpenAlex source、DBLP key、OpenReview 前缀、Crossref member 与 owner prefix（带时间段）、container-title。不以单个 ISSN 作主键，永不单凭 DOI 字符串前缀路由。
 - **演化边**：`renamed_to`（更名或换 ISSN）、`journalized_as`（会议论文集期刊化）、`co_hosted_on`（同一届多平台发布）。
 - **学科差异**：CS 会议按"届 × track"建届次；经管 WP 系列是一等 venue，会议报告以 `presented_at` 事件挂到论文上，不产生新版本。

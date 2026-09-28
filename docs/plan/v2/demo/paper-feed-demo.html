@@ -71,14 +71,18 @@
   --f-med: #e34948; --f-med-t: #ffe8e4;
   --f-other: #6b6f78; --f-other-t: #f1f0ed;
 
-  /* 07 §14.3 font stacks (system only by default) */
-  --font-sans: system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, "PingFang SC",
-    "Hiragino Sans GB", "Microsoft YaHei", "Noto Sans CJK SC", "Source Han Sans SC", sans-serif;
-  --font-serif: "Iowan Old Style", "Charter", "Bitstream Charter", Georgia, "Times New Roman", "Songti SC",
-    "Noto Serif CJK SC", "Source Han Serif SC", serif;
-  --font-serif-zh: "Songti SC", "Noto Serif CJK SC", "Source Han Serif SC", "Iowan Old Style", Georgia, serif;
-  --font-mono: ui-monospace, "SF Mono", Menlo, Consolas, "Liberation Mono", monospace, "PingFang SC",
-    "Microsoft YaHei", sans-serif;
+  /* 07 §14.3 font stacks */
+  /* Latin & digits: Inter / Source Serif 4 / JetBrains Mono (OFL; self-hosted by the deploy build, else local or system);
+     CJK: each platform's own UI font (PingFang, YaHei, Noto CJK); Windows has no good CJK serif, so fall back to YaHei, not SimSun */
+  --font-sans: "Inter", "Inter Variable", -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", "Hiragino Sans GB",
+    "Microsoft YaHei", "Noto Sans SC", "Noto Sans CJK SC", "Source Han Sans SC", Roboto, "Helvetica Neue", Arial, sans-serif,
+    "Apple Color Emoji", "Segoe UI Emoji", "Noto Color Emoji";
+  --font-serif: "Source Serif 4", "Source Serif 4 Variable", "Iowan Old Style", Charter, Georgia, "Songti SC",
+    "Noto Serif CJK SC", "Source Han Serif SC", "Microsoft YaHei", serif;
+  --font-serif-zh: "Source Serif 4", "Source Serif 4 Variable", "Songti SC", "Noto Serif CJK SC", "Source Han Serif SC",
+    "Noto Serif SC", Georgia, "PingFang SC", "Microsoft YaHei", serif;
+  --font-mono: "JetBrains Mono", "JetBrains Mono Variable", ui-monospace, "SF Mono", Menlo, Consolas, "Liberation Mono",
+    "PingFang SC", "Microsoft YaHei", monospace;
 
   --ease-in: cubic-bezier(0.05, 0.7, 0.1, 1);
   --ease-out: cubic-bezier(0.3, 0, 0.8, 0.15);
@@ -249,11 +253,13 @@ details.m-panel > summary::-webkit-details-marker { display: none; }
 /* ---------------------------------------------------------------- app shell (07 §3.4 compact) */
 .app {
   position: relative; overflow: hidden; background: var(--bg); color: var(--ink-1);
+  text-autospace: normal; -webkit-font-smoothing: antialiased; -moz-osx-font-smoothing: grayscale; font-optical-sizing: auto;
   font: 15px/1.5 var(--font-sans); width: 390px; height: var(--app-h, 844px);
   display: flex; flex-direction: column; isolation: isolate;
   -webkit-tap-highlight-color: transparent;
 }
-.app button { border: 0; background: none; padding: 0; color: inherit; }
+/* zero-specificity reset so component classes (.modebtn, .pbtn, .chip …) keep their own padding */
+:where(.app) button { border: 0; background: none; padding: 0; color: inherit; font: inherit; }
 .app .statusbar { height: 47px; flex: none; display: flex; align-items: flex-end; justify-content: space-between; padding: 0 30px 9px 34px; font: 600 15px/1 var(--font-sans); color: var(--ink-1); }
 .app .statusbar .sys { display: flex; gap: 6px; align-items: center; }
 .app .homebar { height: 34px; flex: none; display: grid; place-items: center; background: var(--bg); }
@@ -279,7 +285,7 @@ details.m-panel > summary::-webkit-details-marker { display: none; }
 
 /* deck (07 §6.2) */
 .deckwrap { flex: 1; min-height: 0; position: relative; }
-.deck { position: absolute; left: 16px; right: 16px; top: 12px; bottom: 20px; touch-action: none; overscroll-behavior: none; transform-origin: 50% 100%; will-change: transform; }
+.deck { position: absolute; left: 16px; right: 16px; top: 22px; bottom: 20px; touch-action: none; overscroll-behavior: none; transform-origin: 50% 100%; will-change: transform; }
 .slot { position: absolute; inset: 0; transform-origin: 50% 100%; will-change: transform, opacity; }
 .slot[aria-hidden="true"] { pointer-events: none; }
 .card {
@@ -306,7 +312,7 @@ details.m-panel > summary::-webkit-details-marker { display: none; }
 /* children overflow instead of silently shrinking, so fitCard() can apply the 07 §8.3 drop order; only the figure slot flexes */
 .cbody > * { flex-shrink: 0; }
 /* licensed-figure slot (07 §8.1 P1, §8.5); in this demo it holds a generated schematic, never a paper figure (07 §20.3-4) */
-.fig { position: relative; flex: 0 1 164px; min-height: 88px; border-radius: 10px; background: var(--surface-sunken); overflow: hidden; }
+.fig { position: relative; flex: 1 1 164px; min-height: 88px; max-height: 232px; border-radius: 10px; background: var(--surface-sunken); overflow: hidden; }
 .cbody > .fig { flex-shrink: 1; }
 .fig svg, .mfig svg { position: absolute; left: 10px; top: 20px; width: calc(100% - 20px); height: calc(100% - 40px); }
 .fig-cap { position: absolute; left: 10px; top: 5px; font: 500 10px/12px var(--font-sans); color: var(--ink-3); white-space: nowrap; }
@@ -355,7 +361,7 @@ button.aib::after { content: ""; position: absolute; inset: -12px -8px; }
 .hint.h-l, .hint.h-r { top: 50%; transform: translateY(-50%); writing-mode: vertical-rl; text-orientation: upright; letter-spacing: 1px; font-size: 11px; }
 .hint.h-l { left: 2px; }
 .hint.h-r { right: 2px; }
-.hint.h-u { left: 50%; top: -1px; transform: translateX(-50%); font-size: 11px; line-height: 12px; }
+.hint.h-u { left: 50%; top: 5px; transform: translateX(-50%); font-size: 11px; line-height: 12px; }
 
 /* placeholder / end / state cards */
 .card.k-ph .skel, .skel { background: var(--skeleton); border-radius: 6px; }
@@ -364,7 +370,7 @@ button.aib::after { content: ""; position: absolute; inset: -12px -8px; }
 .state-card h3:lang(zh), .state-card h3 { font-family: var(--font-serif-zh); }
 .state-card p { margin: 0; color: var(--ink-2); font-size: 14px; line-height: 1.55; }
 .state-card .small { font-size: 12px; color: var(--ink-3); }
-.pbtn { min-height: 44px; border-radius: 12px; padding: 0 16px; font-weight: 600; font-size: 14px; }
+.pbtn { min-height: 44px; border-radius: 12px; padding: 0 16px; font-weight: 600; font-size: 14px; display: inline-flex; align-items: center; justify-content: center; gap: 6px; text-decoration: none; box-sizing: border-box; }
 .pbtn.primary { background: var(--primary-bg) !important; color: var(--primary-ink) !important; }
 .pbtn.ghost { border: 1px solid var(--line) !important; background: var(--surface) !important; color: var(--ink-1); }
 .stack-btns { display: grid; gap: 8px; width: 100%; max-width: 260px; }
@@ -386,15 +392,14 @@ button.aib::after { content: ""; position: absolute; inset: -12px -8px; }
 .act.a-save .tint { background: var(--save); } .act.a-save .ifill { color: var(--on-save); }
 .act .ab[aria-disabled="true"] { opacity: 0.45; }
 .act .lb { font-size: 12px; line-height: 16px; color: var(--ink-3); white-space: nowrap; }
-.act.small .lb { margin-top: -6px; }
 
 /* toast (07 §10.2) */
-.toast { position: absolute; left: 50%; bottom: 94px; z-index: 30; max-width: min(360px, calc(100% - 32px)); height: 32px; display: flex; align-items: center; gap: 2px; padding: 0 4px 0 14px; border-radius: 10px; background: var(--toast-bg); color: var(--toast-ink); font-size: 13px; white-space: nowrap; box-shadow: var(--e-toast); transform: translate(-50%, 8px); opacity: 0; pointer-events: none; }
+.toast { position: absolute; left: 50%; bottom: 94px; z-index: 30; width: max-content; max-width: min(360px, calc(100% - 32px)); box-sizing: border-box; min-height: 36px; display: flex; align-items: center; gap: 4px; padding: 7px 6px 7px 14px; border-radius: 12px; line-height: 18px; background: var(--toast-bg); color: var(--toast-ink); font-size: 13px; box-shadow: var(--e-toast); transform: translate(-50%, 8px); opacity: 0; pointer-events: none; }
 .toast.in { opacity: 1; transform: translate(-50%, 0); pointer-events: auto; transition: opacity calc(150ms / var(--tscale)) var(--ease-in), transform calc(150ms / var(--tscale)) var(--ease-in); }
 .toast.out { opacity: 0; transform: translate(-50%, 8px); transition: opacity calc(100ms / var(--tscale)) var(--ease-out), transform calc(100ms / var(--tscale)) var(--ease-out); }
 .rm .toast.in, .rm .toast.out { transform: translate(-50%, 0); }
-.toast .msg { overflow: hidden; text-overflow: ellipsis; min-width: 0; flex: 1; padding-right: 6px; }
-.toast button { flex: none; height: 28px; padding: 0 8px; border-radius: 6px; color: var(--toast-act); font-weight: 600; font-size: 13px; }
+.toast .msg { min-width: 0; flex: 1; padding-right: 6px; display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; overflow: hidden; }
+.toast button { flex: none; white-space: nowrap; height: 28px; padding: 0 8px; border-radius: 6px; color: var(--toast-act); font-weight: 600; font-size: 13px; }
 
 /* tab bar */
 .tabbar { height: 49px; flex: none; display: flex; border-top: 1px solid var(--line); background: var(--bg); position: relative; z-index: 10; }
@@ -408,12 +413,12 @@ button.aib::after { content: ""; position: absolute; inset: -12px -8px; }
 .sheet.open { visibility: visible; }
 .sheet .grab { flex: none; height: 22px; display: grid; place-items: center; touch-action: none; cursor: grab; }
 .sheet .grab i { width: 36px; height: 5px; border-radius: 3px; background: var(--line); display: block; }
-.sheet .shead { flex: none; display: flex; align-items: flex-start; gap: 8px; padding: 0 12px 4px 20px; touch-action: none; }
+.sheet .shead { flex: none; display: flex; align-items: center; gap: 8px; padding: 0 8px 4px 20px; touch-action: none; }
 .sheet .shead .sx { margin-left: auto; }
 .sheet .sbody { flex: 1; min-height: 0; overflow: hidden; padding: 0 20px; overscroll-behavior: contain; touch-action: none; }
 .sheet.full .sbody { overflow-y: auto; touch-action: pan-y pinch-zoom; }
 .sheet .sbody-in { padding-bottom: 120px; }
-.sbar { flex: none; height: 56px; display: flex; gap: 8px; align-items: center; padding: 0 12px; border-top: 1px solid var(--line); background: var(--surface-raised); will-change: transform; position: relative; z-index: 2; }
+.sbar { flex: none; height: 60px; display: flex; gap: 6px; align-items: center; padding: 0 12px 0 16px; border-top: 1px solid var(--line); background: var(--surface-raised); will-change: transform; position: relative; z-index: 2; }
 .sheet.pane { position: absolute; }
 .stitle { margin: 2px 0 6px; font: 600 22px/30px var(--font-serif); color: var(--ink-1); overflow-wrap: anywhere; }
 .stitle:lang(zh) { font-family: var(--font-serif-zh); font-size: 21px; line-height: 32px; }
@@ -458,6 +463,10 @@ button.aib::after { content: ""; position: absolute; inset: -12px -8px; }
 .popover button, .popover a { text-align: left; padding: 10px 12px; border-radius: 8px; font-size: 14px; min-height: 40px; text-decoration: none; color: var(--ink-1); display: block; }
 .popover button:hover, .popover a:hover { background: var(--surface-sunken); }
 .popover .ph { font-size: 12px; color: var(--ink-3); padding: 6px 12px 2px; }
+.popover.has-ck button, .popover.has-ck a { position: relative; padding-left: 36px; }
+.popover.has-ck .ph { padding-left: 36px; }
+.popover .mk { position: absolute; left: 12px; top: 50%; transform: translateY(-50%); display: grid; color: var(--ink-1); }
+.popover [aria-checked="true"] { font-weight: 600; }
 .explain { font-size: 13px; line-height: 1.55; color: var(--ink-2); background: var(--surface-sunken); border-radius: 10px; padding: 10px 12px; margin-top: 8px; }
 
 /* reason menu drawer (07 §10.3) */
@@ -483,9 +492,9 @@ button.aib::after { content: ""; position: absolute; inset: -12px -8px; }
 .segs { display: inline-flex; background: var(--surface-sunken); border-radius: 10px; padding: 3px; gap: 2px; }
 .segs button { min-height: 32px; padding: 0 12px; border-radius: 8px; font-size: 13px; color: var(--ink-2); }
 .segs button[aria-pressed="true"] { background: var(--surface) !important; color: var(--ink-1); font-weight: 600; box-shadow: var(--seg-shadow); }
-.libtools { display: flex; gap: 8px; align-items: center; padding: 0 16px 10px; }
+.libtools { display: flex; gap: 8px; align-items: center; padding: 2px 20px 12px; border-bottom: 1px solid var(--line); }
 .libtools .flex { flex: 1; }
-.fall { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; padding: 0 16px 20px; align-items: start; }
+.fall { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; padding: 14px 16px 20px; align-items: start; }
 .fall .col { display: grid; gap: 10px; }
 .mini { border-radius: 10px; background: var(--surface); box-shadow: var(--e-card); overflow: hidden; display: flex; flex-direction: column; text-align: left; width: 100%; }
 .mini .cov { background: var(--ft); border-top: 3px solid var(--fa); padding: 10px 10px 14px; }
@@ -532,13 +541,13 @@ button.aib::after { content: ""; position: absolute; inset: -12px -8px; }
 /* full-screen layers inside app */
 .layer { position: absolute; inset: 0; z-index: 60; background: var(--bg); display: flex; flex-direction: column; visibility: hidden; opacity: 0; }
 .layer.open { visibility: visible; opacity: 1; transition: opacity calc(150ms / var(--tscale)) var(--ease-in); }
-.layer .lhead { flex: none; display: flex; align-items: center; gap: 8px; padding: 8px 12px 8px 16px; }
+.layer .lhead { flex: none; display: flex; align-items: center; gap: 8px; padding: 8px 8px 8px 20px; min-height: 60px; box-sizing: border-box; }
 .layer .lhead h2 { margin: 0; font-size: 17px; flex: 1; }
 .search-in { flex: 1; min-height: 40px; border-radius: 12px; border: 1px solid var(--line); background: var(--surface); padding: 0 12px; font-size: 15px; color: var(--ink-1); }
-.fchips { display: flex; flex-wrap: wrap; gap: 6px; padding: 0 16px 8px; }
+.fchips { display: flex; flex-wrap: wrap; gap: 6px; padding: 0 20px 8px; }
 .fchip { display: inline-flex; align-items: center; gap: 4px; min-height: 30px; padding: 0 4px 0 10px; border-radius: 999px; background: var(--surface); border: 1px solid var(--line); font-size: 12.5px; }
 .fchip button { width: 28px; height: 28px; display: grid; place-items: center; color: var(--ink-3); }
-.completeness { font-size: 12px; line-height: 18px; color: var(--ink-3); padding: 0 16px 8px; }
+.completeness { font-size: 12px; line-height: 18px; color: var(--ink-3); padding: 0 20px 10px; }
 .completeness .miss { color: var(--warn); }
 .discover h3 { font-size: 12px; color: var(--ink-3); margin: 12px 20px 8px; font-weight: 600; }
 .help-table { width: 100%; border-collapse: collapse; font-size: 13.5px; }
@@ -645,6 +654,146 @@ button.aib::after { content: ""; position: absolute; inset: -12px -8px; }
   .case.span2 { grid-column: auto; }
   .case .shots { justify-content: flex-start; }
 }
+
+/* programmatic focus targets (headings with tabindex=-1) move focus for screen readers; no ring needed */
+.app [tabindex="-1"]:is(h1, h2, h3):focus { outline: none; }
+.dsum { cursor: pointer; font-size: 13px; color: var(--ink-3); font-weight: 600; min-height: 36px; display: flex; align-items: center; list-style: none; }
+.dsum::-webkit-details-marker { display: none; }
+.dsum .chev-r { display: grid; transition: transform 160ms var(--ease-in); }
+details[open] > .dsum .chev-r { transform: rotate(180deg); }
+.app:has(#scr-today[hidden]) .toast { bottom: calc(64px + env(safe-area-inset-bottom, 0px)) !important; }
+.app:not(.bleed):has(#scr-today[hidden]) .toast { bottom: 98px !important; }
+.app.bleed .sheet .sbar { height: calc(60px + env(safe-area-inset-bottom, 0px)); padding-bottom: env(safe-area-inset-bottom, 0px); }
+/* page layer, figure viewer, forms (mock-backed flows) */
+.chip[aria-checked="true"] { background: var(--ink-1) !important; color: var(--surface) !important; border-color: var(--ink-1) !important; }
+.pbody { padding: 4px 20px 32px; display: flex; flex-direction: column; gap: 14px; }
+.pbody > * { flex-shrink: 0; }
+.pnote { margin: 0; font-size: 13px; line-height: 1.55; color: var(--ink-3); }
+.field { width: 100%; box-sizing: border-box; border-radius: 12px; border: 1px solid var(--line); background: var(--surface); padding: 10px 12px; font: 15px/1.5 var(--font-sans); color: var(--ink-1); resize: vertical; }
+input.field { min-height: 44px; padding-block: 0; }
+.field:focus-visible { outline: 2px solid var(--focus); outline-offset: 1px; }
+.pform { display: grid; gap: 8px; }
+.flabel { font-size: 12px; font-weight: 600; color: var(--ink-3); margin-top: 6px; }
+.frow { display: flex; justify-content: space-between; align-items: center; gap: 12px; font-size: 12px; color: var(--ink-3); }
+.pform .pbtn { margin-top: 6px; }
+.pbtn:disabled { opacity: 0.45; }
+.sub { font-size: 12px; line-height: 1.5; color: var(--ink-3); }
+.tickets { display: grid; gap: 8px; }
+.tickets h3 { font-size: 12px; font-weight: 600; color: var(--ink-3); margin: 12px 0 0; }
+.tk { border: 1px solid var(--line); border-radius: 12px; padding: 10px 12px; background: var(--surface); display: grid; gap: 2px; }
+.tk-h { display: flex; justify-content: space-between; gap: 8px; font-size: 14px; }
+.tk-h .st { font-size: 12px; color: var(--good); font-weight: 600; }
+.tk-t { font-size: 13px; color: var(--ink-2); margin-top: 2px; overflow-wrap: anywhere; }
+.ilist { display: grid; border: 1px solid var(--line); border-radius: 14px; background: var(--surface); overflow: hidden; }
+.irow { display: flex; align-items: center; justify-content: space-between; min-height: 48px; padding: 0 14px !important; font-size: 15px; text-align: left; border-bottom: 1px solid var(--line) !important; }
+.irow:last-child { border-bottom: 0 !important; }
+.irow .ick { color: var(--ink-3); display: grid; }
+.irow[aria-pressed="true"] .ick { color: var(--good); }
+.danger { color: var(--nope) !important; }
+.pbtn.danger { border-color: color-mix(in srgb, var(--nope) 40%, var(--line)) !important; }
+.pdoc { border: 1px solid var(--line); border-radius: 12px; background: var(--surface); padding: 16px; display: grid; gap: 8px; }
+.pdoc-h { font: 600 12px/1 var(--font-mono); color: var(--ink-3); }
+.pdoc p { margin: 0 0 4px; font-size: 13px; color: var(--ink-2); }
+.pdoc i { display: block; height: 8px; border-radius: 4px; background: var(--surface-sunken); }
+.explain .xh { font-weight: 600; color: var(--ink-1); margin-bottom: 4px; }
+.explain .sub { margin-top: 6px; }
+.steps { list-style: none; margin: 4px 0 0; padding: 0; display: grid; gap: 6px; }
+.steps li { display: flex; align-items: center; gap: 8px; font-size: 13px; color: var(--ink-3); }
+.steps li.run, .steps li.ok { color: var(--ink-1); }
+.steps .st { flex: none; width: 14px; height: 14px; border-radius: 50%; border: 1.5px solid currentColor; box-sizing: border-box; }
+.steps li.run .st { border-color: var(--ink-3); border-top-color: var(--ink-1); animation: spin 0.8s linear infinite; }
+.steps li.ok .st { border: 0; background: var(--good); position: relative; }
+.steps li.ok .st::after { content: ""; position: absolute; left: 4.5px; top: 2.5px; width: 3.5px; height: 6.5px; border: solid var(--surface); border-width: 0 1.8px 1.8px 0; transform: rotate(45deg); }
+.spin::before { content: ""; display: inline-block; width: 11px; height: 11px; margin-right: 6px; vertical-align: -1px; border-radius: 50%; border: 1.5px solid var(--ink-3); border-top-color: var(--ink-1); animation: spin 0.8s linear infinite; }
+@keyframes spin { to { transform: rotate(360deg); } }
+.layer.viewer { background: #0d0f12; color: #f2f3f5; }
+.viewer .lhead h2 { color: #f2f3f5; }
+.viewer .ibtn { color: #f2f3f5; }
+.vstage { flex: 1; min-height: 0; display: grid; place-items: center; overflow: hidden; touch-action: none; cursor: zoom-in; padding: 0 12px; }
+.vstage .vfig { width: 100%; height: auto; aspect-ratio: 4 / 3; flex: none; cursor: inherit; }
+.vstage .vfig.anim { transition: transform 200ms var(--ease-out); }
+.vcap { flex: none; padding: 12px 20px calc(16px + env(safe-area-inset-bottom, 0px)); font-size: 12px; line-height: 1.5; color: #aeb3bb; text-align: center; }
+.dialog .check { display: flex; align-items: center; gap: 10px; font-size: 14px; color: var(--ink-1); margin: 4px 0 14px; min-height: 32px; }
+.dialog .check input { width: 18px; height: 18px; accent-color: var(--ink-1); }
+.dialog .dsub { font-size: 12px; color: var(--ink-3); margin: 10px 0 0; }
+
+
+/* onboarding tour: one gesture per step, demonstrated on a practice card */
+.tour { position: absolute; inset: 0; z-index: 58; display: flex; flex-direction: column; align-items: center; justify-content: center; overflow: hidden; padding: 56px 28px calc(24px + env(safe-area-inset-bottom, 0px)); box-sizing: border-box;
+  background: color-mix(in srgb, var(--bg) 94%, transparent); -webkit-backdrop-filter: blur(10px); backdrop-filter: blur(10px); opacity: 0; transition: opacity 200ms var(--ease-in); }
+.tour[hidden] { display: none; }
+.tour.in { opacity: 1; }
+.app:not(.bleed) .tour { padding-top: 76px; padding-bottom: 56px; }
+.tskip { position: absolute; top: 10px; right: 12px; min-height: 40px; padding: 0 12px !important; border-radius: 10px; font-size: 14px; color: var(--ink-2); }
+.app:not(.bleed) .tskip { top: 52px; }
+.tstage { position: relative; flex: 0 1 300px; width: 100%; min-height: 250px; }
+.gcard, .gback { position: absolute; left: 50%; top: 50%; width: 168px; height: 212px; margin: -106px 0 0 -84px; border-radius: 18px; background: var(--surface); box-shadow: var(--e-card); overflow: hidden; }
+.gback { transform: translateY(12px) scale(0.93); opacity: 0.7; }
+.gband { height: 76px; background: color-mix(in srgb, var(--tc, var(--focus)) 12%, var(--surface)); border-top: 4px solid color-mix(in srgb, var(--tc, var(--focus)) 70%, var(--surface)); padding: 12px 14px; box-sizing: border-box; display: grid; gap: 7px; align-content: start; }
+.gbody { padding: 14px; display: grid; gap: 9px; }
+.gl { display: block; height: 7px; border-radius: 4px; background: var(--line); }
+.gl.gt { height: 9px; background: color-mix(in srgb, var(--ink-1) 55%, transparent); }
+.gl.w40 { width: 40%; } .gl.w60 { width: 60%; } .gl.w70 { width: 70%; } .gl.w80 { width: 80%; } .gl.w90 { width: 90%; }
+.gstamp { position: absolute; left: 50%; top: 42%; transform: translate(-50%, -50%) rotate(-8deg); padding: 6px 12px; border: 2.5px solid var(--tc); border-radius: 10px; color: var(--tc); background: color-mix(in srgb, var(--surface) 90%, transparent); font: 800 20px/1 var(--font-sans); white-space: nowrap; opacity: 0; }
+.gsheet { position: absolute; left: 50%; bottom: 0; width: 220px; height: 118px; margin-left: -110px; border-radius: 18px 18px 0 0; background: var(--surface-raised); box-shadow: var(--e-sheet); padding: 22px 18px; box-sizing: border-box; display: grid; gap: 10px; align-content: start; transform: translateY(110%); }
+.gsheet { display: none; }
+.tour[data-k="tap"] .gsheet { display: grid; }
+.tour[data-k="tap"] .tstage { overflow: hidden; border-radius: 0 0 18px 18px; }
+.finger { position: absolute; left: 50%; top: 50%; width: 40px; height: 40px; margin: -20px 0 0 -20px; border-radius: 50%; background: color-mix(in srgb, var(--ink-1) 22%, transparent); box-shadow: 0 0 0 2px color-mix(in srgb, var(--surface) 80%, transparent), 0 6px 16px rgba(0, 0, 0, 0.18); opacity: 0; }
+.tour[data-k="right"] { --dx: 120px; --dy: 0px; --rot: 12deg; --fx: 90px; --fy: 0px; }
+.tour[data-k="left"] { --dx: -120px; --dy: 0px; --rot: -12deg; --fx: -90px; --fy: 0px; }
+.tour[data-k="up"] { --dx: 0px; --dy: -130px; --rot: 0deg; --fx: 0px; --fy: -90px; }
+.tour[data-k="down"] { --fx: 0px; --fy: 100px; }
+.tstage.play .gcard { animation: t-fly 2.4s var(--ease-in) infinite; }
+.tstage.play .gstamp { animation: t-stamp 2.4s linear infinite; }
+.tstage.play .finger { animation: t-finger 2.4s ease-in-out infinite; }
+.tour[data-k="down"] .tstage.play .gcard { animation-name: t-undo; }
+.tour[data-k="down"] .tstage.play .gstamp { animation-name: t-stamp-undo; }
+.tour[data-k="tap"] .tstage.play .gcard { animation-name: t-tap; }
+.tour[data-k="tap"] .tstage.play .gstamp { animation: none; }
+.tour[data-k="tap"] .tstage.play .finger { animation-name: t-finger-tap; }
+.tour[data-k="tap"] .tstage.play .gsheet { animation: t-sheet 2.4s var(--ease-in) infinite; }
+@keyframes t-fly { 0%, 18% { transform: none; opacity: 1; } 58% { transform: translate(var(--dx), var(--dy)) rotate(var(--rot)); opacity: 1; } 66% { transform: translate(var(--dx), var(--dy)) rotate(var(--rot)); opacity: 1; } 74% { transform: translate(calc(var(--dx) * 2.2), calc(var(--dy) * 2.2)) rotate(var(--rot)); opacity: 0; } 73%, 84% { transform: none; opacity: 0; } 100% { transform: none; opacity: 1; } }
+@keyframes t-stamp { 0%, 26% { opacity: 0; } 44%, 68% { opacity: 1; } 74%, 100% { opacity: 0; } }
+@keyframes t-finger { 0%, 6% { opacity: 0; transform: none; } 16% { opacity: 1; transform: scale(0.86); } 56% { opacity: 1; transform: translate(var(--fx), var(--fy)) scale(0.86); } 64%, 100% { opacity: 0; transform: translate(var(--fx), var(--fy)); } }
+@keyframes t-undo { 0%, 16% { transform: translateY(-230px) rotate(-3deg); opacity: 0; } 22% { opacity: 1; } 56%, 86% { transform: none; opacity: 1; } 96%, 100% { transform: none; opacity: 0; } }
+@keyframes t-stamp-undo { 0%, 40% { opacity: 0; } 52%, 80% { opacity: 1; } 90%, 100% { opacity: 0; } }
+@keyframes t-tap { 0%, 28% { transform: none; } 34% { transform: scale(0.96); } 42%, 100% { transform: none; } }
+@keyframes t-finger-tap { 0%, 12% { opacity: 0; transform: scale(1.2); } 24% { opacity: 1; transform: scale(1); } 34% { opacity: 1; transform: scale(0.8); } 44% { opacity: 0.9; transform: scale(1); } 54%, 100% { opacity: 0; } }
+@keyframes t-sheet { 0%, 38% { transform: translateY(110%); } 56%, 86% { transform: none; } 98%, 100% { transform: translateY(110%); } }
+.ttext { flex: none; text-align: center; max-width: 300px; margin-top: 12px; }
+.ttext h2 { margin: 0; font: 700 26px/1.25 var(--font-sans); color: var(--ink-1); display: flex; align-items: center; justify-content: center; gap: 10px; flex-wrap: wrap; }
+.ttext .tact { font-size: 15px; font-weight: 700; padding: 4px 12px; border-radius: 999px; color: var(--tc); background: color-mix(in srgb, var(--tc) 13%, var(--surface)); }
+.tdesc { margin: 12px 0 0; font-size: 16px; line-height: 1.6; color: var(--ink-2); min-height: 3.2em; }
+.tkeys { display: none; margin-top: 10px; gap: 6px; justify-content: center; align-items: center; font-size: 13px; color: var(--ink-3); }
+.tkeys kbd { font: 600 12px/1 var(--font-mono); padding: 4px 7px; border: 1px solid var(--line); border-bottom-width: 2px; border-radius: 6px; background: var(--surface); color: var(--ink-1); }
+@media (hover: hover) and (pointer: fine) { .tkeys { display: flex; } }
+.tfoot { flex: none; width: 100%; max-width: 320px; margin-top: 20px; display: grid; gap: 18px; }
+.tdots { display: flex; justify-content: center; gap: 7px; }
+.tdots i { width: 7px; height: 7px; border-radius: 999px; background: var(--line); transition: width 200ms var(--ease-in), background 200ms; }
+.tdots i.on { width: 22px; background: var(--ink-1); }
+.tbtns { display: flex; gap: 10px; }
+.tbtns .tprev { flex: 1; } .tbtns .tnext { flex: 1.6; }
+.tbtns .pbtn { min-height: 50px; font-size: 15px; border-radius: 14px; }
+.rm .tstage.play * { animation: none !important; }
+.rm .tstage .gstamp { opacity: 1; }
+.tbtns .pbtn[hidden] { display: none; }
+@media (prefers-reduced-motion: reduce) { .tstage.play * { animation: none !important; } .tstage .gstamp { opacity: 1; } }
+
+/* standalone (html[data-standalone] or ?app): only the phone — framed and centred on wide screens, full-screen app on phones */
+html[data-standalone] .m-banner, html[data-standalone] .keyhint, html[data-standalone] .stage-right,
+html[data-standalone] .cases, html[data-standalone] .foot-note { display: none !important; }
+html[data-standalone] .page { max-width: none; min-height: 100vh; min-height: 100dvh; display: grid; place-items: center; padding: 24px 16px; }
+html[data-standalone] .stage { display: block; }
+html[data-standalone] .stage-left { position: static; }
+@media (max-width: 600px) {
+  html[data-standalone], html[data-standalone] body { height: 100%; overflow: hidden; overscroll-behavior: none; background: var(--bg); }
+  html[data-standalone] body { background-image: none; }
+  html[data-standalone] .page { display: block; place-items: normal; min-height: 0; padding: 0; }
+  html[data-standalone] .stage-left { display: block; }
+  html[data-standalone] .stage-left { margin: 0; }
+  html[data-standalone] .app.bleed { padding-top: env(safe-area-inset-top, 0px); }
+}
 @media (prefers-reduced-motion: reduce) {
   .toast.in, .toast.out { transition-property: opacity !important; }
   .switch::after { transition: none; }
@@ -743,6 +892,9 @@ button.aib::after { content: ""; position: absolute; inset: -12px -8px; }
 <script>
 (() => {
 'use strict';
+// standalone phone-only page: set by the deploy build (<html data-standalone>) or with ?app for local review
+if (/[?&]app\b/.test(location.search)) document.documentElement.setAttribute('data-standalone', '');
+const STANDALONE = document.documentElement.hasAttribute('data-standalone');
 
 /* =====================================================================
    1. Utilities
@@ -1152,7 +1304,7 @@ const S = {
   scenario: 'today', mapping: 'A', mode: 'personalized', lastNP: 'np_time',
   batchSize: 25, earlyEndAt: 0, slowChunks: false, stateOverride: 'none',
   rmSetting: 'system', degrade: 'auto', autoLevel: 0, lastSlow: 0, timeScale: 1,
-  titleLang: 'orig', aiOn: true, haptics: true, viz: false, singleKey: true, webfont: false, partialSources: true,
+  titleLang: 'orig', aiOn: true, haptics: true, viz: false, singleKey: true, webfont: false, partialSources: !STANDALONE,
   tab: 'today', overlay: null, layout: 'compact', framed: true,
   teachingDone: !!store('teachingDone'), aiNoticeDone: !!store('aiNoticeDone'), calibTeach: true,
   state: 'idle', libSeg: 'want', libView: 'fall', exploreLevel: 'standard',
@@ -1498,12 +1650,26 @@ function fitCard(card) {
     () => { card.querySelector('.ctitle').style.setProperty('--tl', '2'); },
   ];
   const excerptP = card.querySelector('.excerpt p');
+  if (excerptP) {                                           // refits start from the rendered clamp (idempotent)
+    if (!excerptP.dataset.base) excerptP.dataset.base = excerptP.style.webkitLineClamp || '4';
+    excerptP.style.webkitLineClamp = excerptP.dataset.base;
+  }
   if (excerptP && !card.querySelector('.tldr') && !card.querySelector('.cbody > .fig')) {   // AI off: excerpt fills the TL;DR slot, shrink before dropping
     for (let n = 7; n >= 3 && body.scrollHeight > body.clientHeight + 1; n--) excerptP.style.webkitLineClamp = String(n);
   }
   for (const d of drops) {
     if (body.scrollHeight <= body.clientHeight + 1) break;
     d();
+  }
+  // spare room on text-only cards: let the author abstract use it instead of leaving a gap above the reason row
+  if (excerptP && excerptP.offsetParent && !card.querySelector('.cbody > .fig') && body.scrollHeight <= body.clientHeight + 1) {
+    const why = card.querySelector('.why');
+    const spare = () => (why ? why.offsetTop - (excerptP.parentElement.offsetTop + excerptP.parentElement.offsetHeight) : 0);
+    let n = Number(excerptP.style.webkitLineClamp) || 4;
+    while (n < 12 && spare() > 44) {
+      excerptP.style.webkitLineClamp = String(++n);
+      if (body.scrollHeight > body.clientHeight + 1) { excerptP.style.webkitLineClamp = String(--n); break; }
+    }
   }
 }
 
@@ -1518,7 +1684,7 @@ function renderEndCard(o = {}) {
   card.append(ttl);
   if (sample) {
     card.append(h('p', {}, '登录后每天为你准备一批。刚才的“想读”和“收藏”可以放进你的文献库，作为兴趣起点。'));
-    card.append(h('div', { class: 'stack-btns' }, h('button', { class: 'pbtn primary', type: 'button', 'data-act': 'login' }, '登录（模拟）')));
+    card.append(h('div', { class: 'stack-btns' }, h('button', { class: 'pbtn primary', type: 'button', 'data-act': 'login' }, '登录')));
     card.append(h('p', { class: 'small' }, '↓ / ↺ 可撤回最后一张'));
     return card;
   }
@@ -2473,6 +2639,7 @@ function bindDeck() {
     }
   }, true);
   window.addEventListener('resize', () => { cancelDrag('resize'); layout(); });
+  if (STANDALONE && window.visualViewport) window.visualViewport.addEventListener('resize', () => layout());
   document.addEventListener('visibilitychange', () => {
     if (document.hidden) {
       cancelDrag('visibilitychange');
@@ -2502,7 +2669,7 @@ function EndActions(act, el) {
     case 'thumb-up': case 'thumb-down':
       emit('survey_response', null, { kind: 'batch_thumb', batch_id: MAIN ? MAIN.id : null, thumb: act === 'thumb-up' ? 'up' : 'down' }, 'button', 'deck');
       toast('谢谢，已记录', [], 2000); el.closest('.thumbs').remove(); break;
-    case 'login': Dialog.conversion(); break;
+    case 'login': Dialog.login(); break;
     case 'start-today': startScenario('today'); break;
     case 'retry': S.stateOverride = 'none'; Panel.syncState(); rebuildDeck(); break;
     case 'go-me': Tabs.go('me'); break;
@@ -2564,10 +2731,11 @@ const Pop = {
   open(anchor, items, o = {}) {
     this.close();
     const app = $('#app');
-    const pop = h('div', { class: 'popover', role: 'menu', 'aria-label': o.label || '选项' });
+    const pop = h('div', { class: 'popover' + (items.some((it) => it.checked != null) ? ' has-ck' : ''), role: 'menu', 'aria-label': o.label || '选项' });
     if (o.title) pop.append(h('div', { class: 'ph' }, o.title));
     items.forEach((it) => {
       if (it.href) pop.append(h('a', { role: 'menuitem', href: it.href, target: '_blank', rel: 'noopener noreferrer', onclick: () => { this.close(); it.f && it.f(); } }, it.t));
+      else if (it.checked != null) pop.append(h('button', { role: 'menuitemradio', 'aria-checked': String(it.checked), type: 'button', onclick: () => { this.close(); it.f(); } }, it.checked ? h('span', { class: 'mk', html: svg('check', 16, 2.2) }) : null, it.t));
       else pop.append(h('button', { role: 'menuitem', type: 'button', onclick: () => { this.close(); it.f(); } }, it.t));
     });
     app.append(pop);
@@ -2842,7 +3010,7 @@ const Sheet = {
         body.append(ul);
       }
       body.append(h('p', { class: 'attrib', style: 'margin-top:10px' }, 'Demo 中的 AI 速读由构建时撰写，未经 PU 三道闸，仅作版式演示。'));
-      body.append(h('button', { class: 'tlink', type: 'button', onclick: () => { emit('report', inst, { target_type: 'ai_field', target_id: vm.work_id + ':tldr', reason: 'inaccurate' }, 'button', 'detail'); toast('已提交，谢谢', [], 2000); } }, 'AI 内容不准确'));
+      body.append(h('button', { class: 'tlink', type: 'button', onclick: async (e) => { const b = e.currentTarget; emit('report', inst, { target_type: 'ai_field', target_id: vm.work_id + ':tldr', reason: 'inaccurate' }, 'button', 'detail'); b.disabled = true; b.textContent = '提交中…'; const t = await API.submitTicket({ kind: 'AI 内容不准确', work_id: vm.work_id, text: 'AI 速读与摘要不符' }); b.textContent = `已报告（工单 ${t.id}）`; } }, 'AI 内容不准确'));
       det.append(body);
       s3.append(det);
       wrap.append(s3);
@@ -2852,8 +3020,8 @@ const Sheet = {
     if (vm.figure && !(inst.reasonOverride && inst.reasonOverride.code === 'SAMPLE')) {
       const s4 = h('section', { class: 'ssec', 'aria-labelledby': 'sec-fig-h' }, h('h4', { id: 'sec-fig-h' }, '图集'));
       const fb = h('button', { class: 'figbtn', type: 'button', 'aria-label': '查看图 1（demo 生成的示意图，不是论文原图）' }, figEl(vm, 'fig fig-lg'));
-      fb.addEventListener('click', () => { emit('view_figure', inst, { figure_index: 0, figure_id: vm.figure.id }, 'button', 'detail'); toast('演示：这里会放大查看这张图', [], 2000); });
-      s4.append(fb, h('p', { class: 'attrib', style: 'margin-top:6px' }, '示意图由 demo 生成，不是论文原图。真实图集只收 CC0、CC BY、CC BY-SA 与公有领域的图，每张图下给出 TASL 署名（标题、作者、来源、许可）与许可链接（07 §8.5）。'));
+      fb.addEventListener('click', () => { emit('view_figure', inst, { figure_index: 0, figure_id: vm.figure.id }, 'button', 'detail'); Viewer.open(vm, fb); });
+      s4.append(fb, h('p', { class: 'attrib', style: 'margin-top:6px' }, '示意图，不是论文原图。图集只收 CC0、CC BY、CC BY-SA 与公有领域的图，每张图都注明标题、作者、来源与许可。点按可放大。'));
       wrap.append(s4);
     }
 
@@ -2927,7 +3095,7 @@ const Sheet = {
 
     /* 10 sources & attribution (collapsed) */
     const s10 = h('section', { class: 'ssec' });
-    const d10 = h('details', {}, h('summary', { style: 'cursor:pointer;font-size:13px;color:var(--ink-3);font-weight:600;min-height:32px;display:flex;align-items:center' }, '来源与署名'));
+    const d10 = h('details', {}, h('summary', { class: 'dsum' }, '来源与署名', h('span', { class: 'chev-r', html: svg('chevD', 18) })));
     const lines = vm.src === 'arxiv'
       ? ['Thank you to arXiv for use of its open access interoperability.', '标题、作者、摘要与分类来自 arXiv Query API（元数据 CC0），2026-09-27 获取。本 demo 与 arXiv 无关联，也不代表 arXiv 认可。', '论文全文的许可以 arXiv 页面为准；本页不展示任何论文图片。']
       : ['书目元数据来自 Crossref REST API（2026-09-27 获取），未获取摘要。', `出版平台：${vm.source.name}。本页不代表出版方认可。`];
@@ -2940,10 +3108,15 @@ const Sheet = {
     const s11 = h('section', { class: 'ssec' });
     const dup = h('button', { class: 'tlink', type: 'button' }, '报告问题：这是同一篇…');
     dup.addEventListener('click', () => {
-      const box = h('div', { class: 'explain' }, h('div', {}, '选择与本篇重复的论文（演示）：'));
+      const box = h('div', { class: 'explain' }, h('div', {}, '选择与本篇重复的论文：'));
       const cands = [...LIB.saved.map((x) => x.vm), ...LIB.want.map((x) => x.vm)].filter((x) => x !== vm).slice(0, 4);
       if (!cands.length) box.append(h('div', {}, '收藏库里还没有可选的论文。'));
-      cands.forEach((c) => box.append(h('button', { class: 'tlink', type: 'button', style: 'display:block;text-align:left', onclick: () => { emit('report', inst, { target_type: 'duplicate', target_id: [vm.work_id, c.work_id], reason: 'duplicate' }, 'button', 'detail'); toast('已提交，进入去重复核队列', [], 3000); box.remove(); } }, truncW(c.title, 40))));
+      cands.forEach((c) => box.append(h('button', { class: 'tlink', type: 'button', style: 'display:block;text-align:left', onclick: async (e) => {
+        emit('report', inst, { target_type: 'duplicate', target_id: [vm.work_id, c.work_id], reason: 'duplicate' }, 'button', 'detail');
+        $$('button', box).forEach((b) => (b.disabled = true)); e.currentTarget.textContent = '提交中…';
+        const t = await API.submitTicket({ kind: '重复论文', work_id: vm.work_id, text: `与 ${c.work_id} 为同一篇` });
+        box.replaceChildren(h('div', {}, `已提交（工单 ${t.id}），进入去重复核队列。可在“我 → 反馈与申诉”查看进度。`));
+      } }, truncW(c.title, 40))));
       dup.after(box);
     });
     s11.append(dup);
@@ -2997,16 +3170,15 @@ const Sheet = {
 /* read routes (07 §4.7; 08 §5.1.2 order: oa_link > tdm_api > user_fetch > open_in_tab) */
 function readRoutes(vm) {
   const pub = vm.links.doi;
-  const explain = (text) => (inst) => {
-    const box = h('div', { class: 'explain', role: 'note' }, text);
+  const box = (cls) => {                           // status box at the top of the Sheet body (one at a time)
     const host = $('#sheet .sbody-in');
     const old = host.querySelector('.explain.read');
     if (old) old.remove();
-    box.classList.add('read');
-    host.prepend(box);
+    const el = h('div', { class: 'explain read ' + (cls || ''), role: 'status', 'aria-live': 'polite' });
+    host.prepend(el);
     Sheet.to(Sheet.snap);
     Sheet.body.scrollTop = 0;
-    return inst;
+    return el;
   };
   if (vm.src === 'arxiv') {
     return [
@@ -3014,14 +3186,47 @@ function readRoutes(vm) {
       { t: 'PDF · arXiv ↗', href: vm.links.pdf, ev: { route: 'oa', via: 'oa_link' } },
     ];
   }
-  const fetchExplain = explain('演示：点“用你的权限取回”时，平台会签发一个短时有效、绑定会话的取回意图（RetrievalIntent），由配套浏览器扩展在你本人的浏览器会话里单篇取回，同一出版商域串行、间隔 ≥6 s。平台看不到你的凭证，也不代取全文。本 demo 不执行取回。');
-  const byExt = { t: '用你的权限取回', f: (inst) => { fetchExplain(inst); emit('open_fulltext', inst, { route: 'user_side', via: 'companion_extension' }, 'button', 'detail'); toast('演示：由配套扩展在你的浏览器中执行，平台看不到凭证', [], 4000); } };
   const openPub = { t: '在出版社打开 ↗', href: pub, ev: { route: 'user_side', via: 'publisher_link' } };
+  // user-side retrieval through the companion extension (08 §5.1.2, D-053): the platform only issues a short-lived intent
+  const fetchRun = async (inst) => {
+    if (Retrieve.has(vm)) { Retrieve.openCopy(vm); return; }
+    const el = box('steps');
+    el.append(h('div', { class: 'xh' }, '用你的权限取回'));
+    const ol = h('ol', { class: 'steps' });
+    el.append(ol, h('div', { class: 'sub' }, '平台只签发取回意图，看不到你的凭证，也不代取全文；取回的副本只保存在你的设备上。'));
+    emit('open_fulltext', inst, { route: 'user_side', via: 'companion_extension' }, 'button', 'detail');
+    const res = await API.retrieve(vm, (i, label, state) => {
+      let li = ol.children[i];
+      if (!li) { li = h('li', {}, h('i', { class: 'st' }), h('span', {})); ol.append(li); }
+      li.className = state; li.lastChild.textContent = label;
+    });
+    if (!el.isConnected) return;
+    if (res.ok) {
+      el.append(h('div', { class: 'stack-btns', style: 'max-width:none;margin-top:10px' }, h('button', { class: 'pbtn primary', type: 'button', onclick: () => Retrieve.openCopy(vm) }, '打开私有副本')));
+      if (Sheet.inst === inst) Sheet.renderBar(inst);
+      toast('已保存到本机私有库', [{ t: '打开', f: () => Retrieve.openCopy(vm) }], 4000);
+    }
+  };
+  const byExt = { t: Retrieve.has(vm) ? '打开私有副本' : '用你的权限取回', f: fetchRun };
   if (vm.oa === 'subscription_entitled') return [byExt, openPub];
   if (vm.oa === 'open_version') {
-    return [{ t: '阅读开放版本', f: (inst) => explain('演示：会打开预印本或仓储版本，并注明“开放版本，可能与正式版不同”。本条的 OA 状态是演示用模拟值，没有核实开放版本，所以这里不提供链接。')(inst) }, openPub];
+    const findOA = async (inst) => {
+      const el = box();
+      el.append(h('div', { class: 'xh' }, '查找开放版本'), h('div', { class: 'sub spin' }, '正在按 DOI 查询预印本与机构仓储…'));
+      const r = await API.resolveOpenVersion(vm);
+      if (!el.isConnected) return;
+      el.innerHTML = '';
+      if (r) {
+        el.append(h('div', { class: 'xh' }, '找到开放版本'), h('div', { class: 'sub' }, `${r.host} · ${r.version}。开放版本可能与正式版不同。`),
+          h('div', { class: 'stack-btns', style: 'max-width:none;margin-top:10px' }, h('a', { class: 'pbtn primary', href: r.url, target: '_blank', rel: 'noopener noreferrer', onclick: () => emit('open_fulltext', inst, { route: 'oa', via: 'repository' }, 'button', 'detail') }, '打开开放版本 ↗')));
+      } else {
+        el.append(h('div', { class: 'xh' }, '没有找到经核实的开放版本'), h('div', { class: 'sub' }, '可以在出版社页面阅读；有权限时可用配套扩展取回。'),
+          h('div', { class: 'stack-btns', style: 'max-width:none;margin-top:10px' }, h('a', { class: 'pbtn ghost', href: pub, target: '_blank', rel: 'noopener noreferrer', onclick: () => emit('open_fulltext', inst, openPub.ev, 'button', 'detail') }, '在出版社打开 ↗')));
+      }
+    };
+    return [{ t: '阅读开放版本', f: findOA }, openPub];
   }
-  if (vm.oa === 'subscription') return [openPub, { t: '尝试用你的权限取回（需配套扩展）', f: byExt.f }];
+  if (vm.oa === 'subscription') return [openPub, { t: Retrieve.has(vm) ? '打开私有副本' : '尝试用你的权限取回（需配套扩展）', f: fetchRun }];
   return [openPub];
 }
 
@@ -3236,12 +3441,13 @@ const Menu = {
 /* =====================================================================
    20. Full-screen layers: search & discover (07 §3.5, S-11), shortcuts help, recommendation explainer, dialog
    ===================================================================== */
+const LAYERS = ['search', 'help', 'doc', 'page', 'viewer'];
 const Layer = {
   open(id, focusSel) {
     Pop.close();
     const el = $('#' + id);
     // layers stack (search → help / doc): remember what was underneath so closing returns to it, not to "no overlay"
-    el._under = ['search', 'help', 'doc'].includes(S.overlay) && S.overlay !== id ? S.overlay : null;
+    el._under = LAYERS.includes(S.overlay) && S.overlay !== id ? S.overlay : null;
     el._prevFocus = document.activeElement;
     el.classList.add('open');
     S.overlay = id;
@@ -3284,7 +3490,7 @@ const Search = {
     const comp = $('#search-comp');
     comp.innerHTML = '';
     comp.append('来自 本地语料（数据时点 2026-09-27 09:00）');
-    if (S.partialSources) comp.append('；', h('span', { class: 'miss' }, 'Semantic Scholar 超时（结果可能不全，演示）'));
+    if (S.partialSources) comp.append('；', h('span', { class: 'miss' }, 'Semantic Scholar 超时，结果可能不全'));
     const q = this.q.trim().toLowerCase();
     const all = ALL_VMS;
     if (!q) {
@@ -3320,13 +3526,38 @@ const Dialog = {
     if (this.prev && this.prev.isConnected) this.prev.focus({ preventScroll: true }); else focusTop();
     this.prev = null;
   },
-  conversion() {
+  // sign-in (07 key flow 2): email or ORCID, neutral age declaration (≥16); the Web UI never asks for publisher credentials
+  login() {
     this.prev = document.activeElement;
+    const d = $('#dialog');
+    d.innerHTML = '';
+    const age = h('input', { type: 'checkbox', id: 'age-ok' });
+    const btns = [['email', '用邮箱登录'], ['orcid', '用 ORCID 登录']].map(([m, t], i) => h('button', { class: 'pbtn ' + (i ? 'ghost' : 'primary'), type: 'button', disabled: true, onclick: async (e) => {
+      const b = e.currentTarget;
+      $$('button, input', d).forEach((x) => (x.disabled = true));
+      b.textContent = m === 'orcid' ? '正在跳转 ORCID…' : '正在发送登录链接…';
+      await API.login(m);
+      USER.label = m === 'orcid' ? '已通过 ORCID 登录' : '已通过邮箱登录';
+      store('signedIn', m);
+      this.conversion(true);
+    } }, t));
+    age.addEventListener('change', () => btns.forEach((b) => (b.disabled = !age.checked)));
+    d.append(h('h3', { id: 'dlg-h' }, '登录 Paper Crawler'), h('p', {}, '登录后，刚才的选择可以放进你的文献库，推荐也会按你的兴趣定制。'),
+      h('label', { class: 'check', for: 'age-ok' }, age, '我已年满 16 岁'),
+      h('div', { class: 'stack-btns', style: 'max-width:none' }, ...btns, h('button', { class: 'pbtn ghost', type: 'button', onclick: () => this.close() }, '暂不登录')),
+      h('p', { class: 'dsub' }, '样机不连接真实账号：登录过程在本页模拟完成，不收集任何信息。'));
+    d.setAttribute('aria-labelledby', 'dlg-h');
+    d.classList.add('open');
+    S.overlay = 'dialog';
+    age.focus({ preventScroll: true });
+  },
+  conversion(fromLogin) {
+    if (!fromLogin) this.prev = document.activeElement;
     const d = $('#dialog');
     const want = LIB.want.filter((x) => x.inst && x.inst.batch_id === B.id).length;
     const sav = LIB.saved.filter((x) => x.inst && x.inst.batch_id === B.id).length;
     d.innerHTML = '';
-    d.append(h('h3', { id: 'dlg-h' }, '登录成功（模拟）'));
+    d.append(h('h3', { id: 'dlg-h' }, '登录成功'));
     d.append(h('p', {}, `把刚才标记想读的 ${want} 篇、收藏的 ${sav} 篇放进你的文献库，并作为兴趣起点？左滑的选择会直接丢弃。`));
     const go = (keep) => {
       d.classList.remove('open'); S.overlay = null;
@@ -3345,6 +3576,229 @@ const Dialog = {
     d.classList.add('open');
     S.overlay = 'dialog';
     d.querySelector('button').focus({ preventScroll: true });
+  },
+};
+
+
+/* =====================================================================
+   20b. Mock backend — every call is async with realistic latency and local persistence; nothing leaves the page
+   ===================================================================== */
+const API = {
+  wait(ms) { return new Promise((r) => setTimeout(r, ms * (0.8 + Math.random() * 0.4) / (S.timeScale || 1))); },
+  ticketId() { return 'T' + Date.now().toString(36).slice(-6).toUpperCase(); },
+  tickets() { return store('tickets') || []; },
+  async submitTicket(t) {
+    await this.wait(650);
+    const rec = { id: this.ticketId(), at: new Date().toISOString(), status: '已受理', ...t };
+    store('tickets', [rec, ...this.tickets()].slice(0, 50));
+    return rec;
+  },
+  async retrieve(vm, step) {
+    const steps = ['签发取回意图（5 分钟内有效，绑定本次会话）', '等待配套扩展响应', `在你的浏览器会话中从 ${vm.source.name} 取回`, '保存到本机私有库'];
+    for (let i = 0; i < steps.length; i++) {
+      step(i, steps[i], 'run');
+      await this.wait([500, 700, 1400, 400][i]);
+      step(i, steps[i], 'ok');
+    }
+    Retrieve.add(vm);
+    return { ok: true };
+  },
+  async resolveOpenVersion(vm) {
+    await this.wait(900);
+    return vm.doi ? { host: 'Unpaywall', version: '按 DOI 汇总的开放版本', url: 'https://unpaywall.org/' + vm.doi } : null;
+  },
+  async exportData(progress) {
+    for (let p = 0; p <= 100; p += 20) { progress(p); await this.wait(280); }
+    const pick = (x) => ({ work_id: x.vm.work_id, title: x.vm.title, doi: x.vm.doi, collection: x.col ? colName(x.col) : undefined });
+    return {
+      exported_at: new Date().toISOString(),
+      profile: { label: USER.label, interests: USER.interests.map(({ zh, src, lv }) => ({ topic: zh, source: src, level: lv })), follows: USER.follows.filter((f) => f.on).map(({ type, name }) => ({ type, name })), mutes: USER.mutes.map(({ label, kind, until }) => ({ label, kind, until })) },
+      library: { want: LIB.want.map(pick), saved: LIB.saved.map(pick) },
+      tickets: this.tickets(),
+      events: EV.slice(),
+    };
+  },
+  async clearRecent(days) {
+    await this.wait(600);
+    const cut = Date.now() - days * 864e5;
+    let n = 0;
+    for (let i = EV.length - 1; i >= 0; i--) if (Date.parse(EV[i].occurred_at) >= cut) { EV.splice(i, 1); n++; }
+    return n;
+  },
+  async login(method) { await this.wait(method === 'orcid' ? 1100 : 800); return { ok: true, method }; },
+};
+
+/* generic full-screen page layer (feedback, add interest, private copy) */
+const Page = {
+  open(title, fill) {
+    if (S.overlay === 'sheet') Sheet.close({ noFocus: true });
+    $('#page-h').textContent = title;
+    const body = $('#page-body');
+    body.innerHTML = '';
+    body.scrollTop = 0;
+    fill(body);
+    Layer.open('page', '#page-h');
+  },
+  close() { Layer.close('page'); },
+};
+
+/* figure viewer: tap / double-click to zoom 2×, drag to pan, Esc or ✕ to close */
+const Viewer = {
+  z: 1, x: 0, y: 0,
+  open(vm, opener) {
+    const el = $('#viewer');
+    const stage = $('#viewer .vstage');
+    stage.innerHTML = '';
+    this.fig = figEl(vm, 'fig vfig');
+    this.fig.setAttribute('style', FIELD_VAR(vm));
+    stage.append(this.fig);
+    $('#viewer .vcap').textContent = `图 1 · ${vm.figure.license.replace(/\s*·\s*示意$/, '')} · 示意图，不是论文原图 · 点按放大，拖动查看`;
+    this.z = 1; this.x = 0; this.y = 0; this.apply();
+    Layer.open('viewer', '.vclose');
+    el._prevFocus = opener || el._prevFocus;
+  },
+  apply() { if (this.fig) this.fig.style.transform = `translate(${this.x}px, ${this.y}px) scale(${this.z})`; },
+  bind() {
+    const stage = $('#viewer .vstage');
+    let drag = null, moved = false;
+    stage.addEventListener('pointerdown', (e) => { drag = { x: e.clientX - this.x, y: e.clientY - this.y }; moved = false; stage.setPointerCapture(e.pointerId); });
+    stage.addEventListener('pointermove', (e) => {
+      if (!drag || this.z === 1) return;
+      moved = true;
+      const r = stage.getBoundingClientRect(), lx = r.width / 2, ly = r.height / 2;
+      this.x = clamp(e.clientX - drag.x, -lx, lx); this.y = clamp(e.clientY - drag.y, -ly, ly); this.apply();
+    });
+    stage.addEventListener('pointerup', (e) => {
+      if (drag && !moved) {
+        if (this.z === 1) { const r = stage.getBoundingClientRect(); this.z = 2; this.x = -(e.clientX - r.left - r.width / 2); this.y = -(e.clientY - r.top - r.height / 2); }
+        else { this.z = 1; this.x = 0; this.y = 0; }
+        this.fig.classList.add('anim'); this.apply(); setTimeout(() => this.fig && this.fig.classList.remove('anim'), 220);
+      }
+      drag = null;
+    });
+  },
+};
+
+/* private copies retrieved on the user side (only work ids are kept, on this device) */
+const Retrieve = {
+  ids() { return store('privateCopies') || []; },
+  has(vm) { return this.ids().includes(vm.work_id); },
+  add(vm) { if (!this.has(vm)) store('privateCopies', [...this.ids(), vm.work_id]); },
+  remove(vm) { store('privateCopies', this.ids().filter((x) => x !== vm.work_id)); },
+  openCopy(vm) {
+    Page.open('私有副本', (b) => {
+      b.append(
+        h('p', { class: 'pnote' }, '只保存在这台设备上，不会同步到平台，也不参与任何跨用户统计。'),
+        h('div', {}, h('h2', { class: 'stitle', lang: 'en' }, vm.title),
+          h('div', { class: 'hdr-meta' }, vm.authors.join(', ')),
+          h('div', { class: 'hdr-meta' }, `${vm.venue_full || vm.venue || vm.source.name} · ${vm.year}${vm.doi ? ' · DOI ' + vm.doi : ''}`)),
+        h('div', { class: 'pdoc', role: 'img', 'aria-label': '全文占位' }, h('div', { class: 'pdoc-h' }, '全文 PDF'), h('p', {}, '样机不包含出版商全文。正式版会在这里用本机阅读器打开你取回的 PDF。'), ...[92, 100, 96, 88, 100, 64].map((w) => h('i', { style: `width:${w}%` }))),
+        h('div', { class: 'stack-btns', style: 'max-width:none' },
+          h('a', { class: 'pbtn ghost', href: vm.links.doi || '#', target: '_blank', rel: 'noopener noreferrer' }, '在出版社打开 ↗'),
+          h('button', { class: 'pbtn ghost danger', type: 'button', onclick: () => { this.remove(vm); Page.close(); toast('已从本机删除私有副本', [], 2500); if (Sheet.inst && Sheet.inst.vm === vm) Sheet.renderBar(Sheet.inst); } }, '从本机删除')),
+      );
+    });
+  },
+};
+
+/* feedback & appeal (07 §10; DSA 20): category + text → ticket, list of my tickets with status */
+const Feedback = {
+  kinds: ['推荐不相关', '推荐理由不对', '内容或元数据错误', '申诉：屏蔽或少推', '其他'],
+  open() {
+    Page.open('反馈与申诉', (b) => {
+      let kind = this.kinds[0];
+      const seg = h('div', { class: 'chips', role: 'radiogroup', 'aria-label': '类型' });
+      const paint = () => $$('button', seg).forEach((x) => x.setAttribute('aria-checked', String(x.dataset.k === kind)));
+      this.kinds.forEach((k) => seg.append(h('button', { class: 'chip', type: 'button', role: 'radio', 'data-k': k, onclick: () => { kind = k; paint(); } }, k)));
+      paint();
+      const ta = h('textarea', { class: 'field', rows: 5, maxlength: 500, placeholder: '请描述发生了什么，以及你希望怎么处理', 'aria-label': '描述' });
+      const cnt = h('span', { class: 'count' }, '0/500');
+      const send = h('button', { class: 'pbtn primary', type: 'submit', disabled: true }, '提交');
+      ta.addEventListener('input', () => { cnt.textContent = `${ta.value.length}/500`; send.disabled = ta.value.trim().length < 4; });
+      const list = h('div', { class: 'tickets' });
+      const paintList = () => {
+        const ts = API.tickets();
+        list.replaceChildren(h('h3', {}, '我的反馈'), ...(ts.length ? ts.map((t) => h('div', { class: 'tk' }, h('div', { class: 'tk-h' }, h('b', {}, t.kind), h('span', { class: 'st' }, t.status)), h('div', { class: 'sub' }, `${t.id} · ${new Date(t.at).toLocaleString('zh-CN', { hour12: false })}`), t.text ? h('div', { class: 'tk-t' }, t.text) : null)) : [h('p', { class: 'sub' }, '还没有提交过。')]));
+      };
+      const form = h('form', { class: 'pform' }, h('label', { class: 'flabel' }, '类型'), seg, h('label', { class: 'flabel' }, '描述'), ta, h('div', { class: 'frow' }, h('span', { class: 'sub' }, '通常 2 个工作日内人工回复。'), cnt), send);
+      form.addEventListener('submit', async (e) => {
+        e.preventDefault();
+        send.disabled = true; send.textContent = '提交中…';
+        const t = await API.submitTicket({ kind, text: ta.value.trim() });
+        emit('report', null, { target_type: 'feedback', target_id: t.id, reason: kind }, 'button', 'settings');
+        ta.value = ''; cnt.textContent = '0/500'; send.textContent = '提交';
+        toast(`已提交，工单号 ${t.id}`, [], 3000);
+        paintList();
+      });
+      paintList();
+      b.append(form, list);
+    });
+  },
+};
+
+/* add interest: searchable list of sub-fields; toggling adds / removes, effective from the next chunk */
+const Interests = {
+  pool: ['计量经济学', '机器学习', '社会网络分析', '实验经济学', '行为金融', '发展经济学', '劳动经济学', '政治学方法', '文本分析', '人口学', '公共卫生', '流行病学', '图神经网络', '复杂系统', '统计学习理论', '概率论', '优化', '量子信息', '天体物理', '宇宙学', '生态学', '认知科学', '信号处理', '控制系统', '气候经济学', '教育研究'],
+  open() {
+    Page.open('添加兴趣', (b) => {
+      const inp = h('input', { class: 'field', type: 'search', placeholder: '搜索子领域', 'aria-label': '搜索子领域', autocomplete: 'off' });
+      const list = h('div', { class: 'ilist', role: 'list' });
+      const paint = () => {
+        const q = inp.value.trim();
+        const items = this.pool.filter((z) => !q || z.includes(q));
+        list.replaceChildren(...(items.length ? items.map((z) => {
+          const on = USER.interests.some((it) => it.zh === z);
+          return h('button', { class: 'irow', type: 'button', role: 'listitem', 'aria-pressed': String(on), onclick: () => { this.toggle(z); paint(); } }, h('span', {}, z), h('span', { class: 'ick', html: on ? svg('check', 18) : svg('plus', 18) }));
+        }) : [h('p', { class: 'sub', style: 'padding:12px 4px' }, '没有匹配的子领域')]));
+      };
+      inp.addEventListener('input', paint);
+      paint();
+      b.append(h('p', { class: 'pnote' }, '选中后从下一批块开始生效；可以随时在“我”里调整或删除。'), inp, list);
+    });
+  },
+  toggle(z) {
+    const i = USER.interests.findIndex((it) => it.zh === z);
+    if (i >= 0) {
+      const it = USER.interests.splice(i, 1)[0];
+      emit('interest_edit', null, { op: 'delete', node_id: it.id }, 'button', 'settings');
+      toast(`已移除「${z}」`, [], 2000);
+    } else {
+      const it = { id: 't_add_' + Date.now(), zh: z, src: '显式', lv: 'normal' };
+      USER.interests.push(it);
+      emit('interest_edit', null, { op: 'add', node_id: it.id }, 'button', 'settings');
+      toast(`已添加「${z}」，下一批块生效`, [], 2000);
+    }
+    Me.render();
+  },
+};
+
+/* export my data (real JSON download of everything this page holds) and clear recent behaviour */
+const Exporter = {
+  control() {
+    const b = h('button', { class: 'tlink', type: 'button' }, '导出');
+    b.addEventListener('click', async () => {
+      if (b.dataset.url) return;
+      b.disabled = true;
+      const data = await API.exportData((p) => { b.textContent = `生成中 ${p}%`; });
+      const url = URL.createObjectURL(new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' }));
+      const a = h('a', { class: 'tlink', href: url, download: `paper-crawler-export-${new Date().toISOString().slice(0, 10)}.json` }, '下载 JSON');
+      b.replaceWith(a);
+      emit('data_export', null, { format: 'json' }, 'button', 'settings');
+      toast('导出已完成', [{ t: '下载', f: () => a.click() }], 5000);
+    });
+    return b;
+  },
+  async clear(b) {
+    if (!b.dataset.armed) {
+      b.dataset.armed = '1'; b.textContent = '再点一次确认'; b.classList.add('danger');
+      setTimeout(() => { if (b.isConnected && b.dataset.armed === '1') { delete b.dataset.armed; b.textContent = '清除'; b.classList.remove('danger'); } }, 4000);
+      return;
+    }
+    b.dataset.armed = '2'; b.disabled = true; b.textContent = '清除中…';
+    const n = await API.clearRecent(7);
+    Panel.sync();
+    b.textContent = '已清除'; 
+    toast(`已清除最近 7 天的 ${n} 条行为记录`, [], 3000);
   },
 };
 
@@ -3383,9 +3837,9 @@ const TopBar = {
     const chev = h('button', { class: 'chev', type: 'button', id: 'btn-chev', 'aria-label': '推荐方式选项', 'aria-haspopup': 'menu', 'aria-expanded': 'false', html: svg('chevD', 18) });
     chev.addEventListener('click', () => {
       Pop.open(chev, [
-        { t: (S.mode === 'personalized' ? '✓ ' : '') + '个性化（默认）', f: () => switchMode('personalized') },
-        { t: (S.mode === 'np_time' ? '✓ ' : '') + '按时间（不个性化）', f: () => switchMode('np_time') },
-        { t: (S.mode === 'np_source' ? '✓ ' : '') + '按来源（不个性化）', f: () => switchMode('np_source') },
+        { t: '个性化（默认）', checked: S.mode === 'personalized', f: () => switchMode('personalized') },
+        { t: '按时间（不个性化）', checked: S.mode === 'np_time', f: () => switchMode('np_time') },
+        { t: '按来源（不个性化）', checked: S.mode === 'np_source', f: () => switchMode('np_source') },
         { t: '管理兴趣 →', f: () => Tabs.go('me') },
         { t: '推荐说明 →', f: () => Doc.open() },
       ], { alignRight: true, label: '推荐方式', title: '推荐方式' });
@@ -3411,7 +3865,7 @@ const ActionRow = {
       const b = h('button', { class: 'ab', type: 'button', 'aria-label': label });
       b.append(h('span', { class: 'tint' }), ic(icon, cls.includes('small') ? 22 : 26, 2));
       if (fill) { const f = ic(fill, 26, 2); f.classList.add('ifill'); b.append(f); }
-      b.addEventListener('click', (e) => { if (b.getAttribute('aria-disabled') === 'true') { announce('没有可撤回的'); return; } fn(e); });
+      b.addEventListener('click', (e) => { if (b.getAttribute('aria-disabled') === 'true') { announce(cls.includes('undo') ? '没有可撤回的' : '今天的卡片已经看完'); return; } fn(e); });
       pressable(b);
       return h('div', { class: 'act ' + cls }, b, h('span', { class: 'lb', 'aria-hidden': 'true' }, label));
     };
@@ -3426,6 +3880,8 @@ const ActionRow = {
   sync() {
     const u = $('.act.a-undo .ab');
     if (u) u.setAttribute('aria-disabled', String(!canUndo()));
+    const none = !topInst();
+    $$('.act:not(.a-undo) .ab').forEach((b) => b.setAttribute('aria-disabled', String(none)));
     const row = $('#actionrow');
     if (row) row.style.display = S.mapping === 'C' ? 'none' : '';
   },
@@ -3443,7 +3899,7 @@ const Tabs = {
   go(tab, seg) {
     if (S.overlay === 'sheet') Sheet.close({ noFocus: true });
     if (S.overlay === 'menu') Menu.close({ noFocus: true });
-    while (['search', 'help', 'doc'].includes(S.overlay)) Layer.close(S.overlay);   // layers may be stacked
+    while (LAYERS.includes(S.overlay)) Layer.close(S.overlay);   // layers may be stacked
     Pop.close();
     if (S.tab === 'today' && tab !== 'today') { Impr.stop(); FeedC.leave(); }
     S.tab = tab;
@@ -3472,8 +3928,8 @@ const Lib = {
     const segs = h('div', { class: 'segs', role: 'group', 'aria-label': '分区', id: 'lib-segs' });
     head.append(segs);
     const tools = h('div', { class: 'libtools' });
-    const viewSeg = h('div', { class: 'seg2', role: 'group', 'aria-label': '视图', id: 'lib-view' });
-    tools.append(viewSeg, h('span', { class: 'flex' }), h('button', { class: 'pbtn ghost', type: 'button', style: 'min-height:36px;padding:0 12px;font-size:13px', onclick: () => this.export() }, '导出 BibTeX'));
+    const viewSeg = h('div', { class: 'segs', role: 'group', 'aria-label': '视图', id: 'lib-view' });
+    tools.append(viewSeg, h('span', { class: 'flex' }), h('button', { class: 'pbtn ghost', type: 'button', style: 'min-height:38px;padding:0 14px;font-size:13px', onclick: () => this.export() }, '导出 BibTeX'));
     scr.append(head, tools, h('div', { class: 'scroll', id: 'lib-scroll' }));
     return scr;
   },
@@ -3573,7 +4029,7 @@ const Me = {
 
     box.append(sec('推荐方式',
       row(h('div', { class: 'grow' }, '排序方式', h('div', { class: 'sub' }, S.mode === 'personalized' ? '使用你的兴趣画像' : '不使用你的画像（DSA 27(3)）')), seg([['personalized', '个性化'], ['np_time', '按时间'], ['np_source', '按来源']], S.mode, (k) => switchMode(k), '推荐方式')),
-      row(h('div', { class: 'grow' }, '每日张数', h('div', { class: 'sub' }, '看完即结束；候选不足时提前结束')), seg([[15, '15'], [25, '25'], [35, '35']], S.batchSize, (k) => { S.batchSize = k; Panel.sync(); startScenario('today'); toast(`每日张数改为 ${k}，已重新生成今日批次（演示）`, [], 3000); }, '每日张数')),
+      row(h('div', { class: 'grow' }, '每日张数', h('div', { class: 'sub' }, '看完即结束；候选不足时提前结束')), seg([[15, '15'], [25, '25'], [35, '35']], S.batchSize, (k) => { S.batchSize = k; Panel.sync(); startScenario('today'); toast(`每日张数改为 ${k}，已重新生成今日批次`, [], 3000); }, '每日张数')),
       row(h('div', { class: 'grow' }, '探索强度', h('div', { class: 'sub' }, '“今天多探索”24 小时后恢复')), seg([['low', '少'], ['standard', '标准'], ['high', '多'], ['today_max', '今天多探索']], S.exploreLevel, (k) => { S.exploreLevel = k; emit('explore_level_set', null, { level: k }, 'button', 'settings'); this.render(); }, '探索强度')),
     ));
     const ints = USER.interests.map((it) => row(
@@ -3587,7 +4043,7 @@ const Me = {
         this.render();
       } }),
     ));
-    ints.push(row(h('button', { class: 'tlink', type: 'button', onclick: () => { const it = { id: 't_add_' + Date.now(), zh: '计量经济学', src: '显式', lv: 'normal' }; USER.interests.push(it); emit('interest_edit', null, { op: 'add', node_id: it.id }, 'button', 'settings'); this.render(); } }, '+ 添加兴趣（演示：计量经济学）')));
+    ints.push(row(h('button', { class: 'tlink', type: 'button', onclick: () => Interests.open() }, '+ 添加兴趣')));
     box.append(sec('我的兴趣（可看、可调、可删）', ...ints));
     const fol = USER.follows.filter((f) => f.on).map((f) => row(h('div', { class: 'grow' }, f.name, h('div', { class: 'sub' }, f.type === 'author' ? '作者' : f.type === 'venue' ? '期刊或会议' : '来源平台')), h('button', { class: 'tlink', type: 'button', onclick: () => Follow.toggle(f.type, f.name, null) }, '取消关注')));
     box.append(sec('关注', ...(fol.length ? fol : [row(h('span', { class: 'sub' }, '没有关注'))])));
@@ -3602,14 +4058,15 @@ const Me = {
       row(h('div', { class: 'grow' }, '触感', h('div', { class: 'sub' }, '仅 Android Chrome 支持振动')), sw(S.haptics, () => { S.haptics = !S.haptics; Panel.sync(); this.render(); }, '触感')),
     ));
     box.append(sec('关于推荐',
+      row(h('button', { class: 'tlink linkrow', type: 'button', onclick: () => { Tabs.go('today'); setTimeout(() => { if (topInst()) Tour.open(); }, 250); } }, '操作教程'), h('span', { class: 'chev-r', html: svg('chevR', 18) })),
       row(h('button', { class: 'tlink linkrow', type: 'button', onclick: () => Doc.open() }, '推荐说明（原理公示）'), h('span', { class: 'chev-r', html: svg('chevR', 18) })),
-      row(h('button', { class: 'tlink linkrow', type: 'button', onclick: () => toast('演示：反馈与申诉会进入人工处理队列', [], 3000) }, '反馈与申诉'), h('span', { class: 'chev-r', html: svg('chevR', 18) })),
+      row(h('button', { class: 'tlink linkrow', type: 'button', onclick: () => Feedback.open() }, '反馈与申诉'), h('span', { class: 'chev-r', html: svg('chevR', 18) })),
     ));
-    box.append(sec('数据与隐私（演示）',
-      row(h('div', { class: 'grow' }, '导出我的数据', h('div', { class: 'sub' }, '异步生成，完成后通知')), h('button', { class: 'tlink', type: 'button', onclick: () => toast('演示：导出任务已提交', [], 2500) }, '导出')),
-      row(h('div', { class: 'grow' }, '清除最近 7 天的行为', h('div', { class: 'sub' }, '不可恢复，需要一次确认')), h('button', { class: 'tlink', type: 'button', onclick: (e) => { const b = e.currentTarget; if (b.dataset.armed) { toast('演示：已清除（真实环境会删除事件）', [], 2500); b.textContent = '清除'; delete b.dataset.armed; } else { b.dataset.armed = '1'; b.textContent = '再点一次确认'; } } }, '清除')),
+    box.append(sec('数据与隐私',
+      row(h('div', { class: 'grow' }, '导出我的数据', h('div', { class: 'sub' }, '异步生成，完成后通知')), Exporter.control()),
+      row(h('div', { class: 'grow' }, '清除最近 7 天的行为', h('div', { class: 'sub' }, '不可恢复，需要一次确认')), h('button', { class: 'tlink', type: 'button', onclick: (e) => Exporter.clear(e.currentTarget) }, '清除')),
     ));
-    box.append(h('p', { class: 'attrib', style: 'padding:4px 20px 24px' }, '研究者匹配（实验）默认关闭，功能开关未开启时不渲染入口（07 §10.6）。'));
+    box.append(h('div', { style: 'height:24px' }));   // 研究者匹配（实验）默认关闭，功能开关未开启时不渲染入口（07 §10.6）
     box.scrollTop = keep;
   },
   unmute(m) {
@@ -3659,12 +4116,13 @@ function applyDegrade() {
 let gPending = 0;
 function onKey(e) {
   const t = e.target;
+  if (S.overlay === 'tour') { if (Tour.key(e)) return; return; }
   const editable = t && t.closest && t.closest('input, textarea, select, [contenteditable="true"]');
   if (e.key === 'Escape') {
     if (Pop.el) { Pop.close(); e.preventDefault(); return; }
     if (S.overlay === 'menu') { if (!$('#menu').contains(t)) { Menu.close(); e.preventDefault(); } return; }   // focus inside: the menu's own handler
     if (S.overlay === 'sheet') { Sheet.close(); e.preventDefault(); return; }
-    if (['search', 'help', 'doc'].includes(S.overlay)) { Layer.close(S.overlay); e.preventDefault(); return; }
+    if (LAYERS.includes(S.overlay)) { Layer.close(S.overlay); e.preventDefault(); return; }
     if (S.overlay === 'dialog') { Dialog.close(); e.preventDefault(); }
     return;
   }
@@ -3689,7 +4147,7 @@ function onKey(e) {
     if (k === '?') Help.open(); else Search.open('');
     return;
   }
-  if (S.overlay === 'search' || S.overlay === 'help' || S.overlay === 'doc') return;
+  if (LAYERS.includes(S.overlay)) return;
   if (lower === 'g') { gPending = now; return; }
   if (S.overlay === 'sheet') { detailKey(e, lower); return; }
   if (S.tab !== 'today') return;
@@ -3752,7 +4210,7 @@ const Teach = {
   update() {
     if (!this.el) return;
     const on = this.wanted();
-    this.el.style.display = on ? '' : 'none';
+    this.el.style.display = 'none';              // edge hint labels replaced by the onboarding Tour; nudge logic kept
     this.u.textContent = S.mapping === 'B' ? '↑ 收藏' : '↑ 跳过（不算不感兴趣）';
     this.l.style.visibility = this.used.left ? 'hidden' : '';
     this.r.style.visibility = this.used.right ? 'hidden' : '';
@@ -3784,6 +4242,97 @@ const Teach = {
   },
   cancelNudge() { clearTimeout(this.nudgeTimer); },
 };
+
+
+/* =====================================================================
+   25b. Onboarding tour (replaces the edge hint labels): one gesture per step, animated on a practice card
+   ===================================================================== */
+const Tour = {
+  i: 0, el: null, prev: null,
+  steps() {
+    const B_ = S.mapping === 'B';
+    return [
+      { k: 'right', g: '向右滑', a: '想读', c: 'var(--like)', d: '放进阅读队列，之后在「收藏 → 想读」里找到。', keys: ['→', 'L'] },
+      { k: 'left', g: '向左滑', a: '不感兴趣', c: 'var(--nope)', d: '以后少推类似的论文。长按卡片还可以说明原因。', keys: ['←', 'H'] },
+      B_ ? { k: 'up', g: '向上滑', a: '收藏', c: 'var(--save)', d: '直接收进「我的收藏」。', keys: ['S'] }
+         : { k: 'up', g: '向上滑', a: '跳过', c: 'var(--ink-2)', d: '先不做判断，也不影响之后的推荐。', keys: ['↓', 'Space'] },
+      { k: 'down', g: '向下滑', a: '撤回', c: 'var(--ink-2)', d: '拿回上一张，随时可以改主意。', keys: ['↑', 'Z'] },
+      { k: 'tap', g: '轻点卡片', a: '看详情', c: 'var(--focus)', d: '摘要、推荐理由和全文入口都在详情里。', keys: ['Enter'] },
+    ];
+  },
+  wanted() { return !store('tourDone') && S.scenario === 'today' && S.tab === 'today' && S.mapping !== 'C' && !S.overlay && !!topInst(); },
+  build() {
+    const el = h('section', { class: 'tour', id: 'tour', role: 'dialog', 'aria-modal': 'true', 'aria-labelledby': 'tour-h', hidden: true });
+    const stage = h('div', { class: 'tstage', 'aria-hidden': 'true' },
+      h('div', { class: 'gback' }),
+      h('div', { class: 'gcard' }, h('div', { class: 'gband' }, h('i', { class: 'gl w40' }), h('i', { class: 'gl gt w90' }), h('i', { class: 'gl gt w70' })), h('div', { class: 'gbody' }, h('i', { class: 'gl w90' }), h('i', { class: 'gl w80' }), h('i', { class: 'gl w60' })), h('span', { class: 'gstamp' })),
+      h('div', { class: 'gsheet' }, h('i', { class: 'gl w40' }), h('i', { class: 'gl w90' }), h('i', { class: 'gl w70' })),
+      h('div', { class: 'finger' }));
+    el.append(
+      h('button', { class: 'tskip', type: 'button', onclick: () => this.close() }, '跳过教程'),
+      stage,
+      h('div', { class: 'ttext' }, h('h2', { id: 'tour-h', tabindex: '-1' }, h('span', { class: 'tg' }), h('span', { class: 'tact' })), h('p', { class: 'tdesc' }), h('div', { class: 'tkeys' })),
+      h('div', { class: 'tfoot' }, h('div', { class: 'tdots', 'aria-hidden': 'true' }), h('div', { class: 'tbtns' },
+        h('button', { class: 'pbtn ghost tprev', type: 'button', onclick: () => this.go(this.i - 1) }, '上一步'),
+        h('button', { class: 'pbtn primary tnext', type: 'button', onclick: () => this.go(this.i + 1) }, '下一步'))));
+    el.addEventListener('keydown', (e) => trapTab(el, e));
+    this.el = el;
+    return el;
+  },
+  open() {
+    if (!this.el) return;
+    Pop.close();
+    this.prev = document.activeElement;
+    S.overlay = 'tour';
+    Teach.cancelNudge();
+    this.el.hidden = false;
+    requestAnimationFrame(() => this.el.classList.add('in'));
+    this.go(0);
+    emit('tour_open', null, {}, 'button', 'deck');
+  },
+  go(i) {
+    const steps = this.steps();
+    if (i >= steps.length) { this.close(true); return; }
+    this.i = Math.max(0, i);
+    const st = steps[this.i];
+    const el = this.el;
+    el.dataset.k = st.k;
+    el.style.setProperty('--tc', st.c);
+    $('.tg', el).textContent = st.g;
+    $('.tact', el).textContent = st.a;
+    $('.gstamp', el).textContent = st.a;
+    $('.tdesc', el).textContent = st.d;
+    $('.tkeys', el).replaceChildren('键盘', ...st.keys.map((k) => h('kbd', {}, k)));
+    $('.tdots', el).replaceChildren(...steps.map((_, j) => h('i', { class: j === this.i ? 'on' : '' })));
+    $('.tprev', el).hidden = !this.i;
+    $('.tnext', el).textContent = this.i === steps.length - 1 ? '开始分拣' : '下一步';
+    const stage = $('.tstage', el);                       // restart the demo animation for this step
+    stage.classList.remove('play'); void stage.offsetWidth; stage.classList.add('play');
+    announce(`${this.i + 1}/${steps.length}：${st.g}，${st.a}。${st.d}`);
+    setTimeout(() => $('.tnext', el).focus({ preventScroll: true }), 30);
+  },
+  close(done) {
+    if (S.overlay !== 'tour') return;
+    S.overlay = null;
+    store('tourDone', true);
+    S.teachingDone = true; store('teachingDone', true);
+    this.el.classList.remove('in');
+    setTimeout(() => { if (S.overlay !== 'tour') this.el.hidden = true; }, 200);
+    emit('tour_close', null, { completed: !!done, step: this.i }, 'button', 'deck');
+    focusTop();
+    if (!S.aiNoticeDone) setTimeout(aiNotice, 700);
+  },
+  key(e) {
+    if (e.key === 'Escape') { e.preventDefault(); this.close(); return true; }
+    if (e.key === 'ArrowRight') { e.preventDefault(); this.go(this.i + 1); return true; }
+    if (e.key === 'ArrowLeft') { e.preventDefault(); this.go(this.i - 1); return true; }
+    return e.key !== 'Tab' && e.key !== 'Enter' && e.key !== ' ';   // swallow deck shortcuts; buttons keep Enter / Space
+  },
+};
+function aiNotice() {
+  if (S.aiNoticeDone || S.overlay || !$('#toast') || $('#toast').classList.contains('in')) return;
+  toast('AI 摘要由模型生成、可能不准确，可随时在设置关闭', [{ t: '知道了', f: () => { S.aiNoticeDone = true; store('aiNoticeDone', true); } }], 8000);
+}
 
 /* =====================================================================
    26. Decision visualisation (07 §20.6 “显示判定可视化”)
@@ -4034,7 +4583,10 @@ function layout() {
   S.framed = !narrow;
   app.classList.toggle('bleed', narrow);
   let hApp;
-  if (narrow) {
+  if (STANDALONE) {
+    const vh = window.visualViewport ? window.visualViewport.height : window.innerHeight;
+    hApp = narrow ? Math.round(vh) : clamp(window.innerHeight - 64, 600, 844);   // 48 page padding + 12 bezel + 4 slack
+  } else if (narrow) {
     const banner = $('.m-banner');
     hApp = clamp(window.innerHeight - (banner ? banner.offsetHeight : 30) - 4, 560, 960);
   } else {
@@ -4086,7 +4638,7 @@ function rebuildDeck() {
 function startScenario(kind, o = {}) {
   if (S.overlay === 'sheet') Sheet.close({ noFocus: true });
   if (S.overlay === 'menu') Menu.close({ noFocus: true });
-  while (['search', 'help', 'doc'].includes(S.overlay)) Layer.close(S.overlay);
+  while (LAYERS.includes(S.overlay)) Layer.close(S.overlay);
   $('#dialog').classList.remove('open');
   if (S.overlay === 'dialog') S.overlay = null;
   Pop.close(); hideToast();
@@ -4207,7 +4759,7 @@ const Panel = {
       this.check('标题 Web 字体对比：Source Serif 4（OFL-1.1，开启后才请求 Google Fonts）', () => S.webfont, (v) => setWebfont(v), 'ck-wf'),
     );
     g3.append(h('div', { class: 'row' }, h('span', { class: 'lbl' }, '开关'), toggles));
-    g3.append(h('div', { class: 'row' }, h('span', { class: 'lbl' }, '教学'), h('div', { class: 'btns' }, h('button', { class: 'btn-pg', type: 'button', onclick: () => { S.teachingDone = false; store('teachingDone', false); S.aiNoticeDone = false; store('aiNoticeDone', false); startScenario(S.scenario); } }, '重新演示手势教学与轻推'))));
+    g3.append(h('div', { class: 'row' }, h('span', { class: 'lbl' }, '教学'), h('div', { class: 'btns' }, h('button', { class: 'btn-pg', type: 'button', onclick: () => { S.teachingDone = false; store('teachingDone', false); store('tourDone', false); S.aiNoticeDone = false; store('aiNoticeDone', false); Tabs.go('today'); startScenario('today'); setTimeout(() => Tour.open(), 300); } }, '重新演示操作教程'))));
     p.append(g3);
   },
   buildParams(p) {
@@ -4785,6 +5337,7 @@ function buildApp() {
   app.append(today, Lib.build(), Me.build(), TabBar.build(), h('div', { class: 'homebar', 'aria-hidden': 'true' }, h('i')));
   app.append(h('div', { class: 'toast', id: 'toast', role: 'status', 'aria-live': 'polite', 'aria-atomic': 'true' }));
   app.append(h('div', { class: 'scrim', id: 'scrim' }));
+  app.append(Tour.build());
   const sheet = h('section', { class: 'sheet', id: 'sheet', role: 'dialog', 'aria-modal': 'true', 'aria-labelledby': 'sheet-title' });
   sheet.append(h('div', { class: 'grab', 'aria-hidden': 'true' }, h('i')), h('div', { class: 'shead' }), h('div', { class: 'sbody' }, h('div', { class: 'sbody-in' })), h('div', { class: 'sbar' }));
   app.append(sheet);
@@ -4807,6 +5360,13 @@ function buildApp() {
   help.append(h('div', { class: 'scroll', style: 'padding:0 20px 24px' }, tb, h('p', { class: 'attrib', style: 'margin-top:12px' }, '单键快捷键只在应用区域、且焦点不在输入框时生效，可在“我 → 显示”中关闭（WCAG 2.1.4）。焦点在按钮上时 Space 与 Enter 保持按钮的原生行为。')));
   app.append(help);
 
+  const page = h('section', { class: 'layer', id: 'page', role: 'dialog', 'aria-modal': 'true', 'aria-labelledby': 'page-h' });
+  page.append(h('div', { class: 'lhead' }, h('h2', { id: 'page-h', tabindex: '-1' }, ''), h('button', { class: 'ibtn', type: 'button', 'aria-label': '关闭', html: svg('x', 22), onclick: () => Page.close() })), h('div', { class: 'scroll pbody', id: 'page-body' }));
+  app.append(page);
+  const viewer = h('section', { class: 'layer viewer', id: 'viewer', role: 'dialog', 'aria-modal': 'true', 'aria-labelledby': 'viewer-h' });
+  viewer.append(h('div', { class: 'lhead' }, h('h2', { id: 'viewer-h', tabindex: '-1' }, '图集'), h('button', { class: 'ibtn vclose', type: 'button', 'aria-label': '关闭图片', html: svg('x', 22), onclick: () => Layer.close('viewer') })), h('div', { class: 'vstage', title: '点按放大 / 还原，放大后可拖动' }), h('div', { class: 'vcap' }));
+  app.append(viewer);
+
   const doc = h('section', { class: 'layer', id: 'doc', role: 'dialog', 'aria-modal': 'true', 'aria-labelledby': 'doc-h' });
   doc.append(h('div', { class: 'lhead' }, h('h2', { id: 'doc-h', tabindex: '-1' }, '推荐说明'), h('button', { class: 'ibtn', type: 'button', 'aria-label': '关闭推荐说明', html: svg('x', 22), onclick: () => Doc.close() })));
   const d = h('div', { class: 'scroll doc' });
@@ -4827,7 +5387,8 @@ function buildApp() {
   app.append(h('div', { class: 'dialog', id: 'dialog', role: 'dialog', 'aria-modal': 'true' }));
   app.append(h('div', { class: 'vh', id: 'live', 'aria-live': 'polite', 'aria-atomic': 'true' }));
   // aria-modal layers keep keyboard focus inside while open (the Sheet and the menu have their own traps)
-  ['search', 'help', 'doc', 'dialog'].forEach((id) => { const el = $('#' + id); el.addEventListener('keydown', (e) => trapTab(el, e)); });
+  [...LAYERS, 'dialog'].forEach((id) => { const el = $('#' + id); el.addEventListener('keydown', (e) => trapTab(el, e)); });
+  Viewer.bind();
 }
 
 function init() {
@@ -4857,13 +5418,8 @@ function init() {
   Impr.check();
   Teach.update();
   Panel.sync();
-  buildCases();
-  if (!S.aiNoticeDone) {
-    setTimeout(() => {
-      if (S.overlay || !$('#toast') || $('#toast').classList.contains('in')) return;
-      toast('AI 摘要由模型生成、可能不准确，可随时在设置关闭', [{ t: '知道了', f: () => { S.aiNoticeDone = true; store('aiNoticeDone', true); } }], 8000);
-    }, 1200);
-  }
+  if (!STANDALONE) buildCases();
+  setTimeout(() => { if (Tour.wanted()) Tour.open(); else if (!S.aiNoticeDone) setTimeout(aiNotice, 700); }, 500);
   setTimeout(layout, 300);
   window.__deck = { S, P, B: () => B, Q, V, EV, decide, flyPlan, springInfo, commit, undo, M };   // for manual review in devtools
 }

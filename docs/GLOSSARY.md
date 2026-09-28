@@ -2,7 +2,7 @@
 title: 术语表（Glossary）
 status: draft
 owner: opus5.5-primary
-updated: 2026-09-27
+updated: 2026-09-28
 ---
 
 # 术语表
@@ -13,7 +13,9 @@ updated: 2026-09-27
 | 术语 | 含义 |
 |---|---|
 | Source / Venue | 可对接的来源（出版商平台、预印本服务器、聚合器、仓储实例等）与期刊、会议或 WP 系列；两者分开建模 |
-| L1 / L2 | 一级来源（publisher、preprint、journal_platform、conference_platform）/ 二级来源（repository、aggregator，含 registry 子类型） |
+| 来源七类（M1、M2、L1a–L1c、L2a–L2b） | 元层 M1 出版与托管主体、M2 标识与注册；一级 L1a 期刊与会议、L1b 预印本与工作论文、L1c 长尾一级产出；二级 L2a 文献库与学科仓储、L2b 检索引擎与聚合项目。取代旧的 L1/L2 七种类型，定义见 [来源分层](catalog/source-taxonomy.md) |
+| 兼角色（role） | 来源在主类之外承担的职能，如 Crossref 主类 M2、兼 L2b 元数据 API；CNKI 主类 L2a、兼 M1 网络首发 |
+| 评级标签（rating tag） | 挂在 venue 上的名录等级或成员资格，如 `CCF-A`、`ICORE-A*`、`UTD24`、`ABDC-A*`、`NI`；体系与许可见 [评级体系](catalog/venue-rankings.md) |
 | SourceSpec v2 / SourceChannel | 来源的机读声明；每个来源声明 metadata、latest、fulltext 三条来源通道，以及各自的合规证据 |
 | SCD | Source Capability Descriptor：可下推谓词、排序键、增量游标、成本模型与礼貌参数；是路由器的唯一输入 |
 | ConnectorFamily | v2 的 adapter 抽象，共九族（含 `bulk_snapshot`，以及复用 v1 adapter 的 `v1_bridge`）；每个 connector 声明 `exec_side ∈ {platform, user}` |
@@ -28,3 +30,18 @@ updated: 2026-09-27
 | Candidate Pipeline | 推荐管线的六类组件：Source、Hydrator、Filter、Scorer、Selector、SideEffect |
 | k_cf / k_reason / k_show | k 匿名门槛：协同信号入模 / 协同类解释 / 公开计数与社会证明 |
 | V0–V7 / AC-V | v2 里程碑 / 里程碑验收标准编号 AC-V<m>.<n> |
+
+## 推荐研究中的经济机制术语
+
+以下用于[推荐论文清单](survey/peer-review-content-ads-reading-list.md)的经济学增补，不构成新的已批准架构决策。
+
+| 术语 | 含义 |
+|---|---|
+| EconCS / EC / TEAC | 经济学与计算机科学交叉领域 / ACM Economics and Computation 会议 / ACM Transactions on Economics and Computation 期刊 |
+| Mechanism design（机制设计） | 考虑参与者会策略性行动，设计分配、支付、信息披露等规则以实现明确目标 |
+| Incentive compatibility（激励相容） | 在指定信息与博弈假设下，按机制要求诚实报告或遵循建议符合参与者自身利益；不同均衡概念的保证不能混用 |
+| Information design / Bayesian persuasion（信息设计／贝叶斯说服） | 通过选择信息披露或信号结构影响接受者信念与行动；发送者最优不自动等于用户福利最优 |
+| Peer prediction（同行预测） | 缺少可验证真值时，利用同行报告之间的统计关系设计信息反馈激励；不同意见不自动等于低质量 |
+| Supply-side equilibrium（供给侧均衡） | 创作者或卖方响应推荐、报酬和竞争规则后形成的供给结果，区别于固定内容集上的排序效果 |
+| Structural counterfactual（结构反事实） | 基于估计的行为模型预测替代政策结果，依赖识别与模型假设，区别于直接随机试验效果 |
+| Incrementality（增量效果） | 相对未施加干预时新增的结果，区别于对已曝光样本的点击或转化预测 |

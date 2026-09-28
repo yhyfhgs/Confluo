@@ -34,7 +34,7 @@ updated: 2026-09-27
 
 ## 来源格局与接口
 
-- **名录**：5 篇来源调研共登记 249 行，合并去重得 187 行候选来源：L1 一级来源（出版商、预印本、期刊与会议平台）129 行，L2 二级来源（仓储与聚合器）57 行，盗版源合并为 1 行。建议状态：v2-P0 36、v2-P1 63、v2-P2 44、仅元数据 26、仅外链 2、仅用户导入 3、排除 13。逐行现状以[支持名录](../catalog/source-directory.md)为准。
+- **名录**：5 篇来源调研共登记 249 行，合并去重得 187 行候选来源：L1 一级来源（出版商、预印本、期刊与会议平台）129 行，L2 二级来源（仓储与聚合器）57 行，盗版源合并为 1 行。建议状态：v2-P0 36、v2-P1 63、v2-P2 44、仅元数据 26、仅外链 2、仅用户导入 3、排除 13。逐行现状以[支持名录](../catalog/source-directory.md)为准；2026-09-27 起名录按七类重分，见[来源分层](../catalog/source-taxonomy.md)。
 - **元数据主干**：期刊与带 DOI 的 WP 用 Crossref 按 ISSN 枚举（合并历史 ISSN），本地底座以 OpenAlex 季度快照为主，再叠加学科 L2（Europe PMC、INSPIRE、zbMATH、RePEc、dblp 快照）。多数期刊只需登记来源声明（SourceSpec）与 venue，由 Crossref 委托通道承接。
 - **Crossref 的用法**：按请求类型分池限速，venue 枚举走 `/journals/{issn}/works`，不做关键词检索。最新论文以 `from-created-date` 加重叠窗口为主；`from-index-date` 会把结果放大约 100 倍，只作补漏。
 - **只为有官方 API 或协议通道的站点写代码**，如 INSPIRE、zbMATH Open、SCOAP3、Europe PMC、PMC S3、ACL Anthology 包。WAF（Web 应用防火墙）拦截或 robots 全禁的站点只做元数据与外链，或由用户本人单篇触发。例外：robots 允许、无挑战门的 OA 会议论文集静态页（PMLR、CVF 等）可写专站 connector。

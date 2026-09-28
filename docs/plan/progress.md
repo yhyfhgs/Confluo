@@ -14,10 +14,11 @@ updated: 2026-09-27
 - **阶段**：v2 设计已完成，等你评审；main 上没有实现代码。
 - **main 上的文档**（都是精简版）：
   - [v2 方案总览](v2/README.md)与 01–09 九篇设计；
-  - [支持名录](../catalog/source-directory.md)（187 条）、[调研结论](../survey/README.md)、[ADR 登记](decision-log.md)（32 条草案待确认）；
+  - [支持名录](../catalog/source-directory.md)（187 条）、[调研结论](../survey/README.md)、[ADR 登记](decision-log.md)（33 条草案待确认）；
   - 11 张配图与交互 demo。
+- **来源分层与 venue 名录**（同日新增，draft）：[来源七类分层与现状总表](../catalog/source-taxonomy.md)、[候选来源](../catalog/source-candidates.md)（156 个）、[评级体系](../catalog/venue-rankings.md)（45 个）、[按学科的 venue 名录](../catalog/venues/README.md)（866 个）；支持名录按七类分节，ADR 草案增至 33 条（新增 D-072）。
 - **归档**：完整长稿在标签 `v2-drafts`，v1 的实现与文档在分支 `archive/v1`（标签 `v1-final`），见[归档说明](../archive.md)。
-- **待你决定**：见 [v2 方案总览](v2/README.md)的"待你拍板"一节，以及 32 条 ADR 草案。
+- **待你决定**：见 [v2 方案总览](v2/README.md)的"待你拍板"一节，以及 33 条 ADR 草案；其中 D-072 七类分层与评级标签的内置、导入口径（[评级体系](../catalog/venue-rankings.md)"平台怎么用"）是本日新增。
 - **阻塞**：无。书面确认（NCBI、EMBL-EBI、OpenReview）与法务结论是 V0、V1 的外部依赖。
 
 ## 里程碑

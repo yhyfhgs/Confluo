@@ -1,0 +1,1193 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Paper Crawler 宣传片</title>
+<meta name="description" content="Paper Crawler v2 产品宣传片：以个性化推荐为主线，演示设计阶段交互样机 paper-feed-demo.html 的核心流程。">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&family=Noto+Serif+SC:wght@500;600;700&family=Source+Serif+4:opsz,wght@8..60,400;8..60,600&display=swap">
+<style>
+/* =====================================================================
+   Paper Crawler 宣传片 — 1920×1080 定帧舞台，Web Animations 时间轴驱动，可暂停、拖动、逐章跳转。
+   产品色值与 paper-feed-demo.html（07 §14.2 亮色列）一致；舞台为片场暗色，不随系统主题切换。
+   ===================================================================== */
+:root {
+  --stage: #0d0e10;
+  --stage-2: #16171a;
+  --s-ink: #f3f2ee;
+  --s-ink-2: #b9bcc3;
+  --s-ink-3: #80848d;
+  --s-line: rgba(255, 255, 255, 0.09);
+  --s-glass: rgba(255, 255, 255, 0.035);
+
+  --bg: #f5f4f0; --surface: #ffffff; --surface-sunken: #f0efeb; --line: #e3e1dc;
+  --ink-1: #17181b; --ink-2: #45484f; --ink-3: #62666f;
+  --like: #d23a5c; --save: #a86400; --nope: #4f5561; --ai-fg: #5a3fd0; --ai-bg: #efecff;
+  --good: #11843a; --toast-bg: #17181b; --primary-bg: #17181b; --skeleton: #ebe9e4;
+  --e-card: 0 1px 2px rgba(0, 0, 0, 0.06), 0 8px 24px rgba(0, 0, 0, 0.08);
+
+  --f-cs: #2a78d6; --f-cs-t: #e1f2ff;
+  --f-chem: #e2602b; --f-chem-t: #ffe9df;
+  --f-life: #009f6b; --f-life-t: #dcf8e9;
+  --f-econ: #c27800; --f-econ-t: #feedd7;
+  --f-psy: #d0658f; --f-psy-t: #ffe7f0;
+  --f-earth: #008300; --f-earth-t: #e3f7e1;
+  --f-mathphys: #4a3aa7; --f-mathphys-t: #eceeff;
+  --f-med: #e34948; --f-med-t: #ffe8e4;
+
+  --font-sans: "Inter", -apple-system, BlinkMacSystemFont, "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", "Noto Sans SC", sans-serif;
+  --font-serif: "Source Serif 4", "Iowan Old Style", Georgia, "Noto Serif SC", "Songti SC", serif;
+  --font-display: "Source Serif 4", "Noto Serif SC", "Songti SC", "STSong", Georgia, serif;
+  --font-mono: "JetBrains Mono", ui-monospace, "SF Mono", Menlo, "PingFang SC", monospace;
+  color-scheme: dark;
+}
+* { box-sizing: border-box; }
+html, body { margin: 0; height: 100%; background: #050506; overflow: hidden; }
+body { font-family: var(--font-sans); -webkit-font-smoothing: antialiased; color: var(--s-ink); }
+button { font: inherit; color: inherit; }
+
+/* ---------- viewport & stage ---------- */
+#viewport { position: fixed; inset: 0; display: grid; place-items: center; }
+#stage {
+  position: absolute; left: 50%; top: 50%; width: 1920px; height: 1080px; overflow: hidden;
+  transform-origin: 0 0;
+  background:
+    radial-gradient(1200px 800px at 60% 42%, #1b1c20 0%, rgba(27, 28, 32, 0) 70%),
+    radial-gradient(900px 600px at 12% 100%, rgba(90, 63, 208, 0.10), rgba(90, 63, 208, 0) 70%),
+    var(--stage);
+}
+#stage::before { /* dot grid, as in the demo's review page */
+  content: ""; position: absolute; inset: 0; pointer-events: none;
+  background-image: radial-gradient(rgba(255, 255, 255, 0.045) 1px, transparent 1.2px);
+  background-size: 28px 28px; mask-image: radial-gradient(1100px 760px at 55% 45%, #000 30%, transparent 85%);
+}
+#stage::after { /* vignette */
+  content: ""; position: absolute; inset: 0; pointer-events: none;
+  background: radial-gradient(1400px 900px at 50% 50%, transparent 55%, rgba(0, 0, 0, 0.55) 100%);
+}
+.abs { position: absolute; }
+.o0 { opacity: 0; }
+
+/* ---------- scene 1: the flood ---------- */
+.flood-col { position: absolute; top: 40px; width: 400px; font: 400 15px/2.35 var(--font-mono); color: rgba(243, 242, 238, 0.42); white-space: nowrap; opacity: 0; }
+.flood-col div { overflow: hidden; text-overflow: ellipsis; }
+.hl { position: absolute; font: 500 15px/2.35 var(--font-mono); white-space: nowrap; opacity: 0; max-width: 400px; overflow: hidden; text-overflow: ellipsis; }
+.hl::before { content: ""; display: inline-block; width: 7px; height: 7px; border-radius: 50%; background: currentColor; margin-right: 10px; vertical-align: 2px; }
+.bigline { position: absolute; left: 0; right: 0; text-align: center; font: 600 64px/1.3 var(--font-display); letter-spacing: 0.02em; color: var(--s-ink); opacity: 0; }
+.bigline em { font-style: normal; color: #ff8fa8; }
+
+/* ---------- logo ---------- */
+.mark { position: absolute; width: 120px; height: 120px; }
+.mark i { position: absolute; left: 14px; width: 92px; height: 104px; border-radius: 16px; opacity: 0; }
+.mark i:nth-child(1) { top: 16px; background: #3a3c42; scale: 0.84; transform-origin: 50% 100%; translate: 0 -28px; }
+.mark i:nth-child(2) { top: 16px; background: #5b5e66; scale: 0.92; transform-origin: 50% 100%; translate: 0 -14px; }
+.mark i:nth-child(3) { top: 16px; background: #f5f4f0; overflow: hidden; box-shadow: 0 12px 30px rgba(0, 0, 0, 0.4); }
+.mark i:nth-child(3)::before { content: ""; position: absolute; left: 0; right: 0; top: 0; height: 40px; background: var(--f-cs-t); border-top: 5px solid var(--f-cs); }
+.mark i:nth-child(3)::after { content: ""; position: absolute; left: 14px; right: 26px; top: 56px; height: 7px; border-radius: 4px; background: #d7d5cf; box-shadow: 0 16px 0 #e3e1dc, -0px 32px 0 #e3e1dc; }
+.wordmark { position: absolute; left: 0; right: 0; text-align: center; font: 600 104px/1 var(--font-serif); letter-spacing: -0.01em; color: var(--s-ink); }
+.wordmark span { display: inline-block; opacity: 0; }
+.tagline { position: absolute; left: 0; right: 0; text-align: center; font: 500 32px/1.4 var(--font-display); letter-spacing: 0.12em; color: var(--s-ink-2); opacity: 0; }
+
+/* ---------- captions (left column) ---------- */
+.cap { position: absolute; left: 140px; top: 300px; width: 660px; }
+.cap .eb { font: 500 16px/1 var(--font-mono); letter-spacing: 0.14em; color: var(--s-ink-3); opacity: 0; display: flex; align-items: center; gap: 14px; }
+.cap .eb b { font-weight: 500; color: var(--acc, #ff8fa8); }
+.cap .eb::after { content: ""; width: 56px; height: 1px; background: var(--s-line); }
+.cap h2 { margin: 30px 0 0; font: 600 60px/1.28 var(--font-display); letter-spacing: 0.01em; color: var(--s-ink); }
+.cap h2 .ln { display: block; overflow: hidden; padding-bottom: 4px; }
+.cap h2 .ln span { display: block; translate: 0 110%; }
+.cap p { margin: 30px 0 0; font: 400 22px/1.75 var(--font-sans); color: var(--s-ink-2); opacity: 0; max-width: 600px; }
+.cap p b { color: var(--s-ink); font-weight: 600; }
+
+/* ---------- right panels ---------- */
+.panel {
+  position: absolute; left: 1420px; top: 250px; width: 400px; padding: 28px 30px 30px; border-radius: 22px;
+  background: var(--s-glass); border: 1px solid var(--s-line); backdrop-filter: blur(6px); opacity: 0;
+}
+.panel h4 { margin: 0; font: 600 20px/1.3 var(--font-sans); color: var(--s-ink); }
+.panel .sub { margin: 6px 0 0; font: 400 14px/1.5 var(--font-mono); color: var(--s-ink-3); letter-spacing: 0.04em; }
+.panel .foot { margin-top: 22px; padding-top: 16px; border-top: 1px solid var(--s-line); font: 400 14px/1.5 var(--font-mono); color: var(--s-ink-3); }
+.panel .foot b { color: #7ee2a8; font-weight: 500; }
+
+/* funnel */
+#pFunnel { top: 200px; height: 640px; }
+#funnelCv { position: absolute; left: 22px; top: 92px; width: 150px; height: 510px; }
+.fstep { position: absolute; left: 186px; right: 24px; opacity: 0; }
+.fstep b { display: block; font: 600 17px/1.35 var(--font-sans); color: var(--s-ink); }
+.fstep span { display: block; margin-top: 4px; font: 400 13.5px/1.45 var(--font-mono); color: var(--s-ink-3); }
+.fstep.last b { color: #ff8fa8; font-size: 20px; }
+
+/* profile bars */
+.prow { margin-top: 20px; }
+.prow .pn { display: flex; justify-content: space-between; align-items: baseline; font: 500 16px/1 var(--font-sans); color: var(--s-ink-2); }
+.prow .pn em { font: 500 13px/1 var(--font-mono); font-style: normal; opacity: 0; }
+.prow .bar { margin-top: 10px; height: 8px; border-radius: 4px; background: rgba(255, 255, 255, 0.06); overflow: hidden; }
+.prow .bar i { display: block; height: 100%; border-radius: 4px; background: var(--c); transform-origin: 0 50%; }
+.flychip { position: absolute; padding: 8px 14px; border-radius: 999px; font: 600 16px/1 var(--font-sans); white-space: nowrap; opacity: 0; box-shadow: 0 8px 24px rgba(0, 0, 0, 0.35); }
+.flychip.up { background: #ffe3ea; color: #b0304f; }
+.flychip.dn { background: #e7e9ee; color: #3d4250; }
+
+/* trace */
+.trow { display: grid; grid-template-columns: 1fr; gap: 6px; margin-top: 18px; padding: 14px 16px; border-radius: 14px; background: rgba(255, 255, 255, 0.035); border: 1px solid var(--s-line); opacity: 0; }
+.trow code { font: 500 12.5px/1 var(--font-mono); color: #b4a8ff; letter-spacing: 0.04em; }
+.trow b { font: 500 16px/1.4 var(--font-sans); color: var(--s-ink); }
+.trow span { font: 400 13.5px/1.4 var(--font-sans); color: var(--s-ink-3); }
+
+/* control list */
+.citem { display: flex; gap: 16px; margin-top: 22px; opacity: 0; }
+.citem .ci { flex: none; width: 40px; height: 40px; border-radius: 12px; display: grid; place-items: center; background: rgba(255, 255, 255, 0.06); color: var(--s-ink); }
+.citem b { display: block; font: 600 17px/1.3 var(--font-sans); color: var(--s-ink); }
+.citem span { display: block; margin-top: 4px; font: 400 14.5px/1.5 var(--font-sans); color: var(--s-ink-3); }
+
+/* north star */
+.nrow { display: flex; align-items: center; gap: 14px; margin-top: 16px; font: 500 18px/1.3 var(--font-sans); color: var(--s-ink); opacity: 0; }
+.nrow i { width: 30px; height: 30px; border-radius: 50%; display: grid; place-items: center; background: rgba(126, 226, 168, 0.12); color: #7ee2a8; font-style: normal; font-size: 15px; }
+.zero { margin-top: 26px; padding-top: 20px; border-top: 1px solid var(--s-line); display: flex; justify-content: space-between; align-items: baseline; opacity: 0; }
+.zero span { font: 400 16px/1.3 var(--font-sans); color: var(--s-ink-3); }
+.zero b { font: 500 54px/1 var(--font-mono); color: var(--s-ink); }
+
+/* field swatches */
+.sw { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-top: 20px; }
+.sw div { display: flex; align-items: center; gap: 10px; padding: 12px; border-radius: 12px; background: var(--t); color: #17181b; font: 500 14.5px/1.2 var(--font-sans); opacity: 0; border-top: 4px solid var(--a); }
+.sw div i { width: 10px; height: 10px; border-radius: 50%; background: var(--a); flex: none; }
+
+/* ---------- phone ---------- */
+#phone { position: absolute; left: 880px; top: 58px; width: 414px; height: 868px; transform-origin: 0 0; scale: 1.1; opacity: 0; }
+#phone .bezel { position: absolute; inset: 0; border-radius: 62px; background: #1c1e22; box-shadow: 0 0 0 1.5px #3a3d44, 0 40px 90px rgba(0, 0, 0, 0.6), 0 10px 30px rgba(0, 0, 0, 0.4); }
+#screen { position: absolute; left: 12px; top: 12px; width: 390px; height: 844px; border-radius: 50px; overflow: hidden; background: var(--bg); color: var(--ink-1); font-family: var(--font-sans); }
+.status { position: absolute; left: 0; right: 0; top: 0; height: 50px; display: flex; align-items: flex-end; justify-content: space-between; padding: 0 30px 8px 36px; font: 600 16px/1 var(--font-sans); z-index: 30; }
+.status .ic { display: flex; gap: 6px; align-items: center; }
+.island { position: absolute; left: 50%; top: 11px; width: 120px; height: 34px; margin-left: -60px; border-radius: 20px; background: #000; z-index: 31; }
+.homebar { position: absolute; left: 50%; bottom: 8px; width: 134px; height: 5px; margin-left: -67px; border-radius: 3px; background: #17181b; z-index: 40; }
+.scr { position: absolute; inset: 0; opacity: 0; }
+
+/* top bar */
+.topbar { position: absolute; left: 0; right: 0; top: 54px; height: 50px; display: flex; align-items: center; padding: 0 16px 0 20px; gap: 10px; }
+.topbar .t { font: 700 21px/1 var(--font-sans); }
+.topbar .n { font: 500 14px/1 var(--font-mono); color: var(--ink-3); min-width: 50px; }
+.topbar .sp { flex: 1; }
+.topbar .mode { position: relative; height: 32px; padding: 0 12px; border-radius: 16px; background: var(--surface); border: 1px solid var(--line); display: flex; align-items: center; gap: 7px; font: 600 13.5px/1 var(--font-sans); }
+.topbar .mode::before { content: ""; width: 7px; height: 7px; border-radius: 50%; background: var(--ink-1); }
+.topbar .chev { width: 32px; height: 32px; border-radius: 50%; background: var(--surface); border: 1px solid var(--line); display: grid; place-items: center; }
+
+/* deck */
+.deck { position: absolute; left: 16px; top: 116px; width: 358px; height: 510px; }
+.card { position: absolute; inset: 0; border-radius: 20px; background: var(--surface); box-shadow: var(--e-card); overflow: hidden; transform-origin: 50% 100%; opacity: 0; display: flex; flex-direction: column; }
+.cover { background: var(--ft); border-top: 5px solid var(--fa); padding: 14px 18px 16px; }
+.meta { display: flex; align-items: center; gap: 6px; font: 500 12px/1.2 var(--font-sans); color: var(--ink-2); white-space: nowrap; }
+.meta .dot { width: 7px; height: 7px; border-radius: 50%; background: var(--fa); }
+.meta .mono { font: 500 11px/1 var(--font-mono); letter-spacing: 0.02em; text-transform: uppercase; color: var(--ink-3); overflow: hidden; text-overflow: ellipsis; }
+.meta .cat { font: 500 11px/1 var(--font-mono); padding: 3px 5px; border-radius: 4px; background: rgba(255, 255, 255, 0.7); color: var(--ink-2); }
+.meta .sep { color: var(--ink-3); }
+.meta .more { margin-left: auto; letter-spacing: 1px; color: var(--ink-2); font-size: 11px; }
+.title { margin: 10px 0 0; font: 400 21.5px/1.33 var(--font-serif); letter-spacing: -0.005em; color: var(--ink-1); display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden; }
+.body { padding: 16px 18px 0; flex: 1; }
+.tldr { margin: 0; font: 400 15px/1.62 var(--font-sans); color: var(--ink-1); display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden; }
+.aib { display: inline-block; margin-right: 6px; padding: 2px 5px; border-radius: 4px; background: var(--ai-bg); color: var(--ai-fg); font: 600 10.5px/1.3 var(--font-sans); vertical-align: 2px; }
+.pills { display: flex; gap: 6px; margin-top: 12px; }
+.pill { display: inline-flex; align-items: center; gap: 4px; height: 24px; padding: 0 8px; border-radius: 6px; background: var(--surface-sunken); font: 500 12px/1 var(--font-sans); color: var(--ink-2); }
+.pill.oa svg { color: var(--good); }
+.authors { margin: 14px 0 0; font: 400 13px/1.4 var(--font-sans); color: var(--ink-3); }
+.excerpt { margin: 12px 0 0; font: 400 13.5px/1.6 var(--font-serif); color: var(--ink-2); display: -webkit-box; -webkit-line-clamp: 4; -webkit-box-orient: vertical; overflow: hidden; }
+.why { position: relative; display: flex; align-items: center; gap: 8px; margin: 0 12px 12px; padding: 12px 8px 12px 10px; border-radius: 12px; font: 500 13.5px/1.3 var(--font-sans); color: var(--ink-2); }
+.why .wi { color: var(--fa); display: grid; }
+.why .wt { flex: 1; }
+.why .info { color: var(--ink-2); display: grid; }
+.why .glow { position: absolute; inset: 0; border-radius: 12px; background: var(--ft); box-shadow: inset 0 0 0 1.5px var(--fa); opacity: 0; z-index: -1; }
+.xpill { padding: 3px 7px; border-radius: 999px; background: var(--ai-bg); color: var(--ai-fg); font: 600 11px/1 var(--font-sans); }
+.stamp { position: absolute; top: 26px; padding: 6px 12px; border: 3px solid; border-radius: 10px; font: 700 26px/1 var(--font-sans); letter-spacing: 0.06em; opacity: 0; background: rgba(255, 255, 255, 0.85); }
+.stamp.like { left: 22px; color: var(--like); rotate: -12deg; }
+.stamp.nope { right: 22px; color: var(--nope); rotate: 12deg; }
+.skel { position: absolute; inset: 0; border-radius: 20px; background: var(--surface); box-shadow: var(--e-card); padding: 22px 18px; opacity: 0; }
+.skel i { display: block; height: 14px; border-radius: 7px; background: var(--skeleton); margin-top: 14px; }
+.skel p { position: absolute; left: 0; right: 0; bottom: 30px; margin: 0; text-align: center; font: 400 13.5px/1 var(--font-sans); color: var(--ink-3); }
+.endc { padding: 44px 26px 24px; align-items: center; text-align: center; background: var(--surface); }
+.endc .ok { width: 64px; height: 64px; border-radius: 50%; display: grid; place-items: center; background: #e5f5ea; color: var(--good); }
+.endc h3 { margin: 22px 0 0; font: 600 25px/1.3 var(--font-serif); }
+.endc .st { margin: 10px 0 0; font: 500 15px/1 var(--font-sans); color: var(--ink-2); }
+.endc .st b { font-family: var(--font-mono); }
+.btn { display: flex; align-items: center; justify-content: center; height: 46px; border-radius: 12px; font: 600 15px/1 var(--font-sans); width: 100%; }
+.btn.pri { background: var(--primary-bg); color: #fff; margin-top: 28px; }
+.btn.sec { background: var(--surface-sunken); color: var(--ink-1); margin-top: 10px; }
+.endc .nx { margin-top: auto; font: 400 13px/1.4 var(--font-sans); color: var(--ink-3); }
+
+/* action bar */
+.actions { position: absolute; left: 0; right: 0; top: 648px; display: flex; justify-content: center; align-items: flex-start; gap: 22px; }
+.act { display: flex; flex-direction: column; align-items: center; gap: 7px; font: 500 12px/1 var(--font-sans); color: var(--ink-2); }
+.act .b { width: 58px; height: 58px; border-radius: 50%; background: var(--surface); box-shadow: 0 1px 2px rgba(0, 0, 0, 0.06), 0 4px 14px rgba(0, 0, 0, 0.07); display: grid; place-items: center; color: var(--ink-1); }
+.act.sm .b { width: 44px; height: 44px; margin-top: 7px; color: var(--ink-3); }
+.act.like .b { color: var(--like); }
+
+/* tab bar */
+.tabbar { position: absolute; left: 0; right: 0; bottom: 0; height: 88px; border-top: 1px solid var(--line); background: rgba(245, 244, 240, 0.96); display: flex; justify-content: space-around; padding: 10px 30px 0; z-index: 20; }
+.tab { position: relative; width: 70px; display: flex; flex-direction: column; align-items: center; gap: 5px; font: 500 11.5px/1 var(--font-sans); color: var(--ink-3); }
+.tab .on { position: absolute; inset: 0; display: flex; flex-direction: column; align-items: center; gap: 5px; color: var(--ink-1); font-weight: 700; opacity: 0; background: rgba(245, 244, 240, 1); }
+
+/* onboarding */
+.onb-in { position: absolute; left: 22px; right: 22px; top: 70px; }
+.onb-in h2 { margin: 0; font: 600 27px/1.3 var(--font-serif); }
+.onb-in .sub { margin: 8px 0 0; font: 400 14px/1.4 var(--font-sans); color: var(--ink-3); }
+.search { margin-top: 18px; height: 42px; border-radius: 12px; background: var(--surface); border: 1px solid var(--line); display: flex; align-items: center; gap: 8px; padding: 0 12px; font: 400 14px/1 var(--font-sans); color: var(--ink-3); }
+.grp { margin: 20px 0 10px; font: 600 12.5px/1 var(--font-sans); color: var(--ink-3); letter-spacing: 0.04em; display: flex; justify-content: space-between; }
+.grp span { font-weight: 400; }
+.caps { display: flex; flex-wrap: wrap; gap: 8px; }
+.cp { position: relative; display: inline-flex; align-items: center; gap: 5px; height: 36px; padding: 0 13px 0 11px; border-radius: 18px; background: var(--surface); border: 1px solid var(--line); font: 500 13.5px/1 var(--font-sans); color: var(--ink-1); overflow: hidden; }
+.cp .fill { position: absolute; inset: 0; background: var(--ink-1); opacity: 0; }
+.cp .ck { position: relative; width: 14px; height: 14px; }
+.cp .ck > span { position: absolute; inset: 0; display: grid; place-items: center; }
+.cp .ck .y { opacity: 0; color: #fff; }
+.cp .ck .n { color: var(--ink-3); }
+.cp .lb { position: relative; }
+.imp { border-radius: 14px; background: var(--surface); border: 1px solid var(--line); }
+.imp div { display: flex; align-items: center; gap: 10px; height: 50px; padding: 0 14px; font: 500 14.5px/1 var(--font-sans); border-top: 1px solid var(--line); }
+.imp div:first-child { border-top: 0; }
+.imp .lg { width: 26px; height: 26px; border-radius: 7px; display: grid; place-items: center; font: 700 11px/1 var(--font-sans); color: #fff; }
+.imp .rt { margin-left: auto; font: 500 13px/1 var(--font-sans); color: var(--ink-3); position: relative; }
+.imp .rt .done { position: absolute; right: 0; top: -1px; white-space: nowrap; color: var(--good); opacity: 0; background: var(--surface); padding-left: 8px; }
+.onb-cta { position: absolute; left: 22px; right: 22px; bottom: 36px; }
+.onb-cta .btn { margin: 0; height: 52px; font-size: 16px; }
+
+/* me */
+.me-in { position: absolute; left: 20px; right: 20px; top: 62px; }
+.me-in h2 { margin: 0; font: 700 28px/1.2 var(--font-sans); }
+.lbl { margin: 22px 0 10px; font: 600 13px/1 var(--font-sans); color: var(--ink-3); }
+.seg { position: relative; display: grid; grid-template-columns: repeat(3, 1fr); height: 40px; padding: 3px; border-radius: 12px; background: var(--surface-sunken); font: 600 13.5px/1 var(--font-sans); }
+.seg span { position: relative; display: grid; place-items: center; z-index: 1; }
+.seg .kn { position: absolute; left: 3px; top: 3px; bottom: 3px; width: calc((100% - 6px) / 3); border-radius: 9px; background: var(--surface); box-shadow: 0 1px 2px rgba(0, 0, 0, 0.1); z-index: 0; }
+.npbanner { margin-top: 0; padding: 0 12px; border-radius: 10px; background: #eef3ff; color: #1f58d6; font: 500 13px/1.4 var(--font-sans); opacity: 0; height: 0; overflow: hidden; }
+.irows { border-radius: 14px; background: var(--surface); border: 1px solid var(--line); overflow: hidden; }
+.ir { display: flex; align-items: center; gap: 8px; height: 56px; padding: 0 10px 0 14px; border-top: 1px solid var(--line); overflow: hidden; }
+.ir:first-child { border-top: 0; }
+.ir .rn { flex: 1; font: 600 14.5px/1 var(--font-sans); white-space: nowrap; }
+.ir .bd { margin-left: 6px; padding: 3px 6px; border-radius: 5px; font: 500 11px/1 var(--font-sans); background: var(--surface-sunken); color: var(--ink-3); }
+.ir .bd.x { background: #e9f1ff; color: #1f58d6; }
+.s3 { position: relative; display: grid; grid-template-columns: repeat(3, 42px); height: 30px; padding: 2px; border-radius: 8px; background: var(--surface-sunken); font: 500 12px/1 var(--font-sans); color: var(--ink-2); }
+.s3 span { position: relative; display: grid; place-items: center; z-index: 1; }
+.s3 .kn { position: absolute; left: 2px; top: 2px; bottom: 2px; width: 42px; border-radius: 6px; background: var(--surface); box-shadow: 0 1px 2px rgba(0, 0, 0, 0.12); z-index: 0; }
+.ir .dl { width: 26px; height: 26px; display: grid; place-items: center; color: var(--ink-3); }
+
+/* library */
+.lib-in { position: absolute; left: 16px; right: 16px; top: 62px; }
+.lib-in h2 { margin: 0 0 0 4px; font: 700 28px/1.2 var(--font-sans); }
+.ltabs { display: flex; align-items: center; gap: 18px; margin: 16px 4px 0; font: 600 15px/1 var(--font-sans); color: var(--ink-3); }
+.ltabs .a { color: var(--ink-1); position: relative; }
+.ltabs .a::after { content: ""; position: absolute; left: 0; right: 0; bottom: -9px; height: 2.5px; border-radius: 2px; background: var(--ink-1); }
+.ltabs .ex { margin-left: auto; height: 30px; padding: 0 11px; border-radius: 8px; background: var(--surface); border: 1px solid var(--line); display: flex; align-items: center; font: 600 12.5px/1 var(--font-sans); color: var(--ink-1); }
+.mas { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-top: 22px; align-items: start; }
+.mas .col { display: flex; flex-direction: column; gap: 10px; }
+.mc { border-radius: 14px; background: var(--surface); box-shadow: var(--e-card); overflow: hidden; opacity: 0; }
+.mc .mcv { background: var(--ft); border-top: 4px solid var(--fa); padding: 10px 11px 12px; }
+.mc .mm { font: 500 10px/1 var(--font-mono); color: var(--ink-3); text-transform: uppercase; }
+.mc .mt { margin-top: 7px; font: 400 14.5px/1.32 var(--font-serif); color: var(--ink-1); }
+.mc .mb { padding: 9px 11px 11px; font: 400 11.5px/1.45 var(--font-sans); color: var(--ink-3); }
+
+/* sheet */
+.scrim { position: absolute; inset: 0; background: rgba(17, 19, 24, 0.4); opacity: 0; z-index: 25; }
+.sheet { position: absolute; left: 0; right: 0; top: 318px; height: 560px; border-radius: 22px 22px 0 0; background: var(--surface); box-shadow: 0 -8px 32px rgba(0, 0, 0, 0.12); z-index: 26; translate: 0 110%; padding: 10px 22px 0; }
+.sheet .hd { width: 38px; height: 5px; border-radius: 3px; background: #d8d6d0; margin: 0 auto 14px; }
+.sheet .sm { font: 500 12px/1 var(--font-sans); color: var(--ink-3); display: flex; gap: 6px; align-items: center; }
+.sheet .sm .dot { width: 7px; height: 7px; border-radius: 50%; background: var(--f-mathphys); }
+.sheet .stt { margin: 8px 0 0; font: 400 19px/1.32 var(--font-serif); }
+.sheet h5 { margin: 20px 0 0; font: 700 15px/1 var(--font-sans); }
+.reasons { list-style: none; margin: 12px 0 0; padding: 0; }
+.reasons li { display: flex; gap: 10px; align-items: flex-start; padding: 7px 0; font: 400 14.5px/1.45 var(--font-sans); opacity: 0; }
+.reasons li .wi { color: var(--f-mathphys); display: grid; margin-top: 4px; }
+.reasons li .attrib { color: var(--ink-3); font-size: 12.5px; }
+.chips { display: flex; gap: 8px; margin-top: 12px; flex-wrap: wrap; }
+.chip { position: relative; height: 34px; padding: 0 13px; border-radius: 17px; border: 1px solid var(--line); background: var(--surface); display: inline-flex; align-items: center; font: 500 13.5px/1 var(--font-sans); overflow: hidden; opacity: 0; }
+.chip .fill { position: absolute; inset: 0; background: var(--ink-1); opacity: 0; }
+.chip .lb { position: relative; }
+.links { margin-top: 14px; font: 500 13.5px/1 var(--font-sans); color: #1f58d6; display: flex; gap: 18px; opacity: 0; }
+.thumbs { margin-top: 14px; display: flex; align-items: center; gap: 12px; font: 400 13px/1 var(--font-sans); color: var(--ink-3); opacity: 0; }
+
+/* toast & touch */
+.toast { position: absolute; left: 50%; bottom: 104px; translate: -50% 0; padding: 12px 16px; border-radius: 12px; background: var(--toast-bg); color: #fff; font: 500 14px/1.2 var(--font-sans); white-space: nowrap; box-shadow: 0 4px 16px rgba(0, 0, 0, 0.16); opacity: 0; z-index: 35; display: flex; gap: 14px; }
+.toast em { font-style: normal; color: #a9c7ff; font-weight: 600; }
+.touch { position: absolute; width: 46px; height: 46px; margin: -23px 0 0 -23px; border-radius: 50%; background: rgba(23, 24, 27, 0.18); box-shadow: 0 0 0 2px rgba(255, 255, 255, 0.9), 0 4px 14px rgba(0, 0, 0, 0.25); opacity: 0; z-index: 50; pointer-events: none; }
+
+/* outro */
+.cta { position: absolute; left: 50%; translate: -50% 0; padding: 16px 28px; border-radius: 14px; background: var(--s-ink); color: #111; font: 600 19px/1 var(--font-sans); text-decoration: none; opacity: 0; pointer-events: none; }
+.cta.live { pointer-events: auto; }
+
+/* ---------- player chrome (outside the stage) ---------- */
+#bar {
+  position: fixed; left: 50%; bottom: 20px; translate: -50% 0; width: min(920px, calc(100vw - 32px));
+  display: flex; align-items: center; gap: 14px; padding: 10px 14px; border-radius: 16px;
+  background: rgba(22, 23, 26, 0.82); border: 1px solid rgba(255, 255, 255, 0.08); backdrop-filter: blur(14px);
+  font: 500 13px/1 var(--font-mono); color: #d8d9dc; transition: opacity 0.5s, translate 0.5s; z-index: 100;
+}
+body.idle #bar { opacity: 0; translate: -50% 12px; }
+body.idle { cursor: none; }
+#bar button { flex: none; height: 34px; min-width: 34px; padding: 0 10px; border: 0; border-radius: 9px; background: rgba(255, 255, 255, 0.06); display: grid; place-items: center; cursor: pointer; font: 500 13px/1 var(--font-sans); }
+#bar button:hover { background: rgba(255, 255, 255, 0.12); }
+#bar button:focus-visible, #scrub:focus-visible { outline: 2px solid #7aa7ff; outline-offset: 2px; }
+#track { position: relative; flex: 1; height: 34px; display: flex; align-items: center; }
+#scrub { width: 100%; margin: 0; appearance: none; -webkit-appearance: none; height: 34px; background: transparent; cursor: pointer; position: relative; z-index: 2; }
+#scrub::-webkit-slider-runnable-track { height: 4px; border-radius: 2px; background: transparent; }
+#scrub::-webkit-slider-thumb { -webkit-appearance: none; width: 14px; height: 14px; margin-top: -5px; border-radius: 50%; background: #fff; box-shadow: 0 1px 4px rgba(0, 0, 0, 0.5); }
+#scrub::-moz-range-thumb { width: 14px; height: 14px; border: 0; border-radius: 50%; background: #fff; }
+#rail { position: absolute; left: 0; right: 0; top: 15px; height: 4px; border-radius: 2px; background: rgba(255, 255, 255, 0.14); overflow: hidden; }
+#fillbar { height: 100%; width: 0; background: #ff8fa8; }
+.tick { position: absolute; top: 12px; width: 2px; height: 10px; border-radius: 1px; background: rgba(255, 255, 255, 0.35); z-index: 1; }
+#chap { position: absolute; bottom: 38px; translate: -50% 0; padding: 6px 9px; border-radius: 7px; background: #000; font: 500 12px/1 var(--font-sans); white-space: nowrap; opacity: 0; pointer-events: none; transition: opacity 0.15s; }
+#time { flex: none; min-width: 98px; text-align: center; }
+
+#script {
+  position: fixed; top: 16px; right: 16px; bottom: 90px; width: min(460px, calc(100vw - 32px)); overflow: auto; padding: 22px 24px;
+  border-radius: 18px; background: rgba(18, 19, 22, 0.94); border: 1px solid rgba(255, 255, 255, 0.08); backdrop-filter: blur(14px);
+  font: 400 14px/1.65 var(--font-sans); color: #c9cbd0; z-index: 101; display: none;
+}
+#script.open { display: block; }
+#script h3 { margin: 0 0 4px; font: 600 18px/1.3 var(--font-sans); color: #fff; }
+#script .hint { margin: 0 0 14px; color: #8a8e97; font-size: 12.5px; }
+#script ol { list-style: none; margin: 0; padding: 0; }
+#script li { padding: 12px 0; border-top: 1px solid rgba(255, 255, 255, 0.07); cursor: pointer; }
+#script li:hover .st { color: #fff; }
+#script li.cur .st { color: #ff8fa8; }
+#script .tc { font: 500 12px/1 var(--font-mono); color: #8a8e97; }
+#script .st { margin-top: 5px; font-weight: 600; color: #e9eaec; }
+#script .vo { margin-top: 5px; }
+#script .sc { margin-top: 5px; font-size: 12.5px; color: #8a8e97; }
+
+#big {
+  position: fixed; left: 50%; top: 50%; translate: -50% -50%; width: 96px; height: 96px; border-radius: 50%; border: 0;
+  background: rgba(255, 255, 255, 0.92); color: #111; display: none; place-items: center; cursor: pointer; z-index: 99;
+  box-shadow: 0 10px 40px rgba(0, 0, 0, 0.5);
+}
+#big.show { display: grid; }
+@media (max-width: 640px) { #time { display: none; } #bar { gap: 8px; } }
+html[data-published] #bar, html[data-published] #script { display: none !important; }
+</style>
+</head>
+<body>
+<div id="viewport">
+<div id="stage" aria-label="Paper Crawler 宣传片画面" role="img">
+
+  <!-- scene 1 -->
+  <div id="flood"></div>
+  <div class="bigline" id="l1" style="top:470px">每天都有<em>上万篇</em>新论文发表。</div>
+  <div class="bigline" id="l2" style="top:470px">真正和你有关的，可能只有几篇。</div>
+
+  <!-- scene 2 / outro logo -->
+  <div class="mark" id="mark"><i></i><i></i><i></i></div>
+  <div class="wordmark" id="word" style="top:520px"></div>
+  <div class="tagline" id="tag" style="top:672px">每天一小叠，只挑你该读的论文</div>
+
+  <!-- captions -->
+  <div id="caps"></div>
+
+  <!-- right panels -->
+  <div class="panel" id="pFunnel">
+    <h4>这 25 张是怎么选出来的</h4>
+    <p class="sub">筛选 → 打分 → 打散</p>
+    <canvas id="funnelCv" width="300" height="1020"></canvas>
+    <div class="fstep" style="top:110px"><b>今天的新论文</b><span>arXiv · Crossref · OpenAlex …</span></div>
+    <div class="fstep" style="top:220px"><b>按兴趣筛出候选</b><span>频道 · 关注的作者 · 相似论文</span></div>
+    <div class="fstep" style="top:330px"><b>逐篇打分</b><span>你会想读、收藏、引用它吗</span></div>
+    <div class="fstep" style="top:440px"><b>去重、打散，留出探索位</b><span>避免越推越窄</span></div>
+    <div class="fstep last" style="top:548px"><b>今天的 25 张</b><span>看完就停</span></div>
+  </div>
+
+  <div class="panel" id="pProfile">
+    <h4>你的兴趣画像</h4>
+    <p class="sub">实时更新 · 仅你可见</p>
+    <div id="prows"></div>
+    <div class="foot">每次反馈，<b>2 秒内</b>生效</div>
+  </div>
+
+  <div class="panel" id="pTrace">
+    <h4>理由从哪里来</h4>
+    <p class="sub">每条理由都对应它被选中的真实原因</p>
+    <div class="trow"><code>SESSION_INTEREST</code><b>与你刚标记“想读”的论文相近</b><span>← 你这次浏览中的兴趣</span></div>
+    <div class="trow"><code>INTEREST_TOPIC</code><b>你的兴趣主题 · 网络科学</b><span>← 你设置的兴趣标签</span></div>
+    <div class="trow"><code>FRESH_IN_FIELD</code><b>网络科学 的新论文 · 3 天前</b><span>← 新论文的曝光机会</span></div>
+  </div>
+
+  <div class="panel" id="pControl">
+    <h4>看得见，也改得了</h4>
+    <div class="citem"><div class="ci" data-i="eye"></div><div><b>看得到</b><span>每个兴趣标签都注明来源：你自己设的、系统推断的，还是来自频道</span></div></div>
+    <div class="citem"><div class="ci" data-i="sliders"></div><div><b>调得动</b><span>少推、正常、多推，或者直接删掉，下一批就生效</span></div></div>
+    <div class="citem"><div class="ci" data-i="power"></div><div><b>关得掉</b><span>一键关闭个性化；你的数据可以导出，也可以删除</span></div></div>
+  </div>
+
+  <div class="panel" id="pNorth">
+    <h4>我们只在意一件事</h4>
+    <p class="sub">你读到了多少真正有用的论文</p>
+    <div class="nrow"><i>✓</i>收藏</div>
+    <div class="nrow"><i>✓</i>4 星以上评分</div>
+    <div class="nrow"><i>✓</i>导出引用</div>
+    <div class="nrow"><i>✓</i>打开全文</div>
+    <div class="zero"><span>停留时长在排序里的权重</span><b>0</b></div>
+  </div>
+
+  <div class="panel" id="pFields">
+    <h4>不同学科，同一叠卡片</h4>
+    <p class="sub">8 组学科配色，颜色旁总有文字</p>
+    <div class="sw">
+      <div style="--a:var(--f-cs);--t:var(--f-cs-t)"><i></i>计算机与 AI</div>
+      <div style="--a:var(--f-econ);--t:var(--f-econ-t)"><i></i>经济·金融·管理</div>
+      <div style="--a:var(--f-mathphys);--t:var(--f-mathphys-t)"><i></i>数学与物理</div>
+      <div style="--a:var(--f-psy);--t:var(--f-psy-t)"><i></i>心理与社会</div>
+      <div style="--a:var(--f-life);--t:var(--f-life-t)"><i></i>生命科学</div>
+      <div style="--a:var(--f-chem);--t:var(--f-chem-t)"><i></i>化学与材料</div>
+      <div style="--a:var(--f-med);--t:var(--f-med-t)"><i></i>医学与健康</div>
+      <div style="--a:var(--f-earth);--t:var(--f-earth-t)"><i></i>地球·环境·工程</div>
+    </div>
+  </div>
+
+  <div id="flychips"></div>
+
+  <!-- phone -->
+  <div id="phone">
+    <div class="bezel"></div>
+    <div id="screen">
+      <div class="island"></div>
+      <div class="status"><span>9:41</span><span class="ic" data-i="status"></span></div>
+
+      <!-- onboarding -->
+      <div class="scr" id="sOnb">
+        <div class="onb-in">
+          <h2>你关注哪些领域？</h2>
+          <p class="sub">建议选 3–10 个；也可以全部跳过</p>
+          <div class="search"><span data-i="search"></span>搜索领域（中英文）</div>
+          <div class="grp">社会科学</div>
+          <div class="caps" id="caps1"></div>
+          <div class="grp">物理与工程</div>
+          <div class="caps" id="caps2"></div>
+          <div class="grp">导入你的论文 <span>可选</span></div>
+          <div class="imp">
+            <div><span class="lg" style="background:#a6ce39">iD</span>ORCID 本人作品<span class="rt">连接<span class="done" id="orcidDone">✓ 已导入 12 篇</span></span></div>
+            <div><span class="lg" style="background:#cc2936">Z</span>Zotero 文库<span class="rt">连接</span></div>
+            <div><span class="lg" style="background:#62666f">{ }</span>BibTeX · RIS · DOI<span class="rt">上传</span></div>
+          </div>
+        </div>
+        <div class="onb-cta"><div class="btn pri" id="startBtn">开始今日分拣 · 已选 <span id="selN" style="margin-left:4px">0</span></div></div>
+      </div>
+
+      <!-- deck -->
+      <div class="scr" id="sDeck">
+        <div class="topbar"><span class="t">今日</span><span class="n" id="cnt">—</span><span class="sp"></span><span data-i="search"></span><span class="mode" id="modeLbl">个性化</span><span class="chev" data-i="chev"></span></div>
+        <div class="deck" id="deck">
+          <div class="skel" id="skel"><i style="width:40%"></i><i style="width:92%;height:20px;margin-top:20px"></i><i style="width:80%;height:20px"></i><i style="width:88%;margin-top:34px"></i><i style="width:70%"></i><p>正在准备今天的论文…</p></div>
+        </div>
+        <div class="actions">
+          <div class="act sm"><span class="b" data-i="undo"></span>撤回</div>
+          <div class="act"><span class="b" data-i="x"></span>不感兴趣</div>
+          <div class="act"><span class="b" data-i="star"></span>收藏</div>
+          <div class="act like"><span class="b" id="likeBtn" data-i="heart"></span>想读</div>
+        </div>
+      </div>
+
+      <!-- me -->
+      <div class="scr" id="sMe">
+        <div class="me-in">
+          <h2>我</h2>
+          <div class="lbl">推荐方式</div>
+          <div class="seg" id="modeSeg"><i class="kn" id="modeKn"></i><span>个性化</span><span>按时间</span><span>按来源</span></div>
+          <div class="npbanner" id="npb">非个性化：按时间排序 · 不使用你的画像</div>
+          <div class="lbl">我的兴趣（可看、可调、可删）</div>
+          <div class="irows" id="irows"></div>
+        </div>
+      </div>
+
+      <!-- library -->
+      <div class="scr" id="sLib">
+        <div class="lib-in">
+          <h2>收藏</h2>
+          <div class="ltabs"><span class="a">想读 6</span><span>我的收藏 2</span><span class="ex" id="exBtn">导出 BibTeX</span></div>
+          <div class="mas"><div class="col" id="mc1"></div><div class="col" id="mc2"></div></div>
+        </div>
+      </div>
+
+      <div class="tabbar" id="tabbar">
+        <div class="tab"><span data-i="cards"></span>今日<span class="on" id="tabT"><span data-i="cards"></span>今日</span></div>
+        <div class="tab"><span data-i="bookmark"></span>收藏<span class="on" id="tabS"><span data-i="bookmark"></span>收藏</span></div>
+        <div class="tab"><span data-i="user"></span>我<span class="on" id="tabM"><span data-i="user"></span>我</span></div>
+      </div>
+
+      <div class="scrim" id="scrim"></div>
+      <div class="sheet" id="sheet">
+        <div class="hd"></div>
+        <div class="sm"><i class="dot"></i>物理 · cond-mat.stat-mech · arXiv 2026</div>
+        <div class="stt">Multidimensional dynamical centrality from Green functions in complex networks</div>
+        <h5>为什么推荐</h5>
+        <ul class="reasons">
+          <li><span class="wi" data-i="diamond"></span><span>与你刚标记“想读”的论文相近 <span class="attrib">· 主理由</span></span></li>
+          <li><span class="wi" data-i="diamond"></span><span>你的兴趣主题 · 网络科学</span></li>
+          <li><span class="wi" data-i="diamond"></span><span>网络科学 的新论文 · 3 天前</span></li>
+        </ul>
+        <div class="chips"><span class="chip" id="chipLess"><i class="fill"></i><span class="lb">少推「网络科学」</span></span><span class="chip" id="chipMore"><i class="fill"></i><span class="lb" id="chipMoreLb">多推「网络科学」</span></span></div>
+        <div class="links"><span>管理我的兴趣 →</span><span>推荐说明 →</span></div>
+        <div class="thumbs">这个理由有帮助吗？<span data-i="up"></span><span data-i="down"></span></div>
+      </div>
+
+      <div id="toasts"></div>
+      <div id="touches"></div>
+      <div class="homebar"></div>
+    </div>
+  </div>
+
+  <!-- outro -->
+  <div class="bigline" id="o1" style="top:600px;font-size:54px">今天值得读的论文，就这几篇。</div>
+  <a class="cta" id="o3" href="paper-feed-demo.html" style="top:740px">打开交互样机 →</a>
+</div>
+</div>
+
+<button id="big" type="button" aria-label="播放"><svg width="36" height="36" viewBox="0 0 24 24" fill="currentColor"><path d="M8 5.5v13l11-6.5z"/></svg></button>
+
+<div id="bar" role="group" aria-label="播放控制">
+  <button id="pp" type="button" aria-label="暂停"></button>
+  <button id="rs" type="button" aria-label="从头播放"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M3 12a9 9 0 1 0 3-6.7L3 8"/><path d="M3 3v5h5"/></svg></button>
+  <div id="track"><div id="rail"><div id="fillbar"></div></div><input id="scrub" type="range" min="0" max="1000" step="1" value="0" aria-label="播放进度"><div id="chap"></div></div>
+  <span id="time">0:00 / 0:00</span>
+  <button id="sb" type="button" aria-pressed="false">脚本</button>
+  <button id="fs" type="button" aria-label="全屏"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M4 9V4h5M20 9V4h-5M4 15v5h5M20 15v5h-5"/></svg></button>
+</div>
+
+<aside id="script" aria-label="分镜脚本">
+  <h3>分镜脚本 · 旁白</h3>
+  <p class="hint">点任一镜头跳转。快捷键：空格 播放/暂停 · ← → 前后 5 秒 · [ ] 上/下一章 · F 全屏 · S 脚本</p>
+  <ol id="scriptList"></ol>
+</aside>
+
+<script>
+'use strict';
+(async () => {
+await Promise.race([document.fonts.ready, new Promise((r) => setTimeout(r, 1800))]);
+/* =====================================================================
+   Timeline: every animation is a paused WAAPI animation with fill "forwards" on the shared
+   document timeline; the master clock sets currentTime on all of them, so seeking and
+   scrubbing are exact. Base CSS holds each element's state before its first animation;
+   animations are created in chronological order per element so later ones win.
+   ===================================================================== */
+const $ = (s, r = document) => r.querySelector(s);
+const el = (tag, cls, html) => { const e = document.createElement(tag); if (cls) e.className = cls; if (html != null) e.innerHTML = html; return e; };
+const ANIMS = [];
+const HOOKS = [];
+const E = {
+  out: 'cubic-bezier(.16,1,.3,1)',
+  inout: 'cubic-bezier(.65,0,.35,1)',
+  in: 'cubic-bezier(.55,0,.9,.4)',
+  std: 'cubic-bezier(.2,0,0,1)',
+  lin: 'linear',
+};
+/* spring → CSS linear() easing (07 動效 tokens: stiffness/damping, mass 1) */
+const HAS_LINEAR = CSS.supports('animation-timing-function', 'linear(0, 1)');
+function spring(k, c) {
+  const dt = 1 / 240; let x = 0, v = 0, t = 0; const pts = [0];
+  while (t < 3) { const a = k * (1 - x) - c * v; v += a * dt; x += v * dt; t += dt; pts.push(x); if (t > 0.2 && Math.abs(1 - x) < 0.0015 && Math.abs(v) < 0.02) break; }
+  const n = 48, step = (pts.length - 1) / n, out = [];
+  for (let i = 0; i <= n; i++) out.push(pts[Math.round(i * step)].toFixed(4));
+  out[out.length - 1] = '1';
+  return { ease: HAS_LINEAR ? `linear(${out.join(',')})` : E.out, dur: t };
+}
+const SP = { rise: spring(600, 49), back: spring(500, 36), sheet: spring(260, 29), pop: spring(380, 24) };
+
+function tw(node, kf, t, d, ease = E.out) {
+  const a = node.animate(kf, { delay: t * 1000, duration: Math.max(1, d * 1000), fill: 'forwards', easing: ease });
+  a.pause(); ANIMS.push(a); return a;
+}
+const fadeIn = (n, t, d = 0.8, dy = 14) => tw(n, [{ opacity: 0, translate: `0 ${dy}px` }, { opacity: 1, translate: '0 0' }], t, d);
+const fadeOut = (n, t, d = 0.5, dy = -10) => tw(n, [{ opacity: 1, translate: '0 0' }, { opacity: 0, translate: `0 ${dy}px` }], t, d, E.in);
+const show = (n, t, d = 0.35) => tw(n, [{ opacity: 0 }, { opacity: 1 }], t, d, E.std);
+const hide = (n, t, d = 0.35) => tw(n, [{ opacity: 1 }, { opacity: 0 }], t, d, E.std);
+const press = (n, t) => tw(n, [{ scale: 1 }, { scale: 0.94, offset: 0.4 }, { scale: 1 }], t, 0.32, E.inout);
+function hook(fn) { HOOKS.push(fn); }
+function textAt(node, steps) { hook((t) => { let v = steps[0][1]; for (const [ts, s] of steps) if (t >= ts) v = s; if (node.__v !== v) { node.textContent = v; node.__v = v; } }); }
+
+/* ---------- icons ---------- */
+const I = {
+  search: '<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="11" cy="11" r="6.5"/><path d="m20 20-4.2-4.2"/></svg>',
+  chev: '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="m6 9 6 6 6-6"/></svg>',
+  undo: '<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 14 4 9l5-5"/><path d="M4 9h10a6 6 0 0 1 0 12h-3"/></svg>',
+  x: '<svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="M6 6l12 12M18 6 6 18"/></svg>',
+  star: '<svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"><path d="m12 3.5 2.6 5.3 5.8.8-4.2 4.1 1 5.8L12 16.8l-5.2 2.7 1-5.8-4.2-4.1 5.8-.8z"/></svg>',
+  heart: '<svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"><path d="M12 20s-7.5-4.6-7.5-10.2A4.3 4.3 0 0 1 12 7.2a4.3 4.3 0 0 1 7.5 2.6C19.5 15.4 12 20 12 20z"/></svg>',
+  info: '<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><circle cx="12" cy="12" r="9"/><path d="M12 11v6M12 7.5v.01"/></svg>',
+  diamond: '<svg width="12" height="12" viewBox="0 0 12 12" fill="currentColor"><path d="M6 0.8 11.2 6 6 11.2 0.8 6z"/></svg>',
+  cards: '<svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"><rect x="5" y="7" width="12" height="14" rx="2.5"/><path d="M9 4h8.5A2.5 2.5 0 0 1 20 6.5V17"/></svg>',
+  bookmark: '<svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"><path d="M6.5 3.5h11v17L12 16.5l-5.5 4z"/></svg>',
+  user: '<svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="12" cy="8.5" r="3.8"/><path d="M4.5 20.5a7.5 7.5 0 0 1 15 0"/></svg>',
+  check: '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="m5 12.5 4.5 4.5L19 7.5"/></svg>',
+  plus: '<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg>',
+  unlock: '<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><rect x="5" y="11" width="14" height="10" rx="2"/><path d="M8 11V7.5a4 4 0 0 1 7.6-1.7"/></svg>',
+  status: '<svg width="18" height="12" viewBox="0 0 18 12" fill="currentColor"><rect x="0" y="8" width="3" height="4" rx="1"/><rect x="5" y="5.5" width="3" height="6.5" rx="1"/><rect x="10" y="3" width="3" height="9" rx="1"/><rect x="15" y="0" width="3" height="12" rx="1"/></svg><svg width="26" height="13" viewBox="0 0 26 13"><rect x="0.5" y="0.5" width="22" height="12" rx="3.5" fill="none" stroke="currentColor" opacity=".45"/><rect x="2.5" y="2.5" width="16" height="8" rx="2" fill="currentColor"/><rect x="24" y="4.5" width="1.6" height="4" rx=".8" fill="currentColor" opacity=".45"/></svg>',
+  up: '<svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"><path d="M7 10v10H4V10zM7 10l4-7a2 2 0 0 1 3 2l-1 4h5.5a2 2 0 0 1 2 2.4l-1.5 7A2 2 0 0 1 17 20H7"/></svg>',
+  down: '<svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"><path d="M7 14V4H4v10zM7 14l4 7a2 2 0 0 0 3-2l-1-4h5.5a2 2 0 0 0 2-2.4l-1.5-7A2 2 0 0 0 17 4H7"/></svg>',
+  eye: '<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M2.5 12S6 5.5 12 5.5 21.5 12 21.5 12 18 18.5 12 18.5 2.5 12 2.5 12z"/><circle cx="12" cy="12" r="3"/></svg>',
+  sliders: '<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><path d="M4 7h10M18 7h2M4 17h4M12 17h8"/><circle cx="16" cy="7" r="2"/><circle cx="10" cy="17" r="2"/></svg>',
+  power: '<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><path d="M12 3v8"/><path d="M6.3 6.8a8 8 0 1 0 11.4 0"/></svg>',
+  close: '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="M6 6l12 12M18 6 6 18"/></svg>',
+};
+const fillIcons = (root = document) => root.querySelectorAll('[data-i]').forEach((n) => { if (!n.innerHTML) n.innerHTML = I[n.dataset.i] || ''; });
+
+/* ---------- content (real records from the demo's data; TL;DRs are the demo's labelled examples) ---------- */
+const TITLES = [
+  ['cs', 'Cultural Divergence Preservation: Diagnosing Flattening and Caricature in LLM-Simulated Survey Populations'],
+  ['econ', 'First as Tragedy? Second as What? Estimating Dynamic Effects of Recurrent Events'],
+  ['mathphys', 'Dynamics-structure interchangeability in binary opinion models on multiplex networks'],
+  ['econ', 'Social Networks as Information Conduits for Online Credit Supply and Demand'],
+  ['cs', "Propose, Don't Judge: An Anytime-Valid Referee for LLM Agents That Mine Investment Factors"],
+  ['mathphys', 'Semiparametric Inference for Dynamic Causal Effects from Observational Time Series'],
+  ['life', 'Consistent determination of stability regimes in natural ecological communities'],
+  ['cs', 'Why Does Misinformation Propagate Faster? An Algorithmic Perspective on X'],
+  ['econ', 'Generic Covariate Adjustment for Regression Discontinuity Designs'],
+  ['mathphys', 'Percolation in the Stochastic Block Model'],
+  ['econ', 'Discretionary Announcement Timing and Stock Returns'],
+  ['econ', 'Modeling interest rate swap volatility with GARCH processes'],
+  ['cs', 'The Illinois Social Attitudes Aggregate Corpus (ISAAC)'],
+  ['mathphys', 'One-shot Routing in Quantum Networks'],
+  ['econ', 'Decision-Relevant Information in Partially Observed Production Networks'],
+  ['mathphys', 'Estimating direct causal effect under spatial confounding and interference'],
+  ['psy', 'Disillusionment With Meritocracy During the Transition to Adulthood'],
+  ['mathphys', 'Multidimensional dynamical centrality from Green functions in complex networks'],
+  ['mathphys', 'Local Weak Limits for Equilibrium and Risk in Economic Networks'],
+  ['cs', 'Causal Inference with Unobserved Confounding: A Mixture Learning Perspective'],
+  ['mathphys', 'Flexible latent variable models on graphs for multiview network data'],
+  ['mathphys', 'Thinning and sprinkling: from robust sampling to almost Hamiltonicity'],
+  ['mathphys', 'Adaptive confidence intervals with missing data'],
+  ['earth', 'Network Design against the Bullwhip Effect in Complex Supply Chains'],
+  ['life', 'A Spiking Neural Network Model of Elementary Self-Consciousness'],
+  ['life', 'Phylogenetic Inference and the Stickiness of Fréchet Means'],
+  ['mathphys', 'Detection of metal absorption lines in quasar spectra with U-Net'],
+  ['chem', 'Direct Light Storage with Controlled Dark Release in a Covalent Triazine Framework'],
+];
+const CARDS = {
+  A: { f: 'cs', disc: '计算机', cat: 'cs.CL', venue: 'PANDORA@EMNLP 2026', title: 'Cultural Divergence Preservation: Diagnosing Flattening and Caricature in LLM-Simulated Survey Populations', tldr: '提出跨文化分化保持度 CDP，诊断 LLM 模拟调查中国家间差异被抹平或夸大；常用拟合度指标察觉不到这种扁平化。', pills: ['check:已接收', 'oa:开放获取'], au: 'Yeeun Chae, Yewon Choi 等 · 2026-09-24', why: '命中你的频道「LLM 模拟调查」' },
+  B: { f: 'econ', disc: '金融', cat: 'q-fin.MF', venue: 'arXiv 2026', fresh: '3 天前', title: 'Modeling interest rate swap volatility with GARCH processes', tldr: '比较 GARCH、GJR-GARCH 与马尔可夫切换 GARCH 刻画美元远期互换利率波动：切换模型拟合最好，并能区分高、低波动区制。', pills: ['预印本', 'oa:开放获取'], au: 'Michał Balcerek, Michał Wronka', why: '资产定价 的新论文 · 3 天前' },
+  C: { f: 'mathphys', disc: '物理', cat: 'physics.soc-ph', venue: 'arXiv 2026', fresh: '3 天前', title: 'Percolation in the Stochastic Block Model', tldr: '研究社区结构随规模演化的随机块模型中的渗流：临界平均度一般不等于 1；社区间连接稀疏时，社区尺度分支过程能准确预测相变。', pills: ['预印本', 'oa:开放获取'], au: 'Luca Pieleanu, Moritz Laber 等', why: '你关注的 Dmitri Krioukov 有新论文' },
+  D: { f: 'mathphys', disc: '物理', cat: 'cond-mat', venue: 'arXiv 2026', fresh: '3 天前', title: 'Multidimensional dynamical centrality from Green functions in complex networks', tldr: '从线性化网络系统的格林函数提取影响、效率、失真三个互补指标，刻画节点的动力学重要性，并在 Kuramoto 动力学上演示。', pills: ['预印本', 'oa:开放获取'], au: 'Yusen Wang, Hao Yu 等', why: '与你刚标记“想读”的论文相近', glow: true },
+  E: { f: 'mathphys', disc: '统计', cat: 'stat.ME', venue: 'arXiv 2026', fresh: '4 天前', title: 'Semiparametric Inference for Dynamic Causal Effects from Observational Time Series', tldr: '把去偏机器学习与工具变量结合，在单条序列相关的时间序列上推断动态因果效应；货币政策应用显示紧缩在中期降低新屋开工。', pills: ['预印本', 'oa:开放获取'], au: 'Shibo Yu, Yan Chen', why: '你的兴趣主题 · 因果推断' },
+  F: { f: 'cs', disc: '计算机', cat: 'cs.SI', venue: 'arXiv 2026', fresh: '3 天前', title: 'Why Does Misinformation Propagate Faster? An Algorithmic Perspective on X', tldr: '拆解 X 开源推荐算法：各类互动预测加权求和，让虚假信息靠即时点赞转发获得更多曝光；设「深度互动门槛」可缓解。', pills: ['预印本', 'oa:开放获取'], au: 'Pan Li, Shuang Gao', why: '与你收藏的《netseg: a Python Pack…》相近' },
+  G: { f: 'life', disc: '生物', cat: 'q-bio.PE', venue: 'arXiv 2026', fresh: '3 天前', title: 'Consistent determination of stability regimes in natural ecological communities from abundance time series', tldr: '用动态平均场理论从物种丰度时间序列推断群落稳定性区间，无需重建相互作用网络，还能估计物种灭绝风险。', pills: ['预印本', 'oa:开放获取'], au: 'Alberto Megías, Vicente J. Ontiveros 等', why: '与你兴趣相邻的 复杂系统', explore: true },
+};
+
+/* ---------- scene plan: times (s), captions, VO ---------- */
+const SCENES = [
+  { t: 0, id: 's1', name: '开场 · 信息洪流', vo: '每天都有上万篇新论文发表。真正和你有关的，可能只有几篇。', sc: '论文标题像潮水一样往上涌，其中三篇亮起来，聚成一叠卡片。' },
+  { t: 8, id: 's2', name: '品牌', vo: 'Paper Crawler：每天一小叠，只挑你该读的论文。', sc: '卡叠标志升起，字标逐字浮现。' },
+  { t: 13.4, id: 'c1', name: '01 · 从你开始', acc: '#7aa7ff', eb: '01 · 从你开始', h: ['先告诉我们，', '你在研究什么。'], p: '选几个感兴趣的领域，或者导入你在 ORCID、Zotero 里的论文。<b>从第一张卡片开始，推荐就跟着你的方向走。</b>', sc: '手机入画：首次引导选中 4 个领域，导入 ORCID 作品 12 篇，点“开始今日分拣”。' },
+  { t: 23.6, id: 'c2', name: '02 · 从上万篇到 25 张', acc: '#f0b341', eb: '02 · 从上万篇到 25 张', h: ['不追热度，', '只挑对你有用的。'], p: '先按你的兴趣找出候选，再逐篇估计你会不会<b>想读、收藏、打高分或引用</b>它。另外留几个位置给相邻方向，免得越推越窄。', sc: '右侧漏斗：新论文 → 兴趣召回 → 价值打分 → 打散与探索 → 今日 25 张；手机里卡叠落定。' },
+  { t: 33, id: 'c3', name: '03 · 越滑越懂你', acc: '#ff8fa8', eb: '03 · 越滑越懂你', h: ['滑一下，', '它就更懂你。'], p: '喜欢就右滑，没兴趣就左滑。反馈 <b>2 秒内生效</b>，下一张卡片会跟着你调整。', sc: '三次滑动：想读 / 不感兴趣 / 想读；右侧兴趣画像实时增减；第 4 张的理由变为“与你刚标记想读的论文相近”。' },
+  { t: 45.4, id: 'c4', name: '04 · 每张卡都有理由', acc: '#b4a8ff', eb: '04 · 每张卡都有理由', h: ['每张卡片，', '都说得清为什么。'], p: '推荐理由就是它被选中的真实原因，不是事后补上的一句话。觉得不对？<b>当场选择少推或多推。</b>', sc: '点 i：详情 Sheet 升起到“为什么推荐”，三条理由依次出现；点“多推「网络科学」”。' },
+  { t: 55.4, id: 'c5', name: '05 · 你说了算', acc: '#7ee2a8', eb: '05 · 你说了算', h: ['推荐什么，', '由你决定。'], p: '兴趣标签随时可以查看、调整或删除，也能一键关闭个性化。<b>你的偏好、评分和笔记，只保存在你自己的空间里。</b>', sc: '“我”页：资产定价调为少推；删除推断标签“社会态度”；切到“按时间”再切回。' },
+  { t: 65, id: 'c6', name: '06 · 看完即止', acc: '#7ee2a8', eb: '06 · 看完即止', h: ['每天一叠，', '看完就结束。'], p: '每天默认 25 张，看完就停。我们在意的是<b>你读到了多少有用的论文</b>，而不是你在这里待了多久。', sc: '快进分拣到 25/25，结束卡：想读 6 · 收藏 2 · 下一批明天 08:00。' },
+  { t: 72.4, id: 'c7', name: '07 · 收进书架', acc: '#f0b341', eb: '07 · 收进书架', h: ['想读的论文，', '自动收进书架。'], p: '标记想读和收藏的论文会自动整理好，随时翻看，也能<b>一键导出 BibTeX</b>。从计算机、物理到经济金融，都在同一叠卡片里。', sc: '收藏库瀑布流逐张落下；点“导出 BibTeX”。右侧 8 个学科色族。' },
+  { t: 79, id: 'end', name: '结尾', vo: '今天值得读的论文，就这几篇。Paper Crawler。', sc: '标志回到画面中央，下方出现“打开交互样机”。' },
+];
+const T_END = 88;
+
+/* ================= build DOM ================= */
+fillIcons();
+const stage = $('#stage');
+
+/* flood columns */
+const flood = $('#flood');
+const COLS = [70, 540, 1010, 1480];
+const cols = COLS.map((x, ci) => {
+  const c = el('div', 'flood-col'); c.style.left = x + 'px';
+  for (let r = 0; r < 34; r++) { const k = (r * 4 + ci * 7) % TITLES.length; const d = el('div'); d.textContent = TITLES[k][1]; c.append(d); }
+  flood.append(c); return c;
+});
+
+/* captions */
+const capsRoot = $('#caps');
+const CAPS = {};
+SCENES.filter((s) => s.h).forEach((s) => {
+  const c = el('div', 'cap'); c.style.setProperty('--acc', s.acc);
+  const [n, ...rest] = s.eb.split(' · ');
+  c.append(el('div', 'eb', `<b>${n}</b>${rest.join(' · ')}`));
+  const h = el('h2'); s.h.forEach((ln) => { const l = el('span', 'ln'); l.append(el('span', '', ln)); h.append(l); }); c.append(h);
+  c.append(el('p', '', s.p));
+  capsRoot.append(c); CAPS[s.id] = c;
+  s.vo = s.vo || s.h.join('') + s.p.replace(/<[^>]+>/g, '');
+});
+function capIn(id, t) {
+  const c = CAPS[id];
+  fadeIn(c.querySelector('.eb'), t, 0.8, 0);
+  c.querySelectorAll('.ln span').forEach((s, i) => tw(s, [{ translate: '0 110%' }, { translate: '0 0' }], t + 0.15 + i * 0.12, 1.0, E.out));
+  fadeIn(c.querySelector('p'), t + 0.55, 0.9, 12);
+}
+function capOut(id, t) { tw(CAPS[id], [{ opacity: 1, translate: '0 0' }, { opacity: 0, translate: '0 -12px' }], t, 0.55, E.in); }
+
+/* wordmark letters */
+const word = $('#word');
+'Paper Crawler'.split('').forEach((ch) => { const s = el('span'); s.textContent = ch === ' ' ? ' ' : ch; word.append(s); });
+
+/* onboarding capsules */
+function cap(label) { return el('span', 'cp', `<i class="fill"></i><span class="ck"><span class="n">${I.plus}</span><span class="y">${I.check}</span></span><span class="lb">${label}</span>`); }
+const C1 = ['经济学、计量经济学与金融', '商业、管理与会计', '决策科学', '心理学', '社会科学'].map(cap);
+const C2 = ['计算机科学', '数学', '物理与天文', '工程', '化学'].map(cap);
+C1.forEach((c) => $('#caps1').append(c)); C2.forEach((c) => $('#caps2').append(c));
+
+/* cards */
+function pillHTML(p) {
+  if (p.startsWith('check:')) return `<span class="pill">${I.check.replace('width="14" height="14"', 'width="11" height="11"')}${p.slice(6)}</span>`;
+  if (p.startsWith('oa:')) return `<span class="pill oa">${I.unlock}${p.slice(3)}</span>`;
+  return `<span class="pill">${p}</span>`;
+}
+function cardEl(c) {
+  const n = el('div', 'card');
+  n.style.cssText = `--fa:var(--f-${c.f});--ft:var(--f-${c.f}-t)`;
+  n.innerHTML = `
+    <div class="cover"><div class="meta"><i class="dot"></i>${c.disc}<span class="cat">${c.cat}</span><span class="sep">·</span><span class="mono">${c.venue}</span>${c.fresh ? `<span class="sep">·</span><span class="mono">${c.fresh}</span>` : ''}<span class="more">•••</span></div>
+      <h3 class="title">${c.title}</h3></div>
+    <div class="body"><p class="tldr"><span class="aib">AI · 示例</span>${c.tldr}</p>
+      <div class="pills">${c.pills.map(pillHTML).join('')}</div>
+      <p class="authors">${c.au}</p></div>
+    <div class="why"><i class="glow"></i>${c.explore ? '<span class="xpill">探索</span>' : ''}<span class="wi">${I.diamond}</span><span class="wt">${c.why}</span><span class="info">${I.info}</span></div>
+    <div class="stamp like">想读</div><div class="stamp nope">不感兴趣</div>`;
+  return n;
+}
+const deck = $('#deck');
+const ORDER = ['A', 'B', 'C', 'D', 'E', 'F', 'G'];
+const CEL = ORDER.map((k) => cardEl(CARDS[k]));
+const endCard = el('div', 'card endc', `<div class="ok">${I.check.replace(/14/g, '30')}</div><h3>今日 25 篇已看完</h3><p class="st">想读 <b id="nW">0</b> · 收藏 <b id="nS">0</b></p><div class="btn pri">查看想读（6）</div><div class="btn sec">探索与频道</div><div class="btn sec">再看跳过的 3 篇</div><p class="nx">下一批：明天 08:00 · ↓ / ↺ 可撤回最后一张</p>`);
+const STACK = [...CEL, endCard];
+[...STACK].reverse().forEach((c) => deck.append(c));
+
+/* me rows */
+const ROWS = [['因果推断', '显式', 1], ['大语言模型', '显式', 1], ['资产定价', '显式', 1], ['网络科学', '显式', 2], ['调查方法', '推断', 1], ['社会态度', '推断', 1]];
+const RE = {};
+ROWS.forEach(([n, b, v]) => {
+  const r = el('div', 'ir', `<span class="rn">${n}<span class="bd ${b === '显式' ? 'x' : ''}">${b}</span></span><span class="s3"><i class="kn"></i><span>少</span><span>正常</span><span>多</span></span><span class="dl">${I.close}</span>`);
+  r.querySelector('.kn').style.translate = `${v * 42}px 0`;
+  $('#irows').append(r); RE[n] = r;
+});
+
+/* library */
+const LIB = [
+  ['cs', 'CS.CL · PANDORA@EMNLP 2026', 'Cultural Divergence Preservation: Diagnosing Flattening and Caricature in LLM-Simulated Survey Populations', 'Chae 等 · 开放获取'],
+  ['mathphys', 'PHYSICS.SOC-PH · ARXIV 2026', 'Percolation in the Stochastic Block Model', 'Pieleanu 等 · 开放获取'],
+  ['econ', 'ECON.EM · ARXIV 2026', 'Generic Covariate Adjustment for Regression Discontinuity Designs', 'Ma, Sasaki · 开放获取'],
+  ['mathphys', 'COND-MAT · ARXIV 2026', 'Multidimensional dynamical centrality from Green functions in complex networks', 'Wang, Yu · 开放获取'],
+  ['psy', 'PSYCHOLOGICAL SCIENCE 2026', 'Disillusionment With Meritocracy During the Transition to Adulthood', 'Fan, John · 可用你的权限'],
+  ['econ', 'THE JOURNAL OF FINANCE 2026', 'Discretionary Announcement Timing and Stock Returns', 'Back, Carlin · 有开放版本'],
+];
+const MC = LIB.map(([f, m, t, b], i) => {
+  const c = el('div', 'mc', `<div class="mcv"><div class="mm">${m}</div><div class="mt">${t}</div></div><div class="mb">${b}</div>`);
+  c.style.cssText = `--fa:var(--f-${f});--ft:var(--f-${f}-t)`;
+  (i % 2 ? $('#mc2') : $('#mc1')).append(c); return c;
+});
+
+/* profile rows */
+const PROF = [['大语言模型', 0.62, '#7aa7ff'], ['因果推断', 0.72, '#f0b341'], ['网络科学', 0.44, '#9085e9'], ['资产定价', 0.55, '#f0b341'], ['利率波动', 0.36, '#9a9ea7']];
+const PR = {};
+PROF.forEach(([n, v, c]) => {
+  const r = el('div', 'prow', `<div class="pn">${n}<em></em></div><div class="bar"><i style="--c:${c}"></i></div>`);
+  r.querySelector('i').style.scale = `${v} 1`;
+  $('#prows').append(r); PR[n] = { r, v, bar: r.querySelector('i'), em: r.querySelector('em') };
+});
+fillIcons();
+
+/* ---------- helpers bound to the phone ---------- */
+const screen = $('#screen');
+const PH = { x: 880 + 12 * 1.1, y: 58 + 12 * 1.1, s: 1.1 };
+const toStage = (x, y) => [PH.x + x * PH.s, PH.y + y * PH.s];
+function tap(x, y, t) {
+  const n = el('div', 'touch'); n.style.left = x + 'px'; n.style.top = y + 'px'; $('#touches').append(n);
+  tw(n, [{ opacity: 0, scale: 1.5 }, { opacity: 1, scale: 1 }], t - 0.35, 0.3, E.out);
+  tw(n, [{ scale: 1 }, { scale: 0.78 }, { scale: 1 }], t - 0.05, 0.25, E.inout);
+  tw(n, [{ opacity: 1 }, { opacity: 0 }], t + 0.25, 0.3, E.std);
+}
+function drag(x, y, dx, dy, t0, t1) {
+  const n = el('div', 'touch'); n.style.left = x + 'px'; n.style.top = y + 'px'; $('#touches').append(n);
+  tw(n, [{ opacity: 0, scale: 1.4 }, { opacity: 1, scale: 0.85 }], t0 - 0.3, 0.3, E.out);
+  tw(n, [{ translate: '0 0' }, { translate: `${dx}px ${dy}px` }], t0, t1 - t0, E.inout);
+  tw(n, [{ opacity: 1 }, { opacity: 0 }], t1, 0.2, E.std);
+}
+function toast(html, t, d = 1.6) {
+  const n = el('div', 'toast', html); $('#toasts').append(n);
+  tw(n, [{ opacity: 0, translate: '-50% 16px' }, { opacity: 1, translate: '-50% 0' }], t, 0.4, E.out);
+  tw(n, [{ opacity: 1 }, { opacity: 0 }], t + d, 0.35, E.std);
+}
+function capSel(c, t) {
+  press(c, t);
+  show(c.querySelector('.fill'), t, 0.25);
+  hide(c.querySelector('.n'), t, 0.2); show(c.querySelector('.y'), t, 0.25);
+  tw(c.querySelector('.lb'), [{ color: '#17181b' }, { color: '#ffffff' }], t, 0.25, E.std);
+}
+function centerOf(node) { // layout-space centre inside #screen (ignores transforms)
+  let x = 0, y = 0, n = node;
+  while (n && n !== screen) { x += n.offsetLeft; y += n.offsetTop; n = n.offsetParent; }
+  return [x + node.offsetWidth / 2, y + node.offsetHeight / 2];
+}
+const depthKF = (k) => ({ opacity: k > 2 ? 0 : 1, scale: [1, 0.95, 0.9, 0.9][Math.min(k, 3)], translate: `0 ${[0, 10, 20, 20][Math.min(k, 3)]}px`, rotate: '0deg' });
+
+/* ================= SCENE 1: flood (0–8) ================= */
+/* columns drift in alternating directions: even columns rise, odd columns fall */
+const DRIFT = COLS.map((_, i) => (i % 2 ? [-250, -100, -60] : [0, -150, -190]));
+cols.forEach((c, i) => {
+  const [a, b, z] = DRIFT[i];
+  tw(c, [{ opacity: 0 }, { opacity: 1 }], 0, 1.6, E.std);
+  tw(c, [{ translate: `0 ${a}px` }, { translate: `0 ${b}px` }], 0, 5, E.lin);
+  tw(c, [{ translate: `0 ${b}px` }, { translate: `0 ${z}px` }], 5, 3, E.out);
+});
+fadeIn($('#l1'), 0.7, 1.2, 18);
+fadeOut($('#l1'), 3.6, 0.6);
+fadeIn($('#l2'), 4.2, 1.2, 18);
+cols.forEach((c) => tw(c, [{ opacity: 1 }, { opacity: 0.16 }], 4.4, 1.2, E.std));
+/* three highlighted titles, placed on their lines */
+const HL = [[0, 12, 'cs', '#6aa9ff'], [2, 9, 'mathphys', '#b4a8ff'], [3, 21, 'econ', '#f0b341']];
+const hlEls = HL.map(([ci, ri, , color], i) => {
+  const line = cols[ci].children[ri];
+  const drift = DRIFT[ci][2];
+  const x = COLS[ci], y = 40 + line.offsetTop + drift;
+  const n = el('div', 'hl'); n.textContent = line.textContent; n.style.left = x + 'px'; n.style.top = y + 'px'; n.style.color = color;
+  stage.insertBefore(n, $('#l1'));
+  tw(n, [{ opacity: 0 }, { opacity: 1 }], 5.0 + i * 0.25, 0.6, E.std);
+  tw(line, [{ opacity: 1 }, { opacity: 0 }], 5.0 + i * 0.25, 0.3, E.std);
+  const tx = 760 - x, ty = 360 + i * 12 - y;
+  tw(n, [{ translate: '0 0', scale: 1 }, { translate: `${tx}px ${ty}px`, scale: 0.9 }], 6.4 + i * 0.08, 1.1, E.inout);
+  tw(n, [{ opacity: 1 }, { opacity: 0 }], 7.2 + i * 0.08, 0.4, E.std);
+  return n;
+});
+fadeOut($('#l2'), 6.6, 0.6);
+cols.forEach((c) => tw(c, [{ opacity: 0.16 }, { opacity: 0 }], 6.8, 1, E.std));
+
+/* ================= SCENE 2: brand (8–13) ================= */
+const mark = $('#mark'); mark.style.left = '900px'; mark.style.top = '330px';
+const [m1, m2, m3] = mark.children;
+[m1, m2, m3].forEach((m, i) => tw(m, [{ opacity: 0, translate: '0 60px' }, { opacity: 1, translate: `0 ${[-28, -14, 0][i]}px` }], 7.9 + i * 0.16, SP.rise.dur, SP.rise.ease));
+word.querySelectorAll('span').forEach((s, i) => tw(s, [{ opacity: 0, translate: '0 28px', filter: 'blur(6px)' }, { opacity: 1, translate: '0 0', filter: 'blur(0)' }], 8.6 + i * 0.045, 0.9, E.out));
+fadeIn($('#tag'), 9.6, 1.1, 10);
+tw(mark, [{ opacity: 1, translate: '0 0' }, { opacity: 0, translate: '0 -30px' }], 12.4, 0.6, E.in);
+tw(word, [{ opacity: 1, translate: '0 0' }, { opacity: 0, translate: '0 -30px' }], 12.5, 0.6, E.in);
+tw($('#tag'), [{ opacity: 1 }, { opacity: 0 }], 12.5, 0.5, E.in);
+
+/* ================= SCENE 3: onboarding (13.4–23.6) ================= */
+const phone = $('#phone');
+tw(phone, [{ opacity: 0, translate: '0 90px' }, { opacity: 1, translate: '0 0' }], 13.3, 1.4, E.out);
+show($('#sOnb'), 13.3, 0.01);
+capIn('c1', 13.8);
+const selSeq = [[C1[0], 15.2], [C1[3], 15.9], [C2[0], 16.6], [C2[1], 17.3]];
+selSeq.forEach(([c, t]) => { const [x, y] = centerOf(c); tap(x, y, t); capSel(c, t); });
+textAt($('#selN'), [[0, '0'], [15.2, '1'], [15.9, '2'], [16.6, '3'], [17.3, '4']]);
+{ const row = $('#orcidDone').closest('div'); const [x, y] = centerOf(row); tap(x + 120, y, 18.5); fadeIn($('#orcidDone'), 18.9, 0.5, 0); }
+{ const b = $('#startBtn'); const [x, y] = centerOf(b); tap(x, y, 20.3); press(b, 20.3); }
+tw($('#sOnb'), [{ opacity: 1, translate: '0 0' }, { opacity: 0, translate: '-40px 0' }], 20.7, 0.5, E.in);
+tw($('#sDeck'), [{ opacity: 0, translate: '40px 0' }, { opacity: 1, translate: '0 0' }], 20.8, 0.7, E.out);
+tw($('#tabbar'), [{ opacity: 0 }, { opacity: 1 }], 20.8, 0.5, E.std);
+$('#tabbar').style.opacity = 0;
+show($('#tabT'), 20.8, 0.01);
+fadeIn($('#skel'), 21.1, 0.5, 8);
+capOut('c1', 23.3);
+
+/* ================= SCENE 4: funnel (23.6–33) ================= */
+const pF = $('#pFunnel');
+capIn('c2', 23.8);
+fadeIn(pF, 24.0, 0.9, 16);
+pF.querySelectorAll('.fstep').forEach((s, i) => fadeIn(s, 24.4 + i * 1.15, 0.7, 8));
+const fcv = $('#funnelCv'), fctx = fcv.getContext('2d');
+const FCOL = ['#6aa9ff', '#f0b341', '#b4a8ff', '#ff8fa8', '#7ee2a8'];
+const PARTS = Array.from({ length: 420 }, (_, i) => {
+  const h = (n) => { const s = Math.sin(i * 12.9898 + n * 78.233) * 43758.5453; return s - Math.floor(s); };
+  const r = h(1);
+  const dieAt = r < 0.55 ? 0 : r < 0.84 ? 1 : r < 0.96 ? 2 : r < 0.985 ? 3 : 4; // stage where it stops
+  return { u: h(2), ph: h(3), sp: 0.55 + h(4) * 0.35, dieAt, c: FCOL[Math.floor(h(5) * 5)], sz: 1.6 + h(6) * 1.6 };
+});
+const LEVELS = [0.10, 0.31, 0.52, 0.73, 0.93]; // y fraction of each stage (aligned with labels)
+function funnelWidth(yf) { return 0.95 - 0.8 * Math.pow(Math.min(1, Math.max(0, yf)), 0.9); }
+hook((t) => {
+  const W = fcv.width, H = fcv.height;
+  if (t < 24 || t > 33.5) { if (fcv.__clear !== true) { fctx.clearRect(0, 0, W, H); fcv.__clear = true; } return; }
+  fcv.__clear = false; fctx.clearRect(0, 0, W, H);
+  const k = Math.min(1, (t - 24) / 1.2) * Math.min(1, (33.5 - t) / 0.8);
+  // guide lines
+  fctx.strokeStyle = 'rgba(255,255,255,0.08)'; fctx.lineWidth = 2;
+  LEVELS.forEach((lv) => { const w = funnelWidth(lv) * W; fctx.beginPath(); fctx.moveTo((W - w) / 2, lv * H); fctx.lineTo((W + w) / 2, lv * H); fctx.stroke(); });
+  for (const p of PARTS) {
+    const cyc = ((t - 24) * p.sp * 0.32 + p.ph) % 1; // 0..1 progress through funnel
+    const yf = 0.04 + cyc * 0.92;
+    const stop = LEVELS[Math.min(p.dieAt + 1, 4)];
+    let a = 1;
+    if (p.dieAt < 4 && yf > stop - 0.02) a = Math.max(0, 1 - (yf - (stop - 0.02)) / 0.03);
+    if (a <= 0) continue;
+    const w = funnelWidth(yf) * W;
+    const x = (W - w) / 2 + p.u * w;
+    const survivor = p.dieAt >= 3;
+    fctx.globalAlpha = a * k * (survivor ? 1 : 0.5);
+    fctx.fillStyle = survivor ? p.c : 'rgba(210,212,218,1)';
+    fctx.beginPath(); fctx.arc(x, yf * H, p.sz * (survivor ? 2.2 : 1.6), 0, Math.PI * 2); fctx.fill();
+  }
+  fctx.globalAlpha = 1;
+});
+/* deck lands */
+tw($('#skel'), [{ opacity: 1 }, { opacity: 0 }], 29.6, 0.4, E.std);
+STACK.forEach((c, k) => {
+  const d = depthKF(k);
+  if (k <= 2) tw(c, [{ opacity: 0, scale: d.scale, translate: `0 ${60 + k * 10}px` }, { opacity: 1, scale: d.scale, translate: d.translate }], 29.9 + (2 - k) * 0.12, SP.pop.dur, SP.pop.ease);
+  else tw(c, [{ opacity: 0, scale: d.scale, translate: d.translate }, { opacity: 0, scale: d.scale, translate: d.translate }], 29.9, 0.01);
+});
+hook((t) => { // deck counter: one-by-one in scene 5, then a sprint 5 → 25 in scene 8
+  let v = '—';
+  for (const [ts, s] of [[30.1, '1/25'], [35.4, '2/25'], [37.8, '3/25'], [40.2, '4/25']]) if (t >= ts) v = s;
+  if (t >= 66.35) v = `${Math.round(5 + 20 * Math.min(1, (t - 66.35) / 1.6))}/25`;
+  const c = $('#cnt'); if (c.__v !== v) { c.textContent = v; c.__v = v; }
+});
+fadeOut(pF, 32.4, 0.6);
+capOut('c2', 32.5);
+
+/* ================= SCENE 5: swipe & learn (33–45.4) ================= */
+capIn('c3', 33.1);
+const pP = $('#pProfile');
+fadeIn(pP, 33.5, 0.9, 16);
+let topIdx = 0;
+function flight(dir, tDrag, dragDur = 0.62) {
+  const c = STACK[topIdx];
+  const tFly = tDrag + dragDur;
+  const dx = dir * 120, rot = dir * 6;
+  tw(c, [{ translate: '0 0', rotate: '0deg' }, { translate: `${dx}px 8px`, rotate: `${rot}deg` }], tDrag, dragDur, E.inout);
+  const st = c.querySelector(dir > 0 ? '.stamp.like' : '.stamp.nope');
+  tw(st, [{ opacity: 0, scale: 1.2 }, { opacity: 1, scale: 1 }], tDrag + dragDur * 0.45, dragDur * 0.5, E.out);
+  tw(c, [{ translate: `${dx}px 8px`, rotate: `${rot}deg` }, { translate: `${dir * 560}px 40px`, rotate: `${dir * 18}deg` }], tFly, 0.28, 'cubic-bezier(.3,.3,.6,1)');
+  tw(c, [{ opacity: 1 }, { opacity: 0 }], tFly + 0.26, 0.02, E.lin);
+  drag(195, 400, dx * 1.05, 8, tDrag, tFly);
+  topIdx++;
+  for (let k = 0; k < 4 && topIdx + k < STACK.length; k++) {
+    const n = STACK[topIdx + k];
+    const from = depthKF(k + 1), to = depthKF(k);
+    tw(n, [from, to], tFly, SP.rise.dur, SP.rise.ease);
+  }
+  return tFly;
+}
+function fly(label, dir, t, row, delta) {
+  const n = el('div', 'flychip ' + (dir > 0 ? 'up' : 'dn'), label); $('#flychips').append(n);
+  const [sx, sy] = toStage(dir > 0 ? 250 : 120, 360);
+  const p = PR[row]; const pr = p.r;
+  const tx = 1420 + 30 + 10, ty = 250 + pr.offsetTop - 6; // panel origin + row offset
+  n.style.left = sx + 'px'; n.style.top = sy + 'px';
+  tw(n, [{ opacity: 0, scale: 0.6, translate: '0 0' }, { opacity: 1, scale: 1, translate: '0 -40px', offset: 0.3 }, { opacity: 1, scale: 1, translate: `${tx - sx}px ${ty - sy}px`, offset: 0.85 }, { opacity: 0, scale: 0.8, translate: `${tx - sx}px ${ty - sy}px` }], t, 1.3, E.inout);
+  const nv = Math.max(0.05, Math.min(1, p.v + delta));
+  tw(p.bar, [{ scale: `${p.v} 1` }, { scale: `${nv} 1` }], t + 1.0, 0.9, E.out);
+  p.em.textContent = (delta > 0 ? '▲ ' : '▼ ') + (delta > 0 ? '+' : '−') + Math.round(Math.abs(delta) * 100);
+  p.em.style.color = delta > 0 ? '#ff8fa8' : '#9a9ea7';
+  tw(p.em, [{ opacity: 0 }, { opacity: 1 }], t + 1.0, 0.3, E.std);
+  tw(p.em, [{ opacity: 1 }, { opacity: 0 }], t + 2.6, 0.4, E.std);
+  p.v = nv;
+}
+const f1 = flight(1, 34.6);
+toast('已加入想读 <em>撤销</em>', f1 + 0.1, 1.3);
+fly('+ 大语言模型', 1, f1 - 0.1, '大语言模型', 0.16);
+press($('#likeBtn'), f1 - 0.1);
+const f2 = flight(-1, 37.0);
+fly('− 利率波动', -1, f2 - 0.1, '利率波动', -0.22);
+const f3 = flight(1, 39.4);
+toast('已加入想读 <em>撤销</em>', f3 + 0.1, 1.3);
+fly('+ 网络科学', 1, f3 - 0.1, '网络科学', 0.2);
+/* card D's reason row lights up: the model already followed */
+const dWhy = STACK[3].querySelector('.why');
+tw(dWhy.querySelector('.glow'), [{ opacity: 0 }, { opacity: 1 }], 41.0, 0.6, E.std);
+tw(dWhy, [{ scale: 1 }, { scale: 1.035 }, { scale: 1 }], 41.0, 0.9, E.inout);
+{
+  const note = el('div', 'flychip up', '2 秒内，下一张已经调整'); note.style.cssText += 'background:#2a2447;color:#d9d2ff;font-weight:500;';
+  $('#flychips').append(note);
+  const [sx, sy] = toStage(390, 590); note.style.left = (sx + 48) + 'px'; note.style.top = (sy - 18) + 'px';
+  tw(note, [{ opacity: 0, translate: '-12px 0' }, { opacity: 1, translate: '0 0' }], 41.4, 0.6, E.out);
+  tw(note, [{ opacity: 1 }, { opacity: 0 }], 44.6, 0.4, E.std);
+}
+fadeOut(pP, 44.6, 0.6);
+capOut('c3', 44.9);
+
+/* ================= SCENE 6: why this (45.4–55.4) ================= */
+capIn('c4', 45.5);
+const D = STACK[3];
+{ const [x, y] = [16 + 358 - 32, 116 + 510 - 36]; tap(x, y, 46.3); }
+tw(dWhy.querySelector('.glow'), [{ opacity: 1 }, { opacity: 0 }], 46.4, 0.4, E.std);
+tw(D, [{ scale: 1 }, { scale: 0.96 }], 46.5, 0.5, E.out);
+tw($('#scrim'), [{ opacity: 0 }, { opacity: 1 }], 46.5, 0.4, E.std);
+tw($('#sheet'), [{ translate: '0 110%' }, { translate: '0 0' }], 46.5, SP.sheet.dur, SP.sheet.ease);
+const pT = $('#pTrace');
+fadeIn(pT, 47.0, 0.9, 16);
+$('#sheet').querySelectorAll('.reasons li').forEach((li, i) => { fadeIn(li, 47.3 + i * 0.45, 0.6, 8); fadeIn(pT.querySelectorAll('.trow')[i], 47.5 + i * 0.45, 0.7, 10); });
+$('#sheet').querySelectorAll('.chip').forEach((c, i) => fadeIn(c, 48.9 + i * 0.1, 0.5, 6));
+fadeIn($('#sheet .links'), 49.2, 0.5, 6);
+fadeIn($('#sheet .thumbs'), 49.35, 0.5, 6);
+{
+  const c = $('#chipMore'); const [x, y] = centerOf(c); tap(x, y, 50.6); press(c, 50.6);
+  show(c.querySelector('.fill'), 50.6, 0.25);
+  tw(c.querySelector('.lb'), [{ color: '#17181b' }, { color: '#ffffff' }], 50.6, 0.25, E.std);
+  toast('接下来 7 天多推「网络科学」 <em>撤销</em>', 50.9, 1.8);
+}
+tw($('#sheet'), [{ translate: '0 0' }, { translate: '0 110%' }], 53.6, 0.45, E.in);
+tw($('#scrim'), [{ opacity: 1 }, { opacity: 0 }], 53.7, 0.4, E.std);
+tw(D, [{ scale: 0.96 }, { scale: 1 }], 53.8, SP.back.dur, SP.back.ease);
+fadeOut(pT, 54.6, 0.6);
+capOut('c4', 54.8);
+
+/* ================= SCENE 7: control (55.4–65) ================= */
+capIn('c5', 55.5);
+{ const tabs = $('#tabbar').children; const [x, y] = centerOf(tabs[2]); tap(x, y, 55.9); }
+hide($('#tabT'), 56.0, 0.2); show($('#tabM'), 56.0, 0.2);
+tw($('#sDeck'), [{ opacity: 1 }, { opacity: 0 }], 56.0, 0.3, E.std);
+tw($('#sMe'), [{ opacity: 0, translate: '0 10px' }, { opacity: 1, translate: '0 0' }], 56.1, 0.5, E.out);
+const pC = $('#pControl');
+fadeIn(pC, 56.4, 0.9, 16);
+pC.querySelectorAll('.citem').forEach((c, i) => fadeIn(c, 56.9 + i * 0.5, 0.7, 10));
+{ // 资产定价 → 少
+  const r = RE['资产定价']; const kn = r.querySelector('.kn'); const seg = r.querySelector('.s3');
+  const [x, y] = centerOf(seg); tap(x - 42, y, 57.9);
+  tw(kn, [{ translate: '42px 0' }, { translate: '0px 0' }], 57.9, SP.back.dur, SP.back.ease);
+  toast('少推「资产定价」· 下一批生效', 58.1, 1.3);
+}
+{ // delete 社会态度
+  const r = RE['社会态度']; const [x, y] = centerOf(r.querySelector('.dl')); tap(x, y, 59.6);
+  tw(r, [{ opacity: 1, height: '56px' }, { opacity: 0, height: '56px', offset: 0.4 }, { opacity: 0, height: '0px', borderTopWidth: '0px' }], 59.7, 0.6, E.inout);
+  toast('已删除「社会态度」 <em>撤销</em>', 59.9, 1.2);
+}
+{ // non-personalized and back
+  const seg = $('#modeSeg'); const kn = $('#modeKn'); const w = (seg.offsetWidth - 6) / 3;
+  const [x, y] = centerOf(seg); tap(x, y, 61.3);
+  tw(kn, [{ translate: '0 0' }, { translate: `${w}px 0` }], 61.3, SP.back.dur, SP.back.ease);
+  tw($('#npb'), [{ opacity: 0, height: '0px', marginTop: '0px', paddingTop: '0px', paddingBottom: '0px' }, { opacity: 1, height: '38px', marginTop: '10px', paddingTop: '10px', paddingBottom: '10px' }], 61.4, 0.45, E.out);
+  tap(x - w, y, 63.1);
+  tw(kn, [{ translate: `${w}px 0` }, { translate: '0 0' }], 63.1, SP.back.dur, SP.back.ease);
+  tw($('#npb'), [{ opacity: 1, height: '38px', marginTop: '10px', paddingTop: '10px', paddingBottom: '10px' }, { opacity: 0, height: '0px', marginTop: '0px', paddingTop: '0px', paddingBottom: '0px' }], 63.2, 0.4, E.inout);
+}
+textAt($('#modeLbl'), [[0, '个性化'], [61.3, '按时间'], [63.1, '个性化']]);
+fadeOut(pC, 64.3, 0.6);
+capOut('c5', 64.5);
+
+/* ================= SCENE 8: finite deck (65–72.4) ================= */
+capIn('c6', 65.1);
+{ const tabs = $('#tabbar').children; const [x, y] = centerOf(tabs[0]); tap(x, y, 65.3); }
+hide($('#tabM'), 65.4, 0.2); show($('#tabT'), 65.4, 0.2);
+tw($('#sMe'), [{ opacity: 1 }, { opacity: 0 }], 65.4, 0.3, E.std);
+tw($('#sDeck'), [{ opacity: 0 }, { opacity: 1 }], 65.5, 0.4, E.std);
+flight(1, 66.0, 0.3); flight(-1, 66.55, 0.28); flight(1, 67.05, 0.26); flight(1, 67.5, 0.24);
+hook((t) => { const k = Math.max(0, Math.min(1, (t - 68.1) / 0.9)); const w = String(Math.round(6 * k)), s = String(Math.round(2 * k)); const a = $('#nW'), b = $('#nS'); if (a.textContent !== w) a.textContent = w; if (b.textContent !== s) b.textContent = s; });
+const pN = $('#pNorth');
+fadeIn(pN, 66.0, 0.9, 16);
+pN.querySelectorAll('.nrow').forEach((r, i) => fadeIn(r, 66.5 + i * 0.35, 0.6, 8));
+fadeIn(pN.querySelector('.zero'), 68.3, 0.8, 8);
+fadeOut(pN, 71.7, 0.6);
+capOut('c6', 71.9);
+
+/* ================= SCENE 9: library (72.4–79) ================= */
+capIn('c7', 72.5);
+{ const tabs = $('#tabbar').children; const [x, y] = centerOf(tabs[1]); tap(x, y, 72.8); }
+hide($('#tabT'), 72.9, 0.2); show($('#tabS'), 72.9, 0.2);
+tw($('#sDeck'), [{ opacity: 1 }, { opacity: 0 }], 72.9, 0.3, E.std);
+show($('#sLib'), 73.0, 0.35);
+MC.forEach((c, i) => tw(c, [{ opacity: 0, translate: '0 26px' }, { opacity: 1, translate: '0 0' }], 73.2 + i * 0.13, SP.pop.dur, SP.pop.ease));
+{ const b = $('#exBtn'); const [x, y] = centerOf(b); tap(x, y, 75.9); press(b, 75.9); toast('已导出 6 条引用（BibTeX）', 76.1, 1.5); }
+const pS = $('#pFields');
+fadeIn(pS, 73.4, 0.9, 16);
+pS.querySelectorAll('.sw div').forEach((d, i) => fadeIn(d, 73.8 + i * 0.12, 0.6, 8));
+fadeOut(pS, 78.4, 0.6);
+capOut('c7', 78.5);
+
+/* ================= SCENE 10: outro (79–88) ================= */
+tw(phone, [{ opacity: 1, translate: '0 0', scale: 1.1 }, { opacity: 0, translate: '0 40px', scale: 1.04 }], 78.7, 0.9, E.in);
+tw(mark, [{ opacity: 0, translate: '0 -40px' }, { opacity: 1, translate: '0 -80px' }], 79.4, 1.1, E.out);
+tw(word, [{ opacity: 0, translate: '0 -50px' }, { opacity: 1, translate: '0 -70px' }], 79.7, 1.1, E.out);
+fadeIn($('#o1'), 80.6, 1.1, 14);
+tw($('#o3'), [{ opacity: 0, translate: '-50% 10px' }, { opacity: 1, translate: '-50% 0' }], 81.8, 0.8, E.out); // keep the -50% centring
+if (new URLSearchParams(location.search).has('video')) $('#o3').style.display = 'none';
+
+/* ================= player ================= */
+const T = T_END;
+let t = 0, playing = false, last = 0, lastRendered = -1;
+const pp = $('#pp'), scrub = $('#scrub'), fillbar = $('#fillbar'), timeEl = $('#time');
+const PLAY = '<svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path d="M8 5.5v13l11-6.5z"/></svg>';
+const PAUSE = '<svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><rect x="6.5" y="5" width="4" height="14" rx="1"/><rect x="13.5" y="5" width="4" height="14" rx="1"/></svg>';
+const fmt = (s) => `${Math.floor(s / 60)}:${String(Math.floor(s % 60)).padStart(2, '0')}`;
+function render(now) {
+  if (now === lastRendered) return; lastRendered = now;
+  const ms = now * 1000;
+  for (const a of ANIMS) a.currentTime = ms;
+  for (const h of HOOKS) h(now);
+  const f = now / T;
+  fillbar.style.width = (f * 100) + '%';
+  if (document.activeElement !== scrub) scrub.value = Math.round(f * 1000);
+  timeEl.textContent = `${fmt(now)} / ${fmt(T)}`;
+  $('#o3').classList.toggle('live', now > 81.8);
+  markScript(now);
+}
+function setPlaying(p) {
+  playing = p; pp.innerHTML = p ? PAUSE : PLAY; pp.setAttribute('aria-label', p ? '暂停' : '播放');
+  $('#big').classList.toggle('show', !p && t < 0.05);
+  if (p) last = performance.now();
+  poke();
+}
+function seek(s) { t = Math.max(0, Math.min(T, s)); render(t); }
+function loop(now) {
+  if (playing) {
+    t += Math.min(0.1, (now - last) / 1000);
+    if (t >= T) { t = T; setPlaying(false); document.body.classList.remove('idle'); }
+    render(t);
+  }
+  last = now;
+  requestAnimationFrame(loop);
+}
+pp.addEventListener('click', () => { if (!playing && t >= T) seek(0); setPlaying(!playing); });
+$('#big').addEventListener('click', () => { setPlaying(true); });
+$('#rs').addEventListener('click', () => { seek(0); setPlaying(true); });
+scrub.addEventListener('input', () => { seek(scrub.value / 1000 * T); });
+$('#fs').addEventListener('click', () => { if (document.fullscreenElement) document.exitFullscreen(); else document.documentElement.requestFullscreen?.(); });
+$('#sb').addEventListener('click', () => toggleScript());
+
+/* chapter ticks + hover label */
+const track = $('#track'), chap = $('#chap');
+SCENES.forEach((s) => { if (s.t <= 0) return; const k = el('i', 'tick'); k.style.left = `calc(${(s.t / T) * 100}% - 1px)`; track.append(k); });
+const sceneAt = (s) => [...SCENES].reverse().find((x) => s >= x.t) || SCENES[0];
+track.addEventListener('pointermove', (e) => {
+  const r = track.getBoundingClientRect(); const f = Math.max(0, Math.min(1, (e.clientX - r.left) / r.width));
+  chap.textContent = `${fmt(f * T)} · ${sceneAt(f * T).name}`; chap.style.left = (f * 100) + '%'; chap.style.opacity = 1;
+});
+track.addEventListener('pointerleave', () => { chap.style.opacity = 0; });
+
+/* script panel */
+const list = $('#scriptList');
+SCENES.forEach((s, i) => {
+  const li = el('li', '', `<div class="tc">${fmt(s.t)} – ${fmt(SCENES[i + 1] ? SCENES[i + 1].t : T)}</div><div class="st">${s.name}</div><div class="vo">旁白：${s.vo}</div><div class="sc">画面：${s.sc}</div>`);
+  li.addEventListener('click', () => { seek(s.t + 0.01); });
+  list.append(li);
+});
+function markScript(now) { const cur = sceneAt(now); [...list.children].forEach((li, i) => li.classList.toggle('cur', SCENES[i] === cur)); }
+function toggleScript() { const o = $('#script').classList.toggle('open'); $('#sb').setAttribute('aria-pressed', String(o)); }
+
+/* keyboard (the published build, <html data-published>, has no player chrome or shortcuts) */
+const PUBLISHED = document.documentElement.hasAttribute('data-published');
+addEventListener('keydown', (e) => {
+  if (PUBLISHED || e.metaKey || e.ctrlKey || e.altKey) return;
+  const k = e.key;
+  if (k === ' ' || k === 'k' || k === 'K') { e.preventDefault(); if (!playing && t >= T) seek(0); setPlaying(!playing); }
+  else if (k === 'ArrowRight') { seek(t + 5); }
+  else if (k === 'ArrowLeft') { seek(t - 5); }
+  else if (k === ']') { const n = SCENES.find((s) => s.t > t + 0.05); seek(n ? n.t + 0.01 : T); }
+  else if (k === '[') { const cur = sceneAt(t); const i = SCENES.indexOf(cur); const tgt = t - cur.t > 1.5 ? cur : SCENES[Math.max(0, i - 1)]; seek(tgt.t + 0.01); }
+  else if (k === 'f' || k === 'F') { $('#fs').click(); }
+  else if (k === 's' || k === 'S') { toggleScript(); }
+  else if (k === 'Home') { seek(0); }
+  poke();
+});
+
+/* auto-hide chrome while playing */
+let idleTimer = 0;
+function poke() {
+  document.body.classList.remove('idle'); clearTimeout(idleTimer);
+  idleTimer = setTimeout(() => { if (playing && !$('#script').classList.contains('open')) document.body.classList.add('idle'); }, 2600);
+}
+addEventListener('pointermove', poke);
+
+/* fit stage */
+function fit() {
+  const s = Math.min(innerWidth / 1920, innerHeight / 1080);
+  stage.style.transform = `translate(${-960 * s}px, ${-540 * s}px) scale(${s})`;
+}
+addEventListener('resize', fit); fit();
+
+/* ?t=seconds deep link; ?paused to open on a frame */
+const q = new URLSearchParams(location.search);
+const reduce = matchMedia('(prefers-reduced-motion: reduce)').matches;
+seek(parseFloat(q.get('t')) || 0);
+requestAnimationFrame(loop);
+setPlaying(!(reduce || q.has('paused')));
+window.film = { seek: (s) => seek(s), play: () => setPlaying(true), pause: () => setPlaying(false), get t() { return t; } };
+})();
+</script>
+</body>
+</html>

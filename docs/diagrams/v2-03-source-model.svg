@@ -53,8 +53,8 @@
     <!-- ============ 行 A：Source ============ -->
     <rect x="380" y="80" width="520" height="330" rx="10" fill="#FFF7E6" stroke="#D08A1E" stroke-width="1.5"/>
     <text x="396" y="104" font-size="14" font-weight="700" fill="#7C4A03">Source（SourceSpec v2 · registry/sources/&lt;id&gt;.yaml）</text>
-    <text x="396" y="122" font-size="11" fill="#1f2937">L1：publisher · preprint · journal_platform · conference_platform</text>
-    <text x="396" y="137" font-size="11" fill="#1f2937">L2：repository · aggregator（带 roles）· hosts[]（每个主机都有 robots 结论）</text>
+    <text x="396" y="122" font-size="11" fill="#1f2937">class：M1 · M2 · L1a · L1b · L1c · L2a · L2b（七类，见来源分层）</text>
+    <text x="396" y="137" font-size="11" fill="#1f2937">subclass · roles（兼角色）· hosts[]（每个主机都有 robots 结论）</text>
     <text x="396" y="152" font-size="11" fill="#1f2937">owner_org · hosting · commercial_gate · attribution · review（证据 ≤90 天）</text>
 
     <!-- SourceChannel: metadata -->

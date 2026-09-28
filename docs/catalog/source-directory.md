@@ -7,13 +7,13 @@ updated: 2026-09-27
 
 # v2 来源支持名录
 
-> 名录回答四个问题：v2 支持哪些论文来源，每个来源的元数据与新论文怎么接，全文能做到哪一步，受哪些合规闸门约束。共 187 行，覆盖需求点名的全部学科，另补地学材料与中文/区域两组，这两组是主要缺口。多数出版商期刊不写代码，由 Crossref 委托收元数据；订阅全文只在用户侧由用户本人单篇取回，平台出口从不代用户访问出版商（见 D-053）。
+> 名录回答四个问题：v2 支持哪些论文来源，每个来源的元数据与新论文怎么接，全文能做到哪一步，受哪些合规闸门约束。共 187 行，按来源七类分层（M1、M2、L1a–L1c、L2a–L2b，定义见[来源分层](source-taxonomy.md)），覆盖需求点名的全部学科，另补地学材料与中文/区域两组，这两组是主要缺口。多数出版商期刊不写代码，由 Crossref 委托收元数据；订阅全文只在用户侧由用户本人单篇取回，平台出口从不代用户访问出版商（见 D-053）。
 
-来源模型见 [v2-03 来源模型图](../diagrams/v2-03-source-model.svg) 与 [03 来源接入与语料流水线](../plan/v2/03-sources-and-corpus-pipeline.md)，合规硬约束见 [08 合规、隐私、安全与内容治理](../plan/v2/08-compliance-security-privacy.md)。[v2-11 来源汇流概念图](../diagrams/v2-11-source-confluence.svg) 把本表每一行画成一条线，按主通道汇入统一语料，供对外介绍。
+来源模型见 [v2-03 来源模型图](../diagrams/v2-03-source-model.svg) 与 [03 来源接入与语料流水线](../plan/v2/03-sources-and-corpus-pipeline.md)，合规硬约束见 [08 合规、隐私、安全与内容治理](../plan/v2/08-compliance-security-privacy.md)。[v2-11 来源汇流概念图](../diagrams/v2-11-source-confluence.svg) 把本表每一行画成一条线，按主通道汇入统一语料，供对外介绍（按旧的 L1/L2 口径绘制）。期刊会议的学科详表与评级见 [venue 名录](venues/README.md)，尚未入表的调研候选见[候选来源](source-candidates.md)。
 
 ## 数字概览
 
-- **总数 187 行**：L1 129 行（出版商 44、预印本与工作论文 30、期刊平台 24、会议平台 31）；L2 57 行（聚合 42、仓库 11、注册表 3、聚合兼仓储 1）；另有盗版源合并行 1 行。
+- **总数 187 行**：元层 M1 69、M2 6；一级 L1a 31、L1b 31、L1c 0；二级 L2a 27、L2b 22；另有盗版源合并行 1 行不属任何层级。各类的状态分布与学科覆盖见[来源分层](source-taxonomy.md)。
 - **非排除 169 行**：v2-P0 36、v2-P1 63、v2-P2 44、metadata-only 26（登记优先级 P0 3、P1 4、P2 10，未标 9）。
 - **排除类 18 行**，平台零自动化：excluded 13、link-only 2、user-import-only 3。
 - **接入工作量**：非排除的 169 行中，92 行的元数据或新论文通道用到 Crossref 委托；66 行只需登记，不写代码；93 行需要源专用或按源配置的 connector，其中 21 行经 `v1_bridge`（v1 adapter 包装层）复用 v1 全部 20 个 adapter；10 行暂无 connector（待复勘或经他源旁路）。
@@ -39,19 +39,19 @@ updated: 2026-09-27
 
 ## 约定
 
-**层级类型**：L1 是论文出版或首发的地方，L2 负责汇总、登记与补全。Source 与 Venue 分离：本表按来源登记，期刊、会议等 venue 是独立实体，见 03。
+**分层**：来源按七类分层，定义、判定规则与新旧对应见[来源分层](source-taxonomy.md)。Source 与 Venue 分离：本表按来源登记；L1a 只列有自有站点与通道的 venue，其余期刊会议登记在 [venue 名录](venues/README.md)，由所在 M1 平台或 Crossref 委托承接。
 
-| 类型 | 含义 | 行数 |
-|---|---|---:|
-| L1 出版商 `publisher` | 出版商与学会自营平台 | 44 |
-| L1 预印本 `preprint` | 预印本服务器与工作论文系列（含央行与国际组织） | 30 |
-| L1 期刊平台 `journal_platform` | 学会或专业期刊平台与过刊档案 | 24 |
-| L1 会议平台 `conference_platform` | 会议论文集平台；经管会议记为"论文在某会报告过"的事件 | 31 |
-| L2 聚合 `aggregator` | 跨学科与学科聚合器、OA 叠加层、社区信号层、商业索引 | 42 |
-| L2 仓库 `repository` | 仓储与仓储聚合 | 11 |
-| L2 注册表 `registry` | 身份、机构与 DOI 注册表 | 3 |
+| 类别 | 含义 | 子类（行数） | 行数 |
+|---|---|---|---:|
+| M1 出版与托管主体 | 出版或托管多个 venue 的主体及其平台 | 出版商 28、学会与协会 26、公开托管平台 11、国家与公共机构 4 | 69 |
+| M2 标识与注册 | 跨文献的统一注册、标识与身份机构 | DOI 注册机构 2、人 1、机构 1、标识枢纽 1、政策登记 1 | 6 |
+| L1a 期刊与会议 | 有自有站点的具体 venue | 期刊 13、会议与论文集 10、经管会议事件 8 | 31 |
+| L1b 预印本与工作论文 | 预印本服务器与正式编号的 WP 系列 | 预印本 19、WP 系列 12 | 31 |
+| L1c 长尾一级产出 | 技术报告、政策报告、学位论文、JMP 等 | —（候选见[候选来源](source-candidates.md)） | 0 |
+| L2a 文献库与学科仓储 | 基于 L1 的有界语料库 | 学科库 13、区域与国家库 4、仓储 8、过刊与历史档案 2 | 27 |
+| L2b 检索引擎与聚合项目 | 跨语料检索、图谱、OA 定位、信号与聚合 | 引擎与图谱 11、OA 层 3、引文与派生 3、社区信号 5 | 22 |
 
-Europe PMC 兼属聚合与仓储，盗版源合并行不属任何层级，二者都放在 L2 聚合表。区域来源按类型分入各表，学科列带"区"。
+盗版源合并行不属任何层级，放在 L2b 节末尾。区域来源按类分入各节，学科列带"区"。
 
 **v2 状态**（`v2_status`）：
 
@@ -89,9 +89,11 @@ Europe PMC 兼属聚合与仓储，盗版源合并行不属任何层级，二者
 
 ## 总表
 
-每节一张表，节内大体先高优先级、后长尾。通道描述高度压缩，实现任何 connector 之前，须回到完整草稿复核端点、限速与条款。
+每节一张大表按子类分段，节内大体先高优先级、后长尾。通道描述高度压缩，实现任何 connector 之前，须回到完整草稿复核端点、限速与条款。旧稿按 L1/L2 七种类型分节，新旧对应见[来源分层](source-taxonomy.md)的"与旧分类的对应"。
 
-### L1 出版商（44 行）
+### M1 出版与托管主体（69 行）
+
+**出版商（含大学出版社与独立非营利出版商）（28）**
 
 | 来源 | 学科 | 怎么接 | 全文 | 状态 |
 |---|---|---|---|---|
@@ -103,44 +105,147 @@ Europe PMC 兼属聚合与仓储，盗版源合并行不属任何层级，二者
 | Cambridge Core `cambridge_core` | 数 物 心 经 金 管 | Crossref 按 ISSN | 用户侧私有 | v2-P1 ⚑COMM |
 | Taylor & Francis Online `tandf_online` | 数 物 化 心 经 金 管 | Crossref 按 ISSN | 用户侧私有 | v2-P1 ⚑COMM |
 | SAGE Journals `sage_journals` | 心 管 | Crossref 按 ISSN | 用户侧私有 | v2-P1 ⚑COMM ⚑RECHECK |
-| Science / AAAS `aaas_science` | 全 | Crossref 按 ISSN；RSS 仅信号 | 共享 OA/用户侧私有 | v2-P1 |
-| PNAS `pnas` | 全 | Crossref 按 ISSN；RSS 仅信号 | 共享 OA（经 PMC） | v2-P0 |
-| Royal Society Publishing `royal_society` | 数 物 生 | Crossref 按 ISSN | 共享 OA/用户侧私有 | v2-P1 |
 | Annual Reviews `annual_reviews` | 生 心 经 金 管 | Crossref 按 ISSN | 共享 OA | v2-P1 |
 | MDPI `mdpi` | 数 物 化 地材 生 心 | Crossref + OAI-PMH | 共享 OA | v2-P1 |
 | Frontiers `frontiers` | 生 心 | Crossref 按 ISSN；RSS 仅信号 | 共享 OA（经 PMC） | v2-P1 |
 | PLOS `plos` | 生 心 | 官方 Search API + Crossref | 共享 OA | v2-P1 |
-| APA PsycNet（APA 期刊） `apa_psycnet` | 心 管 | Crossref 按 ISSN；可用户导入 | 仅外链 | metadata-only（P2） |
 | CSHL Press `cshl_press` | 生 | Crossref 按 ISSN | 共享 OA（经 PMC） | v2-P2 |
 | Hogrefe `hogrefe` | 心 | Crossref 按 ISSN | 仅外链 | metadata-only（P2） |
 | UC Press 期刊（Collabra: Psychology） `ucpress_online` | 心 | Crossref 按 ISSN | 共享 OA | v2-P2 ⚑RECHECK |
-| American Physical Society（Physical Review） `aps` | 物 | APS Harvest + Crossref | 共享 OA/用户侧私有 | v2-P0 ⚑LIC（仅全量 Harvest） |
-| IOP Publishing（含 AAS 天文刊） `iop` | 物 | Crossref 按 ISSN | 共享 OA（经他源） | metadata-only（P0） |
-| AIP Publishing `aip` | 物 | Crossref 按 ISSN | 用户侧私有 | v2-P1 |
-| Optica Publishing Group `optica` | 物 | Crossref 按 ISSN | 共享 OA | v2-P1 |
 | EDP Sciences（A&A、EPJ WoC） `edp_sciences` | 物 | Crossref 按 ISSN | 共享 OA | v2-P1 |
 | World Scientific `world_scientific` | 物 数 | Crossref 按 ISSN | 仅外链 | metadata-only（P2） |
 | De Gruyter Brill `degruyter_brill` | 数 物 化 经 | Crossref 按 ISSN | 仅外链 | metadata-only（P1） |
-| ACS Publications `acs` | 化 地材 | Crossref 按 ISSN | 仅外链 | metadata-only（P0） |
-| Royal Society of Chemistry `rsc` | 化 | Crossref 按 ISSN | 共享 OA；订阅待重勘 | v2-P1 ⚑DRIFT |
-| American Mathematical Society `ams` | 数 | Crossref 按 ISSN | 外链/用户侧私有 | v2-P1 |
-| SIAM Publications Library `siam` | 数 CS | Crossref 按 ISSN；RSS 仅信号 | 用户侧私有 | v2-P1 |
-| EMS Press `ems_press` | 数 | Crossref 按 ISSN | 共享 OA | v2-P1 |
 | Mathematical Sciences Publishers `msp` | 数 | Crossref 按 ISSN | 仅外链 | v2-P1 |
 | International Press `intl_press` | 数 | Crossref 按 ISSN | 仅外链 | v2-P2 ⚑RECHECK |
 | UChicago Press Journals `uchicago_journals` | 经 管 | Crossref 按 ISSN | 用户侧私有 | v2-P1 |
 | MIT Press Direct（REStat、TACL、CL） `mit_press_direct` | 经 CS | Crossref 按 ISSN | 外链；TACL 等经 ACL | metadata-only（P1） |
 | Emerald Insight `emerald_insight` | 金 管 | Crossref 按 ISSN | 仅外链 | metadata-only（P2） ⚑DRIFT |
 | PM Research（JPM 等） `pm_research` | 金 | Crossref 按 ISSN | 仅外链 | v2-P2 ⚑RECHECK |
-| Harvard Business Review `hbp_hbr` | 管 | 无开放元数据通道 | 无 | excluded |
-| MIT Sloan Management Review `mit_smr` | 管 | Crossref 按前缀 | 仅外链 | metadata-only（P2） ⚑DRIFT |
-| ACM Digital Library `acm_dl` | CS | Crossref（DOI 常在会前注册） | 仅外链 | metadata-only（P1） |
-| IEEE Xplore（含 CSDL） `ieee_xplore` | CS | Crossref（DOI 滞后 2–6 月） | 用户侧私有 | v2-P1 ⚑COMM |
 | IOS Press FAIA（ECAI 等） `iospress_faia` | CS | Crossref 委托 | 共享 OA（限非商用） | v2-P1 ⚑COMM |
 | now publishers（Foundations and Trends） `now_publishers` | CS | Crossref 按 ISSN | 仅外链 | metadata-only（P2） ⚑DRIFT ⚑RECHECK |
-| CCS Chemistry（中国化学会） `ccs_chemistry` | 化 区 | Crossref 按 ISSN | 共享 OA | v2-P2 |
+| PeerJ `peerj` | 生 | Crossref 按 ISSN | 共享 OA（经 PMC） | v2-P2 |
+| F1000Research 等发表后评审平台 `f1000_platforms` | 生 全 | Europe PMC + Crossref | OA（未核） | v2-P2 |
 
-### L1 预印本与工作论文（30 行）
+**学会与协会平台（26）**
+
+| 来源 | 学科 | 怎么接 | 全文 | 状态 |
+|---|---|---|---|---|
+| Science / AAAS `aaas_science` | 全 | Crossref 按 ISSN；RSS 仅信号 | 共享 OA/用户侧私有 | v2-P1 |
+| Royal Society Publishing `royal_society` | 数 物 生 | Crossref 按 ISSN | 共享 OA/用户侧私有 | v2-P1 |
+| APA PsycNet（APA 期刊） `apa_psycnet` | 心 管 | Crossref 按 ISSN；可用户导入 | 仅外链 | metadata-only（P2） |
+| American Physical Society（Physical Review） `aps` | 物 | APS Harvest + Crossref | 共享 OA/用户侧私有 | v2-P0 ⚑LIC（仅全量 Harvest） |
+| IOP Publishing（含 AAS 天文刊） `iop` | 物 | Crossref 按 ISSN | 共享 OA（经他源） | metadata-only（P0） |
+| AIP Publishing `aip` | 物 | Crossref 按 ISSN | 用户侧私有 | v2-P1 |
+| Optica Publishing Group `optica` | 物 | Crossref 按 ISSN | 共享 OA | v2-P1 |
+| ACS Publications `acs` | 化 地材 | Crossref 按 ISSN | 仅外链 | metadata-only（P0） |
+| Royal Society of Chemistry `rsc` | 化 | Crossref 按 ISSN | 共享 OA；订阅待重勘 | v2-P1 ⚑DRIFT |
+| American Mathematical Society `ams` | 数 | Crossref 按 ISSN | 外链/用户侧私有 | v2-P1 |
+| SIAM Publications Library `siam` | 数 CS | Crossref 按 ISSN；RSS 仅信号 | 用户侧私有 | v2-P1 |
+| EMS Press `ems_press` | 数 | Crossref 按 ISSN | 共享 OA | v2-P1 |
+| ACM Digital Library `acm_dl` | CS | Crossref（DOI 常在会前注册） | 仅外链 | metadata-only（P1） |
+| IEEE Xplore（含 CSDL） `ieee_xplore` | CS | Crossref（DOI 滞后 2–6 月） | 用户侧私有 | v2-P1 ⚑COMM |
+| INFORMS PubsOnline `informs_pubsonline` | 管 | Crossref 按 ISSN | 用户侧私有 | v2-P0 |
+| AOM Journals（AMJ、AMR 等） `aom_journals` | 管 | Crossref 按 ISSN | 用户侧私有 | v2-P0 |
+| AEA Journals（AER、AEJ、JEL、JEP） `aea_journals` | 经 | Crossref 按 ISSN | 用户侧私有 | v2-P0 |
+| Econometric Society（ECMA、TE、QE） `econsoc_journals` | 经 | Crossref + OAI-PMH | 共享 OA/用户侧私有 | v2-P0 |
+| AAA Publications（TAR 等） `aaa_pubs` | 管 | Crossref 按 ISSN | 用户侧私有 | v2-P1 |
+| SfN（J Neurosci、eNeuro） `sfn_journals` | 生 | Crossref 按 ISSN | 共享 OA（限非商用） | v2-P1 ⚑COMM |
+| ACL Anthology `acl_anthology` | CS | GitHub XML 与官方包 | 共享 OA（旧卷限非商用） | v2-P0 |
+| AAAI OJS（AAAI、AIES、ICWSM 等） `aaai_ojs` | CS | OAI-PMH + Crossref | 仅外链 | v2-P0 |
+| USENIX（Security、OSDI、NSDI、FAST） `usenix` | CS | 官网会话页 | 仅外链 | v2-P1 |
+| ISCA Archive（Interspeech 等） `isca_archive` | CS | Crossref 按前缀 + 年页 | 仅外链 | v2-P1 |
+| SPIE Digital Library `spie_dl` | 物 | Crossref 按前缀 | 仅外链 | metadata-only |
+| ICIS / AIS eLibrary `ais_icis` | 管 | Crossref（仅有 DOI 部分） | 仅外链 | v2-P2 |
+
+**公开托管平台（论文集系列、overlay、公共托管）（11）**
+
+| 来源 | 学科 | 怎么接 | 全文 | 状态 |
+|---|---|---|---|---|
+| SciPost `scipost` | 物 | Crossref 按前缀；RSS 仅信号 | 共享 OA | v2-P1 |
+| Project Euclid（IMS、Duke Math. J. 等） `project_euclid` | 数 | Crossref 按 ISSN | 共享 OA | v2-P1 |
+| Centre Mersenne / Numdam `centre_mersenne_numdam` | 数 | Crossref + OAI-PMH | 共享 OA | v2-P1 |
+| Episciences `episciences` | 数 CS | Crossref 或 OAI（待核） | OA（未核） | v2-P2 ⚑RECHECK |
+| GeoScienceWorld `geoscienceworld` | 地材 | Crossref 按 ISSN（未测） | 用户侧私有 | v2-P2 ⚑RECHECK |
+| OpenReview `openreview` | CS | 官方 API（服务账号待确认） | 仅外链 | v2-P0 ⚑ACCT |
+| PMLR `pmlr` | CS | 卷页 + BibTeX | 仅外链 | v2-P0 |
+| CVF Open Access（CVPR、ICCV、WACV） `cvf_open_access` | CS | 目录页 + 论文页 | 仅外链 | v2-P0 |
+| Dagstuhl LIPIcs（DROPS） `lipics_drops` | CS 数 | DataCite + OAI-PMH | 共享 OA | v2-P1 |
+| CEUR Workshop Proceedings `ceur_ws` | CS | 官网卷页 | 仅外链 | v2-P2 ⚑RECHECK |
+| Proceedings of Science（SISSA） `pos_sissa` | 物 | Crossref 按前缀 + INSPIRE | 共享 OA | v2-P2 |
+
+**国家与公共机构平台（4）**
+
+| 来源 | 学科 | 怎么接 | 全文 | 状态 |
+|---|---|---|---|---|
+| SciEngine（中国科学等） `sciengine` | 全 区 | Crossref 按 ISSN（未测） | 仅外链 | metadata-only（P2） ⚑RECHECK |
+| J-STAGE `jstage` | 全 区 | 官方 WebAPI | OA 为主，各刊不同 | v2-P2 ⚑COMM |
+| SciELO `scielo` | 全 区 | ArticleMeta API | 共享 OA | v2-P2 |
+| Redalyc `redalyc` | 全 区 | 经 OpenAlex 等旁路 | OA，仅外链 | metadata-only |
+
+### M2 标识与注册（6 行）
+
+| 来源 | 学科 | 怎么接 | 全文 | 状态 |
+|---|---|---|---|---|
+| Crossref `crossref` | 全 | 官方 API + 年度数据文件 | 无 | v2-P0 |
+| Wikidata / WikiCite `wikidata` | 全 | SPARQL + dump | 无 | v2-P2 |
+| Jisc Open policy finder `open_policy_finder` | 全 | 官方 API（2026 新版） | 无 | v2-P2 ⚑COMM |
+| ORCID `orcid` | 全 | 用户 OAuth + 年度 CC0 文件 | 无 | v2-P1 ⚑ROBOTS ⚑COMM |
+| ROR `ror` | 全 | Zenodo 快照（可本地自托管） | 无 | v2-P1 |
+| DataCite `datacite` | 全 | 官方 REST + 年度文件 | 无 | v2-P1 |
+
+### L1a 期刊与会议（31 行）
+
+只列有自有站点与通道的 venue；其余期刊会议见 [venue 名录](venues/README.md)，由所在 M1 平台或 Crossref 委托承接。
+
+**期刊（13）**
+
+| 来源 | 学科 | 怎么接 | 全文 | 状态 |
+|---|---|---|---|---|
+| PNAS `pnas` | 全 | Crossref 按 ISSN；RSS 仅信号 | 共享 OA（经 PMC） | v2-P0 |
+| Harvard Business Review `hbp_hbr` | 管 | 无开放元数据通道 | 无 | excluded |
+| MIT Sloan Management Review `mit_smr` | 管 | Crossref 按前缀 | 仅外链 | metadata-only（P2） ⚑DRIFT |
+| CCS Chemistry（中国化学会） `ccs_chemistry` | 化 区 | Crossref 按 ISSN | 共享 OA | v2-P2 |
+| MIS Quarterly `misq` | 管 | Crossref 按 ISSN | 用户侧私有 | v2-P1 |
+| Quantum `quantum_journal` | 物 | Crossref 按 ISSN；RSS 仅信号 | 共享 OA（arXiv 版） | v2-P2 |
+| Annals of Mathematics `annals_math` | 数 | Crossref 按 ISSN | 仅外链 | metadata-only |
+| eLife `elife` | 生 | Crossref；RSS 仅信号 | 共享 OA | v2-P1 ⚑ROBOTS（仅官方 API） |
+| JMLR `jmlr` | CS | 官方 RSS + 卷页 | 共享 OA | v2-P0 |
+| TMLR `tmlr` | CS | 经 OpenReview + 列表页 | 仅外链 | v2-P0 ⚑ACCT |
+| JAIR `jair` | CS | Crossref 按前缀 | 共享 OA | v2-P1 |
+| 物理学报 `wulixb` | 物 区 | Crossref 按 ISSN（未测） | 未核 | v2-P2 ⚑RECHECK |
+| PVLDB（VLDB） `pvldb` | CS | Crossref 按前缀 + 卷页 | 共享 OA（限非商用） | v2-P1 ⚑COMM |
+
+**会议与论文集（10）**
+
+| 来源 | 学科 | 怎么接 | 全文 | 状态 |
+|---|---|---|---|---|
+| NeurIPS Proceedings `neurips_proceedings` | CS | 年/卷页 + Crossref | 仅外链 | v2-P0 |
+| ECVA（ECCV 开放版） `ecva` | CS | 列表页 + Crossref | 仅外链 | v2-P1 |
+| IJCAI Proceedings（兼 KR） `ijcai_proceedings` | CS | Crossref 按前缀 + 年页 | 仅外链 | v2-P0 |
+| NDSS Symposium `ndss` | CS | Crossref 按前缀 | 仅外链 | v2-P1 |
+| Robotics: Science and Systems `rss_proceedings` | CS | 官网卷页 | 仅外链 | v2-P2 ⚑RECHECK |
+| MLSys Proceedings `mlsys_proceedings` | CS | 待复勘（评审在 OpenReview） | OA（未核） | v2-P2 ⚑RECHECK |
+| IFAAMAS AAMAS Proceedings `aamas_ifaamas` | CS | Crossref 按前缀 | 仅外链 | v2-P2 |
+| CogSci Proceedings `cogsci_proceedings` | 心 | eScholarship OAI-PMH | 共享 OA | v2-P1 |
+| Pacific Symposium on Biocomputing `psb_proceedings` | 生 | 经 PubMed | 未核 | v2-P2 ⚑RECHECK |
+| icml.cc / neurips.cc / iclr.cc（miniconf） `conf_virtual_sites` | CS | 不接（robots 禁区） | 无 | excluded |
+
+**经管会议事件（论文在某会报告过）（8）**
+
+| 来源 | 学科 | 怎么接 | 全文 | 状态 |
+|---|---|---|---|---|
+| ASSA 年会（含 AFA 等分会场） `assa_meetings` | 经 金 | 程序页 → 会议事件与 JEL | 外链/用户侧私有 | v2-P1 |
+| NBER Summer Institute 与各类会议 `nber_conferences` | 经 金 | 会议页 → 会议标签 | 同 NBER WP | v2-P1 |
+| WFA 年会 `wfa_meeting` | 金 | 经 SSRN 版本关联 | 仅外链（经 SSRN） | metadata-only |
+| SFS Cavalcade `sfs_cavalcade` | 金 | 人工维护会议标签 | 无（robots 禁止） | metadata-only |
+| EFA 年会 `efa_meeting` | 金 | 待复勘 | 未核 | v2-P2 ⚑RECHECK |
+| AOM Annual Meeting Proceedings `aom_proceedings` | 管 | Crossref 按前缀 | 仅外链 | v2-P2 |
+| SED Meetings `sed_meetings` | 经 | 经 RePEc（待核） | 未核 | v2-P2 ⚑RECHECK |
+| INFORMS Annual Meeting `informs_annual` | 管 | 不接（只有摘要级程序） | 无 | excluded |
+
+### L1b 预印本与工作论文（31 行）
+
+**预印本服务器（19）**
 
 | 来源 | 学科 | 怎么接 | 全文 | 状态 |
 |---|---|---|---|---|
@@ -161,6 +266,13 @@ Europe PMC 兼属聚合与仓储，盗版源合并行不属任何层级，二者
 | IACR ePrint Archive `iacr_eprint` | CS | OAI-PMH；RSS 增量 | 仅外链 | metadata-only（P1） ⚑ROBOTS |
 | ECCC `eccc` | CS | 待复勘 | OA（未核） | v2-P2 ⚑RECHECK |
 | SSRN `ssrn` | 生 经 金 管 | Crossref 按前缀 | 仅外链 | metadata-only（P0） ⚑DRIFT |
+| ChinaXiv `chinaxiv` | 全 区 | robots 可读前不接 | OA 预印本 | v2-P2（观察） ⚑RECHECK |
+| 中国科技论文在线 `paper_edu_cn` | 全 区 | 暂不接（全站维护） | OA | v2-P2（暂缓） ⚑RECHECK |
+
+**工作论文系列（含央行与国际组织）（12）**
+
+| 来源 | 学科 | 怎么接 | 全文 | 状态 |
+|---|---|---|---|---|
 | NBER Working Papers `nber_wp` | 经 金 | Crossref + RePEc；RSS 增量 | 用户侧私有 | v2-P0 ⚑LIC（仅周更元数据文件） |
 | CEPR Discussion Papers `cepr_dp` | 经 金 | 经 RePEc 批量 | 仅外链 | metadata-only |
 | IZA Discussion Papers `iza_dp` | 经 | 经 RePEc | 外链/用户侧私有 | v2-P1 |
@@ -173,102 +285,19 @@ Europe PMC 兼属聚合与仓储，盗版源合并行不属任何层级，二者
 | MPRA `mpra` | 经 | 经 RePEc | 仅外链 | metadata-only（P2） |
 | CESifo Working Papers `cesifo_wp` | 经 | 经 RePEc | 免费（未核） | v2-P2 ⚑RECHECK |
 | 其他央行与国际组织 WP（NY Fed、BoE、OECD 等） `other_cb_wp` | 经 金 | 经 RePEc/Crossref | 多为免费，许可待核 | v2-P2 ⚑RECHECK |
-| ChinaXiv `chinaxiv` | 全 区 | robots 可读前不接 | OA 预印本 | v2-P2（观察） ⚑RECHECK |
 
-### L1 期刊平台（24 行）
+### L1c 长尾一级产出（0 行）
 
-| 来源 | 学科 | 怎么接 | 全文 | 状态 |
-|---|---|---|---|---|
-| INFORMS PubsOnline `informs_pubsonline` | 管 | Crossref 按 ISSN | 用户侧私有 | v2-P0 |
-| AOM Journals（AMJ、AMR 等） `aom_journals` | 管 | Crossref 按 ISSN | 用户侧私有 | v2-P0 |
-| AEA Journals（AER、AEJ、JEL、JEP） `aea_journals` | 经 | Crossref 按 ISSN | 用户侧私有 | v2-P0 |
-| Econometric Society（ECMA、TE、QE） `econsoc_journals` | 经 | Crossref + OAI-PMH | 共享 OA/用户侧私有 | v2-P0 |
-| AAA Publications（TAR 等） `aaa_pubs` | 管 | Crossref 按 ISSN | 用户侧私有 | v2-P1 |
-| MIS Quarterly `misq` | 管 | Crossref 按 ISSN | 用户侧私有 | v2-P1 |
-| JSTOR（过刊档案） `jstor` | 全 | Crossref 按前缀 | 仅外链 | metadata-only（P2） |
-| SciPost `scipost` | 物 | Crossref 按前缀；RSS 仅信号 | 共享 OA | v2-P1 |
-| Quantum `quantum_journal` | 物 | Crossref 按 ISSN；RSS 仅信号 | 共享 OA（arXiv 版） | v2-P2 |
-| Project Euclid（IMS、Duke Math. J. 等） `project_euclid` | 数 | Crossref 按 ISSN | 共享 OA | v2-P1 |
-| Centre Mersenne / Numdam `centre_mersenne_numdam` | 数 | Crossref + OAI-PMH | 共享 OA | v2-P1 |
-| Episciences `episciences` | 数 CS | Crossref 或 OAI（待核） | OA（未核） | v2-P2 ⚑RECHECK |
-| Annals of Mathematics `annals_math` | 数 | Crossref 按 ISSN | 仅外链 | metadata-only |
-| GeoScienceWorld `geoscienceworld` | 地材 | Crossref 按 ISSN（未测） | 用户侧私有 | v2-P2 ⚑RECHECK |
-| eLife `elife` | 生 | Crossref；RSS 仅信号 | 共享 OA | v2-P1 ⚑ROBOTS（仅官方 API） |
-| PeerJ `peerj` | 生 | Crossref 按 ISSN | 共享 OA（经 PMC） | v2-P2 |
-| SfN（J Neurosci、eNeuro） `sfn_journals` | 生 | Crossref 按 ISSN | 共享 OA（限非商用） | v2-P1 ⚑COMM |
-| F1000Research 等发表后评审平台 `f1000_platforms` | 生 全 | Europe PMC + Crossref | OA（未核） | v2-P2 |
-| JMLR `jmlr` | CS | 官方 RSS + 卷页 | 共享 OA | v2-P0 |
-| TMLR `tmlr` | CS | 经 OpenReview + 列表页 | 仅外链 | v2-P0 ⚑ACCT |
-| JAIR `jair` | CS | Crossref 按前缀 | 共享 OA | v2-P1 |
-| SciEngine（中国科学等） `sciengine` | 全 区 | Crossref 按 ISSN（未测） | 仅外链 | metadata-only（P2） ⚑RECHECK |
-| 物理学报 `wulixb` | 物 区 | Crossref 按 ISSN（未测） | 未核 | v2-P2 ⚑RECHECK |
-| J-STAGE `jstage` | 全 区 | 官方 WebAPI | OA 为主，各刊不同 | v2-P2 ⚑COMM |
+名录暂无此类来源。企业技术报告、政府与智库报告、学位论文与 JMP 的候选见 [候选来源](source-candidates.md)。
 
-### L1 会议平台（31 行）
+### L2a 文献库与学科仓储（27 行）
+
+**学科书目库与索引（13）**
 
 | 来源 | 学科 | 怎么接 | 全文 | 状态 |
 |---|---|---|---|---|
-| OpenReview `openreview` | CS | 官方 API（服务账号待确认） | 仅外链 | v2-P0 ⚑ACCT |
-| PMLR `pmlr` | CS | 卷页 + BibTeX | 仅外链 | v2-P0 |
-| NeurIPS Proceedings `neurips_proceedings` | CS | 年/卷页 + Crossref | 仅外链 | v2-P0 |
-| CVF Open Access（CVPR、ICCV、WACV） `cvf_open_access` | CS | 目录页 + 论文页 | 仅外链 | v2-P0 |
-| ECVA（ECCV 开放版） `ecva` | CS | 列表页 + Crossref | 仅外链 | v2-P1 |
-| ACL Anthology `acl_anthology` | CS | GitHub XML 与官方包 | 共享 OA（旧卷限非商用） | v2-P0 |
-| AAAI OJS（AAAI、AIES、ICWSM 等） `aaai_ojs` | CS | OAI-PMH + Crossref | 仅外链 | v2-P0 |
-| IJCAI Proceedings（兼 KR） `ijcai_proceedings` | CS | Crossref 按前缀 + 年页 | 仅外链 | v2-P0 |
-| USENIX（Security、OSDI、NSDI、FAST） `usenix` | CS | 官网会话页 | 仅外链 | v2-P1 |
-| NDSS Symposium `ndss` | CS | Crossref 按前缀 | 仅外链 | v2-P1 |
-| PVLDB（VLDB） `pvldb` | CS | Crossref 按前缀 + 卷页 | 共享 OA（限非商用） | v2-P1 ⚑COMM |
-| ISCA Archive（Interspeech 等） `isca_archive` | CS | Crossref 按前缀 + 年页 | 仅外链 | v2-P1 |
-| Dagstuhl LIPIcs（DROPS） `lipics_drops` | CS 数 | DataCite + OAI-PMH | 共享 OA | v2-P1 |
-| Robotics: Science and Systems `rss_proceedings` | CS | 官网卷页 | 仅外链 | v2-P2 ⚑RECHECK |
-| MLSys Proceedings `mlsys_proceedings` | CS | 待复勘（评审在 OpenReview） | OA（未核） | v2-P2 ⚑RECHECK |
-| CEUR Workshop Proceedings `ceur_ws` | CS | 官网卷页 | 仅外链 | v2-P2 ⚑RECHECK |
-| IFAAMAS AAMAS Proceedings `aamas_ifaamas` | CS | Crossref 按前缀 | 仅外链 | v2-P2 |
-| CogSci Proceedings `cogsci_proceedings` | 心 | eScholarship OAI-PMH | 共享 OA | v2-P1 |
-| Pacific Symposium on Biocomputing `psb_proceedings` | 生 | 经 PubMed | 未核 | v2-P2 ⚑RECHECK |
-| Proceedings of Science（SISSA） `pos_sissa` | 物 | Crossref 按前缀 + INSPIRE | 共享 OA | v2-P2 |
-| SPIE Digital Library `spie_dl` | 物 | Crossref 按前缀 | 仅外链 | metadata-only |
-| ASSA 年会（含 AFA 等分会场） `assa_meetings` | 经 金 | 程序页 → 会议事件与 JEL | 外链/用户侧私有 | v2-P1 |
-| NBER Summer Institute 与各类会议 `nber_conferences` | 经 金 | 会议页 → 会议标签 | 同 NBER WP | v2-P1 |
-| WFA 年会 `wfa_meeting` | 金 | 经 SSRN 版本关联 | 仅外链（经 SSRN） | metadata-only |
-| SFS Cavalcade `sfs_cavalcade` | 金 | 人工维护会议标签 | 无（robots 禁止） | metadata-only |
-| EFA 年会 `efa_meeting` | 金 | 待复勘 | 未核 | v2-P2 ⚑RECHECK |
-| AOM Annual Meeting Proceedings `aom_proceedings` | 管 | Crossref 按前缀 | 仅外链 | v2-P2 |
-| ICIS / AIS eLibrary `ais_icis` | 管 | Crossref（仅有 DOI 部分） | 仅外链 | v2-P2 |
-| SED Meetings `sed_meetings` | 经 | 经 RePEc（待核） | 未核 | v2-P2 ⚑RECHECK |
-| icml.cc / neurips.cc / iclr.cc（miniconf） `conf_virtual_sites` | CS | 不接（robots 禁区） | 无 | excluded |
-| INFORMS Annual Meeting `informs_annual` | 管 | 不接（只有摘要级程序） | 无 | excluded |
-
-### L2 聚合（44 行）
-
-聚合 42 行，另含聚合兼仓储的 Europe PMC 与盗版源合并行各 1 行。
-
-| 来源 | 学科 | 怎么接 | 全文 | 状态 |
-|---|---|---|---|---|
-| Crossref `crossref` | 全 | 官方 API + 年度数据文件 | 无 | v2-P0 |
-| OpenAlex `openalex` | 全 | 季度快照 + 按量计费 API | 只做 OA 定位 | v2-P0 ⚑BUDGET |
-| Semantic Scholar `s2` | 全 | 官方 API + 周更数据集 | OA 链接 | v2-P1 ⚑COMM |
-| Unpaywall `unpaywall` | 全 | 按 DOI 查 OA 位置 | 只做 OA 定位 | v2-P1 |
-| DOAJ `doaj` | 全 | API + OAI-PMH + 期刊 CSV | OA 链接 | v2-P1 |
-| OpenAIRE Graph `openaire` | 全 | 全图快照 + API | 仅外链 | v2-P2 |
-| Fatcat / IA Scholar `fatcat_ia_scholar` | 全 | 仅作链接来源 | IA 存档副本链接 | metadata-only |
-| Lens.org `lens` | 全 | 用户自带 token，私有富化 | 无 | metadata-only |
-| Dimensions `dimensions` | 全 | 不接（条款） | 无 | excluded |
-| Scopus `scopus` | 全 | 平台不接；用户可自带 key | 无 | excluded |
-| Web of Science `web_of_science` | 全 | 平台不接；用户可自带 key | 无 | excluded |
-| BASE `base` | 全 | 不接（未获授权） | 无 | excluded |
-| Microsoft Academic（MAG） `microsoft_academic` | 全 | 已关停；仅兼容 `mag` ID | 无 | excluded |
-| Google Scholar `google_scholar` | 全 | 不接；只收用户手动导出 | 无 | excluded |
-| SciRate `scirate` | 物 CS | 不接（挑战门） | 无 | excluded |
-| Paper Copilot / paperlists `paper_copilot` | CS | 不接（数据无许可） | 无 | excluded |
-| Hugging Face Papers `hf_papers` | CS | Hub API（每日精选与热度） | 无，只缓存信号 | v2-P0（信号层） ⚑RECHECK（仅商用与长期缓存条款） |
-| Papers with Code 存档 `pwc_archive` | CS | HF 数据集一次性导入 | 无 | v2-P1 ⚑SA |
-| alphaXiv `alphaxiv` | CS | MCP，用户自连 | 仅外链 | v2-P2 |
 | Europe PMC（兼仓储） `europe_pmc` | 生 心 | 官方 REST API | 共享 OA | v2-P0 ⚑ROBOTS（仅 bulk） |
 | PubMed / MEDLINE `pubmed` | 生 心 | 年度 baseline + 日更文件 | 无 | v2-P0 ⚑ROBOTS |
-| NCBI PubTator3 `pubtator3` | 生 | 官方 REST（按 PMID） | 无 | v2-P1 ⚑RECHECK |
-| NIH iCite `icite` | 生 | 官方 REST（按 PMID） | 无 | v2-P1 ⚑RECHECK |
 | INSPIRE-HEP `inspire_hep` | 物 | 官方 REST API | 仅外链 | v2-P0 |
 | NASA ADS / SciX `nasa_ads_scix` | 物 地材 | 官方 API（每用户 token） | 仅外链 | v2-P1 ⚑DRIFT |
 | zbMATH Open `zbmath_open` | 数 | REST + OAI-PMH + 快照 | 仅外链 | v2-P0 ⚑SA ⚑COMM（MSC 码表） |
@@ -280,22 +309,20 @@ Europe PMC 兼属聚合与仓储，盗版源合并行不属任何层级，二者
 | MathSciNet `mathscinet` | 数 | 只生成外链 | 无 | link-only |
 | CAS SciFinder `cas_scifinder` | 化 | 只生成外链 | 无 | link-only |
 | EconLit `econlit` | 经 | 不接（无 API 与许可） | 无 | excluded |
-| OpenCitations `opencitations` | 全 | REST/SPARQL + CC0 快照 | 无 | v2-P1 |
-| Wikidata / WikiCite `wikidata` | 全 | SPARQL + dump | 无 | v2-P2 |
-| Jisc Open policy finder `open_policy_finder` | 全 | 官方 API（2026 新版） | 无 | v2-P2 ⚑COMM |
-| CiNii Research `cinii_research` | 全 区 | ResourceSync 批量同步 | 仅外链 | v2-P2 ⚑ROBOTS（仅 OpenSearch） |
-| SciELO `scielo` | 全 区 | ArticleMeta API | 共享 OA | v2-P2 |
-| Redalyc `redalyc` | 全 区 | 经 OpenAlex 等旁路 | OA，仅外链 | metadata-only |
-| 中国知网（CNKI） `cnki` | 全 区 | 用户手动导入题录 | 无（订阅库） | user-import-only |
-| 万方数据 `wanfang` | 全 区 | 用户手动导入题录 | 无（订阅库） | user-import-only |
-| 维普（CQVIP） `cqvip` | 全 区 | 用户手动导入题录 | 无（订阅库） | user-import-only |
-| 盗版源合并行（Sci-Hub、LibGen、Anna's Archive；无层级） `pirate_sources` | 全 | 永不接入 | 无 | excluded |
 
-### L2 仓库（11 行）
+**区域与国家文献库（4）**
 
 | 来源 | 学科 | 怎么接 | 全文 | 状态 |
 |---|---|---|---|---|
-| CORE `core` | 全 | 官方 API v3 | 共享 OA（兜底） | v2-P1 ⚑LIC ⚑COMM |
+| CiNii Research `cinii_research` | 全 区 | ResourceSync 批量同步 | 仅外链 | v2-P2 ⚑ROBOTS（仅 OpenSearch） |
+| 中国知网（CNKI） `cnki` | 全 区 | 用户手动导入题录 | 无（订阅库） | user-import-only |
+| 万方数据 `wanfang` | 全 区 | 用户手动导入题录 | 无（订阅库） | user-import-only |
+| 维普（CQVIP） `cqvip` | 全 区 | 用户手动导入题录 | 无（订阅库） | user-import-only |
+
+**存缴仓储（8）**
+
+| 来源 | 学科 | 怎么接 | 全文 | 状态 |
+|---|---|---|---|---|
 | Zenodo `zenodo` | 全 | OAI-PMH | 按记录许可 | v2-P2 |
 | HAL `hal` | 全 | 官方 API/OAI（确认前旁路） | 共享 OA | v2-P2 ⚑ROBOTS |
 | PubMed Central `pmc` | 生 | S3 + OAI-PMH | 共享 OA | v2-P0 ⚑ROBOTS（仅 E-utilities） |
@@ -303,17 +330,66 @@ Europe PMC 兼属聚合与仓储，盗版源合并行不属任何层级，二者
 | SCOAP3 Repository `scoap3_repo` | 物 | 官方 API | 共享 OA | v2-P1 |
 | OSTI.GOV `osti_gov` | 物 化 地材 | 官方 REST API | 链接或接受稿，许可待核 | v2-P2 ⚑RECHECK |
 | EconStor `econstor` | 经 管 | OAI-PMH | 共享 OA | v2-P1 |
-| FRASER `fraser` | 经 | 官方 API（待核） | 免费 | v2-P2 ⚑RECHECK |
 | SSOAR `ssoar` | 管 | 经 CORE/OpenAlex 旁路 | OA，仅外链 | metadata-only ⚑RECHECK |
-| 中国科技论文在线 `paper_edu_cn` | 全 区 | 暂不接（全站维护） | OA | v2-P2（暂缓） ⚑RECHECK |
 
-### L2 注册表（3 行）
+**过刊与历史档案（2）**
 
 | 来源 | 学科 | 怎么接 | 全文 | 状态 |
 |---|---|---|---|---|
-| ORCID `orcid` | 全 | 用户 OAuth + 年度 CC0 文件 | 无 | v2-P1 ⚑ROBOTS ⚑COMM |
-| ROR `ror` | 全 | Zenodo 快照（可本地自托管） | 无 | v2-P1 |
-| DataCite `datacite` | 全 | 官方 REST + 年度文件 | 无 | v2-P1 |
+| JSTOR（过刊档案） `jstor` | 全 | Crossref 按前缀 | 仅外链 | metadata-only（P2） |
+| FRASER `fraser` | 经 | 官方 API（待核） | 免费 | v2-P2 ⚑RECHECK |
+
+### L2b 检索引擎与聚合项目（22 行）
+
+另含不属任何层级的盗版源合并行，放在本节末尾。
+
+**跨学科检索引擎与图谱（11）**
+
+| 来源 | 学科 | 怎么接 | 全文 | 状态 |
+|---|---|---|---|---|
+| OpenAlex `openalex` | 全 | 季度快照 + 按量计费 API | 只做 OA 定位 | v2-P0 ⚑BUDGET |
+| Semantic Scholar `s2` | 全 | 官方 API + 周更数据集 | OA 链接 | v2-P1 ⚑COMM |
+| OpenAIRE Graph `openaire` | 全 | 全图快照 + API | 仅外链 | v2-P2 |
+| Lens.org `lens` | 全 | 用户自带 token，私有富化 | 无 | metadata-only |
+| Dimensions `dimensions` | 全 | 不接（条款） | 无 | excluded |
+| Scopus `scopus` | 全 | 平台不接；用户可自带 key | 无 | excluded |
+| Web of Science `web_of_science` | 全 | 平台不接；用户可自带 key | 无 | excluded |
+| BASE `base` | 全 | 不接（未获授权） | 无 | excluded |
+| Microsoft Academic（MAG） `microsoft_academic` | 全 | 已关停；仅兼容 `mag` ID | 无 | excluded |
+| Google Scholar `google_scholar` | 全 | 不接；只收用户手动导出 | 无 | excluded |
+| CORE `core` | 全 | 官方 API v3 | 共享 OA（兜底） | v2-P1 ⚑LIC ⚑COMM |
+
+**OA 定位与 OA 期刊目录（3）**
+
+| 来源 | 学科 | 怎么接 | 全文 | 状态 |
+|---|---|---|---|---|
+| Unpaywall `unpaywall` | 全 | 按 DOI 查 OA 位置 | 只做 OA 定位 | v2-P1 |
+| DOAJ `doaj` | 全 | API + OAI-PMH + 期刊 CSV | OA 链接 | v2-P1 |
+| Fatcat / IA Scholar `fatcat_ia_scholar` | 全 | 仅作链接来源 | IA 存档副本链接 | metadata-only |
+
+**引文与派生服务（3）**
+
+| 来源 | 学科 | 怎么接 | 全文 | 状态 |
+|---|---|---|---|---|
+| NCBI PubTator3 `pubtator3` | 生 | 官方 REST（按 PMID） | 无 | v2-P1 ⚑RECHECK |
+| NIH iCite `icite` | 生 | 官方 REST（按 PMID） | 无 | v2-P1 ⚑RECHECK |
+| OpenCitations `opencitations` | 全 | REST/SPARQL + CC0 快照 | 无 | v2-P1 |
+
+**社区信号与聚合项目（5）**
+
+| 来源 | 学科 | 怎么接 | 全文 | 状态 |
+|---|---|---|---|---|
+| SciRate `scirate` | 物 CS | 不接（挑战门） | 无 | excluded |
+| Paper Copilot / paperlists `paper_copilot` | CS | 不接（数据无许可） | 无 | excluded |
+| Hugging Face Papers `hf_papers` | CS | Hub API（每日精选与热度） | 无，只缓存信号 | v2-P0（信号层） ⚑RECHECK（仅商用与长期缓存条款） |
+| Papers with Code 存档 `pwc_archive` | CS | HF 数据集一次性导入 | 无 | v2-P1 ⚑SA |
+| alphaXiv `alphaxiv` | CS | MCP，用户自连 | 仅外链 | v2-P2 |
+
+**无层级（1）**
+
+| 来源 | 学科 | 怎么接 | 全文 | 状态 |
+|---|---|---|---|---|
+| 盗版源合并行（Sci-Hub、LibGen、Anna's Archive；无层级） `pirate_sources` | 全 | 永不接入 | 无 | excluded |
 
 ## 排除清单
 
@@ -353,7 +429,8 @@ Europe PMC 兼属聚合与仓储，盗版源合并行不属任何层级，二者
 
 ## 已知缺口
 
-- **地学与材料最薄**：地学专属来源只有 3 行且都是 P2，材料没有专属来源；AGU、EGU/Copernicus、GSA 与材料来源未调研，GeoScienceWorld 的 Crossref 未测。
+- **L1c 全空、M2 偏薄**：企业技术报告、政府与智库报告、学位论文、JMP 与标准都没有来源行；ISSN 国际中心、日中韩 DOI 注册机构与会议标识不在表内。2026-09-27 的调研候选见[候选来源](source-candidates.md)。
+- **地学与材料最薄**：地学专属来源只有 3 行且都是 P2，材料没有专属来源。2026-09-27 已核实 Copernicus（EGU 期刊）有可用的 OAI-PMH，AGU 刊由 Wiley 托管、GSA 与 SSA 刊由 GeoScienceWorld 托管，列为候选；材料仍没有开放的学科书目库。
 - **中文与区域没有 P0/P1**：知网、万方、维普只能用户导入，ChinaXiv 与中国科技论文在线处于维护中；须补一轮中文生态调研，先量化 Crossref、OpenAlex 对中文刊的覆盖。
 - **范围外与未勘察**：社会学、政治学、教育学不在 v2.0 范围；Project MUSE、SMF、UW Press 平台未勘察，本轮不增行，其上的 venue 暂时只能经 Crossref。心理学会议、ISMB/RECOMB、部分经管会议与 CS 长尾（MLSys、RSS、ECCC）也未核实，待补充调研或实现前勘察。
 - **书面确认未到**：NCBI、EMBL-EBI（含 Europe PMC 用量）、OpenReview 服务账号为 P0，V0 即发函；ORCID、OSF、eLife、HAL、PubChem、CiNii、IACR 等为 P1。确认前：`pubmed` 首批降级，D-049 接受前 E-utilities 连按需调用也不做，生命科学主干由 Europe PMC、PMC 与 Crossref 承担；与 EBI 约定用量前，Europe PMC 只作后台收割；OpenReview 平台侧共享收割停用，ICLR、TMLR、COLM 等由 arXiv 版本、DROPS dblp 快照与 forum 外链兜底。
@@ -364,7 +441,7 @@ Europe PMC 兼属聚合与仓储，盗版源合并行不属任何层级，二者
 
 ## 名录怎么维护
 
-- **注册表是单一事实来源**：实现期每源一个 `registry/sources/<source_id>.yaml`，本表、统计与排除视图都由生成器产出，统计数字不许手改；首版以本表 187 行导入。运行时状态（健康度、配额余量）不写回名录。V0 验收注册表完整、枚举合法、生成一致、合规不变式与变更留痕（AC-V0.x）；V1 验收闸门执行、证据时效、漂移响应、venue 可路由、首批可用与学科覆盖（AC-V1.x）；季度复核为 AC-V3.26。
+- **注册表是单一事实来源**：实现期每源一个 `registry/sources/<source_id>.yaml`，声明 `class`、`subclass`、`roles` 与 `operator`；本表、统计与排除视图都由生成器产出，统计数字不许手改；首版以本表 187 行导入。运行时状态（健康度、配额余量）不写回名录。V0 验收注册表完整、枚举合法、生成一致、合规不变式与变更留痕（AC-V0.x）；V1 验收闸门执行、证据时效、漂移响应、venue 可路由、首批可用与学科覆盖（AC-V1.x）；季度复核为 AC-V3.26。
 - **新增与退役**：新增来源先写调研短文，再提交注册表条目，初始状态为 `v2-P2` 或 `metadata-only`；生成器重建后由主 agent 复核证据再合并。退役改为 `excluded`，写明理由与替代来源，不删行。
 - **状态与闸门变更附证据**：每次变更留证据链接与审批记录。`metadata-only` 升为 `v2-Px` 须有一手条款或书面确认；解除 ⚑ROBOTS 或 ⚑ACCT 须书面确认，⚑ROBOTS 另须按 D-049 登记；这些由主 agent 审批。改为 `excluded`、解除 ⚑LIC、⚑RECHECK、⚑DRIFT 由维护者审批；降级可由探针自动执行，维护者事后补证据确认。
 - **证据时效**：每条通道带 `evidence{url, verified_at}`。超过 90 天未复核进入 `review_overdue`：探针持续为绿、证据其余字段完整时宽限 30 天，维持原模式；宽限结束或任一探针告警，即降为 `on_demand`（只做按需调用）并标 `needs_confirmation`（待确认）。快变事实（arXiv、bioRxiv、PMC、OpenAlex 计费、Crossref 分池、SSRN 平台等）按季度复核，venue 名录与出版商条款按年复读。

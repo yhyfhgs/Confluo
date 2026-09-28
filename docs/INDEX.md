@@ -1,7 +1,7 @@
 # 文档索引
 
 > main 上全部文档的清单。新增、改名或删除文档时，在同一提交内更新本表。status 的取值与流转见 [AGENTS.md](../AGENTS.md)。
-> **最后盘点：2026-09-27（精简）**：设计、名录与调研都换成了精简版；完整长稿在标签 `v2-drafts`，v1 在分支 `archive/v1`，读法见[归档说明](archive.md)。
+> **最后盘点：2026-09-27**：设计、名录与调研都换成了精简版；完整长稿在标签 `v2-drafts`，v1 在分支 `archive/v1`，读法见[归档说明](archive.md)。同日新增来源七类分层、候选来源、评级体系与按学科的 venue 名录。
 
 ## 先读
 
@@ -25,17 +25,42 @@
 | [08-compliance-security-privacy.md](plan/v2/08-compliance-security-privacy.md) | 合规、隐私与安全（含 HC-01…HC-32） | draft |
 | [09-roadmap-and-milestones.md](plan/v2/09-roadmap-and-milestones.md) | 路线图与里程碑 V0–V7 | draft |
 | [demo/paper-feed-demo.html](plan/v2/demo/paper-feed-demo.html) | 卡片流交互 demo 与视觉案例（已发布为 Artifact） | — |
+| [demo/promo-film.html](plan/v2/demo/promo-film.html) | 产品宣传片（约 88 秒动画，突出个性化推荐，演示上面这个 demo 的核心流程；内含分镜脚本） | — |
 
 ## 查阅
 
 | 文档 | 内容 | status |
 |---|---|---|
-| [catalog/source-directory.md](catalog/source-directory.md) | 来源支持名录（187 条） | draft |
+| [catalog/source-taxonomy.md](catalog/source-taxonomy.md) | 来源七类分层与收集现状总表 | draft |
+| [catalog/source-directory.md](catalog/source-directory.md) | 来源支持名录（187 条，按七类分节） | draft |
+| [catalog/source-candidates.md](catalog/source-candidates.md) | 本轮调研的候选来源（156 个，未入名录） | draft |
+| [catalog/venue-rankings.md](catalog/venue-rankings.md) | 期刊会议评级体系（45 个）与评级标签词表 | draft |
+| [catalog/venues/README.md](catalog/venues/README.md) | 按学科的 venue 名录总览（866 个）与关联总图 | draft |
 | [survey/README.md](survey/README.md) | 调研结论 | draft |
-| [plan/decision-log.md](plan/decision-log.md) | ADR 登记：v2 草案 D-040…D-071 与 v1 索引 | approved |
+| [survey/peer-review-content-ads-reading-list.md](survey/peer-review-content-ads-reading-list.md) | 同行评审、内容与广告推荐论文精选（75 篇；含 EconCS、博弈论与经济学增补、摘要、发表状态与链接；2026-09-28） | draft |
+| [plan/decision-log.md](plan/decision-log.md) | ADR 登记：v2 草案 D-040…D-072 与 v1 索引 | approved |
 | [GLOSSARY.md](GLOSSARY.md) | 术语速查 | draft |
 | [archive.md](archive.md) | 归档说明：v2 完整长稿与 v1 | approved |
 | [../AGENTS.md](../AGENTS.md) | AI 协作者规范 | — |
+
+## venue 名录（catalog/venues/）
+
+按学科分文件，每个文件开头有"学科 → 子领域 → 代表 venue"的关联图。总览、数字与跨学科关联总图见 [catalog/venues/README.md](catalog/venues/README.md)。
+
+| 文件 | 学科组 | venue 数 | status |
+|---|---|---:|---|
+| [math.md](catalog/venues/math.md) | 数学（含统计、概率） | 63 | draft |
+| [physics-astronomy.md](catalog/venues/physics-astronomy.md) | 物理与天文 | 61 | draft |
+| [chemistry.md](catalog/venues/chemistry.md) | 化学 | 47 | draft |
+| [earth-sciences.md](catalog/venues/earth-sciences.md) | 地学 | 52 | draft |
+| [materials.md](catalog/venues/materials.md) | 材料 | 36 | draft |
+| [life-sciences-medicine.md](catalog/venues/life-sciences-medicine.md) | 生命科学与医学 | 104 | draft |
+| [psychology-cognition.md](catalog/venues/psychology-cognition.md) | 心理与认知 | 57 | draft |
+| [economics.md](catalog/venues/economics.md) | 经济 | 98 | draft |
+| [finance.md](catalog/venues/finance.md) | 金融 | 45 | draft |
+| [business-management.md](catalog/venues/business-management.md) | 商业与管理 | 124 | draft |
+| [computer-science-ai.md](catalog/venues/computer-science-ai.md) | 计算机与 AI | 154 | draft |
+| [multidisciplinary.md](catalog/venues/multidisciplinary.md) | 跨学科综合 | 25 | draft |
 
 ## 配图（diagrams/）
 
@@ -51,7 +76,7 @@
 | [v2-08-bidirectional-matching.svg](diagrams/v2-08-bidirectional-matching.svg) | 三层双向匹配 |
 | [v2-09-card-anatomy.svg](diagrams/v2-09-card-anatomy.svg) | 论文卡片解剖 |
 | [v2-10-data-boundaries.svg](diagrams/v2-10-data-boundaries.svg) | 共享、私有、用户侧与上游之间的数据流与禁止路径 |
-| [v2-11-source-confluence.svg](diagrams/v2-11-source-confluence.svg) | 宣传概念图：一级、二级来源汇入统一语料 |
+| [v2-11-source-confluence.svg](diagrams/v2-11-source-confluence.svg) | 宣传概念图：一级、二级来源汇入统一语料（按旧的 L1/L2 口径绘制） |
 
 图注里的章节号指 `v2-drafts` 上的完整长稿。
 
@@ -60,5 +85,7 @@
 | 日志 | 内容 |
 |---|---|
 | [2026-09-27-session-014.md](logs/2026-09-27-session-014.md) | 精简 docs，清理仓库与分支 |
+| [2026-09-27-session-015.md](logs/2026-09-27-session-015.md) | 来源七类分层、评级体系与按学科的 venue 名录 |
+| [2026-09-28-session-016.md](logs/2026-09-28-session-016.md) | 推荐系统论文清单及 EconCS、博弈论与经济学增补（75篇） |
 
 更早的日志：设计阶段的 011–013 在标签 `v2-drafts`，v1 的 001–010 在分支 `archive/v1`。里程碑报告从 V0 起写入 `reports/`。

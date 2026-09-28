@@ -17,7 +17,7 @@ updated: 2026-09-27
 
 | 你的需求 | 方案要点 | 详见 |
 |---|---|---|
-| 来源对接与支持名录 | Source 与 Venue 分离；每个来源声明元数据、最新论文、全文三条通道及合规证据；连接器分九族，多数期刊经 Crossref 零代码接入；名录 187 条，首批 P0 36 条 | [03](03-sources-and-corpus-pipeline.md)、[名录](../../catalog/source-directory.md) |
+| 来源对接与支持名录 | 来源按七类分层（M1、M2、L1a–L1c、L2a–L2b），Source 与 Venue 分离；每个来源声明元数据、最新论文、全文三条通道及合规证据；连接器分九族，多数期刊经 Crossref 零代码接入；名录 187 条，首批 P0 36 条 | [03](03-sources-and-corpus-pipeline.md)、[名录](../../catalog/source-directory.md) |
 | 检索、路由与多用户数据库 | 先收割、后联邦；统一 Query AST 支持五种意图；主题-来源路由图 TSRG 同时管路由、收割调度、兴趣挂点和反向推送；PostgreSQL 18 四个数据域，私有层全表 RLS | [04](04-retrieval-and-routing.md)、[05](05-data-platform.md) |
 | 推荐、反馈与双向匹配 | 行为价值模型打分，北极星是有价值阅读而非时长；R0 用每用户逻辑回归，反馈 2 秒内生效；新论文分级曝光；三层双向匹配，研究者匹配默认关闭 | [06](06-recommendation-and-matching.md) |
 | 卡片流前端 | 今日分拣卡叠、收藏库、详情面板三件套，一级入口只有今日、收藏、我；→ 想读、← 不感兴趣、↑ 跳过、↓ 撤回；每日默认 25 张，看完即止 | [07](07-frontend-interaction.md)、[demo](demo/paper-feed-demo.html) |
@@ -88,7 +88,8 @@ updated: 2026-09-27
 - **T1 是否配 GPU 与自托管 LLM**：默认不配；画像摘要、LLM 重排、个性化解释等四项 LLM 功能关闭，回退到非 LLM 路径。
 - **用户之声调研与 demo 可用性测试（5–8 人 × 3 个学科）何时做**：建议在 V1 之前。
 - **社科是否扩展到社会学、政治学、教育学**：默认 v2.0 不含，只覆盖经济、金融、商业、管理；列为补充调研缺口，将来走同一接入机制。
-- **32 条 ADR 草案**（D-040…D-071）：逐条确认是 V0 的第一项工作，见 [ADR 登记](../decision-log.md)。
+- **评级标签怎么用**：默认把公开名单（CCF、ICORE、UTD24、Nature Index、科协 T 级、卓越、CSSCI 等）内置为 venue 的展示与过滤标签；ABDC、FT50、VHB 在许可确认前只接受用户导入，AJG、JCR、中科院分区表只接受用户自带；评级不进默认排序。见[评级体系](../../catalog/venue-rankings.md)。
+- **33 条 ADR 草案**（D-040…D-072）：逐条确认是 V0 的第一项工作，见 [ADR 登记](../decision-log.md)。D-072（来源七类分层）是 2026-09-27 新增的，见[来源分层](../../catalog/source-taxonomy.md)。
 
 ## 待法务与外部确认
 
@@ -114,5 +115,7 @@ updated: 2026-09-27
 | [08 合规、隐私与安全](08-compliance-security-privacy.md) | HC-01…HC-32、许可闸、robots 政策、隐私、LLM、威胁 |
 | [09 路线图与里程碑](09-roadmap-and-milestones.md) | V0–V7、决策门、风险、组织方式、v1 迁移 |
 | [交互 demo](demo/paper-feed-demo.html) | 可操作的卡片流与视觉案例；在线版 <https://claude.ai/artifact/YYZiiZjCVVeTzbESeFxqQr> |
+
+来源与期刊会议的查阅文档：[来源分层与收集现状](../../catalog/source-taxonomy.md)、[支持名录](../../catalog/source-directory.md)、[venue 名录](../../catalog/venues/README.md)、[评级体系](../../catalog/venue-rankings.md)。
 
 完整长稿（设计简报与三轮裁决、DDL、算法推导、任务卡与全部验收条目）在标签 `v2-drafts`，例如 `git show v2-drafts:docs/plan/v2/00-design-brief.md`；读法见[归档说明](../../archive.md)。
