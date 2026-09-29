@@ -2,7 +2,7 @@
 title: v2 方案总览
 status: draft
 owner: opus5.5-primary
-updated: 2026-09-28
+updated: 2026-09-29
 ---
 
 # Confluo v2 方案总览
@@ -89,7 +89,7 @@ updated: 2026-09-28
 - **用户之声调研与 demo 可用性测试（5–8 人 × 3 个学科）何时做**：建议在 V1 之前。
 - **社科是否扩展到社会学、政治学、教育学**：默认 v2.0 不含，只覆盖经济、金融、商业、管理；列为补充调研缺口，将来走同一接入机制。
 - **评级标签怎么用**：默认把公开名单（CCF、ICORE、UTD24、Nature Index、科协 T 级、卓越、CSSCI 等）内置为 venue 的展示与过滤标签；ABDC、FT50、VHB 在许可确认前只接受用户导入，AJG、JCR、中科院分区表只接受用户自带；评级不进默认排序。见[评级体系](../../catalog/venue-rankings.md)。
-- **33 条 ADR 草案**（D-040…D-072）：逐条确认是 V0 的第一项工作，见 [ADR 登记](../decision-log.md)。D-072（来源七类分层）是 2026-09-27 新增的，见[来源分层](../../catalog/source-taxonomy.md)。
+- **34 条 ADR 草案**（D-040…D-073）：逐条确认是 V0 的第一项工作，见 [ADR 登记](../decision-log.md)。D-072（来源七类分层）是 2026-09-27 新增的，见[来源分层](../../catalog/source-taxonomy.md)；D-073（支持分级）是 2026-09-29 新增的，见[来源分层](../../catalog/source-taxonomy.md#支持分级)与 [venue 名录](../../catalog/venues/README.md#支持分级)。
 
 ## 待法务与外部确认
 

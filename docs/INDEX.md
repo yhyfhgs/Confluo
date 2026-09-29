@@ -35,7 +35,7 @@
 | [catalog/source-directory.md](catalog/source-directory.md) | 来源支持名录（187 条，按七类分节，标支持层级） | draft |
 | [catalog/source-candidates.md](catalog/source-candidates.md) | 本轮调研的候选来源（156 个，未入名录） | draft |
 | [catalog/venue-rankings.md](catalog/venue-rankings.md) | 期刊会议评级体系（45 个）与评级标签词表 | draft |
-| [catalog/venues/README.md](catalog/venues/README.md) | 按学科的 venue 名录总览（866 个，核心 304）、支持分级与关联总图 | draft |
+| [catalog/venues/README.md](catalog/venues/README.md) | 按学科的 venue 名录总览（866 个，核心 305）、支持分级与关联总图 | draft |
 | [catalog/source-support-catalog.xlsx](catalog/source-support-catalog.xlsx) | 支持名录 Excel：各学科 M、L1、L2 来源与 venue 的支持层级，合并单元格标隶属关系（由名录生成） | — |
 | [survey/README.md](survey/README.md) | 调研结论 | draft |
 | [survey/peer-review-content-ads-reading-list.md](survey/peer-review-content-ads-reading-list.md) | 同行评审、内容与广告推荐论文精选（75 篇；含 EconCS、博弈论与经济学增补、摘要、发表状态与链接；2026-09-28） | draft |
@@ -60,7 +60,7 @@
 | [economics.md](catalog/venues/economics.md) | 经济 | 98（27） | draft |
 | [finance.md](catalog/venues/finance.md) | 金融 | 45（16） | draft |
 | [business-management.md](catalog/venues/business-management.md) | 商业与管理 | 124（37） | draft |
-| [computer-science-ai.md](catalog/venues/computer-science-ai.md) | 计算机与 AI | 154（69） | draft |
+| [computer-science-ai.md](catalog/venues/computer-science-ai.md) | 计算机与 AI | 154（70） | draft |
 | [multidisciplinary.md](catalog/venues/multidisciplinary.md) | 跨学科综合 | 25（10） | draft |
 
 ## 配图（diagrams/）

@@ -7,14 +7,14 @@ updated: 2026-09-29
 
 # 计算机与AI venue 名录
 
-> 计算机与 AI共 154 个 venue（期刊 73、会议 81），归并为 9 个子领域（原 16 个），另有中文刊 16 个。其中核心 69 个优先支持，其余 85 个登记在册、暂不专门支持，规则见[支持分级](README.md#支持分级)。主要学科库：dblp、zbMATH、PubMed、Europe PMC、CNKI、万方、维普（中文刊）；主要预印本与 WP 通道：arXiv cs、arXiv stat、arXiv eess、IACR ePrint、ChinaXiv（中文刊）。评级标签的体系、版本与许可见[评级体系](../venue-rankings.md)，七类分层见[来源分层](../source-taxonomy.md)。
+> 计算机与 AI共 154 个 venue（期刊 73、会议 81），归并为 9 个子领域（原 16 个），另有中文刊 16 个。其中核心 70 个优先支持，其余 84 个登记在册、暂不专门支持，规则见[支持分级](README.md#支持分级)。主要学科库：dblp、zbMATH、PubMed、Europe PMC、CNKI、万方、维普（中文刊）；主要预印本与 WP 通道：arXiv cs、arXiv stat、arXiv eess、IACR ePrint、ChinaXiv（中文刊）。评级标签的体系、版本与许可见[评级体系](../venue-rankings.md)，七类分层见[来源分层](../source-taxonomy.md)。
 
 ## 关联图
 
 ```mermaid
 flowchart LR
   D(("计算机与 AI<br/>154"))
-  D --> S0["AI：机器学习与综合 · 核心 10 / 20"]
+  D --> S0["AI：机器学习与综合 · 核心 11 / 20"]
   S0 --- V0["NeurIPS · ICLR · ICML · COLT …"]
   D --> S1["AI：视觉、语言、语音与机器人 · 核心 12 / 21"]
   S1 --- V1["CVPR · ICCV · ECCV · TPAMI …"]
@@ -67,7 +67,7 @@ flowchart LR
 
 本节只列核心 venue：逐刊核验标识与通道，进入首批验收与默认推荐池。其余 venue 见下文"登记 venue"。子领域由原来的细分方向归并而成：合并组先按原方向、再按评级排列，备注以"方向："开头标出原方向。
 
-### AI：机器学习与综合（核心 10 · 登记 10）
+### AI：机器学习与综合（核心 11 · 登记 9）
 
 含原方向：AI-机器学习、AI-综合、AI-知识表示与规划。
 
@@ -78,6 +78,7 @@ flowchart LR
 | International Conference on Machine Learning（ICML） | C | dblp `conf/icml` | PMLR `pmlr` | CCF-A; ICORE-A*; THCPL-A; CAAI-A; CSR | dblp | arXiv:cs.LG; stat.ML | 现有:pmlr | 方向：AI-机器学习；接收列表在 OpenReview |
 | Annual Conference on Learning Theory（COLT） | C | dblp `conf/colt` | PMLR `pmlr` | CCF-B; ICORE-A*; THCPL-A; CAAI-A | dblp | arXiv:cs.LG; stat.ML | 现有:pmlr | 方向：AI-机器学习 |
 | Journal of Machine Learning Research（JMLR） | J | — / 1533-7928；dblp `journals/jmlr` | JMLR (MIT Press 名义) `jmlr` | CCF-A; CAAI-A | dblp | arXiv:cs.LG; stat.ML | 现有:jmlr | 方向：AI-机器学习；CC BY 4.0，无 DOI |
+| Transactions on Machine Learning Research（TMLR） | J | — / 2835-8856；dblp `journals/tmlr` | OpenReview `openreview` | CAAI-C | dblp | arXiv:cs.LG; stat.ML | Crossref:ISSN | 方向：AI-机器学习；ISSN 取自长稿 CS §2.3；三份名录均未收 |
 | International Conference on Principles of Knowledge Representation and Reasoning（KR） | C | dblp `conf/kr` | KR Inc. (IJCAI 平台) `ijcai_proceedings` | CCF-B; ICORE-A*; CAAI-B | dblp | arXiv:cs.AI; cs.MA | 现有:ijcai_proceedings | 方向：AI-知识表示与规划；DOI 前缀与 IJCAI 共用 |
 | AAAI Conference on Artificial Intelligence | C | dblp `conf/aaai` | AAAI `aaai_ojs` | CCF-A; ICORE-A*; THCPL-A; CAAI-A; CSR | dblp | arXiv:cs.AI | 现有:aaai_ojs | 方向：AI-综合 |
 | International Joint Conference on Artificial Intelligence（IJCAI） | C | dblp `conf/ijcai` | IJCAI `ijcai_proceedings` | CCF-B; ICORE-A*; THCPL-B; CAAI-A; CSR | dblp | arXiv:cs.AI | 现有:ijcai_proceedings | 方向：AI-综合；2026 由 CCF-A 降 B |
@@ -200,7 +201,7 @@ flowchart LR
 
 以下 venue 登记在册，保留标识、托管与评级，但暂不逐刊核验通道、不进首批验收。用户关注其中任意一个时，照常经 Crossref 或 OpenAlex 自动建 venue（`auto`）收元数据；问卷、调研与关注数达到[升级条件](README.md#支持分级)后升为核心。
 
-### AI：机器学习与综合（登记 10）
+### AI：机器学习与综合（登记 9）
 
 | venue | 类型 | ISSN（印/电）或 dblp | 出版托管（M1） | 评级 | 学科库（L2a） | 预印本（L1b） | 接入 | 备注 |
 |---|---|---|---|---|---|---|---|---|
@@ -208,7 +209,6 @@ flowchart LR
 | IEEE Transactions on Neural Networks and Learning Systems（TNNLS） | J | 2162-237X / 2162-2388；dblp `journals/tnn` | IEEE `ieee_xplore` | CCF-B; CAAI-A | dblp | arXiv:cs.LG; stat.ML | Crossref:ISSN | 方向：AI-机器学习 |
 | International Conference on Artificial Intelligence and Statistics（AISTATS） | C | dblp `conf/aistats` | PMLR `pmlr` | CCF-C; ICORE-A; THCPL-B; CAAI-B | dblp | arXiv:cs.LG; stat.ML | 现有:pmlr | 方向：AI-机器学习 |
 | Conference on Machine Learning and Systems（MLSys） | C | dblp `conf/mlsys` | MLSys `mlsys_proceedings` | — | dblp | arXiv:cs.LG; stat.ML | 现有:mlsys_proceedings | 方向：AI-机器学习；平台 ⚠ 待复勘 |
-| Transactions on Machine Learning Research（TMLR） | J | — / 2835-8856；dblp `journals/tmlr` | OpenReview `openreview` | CAAI-C | dblp | arXiv:cs.LG; stat.ML | Crossref:ISSN | 方向：AI-机器学习；ISSN 取自长稿 CS §2.3；三份名录均未收 |
 | International Conference on Automated Planning and Scheduling（ICAPS） | C | dblp `conf/icaps` | AAAI `aaai_ojs` | CCF-B; ICORE-A*; THCPL-B | dblp | arXiv:cs.AI; cs.MA | 现有:aaai_ojs | 方向：AI-知识表示与规划 |
 | International Conference on Autonomous Agents and Multiagent Systems（AAMAS） | C | dblp `conf/ifaamas` | IFAAMAS `aamas_ifaamas` | CCF-B; ICORE-A; THCPL-B | dblp | arXiv:cs.AI; cs.MA | 现有:aamas_ifaamas | 方向：AI-知识表示与规划；Crossref 前缀 10.65109 |
 | European Conference on Artificial Intelligence（ECAI） | C | dblp `conf/ecai` | IOS Press FAIA `iospress_faia` | CCF-B; ICORE-A; CAAI-B | dblp | arXiv:cs.AI | 现有:iospress_faia | 方向：AI-综合；CC BY-NC |
