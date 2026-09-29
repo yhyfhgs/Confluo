@@ -2,7 +2,7 @@
 title: 来源分层与收集现状
 status: draft
 owner: opus5.5-primary
-updated: 2026-09-27
+updated: 2026-09-29
 ---
 
 # 来源分层与收集现状
@@ -15,7 +15,43 @@ updated: 2026-09-27
 - **现状**：M1 69、M2 6、L1a 31（另有 venue 名录 866 个）、L1b 31、L1c 0、L2a 27、L2b 22，盗版源合并行不属任何层级。首批 P0 的 36 行集中在 M1、L1b 与 L2a。
 - **最大缺口**：L1c 全空（企业技术报告、政府与智库报告、学位论文、JMP、标准）；M2 只有 6 行，ISSN 国际中心与日中韩 DOI 注册机构不在名录；国家与公共机构平台只有 4 个；地学、材料、中文区域在各层都偏薄。
 - **本轮候选**：M1 29、M2 21、L1b 1、L1c 48、L2a 28、L2b 29。最值得先补的是 Copernicus（EGU 期刊，OAI-PMH 已核）、FEDS Notes、NASA NTRS、NIST 与 USGS 报告、World Bank OKR、theses.fr、大学机构库 ETD、IETF RFC 与 ccfddl。
+- **支持分级（2026-09-29，D-073 草案）**：在七类之上加一层"支持 / 登记 / 不接入"，把维护投入集中到核心。L2a、L2b 与 M2 的非排除行全部支持，它们天然汇总了大量一级内容，是降低收集成本的主干；M1、L1a、L1b 只支持 P0/P1 与承接核心 venue 的行。venue 名录的 141 个子领域归并为 66 个（中文刊另各成一组），866 个 venue 中核心 304 个优先支持，长尾 562 个登记，靠问卷与用户需求逐步升级。全表见 [支持名录 Excel](source-support-catalog.xlsx)。
 - **评级**：收 45 个体系；CS 用 CCF 2026 等，经管用 UTD24、FT50、ABDC、VHB、FMS，理工医用科协分级目录与 Nature Index，中文刊用 CSSCI、CSCD、北大核心等。中科院分区表 2025 年版为最终版、已停更，与 JCR 一样不做逐刊标注。
+
+## 支持分级
+
+七类回答"来源在检索链上的哪个位置"，支持分级回答"要不要为它投入维护"。两者正交，与决定"何时接入"的 v2 状态（P0/P1/P2）也正交。
+
+| 层级 | 含义 | 来源（名录行） | venue |
+|---|---|---|---|
+| **支持** | 纳入维护承诺：按 v2 状态排期，通道与证据按期复核，进验收 | M2、L2a、L2b 的非排除行全部支持；M1、L1a、L1b 为 P0/P1 或承接核心 venue 时支持 | 核心 venue：逐刊核验标识与通道，进首批验收与默认推荐池 |
+| **登记** | 保留条目与已有证据，不排期、不复核、不进验收 | 其余 M1、L1a、L1b 行；L1c 与候选来源全部登记 | 长尾 venue：用户关注时照常经 Crossref 或 OpenAlex 自动建 `auto` venue 收元数据 |
+| **不接入** | 平台零自动化 | `excluded`、`link-only`、`user-import-only` | —（只能用户导入的中文刊属于登记） |
+
+各类计数（名录 187 行）：
+
+| 类别 | 支持 | 登记 | 不接入 | 登记行 |
+|---|---:|---:|---:|---|
+| M1 | 54 | 15 | 0 | `hogrefe` `ucpress_online` `world_scientific` `emerald_insight` `pm_research` `now_publishers` `peerj` `f1000_platforms` `spie_dl` `episciences` `ceur_ws` `pos_sissa` `jstage` `scielo` `redalyc` |
+| M2 | 6 | 0 | 0 | — |
+| L1a | 20 | 8 | 3 | `mit_smr` `ccs_chemistry` `quantum_journal` `rss_proceedings` `mlsys_proceedings` `aamas_ifaamas` `psb_proceedings` `sed_meetings` |
+| L1b | 19 | 12 | 0 | `authorea` `ess_open_archive` `eartharxiv` `optica_open` `eccc` `chinaxiv` `paper_edu_cn` `cepr_dp` `hbs_wp` `mpra` `cesifo_wp` `other_cb_wp` |
+| L1c | 0 | 0 | 0 | 候选 48 个全部登记 |
+| L2a | 21 | 0 | 6 | — |
+| L2b | 14 | 0 | 8 | — |
+| 无层级 | 0 | 0 | 1 | — |
+| **合计** | **134** | **35** | **18** | |
+
+登记的 L1b 与 L1a 多数仍能经已支持的 L2 间接覆盖：CEPR、MPRA、CESifo 与其他央行 WP 经 RePEc，ESS Open Archive、EarthArXiv 经 Crossref 与 OpenAlex，PSB 经 PubMed。登记不等于看不到，只是不为它单独维护通道。
+
+**升级与降级**（初值为草案，V1 用真实数据校准）：
+
+- **问卷与调研**：每季度随用户问卷收集"缺少的期刊、会议与来源"，并由学科负责人做一次缺口调研。
+- **登记 → 支持 / 核心**：满足任一条即进入候选，核验标识、通道与条款后升级：季度问卷中至少 5 名用户列为"必需"；至少 10 名活跃用户的频道或订阅引用它；学科负责人调研认定为核心并写明理由；核心 venue 迁到该平台。
+- **支持 / 核心 → 登记**：连续两个季度零关注且不在评级顶档，或通道失效且无替代，由维护者降级并留记录。
+- **L2 候选**：[候选来源](source-candidates.md)里的 L2a、L2b 入名录后直接按支持处理，不走问卷门槛。
+
+venue 的核心判定规则见 [venue 名录](venues/README.md#支持分级)。
 
 ## 七类定义
 
@@ -75,22 +111,22 @@ updated: 2026-09-27
 
 ## 学科 × 类别
 
-名录行按学科计数，一个来源可标多个学科；标"全"的来源只计入"跨学科"。M2 全部是跨学科来源，不单列。venue 名录的数目取自各学科文件，"中文与区域"一行的 venue 数是中文刊 121 加中国主办英文刊 44。
+名录行按学科计数，一个来源可标多个学科；标"全"的来源只计入"跨学科"。M2 全部是跨学科来源，不单列。venue 名录的数目取自各学科文件，"中文与区域"一行的 venue 数是中文刊 121 加中国主办英文刊 44，核心 venue 数是 23 加 19。
 
-| 学科组 | M1 | L1a 名录行 / venue | L1b | L1c 候选 | L2a | L2b | 其中 P0 | 现状 |
+| 学科组 | M1 | L1a 名录行 / 核心 venue / venue | L1b | L1c 候选 | L2a | L2b | 其中 P0 | 现状 |
 |---|---:|---:|---:|---:|---:|---:|---:|---|
-| 数学 | 19 | 1 / 63 | 1 | 0 | 3 | 0 | 6 | 主干好：zbMATH Open、arXiv、EMS、Numdam；MathSciNet 只外链 |
-| 物理与天文 | 19 | 2 / 61 | 2 | 3 | 4 | 1 | 8 | 通道最丰富：arXiv、APS、INSPIRE、SCOAP3、ADS |
-| 化学 | 9 | 1 / 47 | 1 | 2 | 3 | 0 | 5 | 最弱的理科：ACS 只取元数据，CAS 只外链，没有本学科的科协目录 |
-| 地学与材料 | 6 | 0 / 88 | 4 | 5 | 2 | 0 | 5 | 最薄：Copernicus、AMS 平台不在名录，没有开放学科库 |
-| 生命科学与医学 | 14 | 2 / 104 | 5 | 1 | 4 | 2 | 11 | L2 最完整：Europe PMC、PubMed、PMC |
-| 心理与认知 | 15 | 1 / 57 | 3 | 0 | 3 | 0 | 9 | 依赖 Crossref，APA 期刊摘要覆盖为 0；PsycInfo 是订阅库 |
-| 经济 | 12 | 3 / 98 | 14 | 19 | 5 | 0 | 9 | 最强之一：AEA、ECMA、NBER、RePEc、央行 WP；政策报告是 L1c 大块 |
-| 金融 | 9 | 5 / 45 | 10 | 11 | 1 | 0 | 7 | Top3 在 Wiley、Elsevier、OUP；WP 经 SSRN、NBER |
-| 商业与管理 | 15 | 5 / 124 | 4 | 7 | 3 | 0 | 6 | UTD24 刊多在 Atypon、Silverchair；INFORMS、AOM 为 P0 |
-| 计算机与 AI | 18 | 12 / 154 | 4 | 28 | 1 | 5 | 14 | P0 最多；企业技术报告是 L1c 最大一块 |
-| 跨学科 | 6 | 1 / 25 | 5 | 1 | 7 | 15 | 3 | M2 与 L2b 的主干都在这里 |
-| 中文与区域 | 4 | 2 / 165 | 2 | — | 4 | 0 | 0 | 没有 P0、P1；知网、万方、维普只能用户导入 |
+| 数学 | 19 | 1 / 20 / 63 | 1 | 0 | 3 | 0 | 6 | 主干好：zbMATH Open、arXiv、EMS、Numdam；MathSciNet 只外链 |
+| 物理与天文 | 19 | 2 / 22 / 61 | 2 | 3 | 4 | 1 | 8 | 通道最丰富：arXiv、APS、INSPIRE、SCOAP3、ADS |
+| 化学 | 9 | 1 / 17 / 47 | 1 | 2 | 3 | 0 | 5 | 最弱的理科：ACS 只取元数据，CAS 只外链，没有本学科的科协目录 |
+| 地学与材料 | 6 | 0 / 28 / 88 | 4 | 5 | 2 | 0 | 5 | 最薄：Copernicus、AMS 平台不在名录，没有开放学科库 |
+| 生命科学与医学 | 14 | 2 / 37 / 104 | 5 | 1 | 4 | 2 | 11 | L2 最完整：Europe PMC、PubMed、PMC |
+| 心理与认知 | 15 | 1 / 21 / 57 | 3 | 0 | 3 | 0 | 9 | 依赖 Crossref，APA 期刊摘要覆盖为 0；PsycInfo 是订阅库 |
+| 经济 | 12 | 3 / 27 / 98 | 14 | 19 | 5 | 0 | 9 | 最强之一：AEA、ECMA、NBER、RePEc、央行 WP；政策报告是 L1c 大块 |
+| 金融 | 9 | 5 / 16 / 45 | 10 | 11 | 1 | 0 | 7 | Top3 在 Wiley、Elsevier、OUP；WP 经 SSRN、NBER |
+| 商业与管理 | 15 | 5 / 37 / 124 | 4 | 7 | 3 | 0 | 6 | UTD24 刊多在 Atypon、Silverchair；INFORMS、AOM 为 P0 |
+| 计算机与 AI | 18 | 12 / 69 / 154 | 4 | 28 | 1 | 5 | 14 | P0 最多；企业技术报告是 L1c 最大一块 |
+| 跨学科 | 6 | 1 / 10 / 25 | 5 | 1 | 7 | 15 | 3 | M2 与 L2b 的主干都在这里 |
+| 中文与区域 | 4 | 2 / 42 / 165 | 2 | — | 4 | 0 | 0 | 没有 P0、P1；知网、万方、维普只能用户导入 |
 
 ## 各类清单
 

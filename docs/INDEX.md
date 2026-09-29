@@ -32,35 +32,36 @@
 | 文档 | 内容 | status |
 |---|---|---|
 | [catalog/source-taxonomy.md](catalog/source-taxonomy.md) | 来源七类分层与收集现状总表 | draft |
-| [catalog/source-directory.md](catalog/source-directory.md) | 来源支持名录（187 条，按七类分节） | draft |
+| [catalog/source-directory.md](catalog/source-directory.md) | 来源支持名录（187 条，按七类分节，标支持层级） | draft |
 | [catalog/source-candidates.md](catalog/source-candidates.md) | 本轮调研的候选来源（156 个，未入名录） | draft |
 | [catalog/venue-rankings.md](catalog/venue-rankings.md) | 期刊会议评级体系（45 个）与评级标签词表 | draft |
-| [catalog/venues/README.md](catalog/venues/README.md) | 按学科的 venue 名录总览（866 个）与关联总图 | draft |
+| [catalog/venues/README.md](catalog/venues/README.md) | 按学科的 venue 名录总览（866 个，核心 304）、支持分级与关联总图 | draft |
+| [catalog/source-support-catalog.xlsx](catalog/source-support-catalog.xlsx) | 支持名录 Excel：各学科 M、L1、L2 来源与 venue 的支持层级，合并单元格标隶属关系（由名录生成） | — |
 | [survey/README.md](survey/README.md) | 调研结论 | draft |
 | [survey/peer-review-content-ads-reading-list.md](survey/peer-review-content-ads-reading-list.md) | 同行评审、内容与广告推荐论文精选（75 篇；含 EconCS、博弈论与经济学增补、摘要、发表状态与链接；2026-09-28） | draft |
-| [plan/decision-log.md](plan/decision-log.md) | ADR 登记：v2 草案 D-040…D-072 与 v1 索引 | approved |
+| [plan/decision-log.md](plan/decision-log.md) | ADR 登记：v2 草案 D-040…D-073 与 v1 索引 | approved |
 | [GLOSSARY.md](GLOSSARY.md) | 术语速查 | draft |
 | [archive.md](archive.md) | 归档说明：v2 完整长稿与 v1 | approved |
 | [../AGENTS.md](../AGENTS.md) | AI 协作者规范 | — |
 
 ## venue 名录（catalog/venues/）
 
-按学科分文件，每个文件开头有"学科 → 子领域 → 代表 venue"的关联图。总览、数字与跨学科关联总图见 [catalog/venues/README.md](catalog/venues/README.md)。
+按学科分文件，每个文件开头有"学科 → 子领域 → 核心 venue"的关联图，正文先列核心、后列登记。总览、数字与跨学科关联总图见 [catalog/venues/README.md](catalog/venues/README.md)。
 
-| 文件 | 学科组 | venue 数 | status |
+| 文件 | 学科组 | venue 数（核心） | status |
 |---|---|---:|---|
-| [math.md](catalog/venues/math.md) | 数学（含统计、概率） | 63 | draft |
-| [physics-astronomy.md](catalog/venues/physics-astronomy.md) | 物理与天文 | 61 | draft |
-| [chemistry.md](catalog/venues/chemistry.md) | 化学 | 47 | draft |
-| [earth-sciences.md](catalog/venues/earth-sciences.md) | 地学 | 52 | draft |
-| [materials.md](catalog/venues/materials.md) | 材料 | 36 | draft |
-| [life-sciences-medicine.md](catalog/venues/life-sciences-medicine.md) | 生命科学与医学 | 104 | draft |
-| [psychology-cognition.md](catalog/venues/psychology-cognition.md) | 心理与认知 | 57 | draft |
-| [economics.md](catalog/venues/economics.md) | 经济 | 98 | draft |
-| [finance.md](catalog/venues/finance.md) | 金融 | 45 | draft |
-| [business-management.md](catalog/venues/business-management.md) | 商业与管理 | 124 | draft |
-| [computer-science-ai.md](catalog/venues/computer-science-ai.md) | 计算机与 AI | 154 | draft |
-| [multidisciplinary.md](catalog/venues/multidisciplinary.md) | 跨学科综合 | 25 | draft |
+| [math.md](catalog/venues/math.md) | 数学（含统计、概率） | 63（20） | draft |
+| [physics-astronomy.md](catalog/venues/physics-astronomy.md) | 物理与天文 | 61（22） | draft |
+| [chemistry.md](catalog/venues/chemistry.md) | 化学 | 47（17） | draft |
+| [earth-sciences.md](catalog/venues/earth-sciences.md) | 地学 | 52（16） | draft |
+| [materials.md](catalog/venues/materials.md) | 材料 | 36（12） | draft |
+| [life-sciences-medicine.md](catalog/venues/life-sciences-medicine.md) | 生命科学与医学 | 104（37） | draft |
+| [psychology-cognition.md](catalog/venues/psychology-cognition.md) | 心理与认知 | 57（21） | draft |
+| [economics.md](catalog/venues/economics.md) | 经济 | 98（27） | draft |
+| [finance.md](catalog/venues/finance.md) | 金融 | 45（16） | draft |
+| [business-management.md](catalog/venues/business-management.md) | 商业与管理 | 124（37） | draft |
+| [computer-science-ai.md](catalog/venues/computer-science-ai.md) | 计算机与 AI | 154（69） | draft |
+| [multidisciplinary.md](catalog/venues/multidisciplinary.md) | 跨学科综合 | 25（10） | draft |
 
 ## 配图（diagrams/）
 
