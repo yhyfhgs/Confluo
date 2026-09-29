@@ -2,40 +2,29 @@
 title: 心理与认知 venue 名录
 status: draft
 owner: opus5.5-primary
-updated: 2026-09-27
+updated: 2026-09-29
 ---
 
 # 心理与认知 venue 名录
 
-> 心理与认知共 57 个 venue（期刊 52、会议 5），分 10 个子领域，另有中文刊 6 个。主要学科库：PsycInfo、PubMed、dblp、CNKI、万方、维普（中文刊）；主要预印本与 WP 通道：PsyArXiv、medRxiv、bioRxiv、arXiv cs、ChinaXiv（中文刊）。评级标签的体系、版本与许可见[评级体系](../venue-rankings.md)，七类分层见[来源分层](../source-taxonomy.md)。
+> 心理与认知共 57 个 venue（期刊 52、会议 5），归并为 5 个子领域（原 10 个），另有中文刊 6 个。其中核心 21 个优先支持，其余 36 个登记在册、暂不专门支持，规则见[支持分级](README.md#支持分级)。主要学科库：PsycInfo、PubMed、dblp、CNKI、万方、维普（中文刊）；主要预印本与 WP 通道：PsyArXiv、medRxiv、bioRxiv、arXiv cs、ChinaXiv（中文刊）。评级标签的体系、版本与许可见[评级体系](../venue-rankings.md)，七类分层见[来源分层](../source-taxonomy.md)。
 
 ## 关联图
 
 ```mermaid
 flowchart LR
   D(("心理与认知<br/>57"))
-  D --> S0["综合与综述 · 12"]
+  D --> S0["综合与方法 · 核心 5 / 16"]
   S0 --- V0["Psychol Sci · Nat Hum Behav · Psychol Bull · Psychol Rev …"]
-  D --> S1["社会与人格 · 6"]
-  S1 --- V1["JPSP · PSPB · EJSP · JESP …"]
-  D --> S2["认知与实验 · 13"]
-  S2 --- V2["JEP:G · TiCS · CogSci · Cognition …"]
-  D --> S3["发展 · 3"]
-  S3 --- V3["Child Dev · Dev Psychol · Dev Sci"]
-  D --> S4["临床与精神病理 · 5"]
-  S4 --- V4["Clinical Psychology Review · Psychol Med · CPS · JCCP …"]
-  D --> S5["认知神经科学 · 4"]
-  S5 --- V5["NeuroImage · CCN · Journal of Cognitive Neuroscience · SCAN"]
-  D --> S6["心理测量与方法 · 4"]
-  S6 --- V6["AMPPS · BRM · Psychological Methods · Psychometrika"]
-  D --> S7["健康心理 · 1"]
-  S7 --- V7["Health Psychol"]
-  D --> S8["教育心理 · 1"]
-  S8 --- V8["J Educ Psychol"]
-  D --> S9["会议（社会与综合） · 2"]
-  S9 --- V9["APS · SPSP"]
-  D --> SCN["中文刊 · 6"]
-  SCN --- VCN["心理学报 · 中国临床心理学杂志 · 心理科学进展 · 心理与行为研究 …"]
+  D --> S1["认知与认知神经 · 核心 9 / 17"]
+  S1 --- V1["JEP:G · TiCS · CogSci · Cognition …"]
+  D --> S2["社会与人格 · 核心 3 / 8"]
+  S2 --- V2["JPSP · PSPB · EJSP"]
+  D --> S3["发展与教育 · 核心 0 / 4"]
+  D --> S4["临床与健康 · 核心 2 / 6"]
+  S4 --- V4["Clin Psychol Rev · Psychol Med"]
+  D --> SCN["中文刊 · 核心 2 / 6"]
+  SCN --- VCN["心理学报 · 心理科学进展"]
   subgraph M1["M1 出版与托管"]
     P0{{"APA · 13"}}
     P1{{"SAGE · 9"}}
@@ -62,120 +51,140 @@ flowchart LR
   L1B -. 发表去向 .-> D
 ```
 
-## 名录
+## 核心 venue（优先支持）
 
 每个子领域内按评级强弱排序，评级相同按名称。`接入` 一列：`Crossref:ISSN` 指由 Crossref 委托按 ISSN 收元数据，`现有:`/`平台:` 指经名录里已有的来源行，`用户导入` 指只接受用户导出的题录。
 
-### 综合与综述（12）
+本节只列核心 venue：逐刊核验标识与通道，进入首批验收与默认推荐池。其余 venue 见下文"登记 venue"。子领域由原来的细分方向归并而成：合并组先按原方向、再按评级排列，备注以"方向："开头标出原方向。
+
+### 综合与方法（核心 5 · 登记 11）
+
+含原方向：综合与综述、心理测量与方法。
 
 | venue | 类型 | ISSN（印/电）或 dblp | 出版托管（M1） | 评级 | 学科库（L2a） | 预印本（L1b） | 接入 | 备注 |
 |---|---|---|---|---|---|---|---|---|
-| Psychological Science（Psychol Sci） | J | 0956-7976 / 1467-9280 | SAGE（APS） `sage_journals` | FT50; ABDC-A*; VHB-A+; FMS-A | PubMed; PsycInfo（订阅） | PsyArXiv | Crossref:ISSN |  |
-| Nature Human Behaviour（Nat Hum Behav） | J | 2397-3374 / — | Nature Portfolio `nature_portfolio` | NI; T1(中国地理学会) | PubMed; PsycInfo（订阅） | PsyArXiv | Crossref:ISSN |  |
-| Psychological Bulletin（Psychol Bull） | J | 0033-2909 / 1939-1455 | APA `apa_psycnet` | ABDC-A*; FMS-B; T1(中华医学会) | PubMed; PsycInfo（订阅） | PsyArXiv | Crossref:ISSN |  |
-| Psychological Review（Psychol Rev） | J | 0033-295X / 1939-1471 | APA `apa_psycnet` | ABDC-A*; T1(中华医学会) | PubMed; PsycInfo（订阅） | PsyArXiv | Crossref:ISSN |  |
-| American Psychologist（Am Psychol） | J | 0003-066X / 1935-990X | APA `apa_psycnet` | ABDC-A* | PubMed; PsycInfo（订阅） | PsyArXiv | Crossref:ISSN |  |
-| Annual Review of Psychology（Annu Rev Psychol） | J | 0066-4308 / 1545-2085 | Annual Reviews `annual_reviews` | ABDC-A*; FMS-B | PubMed; PsycInfo（订阅） | PsyArXiv | Crossref:ISSN | S2O |
-| Behavioral and Brain Sciences（BBS） | J | 0140-525X / 1469-1825 | Cambridge University Press `cambridge_core` | T1(中华医学会) | PubMed; PsycInfo（订阅） | PsyArXiv | Crossref:ISSN |  |
-| Collabra: Psychology | J | 2474-7394 / — | UC Press `ucpress_online` | — | PubMed; PsycInfo（订阅） | PsyArXiv | Crossref:ISSN |  |
-| Current Directions in Psychological Science（CDPS） | J | 0963-7214 / 1467-8721 | SAGE（APS） `sage_journals` | FMS-B | PubMed; PsycInfo（订阅） | PsyArXiv | Crossref:ISSN |  |
-| Frontiers in Psychology（Front Psychol） | J | 1664-1078 / — | Frontiers `frontiers` | — | PubMed; PsycInfo（订阅） | PsyArXiv | Crossref:ISSN |  |
-| Perspectives on Psychological Science（PPS） | J | 1745-6916 / 1745-6924 | SAGE（APS） `sage_journals` | — | PubMed; PsycInfo（订阅） | PsyArXiv | Crossref:ISSN |  |
-| PsyCh Journal | J | 2046-0252 / 2046-0260 | Wiley `wiley` | — | PubMed; PsycInfo（订阅） | PsyArXiv | Crossref:ISSN | 中国(英文)；中科院心理所主办 |
+| Psychological Science（Psychol Sci） | J | 0956-7976 / 1467-9280 | SAGE（APS） `sage_journals` | FT50; ABDC-A*; VHB-A+; FMS-A | PubMed; PsycInfo（订阅） | PsyArXiv | Crossref:ISSN | 方向：综合与综述 |
+| Nature Human Behaviour（Nat Hum Behav） | J | 2397-3374 / — | Nature Portfolio `nature_portfolio` | NI; T1(中国地理学会) | PubMed; PsycInfo（订阅） | PsyArXiv | Crossref:ISSN | 方向：综合与综述 |
+| Psychological Bulletin（Psychol Bull） | J | 0033-2909 / 1939-1455 | APA `apa_psycnet` | ABDC-A*; FMS-B; T1(中华医学会) | PubMed; PsycInfo（订阅） | PsyArXiv | Crossref:ISSN | 方向：综合与综述 |
+| Psychological Review（Psychol Rev） | J | 0033-295X / 1939-1471 | APA `apa_psycnet` | ABDC-A*; T1(中华医学会) | PubMed; PsycInfo（订阅） | PsyArXiv | Crossref:ISSN | 方向：综合与综述 |
+| Annual Review of Psychology（Annu Rev Psychol） | J | 0066-4308 / 1545-2085 | Annual Reviews `annual_reviews` | ABDC-A*; FMS-B | PubMed; PsycInfo（订阅） | PsyArXiv | Crossref:ISSN | 方向：综合与综述；S2O |
 
-### 社会与人格（6）
+### 认知与认知神经（核心 9 · 登记 8）
+
+含原方向：认知与实验、认知神经科学。
 
 | venue | 类型 | ISSN（印/电）或 dblp | 出版托管（M1） | 评级 | 学科库（L2a） | 预印本（L1b） | 接入 | 备注 |
 |---|---|---|---|---|---|---|---|---|
-| Journal of Personality and Social Psychology（JPSP） | J | 0022-3514 / 1939-1315 | APA `apa_psycnet` | ABDC-A*; FMS-B | PubMed; PsycInfo（订阅） | PsyArXiv | Crossref:ISSN |  |
-| Personality and Social Psychology Bulletin（PSPB） | J | 0146-1672 / 1552-7433 | SAGE `sage_journals` | ABDC-A*; FMS-B | PubMed; PsycInfo（订阅） | PsyArXiv | Crossref:ISSN |  |
-| European Journal of Social Psychology（EJSP） | J | 0046-2772 / 1099-0992 | Wiley `wiley` | ABDC-A; FMS-B | PubMed; PsycInfo（订阅） | PsyArXiv | Crossref:ISSN |  |
-| Journal of Experimental Social Psychology（JESP） | J | 0022-1031 / 1096-0465 | Elsevier `elsevier_sd` | ABDC-A; FMS-B | PubMed; PsycInfo（订阅） | PsyArXiv | Crossref:ISSN |  |
-| Personality and Social Psychology Review（PSPR） | J | 1088-8683 / 1532-7957 | SAGE `sage_journals` | — | PubMed; PsycInfo（订阅） | PsyArXiv | Crossref:ISSN |  |
-| Social Psychological and Personality Science（SPPS） | J | 1948-5506 / 1948-5514 | SAGE `sage_journals` | ABDC-B | PubMed; PsycInfo（订阅） | PsyArXiv | Crossref:ISSN |  |
+| Journal of Experimental Psychology: General（JEP:G） | J | 0096-3445 / 1939-2222 | APA `apa_psycnet` | ABDC-A* | PubMed; PsycInfo（订阅） | PsyArXiv | Crossref:ISSN | 方向：认知与实验 |
+| Trends in Cognitive Sciences（TiCS） | J | 1364-6613 / — | Elsevier（Cell Press） `elsevier_sd` | T1(中华医学会) | PubMed; PsycInfo（订阅） | PsyArXiv | Crossref:ISSN | 方向：认知与实验；综述刊 |
+| Annual Meeting of the Cognitive Science Society（CogSci） | C | 1069-7977 / —；dblp `conf/cogsci` | eScholarship（UC） `cogsci_proceedings` | CCF-B; ICORE-B; CAAI-B | dblp | PsyArXiv; arXiv:cs | 现有:cogsci_proceedings | 方向：认知与实验；OAI-PMH 全量 |
+| Cognition | J | 0010-0277 / — | Elsevier `elsevier_sd` | CCF-B | PubMed; PsycInfo（订阅） | PsyArXiv | Crossref:ISSN | 方向：认知与实验 |
+| Cognitive Psychology（Cogn Psychol） | J | 0010-0285 / 1095-5623 | Elsevier `elsevier_sd` | — | PubMed; PsycInfo（订阅） | PsyArXiv | Crossref:ISSN | 方向：认知与实验；科协管理外文-C |
+| Cognitive Science（Cogn Sci） | J | 0364-0213 / 1551-6709 | Wiley `wiley` | — | PubMed; PsycInfo（订阅） | PsyArXiv | Crossref:ISSN | 方向：认知与实验 |
+| Journal of Experimental Psychology: Learning, Memory, and Cognition（JEP:LMC） | J | 0278-7393 / 1939-1285 | APA `apa_psycnet` | ABDC-A | PubMed; PsycInfo（订阅） | PsyArXiv | Crossref:ISSN | 方向：认知与实验 |
+| Psychonomic Bulletin & Review（PB&R） | J | 1069-9384 / 1531-5320 | Springer Nature `springer_link` | — | PubMed; PsycInfo（订阅） | PsyArXiv | Crossref:ISSN | 方向：认知与实验 |
+| NeuroImage | J | 1053-8119 / 1095-9572 | Elsevier `elsevier_sd` | T1(中华医学会) | PubMed; PsycInfo（订阅） | bioRxiv; PsyArXiv | Crossref:ISSN | 方向：认知神经科学；OA 模式待核 ⚠ |
 
-### 认知与实验（13）
+### 社会与人格（核心 3 · 登记 5）
 
-| venue | 类型 | ISSN（印/电）或 dblp | 出版托管（M1） | 评级 | 学科库（L2a） | 预印本（L1b） | 接入 | 备注 |
-|---|---|---|---|---|---|---|---|---|
-| Journal of Experimental Psychology: General（JEP:G） | J | 0096-3445 / 1939-2222 | APA `apa_psycnet` | ABDC-A* | PubMed; PsycInfo（订阅） | PsyArXiv | Crossref:ISSN |  |
-| Trends in Cognitive Sciences（TiCS） | J | 1364-6613 / — | Elsevier（Cell Press） `elsevier_sd` | T1(中华医学会) | PubMed; PsycInfo（订阅） | PsyArXiv | Crossref:ISSN | 综述刊 |
-| Annual Meeting of the Cognitive Science Society（CogSci） | C | 1069-7977 / —；dblp `conf/cogsci` | eScholarship（UC） `cogsci_proceedings` | CCF-B; ICORE-B; CAAI-B | dblp | PsyArXiv; arXiv:cs | 现有:cogsci_proceedings | OAI-PMH 全量 |
-| Cognition | J | 0010-0277 / — | Elsevier `elsevier_sd` | CCF-B | PubMed; PsycInfo（订阅） | PsyArXiv | Crossref:ISSN |  |
-| Cognition and Emotion（Cogn Emot） | J | 0269-9931 / 1464-0600 | Taylor & Francis `tandf_online` | — | PubMed; PsycInfo（订阅） | PsyArXiv | Crossref:ISSN | 情绪 |
-| Cognitive Psychology（Cogn Psychol） | J | 0010-0285 / 1095-5623 | Elsevier `elsevier_sd` | — | PubMed; PsycInfo（订阅） | PsyArXiv | Crossref:ISSN | 科协管理外文-C |
-| Cognitive Science（Cogn Sci） | J | 0364-0213 / 1551-6709 | Wiley `wiley` | — | PubMed; PsycInfo（订阅） | PsyArXiv | Crossref:ISSN |  |
-| Journal of Experimental Psychology: Human Perception and Performance（JEP:HPP） | J | 0096-1523 / 1939-1277 | APA `apa_psycnet` | — | PubMed; PsycInfo（订阅） | PsyArXiv | Crossref:ISSN |  |
-| Journal of Experimental Psychology: Learning, Memory, and Cognition（JEP:LMC） | J | 0278-7393 / 1939-1285 | APA `apa_psycnet` | ABDC-A | PubMed; PsycInfo（订阅） | PsyArXiv | Crossref:ISSN |  |
-| Journal of Memory and Language（JML） | J | 0749-596X / 1096-0821 | Elsevier `elsevier_sd` | T3(中华医学会) | PubMed; PsycInfo（订阅） | PsyArXiv | Crossref:ISSN |  |
-| Psychonomic Bulletin & Review（PB&R） | J | 1069-9384 / 1531-5320 | Springer Nature `springer_link` | — | PubMed; PsycInfo（订阅） | PsyArXiv | Crossref:ISSN |  |
-| Psychonomic Society Annual Meeting（Psychonomics） | C | — | Psychonomic Society | — | — | — | 待勘察 | 只有摘要集；待勘察 |
-| Quarterly Journal of Experimental Psychology（QJEP） | J | 1747-0218 / 1747-0226 | SAGE `sage_journals` | ABDC-A | PubMed; PsycInfo（订阅） | PsyArXiv | Crossref:ISSN | 科协管理外文-C |
-
-### 发展（3）
+含原方向：社会与人格、会议（社会与综合）。
 
 | venue | 类型 | ISSN（印/电）或 dblp | 出版托管（M1） | 评级 | 学科库（L2a） | 预印本（L1b） | 接入 | 备注 |
 |---|---|---|---|---|---|---|---|---|
-| Child Development | J | 0009-3920 / 1467-8624 | Oxford University Press（SRCD） `oup_academic` | — | PubMed; PsycInfo（订阅） | PsyArXiv | Crossref:ISSN | 须用 eISSN |
-| Developmental Psychology（Dev Psychol） | J | 0012-1649 / 1939-0599 | APA `apa_psycnet` | — | PubMed; PsycInfo（订阅） | PsyArXiv | Crossref:ISSN |  |
-| Developmental Science（Dev Sci） | J | 1363-755X / 1467-7687 | Wiley `wiley` | — | PubMed; PsycInfo（订阅） | PsyArXiv | Crossref:ISSN |  |
+| Journal of Personality and Social Psychology（JPSP） | J | 0022-3514 / 1939-1315 | APA `apa_psycnet` | ABDC-A*; FMS-B | PubMed; PsycInfo（订阅） | PsyArXiv | Crossref:ISSN | 方向：社会与人格 |
+| Personality and Social Psychology Bulletin（PSPB） | J | 0146-1672 / 1552-7433 | SAGE `sage_journals` | ABDC-A*; FMS-B | PubMed; PsycInfo（订阅） | PsyArXiv | Crossref:ISSN | 方向：社会与人格 |
+| European Journal of Social Psychology（EJSP） | J | 0046-2772 / 1099-0992 | Wiley `wiley` | ABDC-A; FMS-B | PubMed; PsycInfo（订阅） | PsyArXiv | Crossref:ISSN | 方向：社会与人格 |
 
-### 临床与精神病理（5）
+### 发展与教育（核心 0 · 登记 4）
 
-| venue | 类型 | ISSN（印/电）或 dblp | 出版托管（M1） | 评级 | 学科库（L2a） | 预印本（L1b） | 接入 | 备注 |
-|---|---|---|---|---|---|---|---|---|
-| Clinical Psychology Review（Clin Psychol Rev） | J | 0272-7358 / — | Elsevier `elsevier_sd` | T1(中华医学会) | PubMed; PsycInfo（订阅） | PsyArXiv; medRxiv | Crossref:ISSN |  |
-| Psychological Medicine（Psychol Med） | J | 0033-2917 / 1469-8978 | Cambridge University Press `cambridge_core` | T1(中华医学会) | PubMed; PsycInfo（订阅） | PsyArXiv; medRxiv | Crossref:ISSN |  |
-| Clinical Psychological Science（CPS） | J | 2167-7026 / 2167-7034 | SAGE（APS） `sage_journals` | T3(中华医学会) | PubMed; PsycInfo（订阅） | PsyArXiv; medRxiv | Crossref:ISSN |  |
-| Journal of Consulting and Clinical Psychology（JCCP） | J | 0022-006X / 1939-2117 | APA `apa_psycnet` | T3(中华医学会) | PubMed; PsycInfo（订阅） | PsyArXiv; medRxiv | Crossref:ISSN |  |
-| Journal of Psychopathology and Clinical Science（JPCS） | J | 2769-7541 / 2769-755X | APA `apa_psycnet` | — | PubMed; PsycInfo（订阅） | PsyArXiv; medRxiv | Crossref:ISSN | 原 J Abnormal Psychology |
+含原方向：发展、教育心理。
 
-### 认知神经科学（4）
+本组暂无核心 venue，全部登记。
+
+### 临床与健康（核心 2 · 登记 4）
+
+含原方向：临床与精神病理、健康心理。
 
 | venue | 类型 | ISSN（印/电）或 dblp | 出版托管（M1） | 评级 | 学科库（L2a） | 预印本（L1b） | 接入 | 备注 |
 |---|---|---|---|---|---|---|---|---|
-| NeuroImage | J | 1053-8119 / 1095-9572 | Elsevier `elsevier_sd` | T1(中华医学会) | PubMed; PsycInfo（订阅） | bioRxiv; PsyArXiv | Crossref:ISSN | OA 模式待核 ⚠ |
-| Cognitive Computational Neuroscience（CCN） | C | — | CCN（ccneuro.org） | — | — | — | 待勘察 | 扩展摘要；待勘察 |
-| Journal of Cognitive Neuroscience（J Cogn Neurosci） | J | 0898-929X / 1530-8898 | MIT Press `mit_press_direct` | — | PubMed; PsycInfo（订阅） | bioRxiv; PsyArXiv | Crossref:ISSN |  |
-| Social Cognitive and Affective Neuroscience（SCAN） | J | 1749-5016 / 1749-5024 | Oxford University Press `oup_academic` | T3(中华医学会) | PubMed; PsycInfo（订阅） | bioRxiv; PsyArXiv | Crossref:ISSN |  |
+| Clinical Psychology Review（Clin Psychol Rev） | J | 0272-7358 / — | Elsevier `elsevier_sd` | T1(中华医学会) | PubMed; PsycInfo（订阅） | PsyArXiv; medRxiv | Crossref:ISSN | 方向：临床与精神病理 |
+| Psychological Medicine（Psychol Med） | J | 0033-2917 / 1469-8978 | Cambridge University Press `cambridge_core` | T1(中华医学会) | PubMed; PsycInfo（订阅） | PsyArXiv; medRxiv | Crossref:ISSN | 方向：临床与精神病理 |
 
-### 心理测量与方法（4）
+### 中文刊（核心 2 · 登记 4）
 
-| venue | 类型 | ISSN（印/电）或 dblp | 出版托管（M1） | 评级 | 学科库（L2a） | 预印本（L1b） | 接入 | 备注 |
-|---|---|---|---|---|---|---|---|---|
-| Advances in Methods and Practices in Psychological Science（AMPPS） | J | 2515-2459 / 2515-2467 | SAGE（APS） `sage_journals` | T1(中华医学会) | PsycInfo（订阅） | PsyArXiv | Crossref:ISSN | PubMed/PMC 为 0 |
-| Behavior Research Methods（BRM） | J | 1554-351X / 1554-3528 | Springer Nature `springer_link` | — | PubMed; PsycInfo（订阅） | PsyArXiv | Crossref:ISSN | 须用 eISSN |
-| Psychological Methods（Psychol Methods） | J | 1082-989X / 1939-1463 | APA `apa_psycnet` | ABDC-B | PubMed; PsycInfo（订阅） | PsyArXiv | Crossref:ISSN |  |
-| Psychometrika | J | 0033-3123 / 1860-0980 | Cambridge University Press `cambridge_core` | — | PubMed; PsycInfo（订阅） | PsyArXiv | Crossref:ISSN | Crossref 出版方为 CUP；科协管理外文-C |
-
-### 健康心理（1）
-
-| venue | 类型 | ISSN（印/电）或 dblp | 出版托管（M1） | 评级 | 学科库（L2a） | 预印本（L1b） | 接入 | 备注 |
-|---|---|---|---|---|---|---|---|---|
-| Health Psychology | J | 0278-6133 / 1930-7810 | APA `apa_psycnet` | T3(中华医学会) | PubMed; PsycInfo（订阅） | PsyArXiv | Crossref:ISSN |  |
-
-### 教育心理（1）
-
-| venue | 类型 | ISSN（印/电）或 dblp | 出版托管（M1） | 评级 | 学科库（L2a） | 预印本（L1b） | 接入 | 备注 |
-|---|---|---|---|---|---|---|---|---|
-| Journal of Educational Psychology（J Educ Psychol） | J | 0022-0663 / 1939-2176 | APA `apa_psycnet` | — | PubMed; PsycInfo（订阅） | PsyArXiv | Crossref:ISSN | 教育学范围外，附带 |
-
-### 会议（社会与综合）（2）
-
-| venue | 类型 | ISSN（印/电）或 dblp | 出版托管（M1） | 评级 | 学科库（L2a） | 预印本（L1b） | 接入 | 备注 |
-|---|---|---|---|---|---|---|---|---|
-| APS Annual Convention | C | — | Association for Psychological Science | — | — | — | 待勘察 | 无论文集；待勘察 |
-| SPSP Annual Convention | C | — | Society for Personality and Social Psychology | — | — | — | 待勘察 | 只有摘要/海报；待勘察 |
-
-### 中文刊（6）
-
-子领域写在备注里。知网、万方、维普只接受用户导入题录；在 Crossref 注册了 DOI 的中文刊可经 Crossref 收元数据。
+子领域写在备注里。知网、万方、维普只接受用户导入题录；在 Crossref 注册了 DOI 的中文刊可经 Crossref 收元数据。只接受用户导入的中文刊不列为核心。
 
 | venue | 类型 | ISSN（印/电）或 dblp | 出版托管（M1） | 评级 | 学科库（L2a） | 预印本（L1b） | 接入 | 备注 |
 |---|---|---|---|---|---|---|---|---|
 | 心理学报（Acta Psychologica Sinica） | J | 0439-755X / — | 中国心理学会/中科院心理所 | T1(中国优选法统筹法与经济数学研究会/管理科学与工程学会/中国系统工程学会、管理科学三学会); CSSCI; CSCD核心; 北大核心; 科技核心; AMI-权威; FMS-T1 | CNKI; 万方 | ChinaXiv | Crossref:ISSN | 综合与综述；Crossref前缀10.3724 |
-| 中国临床心理学杂志（Chinese Journal of Clinical Psychology） | J | 1005-3611 / — | 中国心理卫生协会; 中南大学 | T3(中华医学会); CSSCI; CSCD核心; 北大核心; 科技核心 | CNKI; 万方; CSCD | ChinaXiv | 用户导入 | 临床心理；Crossref无该ISSN记录 |
 | 心理科学进展（Advances in Psychological Science） | J | 1671-3710 / — | 中科院心理所 | CSSCI; CSCD核心; 北大核心; 科技核心; AMI-核心 | CNKI; 万方 | ChinaXiv | Crossref:ISSN | 综合与综述；Crossref前缀10.3724 |
+
+## 登记 venue（长尾，暂不支持）
+
+以下 venue 登记在册，保留标识、托管与评级，但暂不逐刊核验通道、不进首批验收。用户关注其中任意一个时，照常经 Crossref 或 OpenAlex 自动建 venue（`auto`）收元数据；问卷、调研与关注数达到[升级条件](README.md#支持分级)后升为核心。
+
+### 综合与方法（登记 11）
+
+| venue | 类型 | ISSN（印/电）或 dblp | 出版托管（M1） | 评级 | 学科库（L2a） | 预印本（L1b） | 接入 | 备注 |
+|---|---|---|---|---|---|---|---|---|
+| American Psychologist（Am Psychol） | J | 0003-066X / 1935-990X | APA `apa_psycnet` | ABDC-A* | PubMed; PsycInfo（订阅） | PsyArXiv | Crossref:ISSN | 方向：综合与综述 |
+| Behavioral and Brain Sciences（BBS） | J | 0140-525X / 1469-1825 | Cambridge University Press `cambridge_core` | T1(中华医学会) | PubMed; PsycInfo（订阅） | PsyArXiv | Crossref:ISSN | 方向：综合与综述 |
+| Collabra: Psychology | J | 2474-7394 / — | UC Press `ucpress_online` | — | PubMed; PsycInfo（订阅） | PsyArXiv | Crossref:ISSN | 方向：综合与综述 |
+| Current Directions in Psychological Science（CDPS） | J | 0963-7214 / 1467-8721 | SAGE（APS） `sage_journals` | FMS-B | PubMed; PsycInfo（订阅） | PsyArXiv | Crossref:ISSN | 方向：综合与综述 |
+| Frontiers in Psychology（Front Psychol） | J | 1664-1078 / — | Frontiers `frontiers` | — | PubMed; PsycInfo（订阅） | PsyArXiv | Crossref:ISSN | 方向：综合与综述 |
+| Perspectives on Psychological Science（PPS） | J | 1745-6916 / 1745-6924 | SAGE（APS） `sage_journals` | — | PubMed; PsycInfo（订阅） | PsyArXiv | Crossref:ISSN | 方向：综合与综述 |
+| PsyCh Journal | J | 2046-0252 / 2046-0260 | Wiley `wiley` | — | PubMed; PsycInfo（订阅） | PsyArXiv | Crossref:ISSN | 方向：综合与综述；中国(英文)；中科院心理所主办 |
+| Advances in Methods and Practices in Psychological Science（AMPPS） | J | 2515-2459 / 2515-2467 | SAGE（APS） `sage_journals` | T1(中华医学会) | PsycInfo（订阅） | PsyArXiv | Crossref:ISSN | 方向：心理测量与方法；PubMed/PMC 为 0 |
+| Behavior Research Methods（BRM） | J | 1554-351X / 1554-3528 | Springer Nature `springer_link` | — | PubMed; PsycInfo（订阅） | PsyArXiv | Crossref:ISSN | 方向：心理测量与方法；须用 eISSN |
+| Psychological Methods（Psychol Methods） | J | 1082-989X / 1939-1463 | APA `apa_psycnet` | ABDC-B | PubMed; PsycInfo（订阅） | PsyArXiv | Crossref:ISSN | 方向：心理测量与方法 |
+| Psychometrika | J | 0033-3123 / 1860-0980 | Cambridge University Press `cambridge_core` | — | PubMed; PsycInfo（订阅） | PsyArXiv | Crossref:ISSN | 方向：心理测量与方法；Crossref 出版方为 CUP；科协管理外文-C |
+
+### 认知与认知神经（登记 8）
+
+| venue | 类型 | ISSN（印/电）或 dblp | 出版托管（M1） | 评级 | 学科库（L2a） | 预印本（L1b） | 接入 | 备注 |
+|---|---|---|---|---|---|---|---|---|
+| Cognition and Emotion（Cogn Emot） | J | 0269-9931 / 1464-0600 | Taylor & Francis `tandf_online` | — | PubMed; PsycInfo（订阅） | PsyArXiv | Crossref:ISSN | 方向：认知与实验；情绪 |
+| Journal of Experimental Psychology: Human Perception and Performance（JEP:HPP） | J | 0096-1523 / 1939-1277 | APA `apa_psycnet` | — | PubMed; PsycInfo（订阅） | PsyArXiv | Crossref:ISSN | 方向：认知与实验 |
+| Journal of Memory and Language（JML） | J | 0749-596X / 1096-0821 | Elsevier `elsevier_sd` | T3(中华医学会) | PubMed; PsycInfo（订阅） | PsyArXiv | Crossref:ISSN | 方向：认知与实验 |
+| Psychonomic Society Annual Meeting（Psychonomics） | C | — | Psychonomic Society | — | — | — | 待勘察 | 方向：认知与实验；只有摘要集；待勘察 |
+| Quarterly Journal of Experimental Psychology（QJEP） | J | 1747-0218 / 1747-0226 | SAGE `sage_journals` | ABDC-A | PubMed; PsycInfo（订阅） | PsyArXiv | Crossref:ISSN | 方向：认知与实验；科协管理外文-C |
+| Cognitive Computational Neuroscience（CCN） | C | — | CCN（ccneuro.org） | — | — | — | 待勘察 | 方向：认知神经科学；扩展摘要；待勘察 |
+| Journal of Cognitive Neuroscience（J Cogn Neurosci） | J | 0898-929X / 1530-8898 | MIT Press `mit_press_direct` | — | PubMed; PsycInfo（订阅） | bioRxiv; PsyArXiv | Crossref:ISSN | 方向：认知神经科学 |
+| Social Cognitive and Affective Neuroscience（SCAN） | J | 1749-5016 / 1749-5024 | Oxford University Press `oup_academic` | T3(中华医学会) | PubMed; PsycInfo（订阅） | bioRxiv; PsyArXiv | Crossref:ISSN | 方向：认知神经科学 |
+
+### 社会与人格（登记 5）
+
+| venue | 类型 | ISSN（印/电）或 dblp | 出版托管（M1） | 评级 | 学科库（L2a） | 预印本（L1b） | 接入 | 备注 |
+|---|---|---|---|---|---|---|---|---|
+| Journal of Experimental Social Psychology（JESP） | J | 0022-1031 / 1096-0465 | Elsevier `elsevier_sd` | ABDC-A; FMS-B | PubMed; PsycInfo（订阅） | PsyArXiv | Crossref:ISSN | 方向：社会与人格 |
+| Personality and Social Psychology Review（PSPR） | J | 1088-8683 / 1532-7957 | SAGE `sage_journals` | — | PubMed; PsycInfo（订阅） | PsyArXiv | Crossref:ISSN | 方向：社会与人格 |
+| Social Psychological and Personality Science（SPPS） | J | 1948-5506 / 1948-5514 | SAGE `sage_journals` | ABDC-B | PubMed; PsycInfo（订阅） | PsyArXiv | Crossref:ISSN | 方向：社会与人格 |
+| APS Annual Convention | C | — | Association for Psychological Science | — | — | — | 待勘察 | 方向：会议（社会与综合）；无论文集；待勘察 |
+| SPSP Annual Convention | C | — | Society for Personality and Social Psychology | — | — | — | 待勘察 | 方向：会议（社会与综合）；只有摘要/海报；待勘察 |
+
+### 发展与教育（登记 4）
+
+| venue | 类型 | ISSN（印/电）或 dblp | 出版托管（M1） | 评级 | 学科库（L2a） | 预印本（L1b） | 接入 | 备注 |
+|---|---|---|---|---|---|---|---|---|
+| Child Development | J | 0009-3920 / 1467-8624 | Oxford University Press（SRCD） `oup_academic` | — | PubMed; PsycInfo（订阅） | PsyArXiv | Crossref:ISSN | 方向：发展；须用 eISSN |
+| Developmental Psychology（Dev Psychol） | J | 0012-1649 / 1939-0599 | APA `apa_psycnet` | — | PubMed; PsycInfo（订阅） | PsyArXiv | Crossref:ISSN | 方向：发展 |
+| Developmental Science（Dev Sci） | J | 1363-755X / 1467-7687 | Wiley `wiley` | — | PubMed; PsycInfo（订阅） | PsyArXiv | Crossref:ISSN | 方向：发展 |
+| Journal of Educational Psychology（J Educ Psychol） | J | 0022-0663 / 1939-2176 | APA `apa_psycnet` | — | PubMed; PsycInfo（订阅） | PsyArXiv | Crossref:ISSN | 方向：教育心理；教育学范围外，附带 |
+
+### 临床与健康（登记 4）
+
+| venue | 类型 | ISSN（印/电）或 dblp | 出版托管（M1） | 评级 | 学科库（L2a） | 预印本（L1b） | 接入 | 备注 |
+|---|---|---|---|---|---|---|---|---|
+| Clinical Psychological Science（CPS） | J | 2167-7026 / 2167-7034 | SAGE（APS） `sage_journals` | T3(中华医学会) | PubMed; PsycInfo（订阅） | PsyArXiv; medRxiv | Crossref:ISSN | 方向：临床与精神病理 |
+| Journal of Consulting and Clinical Psychology（JCCP） | J | 0022-006X / 1939-2117 | APA `apa_psycnet` | T3(中华医学会) | PubMed; PsycInfo（订阅） | PsyArXiv; medRxiv | Crossref:ISSN | 方向：临床与精神病理 |
+| Journal of Psychopathology and Clinical Science（JPCS） | J | 2769-7541 / 2769-755X | APA `apa_psycnet` | — | PubMed; PsycInfo（订阅） | PsyArXiv; medRxiv | Crossref:ISSN | 方向：临床与精神病理；原 J Abnormal Psychology |
+| Health Psychology | J | 0278-6133 / 1930-7810 | APA `apa_psycnet` | T3(中华医学会) | PubMed; PsycInfo（订阅） | PsyArXiv | Crossref:ISSN | 方向：健康心理 |
+
+### 中文刊（登记 4）
+
+| venue | 类型 | ISSN（印/电）或 dblp | 出版托管（M1） | 评级 | 学科库（L2a） | 预印本（L1b） | 接入 | 备注 |
+|---|---|---|---|---|---|---|---|---|
+| 中国临床心理学杂志（Chinese Journal of Clinical Psychology） | J | 1005-3611 / — | 中国心理卫生协会; 中南大学 | T3(中华医学会); CSSCI; CSCD核心; 北大核心; 科技核心 | CNKI; 万方; CSCD | ChinaXiv | 用户导入 | 临床心理；Crossref无该ISSN记录 |
 | 心理与行为研究（Studies of Psychology and Behavior） | J | 1672-0628 / — | 天津师范大学 | CSSCI; 北大核心 | CNKI; 万方; 维普 | ChinaXiv | 用户导入 | 实验与行为；Crossref无该ISSN记录；Crossref 无记录 |
 | 心理发展与教育（Psychological Development and Education） | J | 1001-4918 / — | 北京师范大学 | CSSCI; 北大核心; 科技核心; AMI-核心 | CNKI; 万方; 维普 | ChinaXiv | 用户导入 | 发展与教育；Crossref无该ISSN记录；Crossref 无记录 |
 | 心理科学（Journal of Psychological Science） | J | 1671-6981 / — | 中国心理学会 | CSSCI; CSCD扩展; 北大核心; 科技核心; AMI-核心 | CNKI; 万方; CSCD | ChinaXiv | 用户导入 | 综合心理；Crossref无该ISSN记录 |
@@ -187,3 +196,4 @@ flowchart LR
 - **FT50**：含 2026 年新增的 Psychological Science；JAP、OBHDP、Personnel Psychology 主属商业与管理。
 - **会议**：Psychonomics、SPSP、APS、CCN 没有可引用的分档出处，不标评级。
 - **待核**：PubMed 对心理刊覆盖不全（AMPPS 为 0），PsycInfo 是 APA 订阅库。
+- **支持分级**：核心按[支持分级](README.md#支持分级)的规则初选，2026-09-29 定稿。人工补选 Cogn Psychol、Cogn Sci、PB&R（评级标签缺失或不反映学科地位）。

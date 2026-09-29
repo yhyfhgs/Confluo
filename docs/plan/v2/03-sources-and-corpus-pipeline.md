@@ -2,7 +2,7 @@
 title: 来源接入与语料流水线
 status: draft
 owner: opus5.5-primary
-updated: 2026-09-27
+updated: 2026-09-29
 ---
 
 # 03 · 来源接入与语料流水线
@@ -32,6 +32,7 @@ updated: 2026-09-27
 - **演化边**：`renamed_to`（更名或换 ISSN）、`journalized_as`（会议论文集期刊化）、`co_hosted_on`（同一届多平台发布）。
 - **学科差异**：CS 会议按"届 × track"建届次；经管 WP 系列是一等 venue，会议报告以 `presented_at` 事件挂到论文上，不产生新版本。
 - **策展等级**：`curated`（人工 YAML）；`auto`（由 Crossref 或 OpenAlex 记录自动建立，用户关注任意期刊都不必写 YAML）；`user_proposed`（经已登记来源核验后转为 `auto`）。
+- **支持分级**：来源分支持、登记、不接入，venue 分核心、登记（D-073 草案）。M2、L2a、L2b 的非排除来源全部支持；核心 venue 写 `curated` 条目并进验收，登记 venue 按 `auto` 处理，靠问卷与关注数升级。规则见[来源分层](../../catalog/source-taxonomy.md#支持分级)与 [venue 名录](../../catalog/venues/README.md#支持分级)。
 
 ## SourceSpec v2：三条通道与合规证据
 
