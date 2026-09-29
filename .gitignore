@@ -8,11 +8,13 @@ auth/state/
 *.enc
 .filekey
 profiles.toml
+confluo.toml
 paper-crawler.toml
 .env
 .env.*
 
 # ---- 本地运行目录：凭证、数据库、日志与报告都在这里，整目录绝不追踪 ----
+/.confluo/
 /.paper-crawler/
 
 # ---- 数据与下载产物（体积大且有版权，绝不入库）----
