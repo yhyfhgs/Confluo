@@ -33,7 +33,7 @@ Read `README.md`, `docs/INDEX.md`, `docs/plan/progress.md` and `docs/plan/v2/REA
 - Acquire papers through legitimate sources and authorized user credentials, following robots.txt/ToS and conservative source-specific rates with an identifying user agent. Exclude paywall/CAPTCHA bypasses, impersonation, pirate sources and redistribution features.
 - v2 is a multi-user platform. Auth-gated full text is retrieved on the user side with that user's own credentials, only on explicit request, and stays private to that user. Shared data holds only public metadata and content whose license permits redistribution, and anything derived from private content stays private. The compliance hard constraints HC-01 onward in `docs/plan/v2/08-compliance-security-privacy.md` are binding.
 - Keep credentials, cookies, sessions and downloaded PDFs in ignored local storage. Local runtime config/state lives in ignored `.confluo/`, selected through `CONFLUO_HOME`.
-- Protect `.confluo` with `-e .confluo` whenever an authorized cleanup uses `git clean -x`; this preserves credentials and databases even when Git ignore rules are bypassed.
+- Protect both runtime homes with `-e .confluo -e .paper-crawler` whenever an authorized cleanup uses `git clean -x`; existing checkouts may still hold credentials and databases in the legacy `.paper-crawler/`, and this preserves them even when Git ignore rules are bypassed.
 
 ## Commands and validation
 

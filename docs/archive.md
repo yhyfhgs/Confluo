@@ -44,4 +44,4 @@ git show archive/v1:docs/design/01-architecture.md     # 读一个文件
 git worktree add ../confluo-v1 archive/v1        # 并排对照；在其中 uv sync --extra auth && make check 仍可跑 v1 门禁
 ```
 
-v1 的本地运行数据（数据库、凭证、日报）都在被忽略的 `.confluo/`（原 `.paper-crawler/`） 里，不进 git。
+v1 的本地运行数据（数据库、凭证、日报）不进 git。v1 代码没有随 v2 改名：它只读 `PAPER_CRAWLER_HOME`，未设置时默认 `~/.paper-crawler`，不识别 `CONFLUO_HOME` 或 `.confluo/`。在 v1 worktree 里运行时，保留旧环境变量或用 `--home` 显式指向数据所在目录。
