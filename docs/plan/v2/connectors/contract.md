@@ -169,16 +169,25 @@ class Step: resp: Response; page: Page | None; error_class: str | None = None   
 @dataclass(frozen=True)
 class CursorEnvelope: scope_key: str; cursor: Cursor; schema: int; rev: int   # kind 见 §6
 
+OperationInput = LookupInput | SearchInput | EnumerateInput | SnapshotInput | ProbeInput   # 各类型定义紧随其后
 @dataclass(frozen=True)
 class LookupInput: identifiers: tuple[Identifier, ...]          # 04 联邦 LOOKUP 的标识符批
 @dataclass(frozen=True)
 class SearchInput: query: PushdownQuery; limit: int               # 只含 SCD 声明可下推的谓词（aggregator_api §2.2）
+@dataclass(frozen=True)
+class EnumerateInput: window: tuple[datetime, datetime]           # [from, until)，回填与对账窗口
+@dataclass(frozen=True)
+class SnapshotInput: release_id: str; union_filter: UnionFilter   # 兴趣并集过滤（05）
+@dataclass(frozen=True)
+class ProbeInput: probe: ProbeSpec                                 # ProbeSpec 见后文
 
 @dataclass(frozen=True)
 class ConnectorTask:                     # 无 user_id；plan_key 只作缓存与审计键
     task_id: str; operation: Operation; source_id: str; channel: str; scope_key: str
     cursor: CursorEnvelope | None
-    payload: LookupInput | SearchInput | None   # lookup 带 identifiers，search 带 04 编译好的 PushdownQuery；其余 operation 为 None，plan() 只从这里取输入、不做隐藏 I/O
+    payload: OperationInput | None      # 按 operation 取对应类型：lookup→LookupInput、search→SearchInput、enumerate→EnumerateInput、
+                                        # snapshot_import→SnapshotInput、probe→ProbeInput；increment 只用 cursor，为 None；
+                                        # locate_fulltext 不经 plan()，由 locate_fulltext(VersionView) 直接取输入。plan() 只从这里取输入、不做隐藏 I/O
     decision_ref: DecisionRef            # {decision_id, engine_version, inputs_epoch}
     budget: TaskBudget                   # {max_requests, max_pages, deadline}
     lane: Literal["interactive", "harvest", "enrich"]; plan_key: str | None
@@ -202,6 +211,7 @@ class EgressEnvelope:                    # runner 生成，连接器不可见；
 class AccessDecision:                    # 策略引擎产物，只由网关与 runner 读
     decision_id: str; source_id: str; channel: str; operation: Operation
     mode: Mode; allowed: bool; needs_confirmation: bool
+    caps: ModeCaps                       # 该 mode 下的操作与通道上限，runner 注入 PlanCtx.mode_caps
     robots_basis: Literal["none", "api_conflict", "written_confirmation"]
     exception_refs: tuple[str, ...]; hosts_allowed: frozenset[str]; min_interval_s: float
     engine_version: int; inputs_epoch: int; valid_until: datetime   # ≤ 24h
@@ -253,11 +263,19 @@ class RecipeProvider(Protocol):          # kind: recipe_provider；exec_side 恒
 
 # 设计伪代码 —— 平台侧 runner；HTTP 完全交给网关；每页数据与游标同事务落库
 def run(task, c: PlatformConnector, gw, policy, sink, clock) -> TaskOutcome:
-    decision = policy.decide(task)                                   # 判定 ①
-    if not decision.allowed:                                         # needs_confirmation 单独成类，进 O4 队列（§7）
-        return TaskOutcome(status="denied", error_class="needs_confirmation" if decision.needs_confirmation else "policy_denied", ...)
-    ctx = PlanCtx(now=clock.frozen(), instance=..., scd=..., mode_caps=decision.caps)
-    exec_ctx = ExecCtx(task.task_id, decision.decision_id, traffic_class_of(task.lane), ref(c), task.plan_key)
+    readmitted = False
+    while True:                                                      # 外层只为 stale_decision 重新准入一次
+        decision = policy.decide(task)                               # 判定 ①
+        if not decision.allowed:                                     # needs_confirmation 单独成类，进 O4 队列（§7）
+            return TaskOutcome(status="denied", error_class="needs_confirmation" if decision.needs_confirmation else "policy_denied", ...)
+        ctx = PlanCtx(now=clock.frozen(), instance=..., scd=..., mode_caps=decision.caps)
+        exec_ctx = ExecCtx(task.task_id, decision.decision_id, traffic_class_of(task.lane), ref(c), task.plan_key)
+        outcome = _drive(task, c, gw, sink, ctx, exec_ctx)
+        if outcome.reason == "stale_decision" and not readmitted:    # inputs_epoch 或 engine_version 变了：从已提交游标重新准入
+            readmitted, task = True, replace(task, cursor=sink.last(task)); continue
+        return outcome
+
+def _drive(task, c, gw, sink, ctx, exec_ctx) -> TaskOutcome:
     gen, step = c.plan(task, ctx), None
     while True:
         try: req = gen.send(step) if step else next(gen)
@@ -265,7 +283,7 @@ def run(task, c: PlatformConnector, gw, policy, sink, clock) -> TaskOutcome:
         resp = gw.execute(EgressEnvelope(exec_ctx, task.source_id, task.channel, task.operation, rollout, req))   # 判定 ②
         if resp.terminal:                                            # challenge / policy_denied / budget_exhausted / disabled …
             gen.close(); return TaskOutcome(status=outcome_of(resp.error_class),   # 按 §7 矩阵：budget_exhausted 为 partial，其余 stopped
-                                            error_class=resp.error_class, committed=sink.last(task), ...)
+                                            error_class=resp.error_class, reason=resp.subcode, committed=sink.last(task), ...)
         try: page = c.parse(resp, ParseCtx(ctx.now, endpoint_of(req), ctx.instance))
         except ParseError as e:                                      # 类别随 Step 回送，plan() 据此处理 cursor_expired 重启
             if e.error_class == "parse": sink.quarantine(task, resp)
