@@ -79,7 +79,7 @@ class OaiPmh(PlatformConnector):
         while req is not None:
             step = yield req
             if step.page is None:
-                if token_expired(step.resp, inst) and restarts < 2:   # 与 parse 共用的纯函数：badResumptionToken 或 status_overrides 的 422
+                if step.error_class == "cursor_expired" and restarts < 2:   # parse 判定 badResumptionToken；InvenioRDM 422 的判定者待 W0 定（契约未决）
                     restarts += 1                      # 从本次窗口起点重启；已落库的页由 (source_id, source_key) 去重吸收
                     req = list_records(inst, frm, set_=sset, until=req_until)
                     continue

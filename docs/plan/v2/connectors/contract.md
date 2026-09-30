@@ -165,7 +165,7 @@ class RawRecord:
 @dataclass(frozen=True)
 class Page: records: tuple[RawRecord, ...]; next_cursor: Cursor | None; signals: PageSignals
 @dataclass(frozen=True)
-class Step: resp: Response; page: Page | None            # None = 非合法结果，只能在安全点结束
+class Step: resp: Response; page: Page | None; error_class: str | None = None   # page 为 None = 非合法结果，只能在安全点结束；error_class 为 parse 判定的类（如 cursor_expired）
 @dataclass(frozen=True)
 class CursorEnvelope: scope_key: str; cursor: Cursor; schema: int; rev: int   # kind 见 §6
 
@@ -234,7 +234,7 @@ class PlatformConnector(Protocol):       # kind: platform_connector
     manifest: ConnectorManifest
     def describe(self, spec: SourceSpec, instance: ConnectorInstance | None) -> list[SCD]: ...
     def plan(self, task: ConnectorTask, ctx: PlanCtx) -> Generator[RequestSpec, Step, TaskOutcome]: ...
-    def parse(self, resp: Response, ctx: ParseCtx) -> Page: ...             # 纯函数；失败抛 ParseError
+    def parse(self, resp: Response, ctx: ParseCtx) -> Page: ...             # 纯函数；失败抛 ParseError(error_class=parse|cursor_expired …)
     def normalize(self, raw: RawRecord, ctx: MapCtx) -> NormRecord: ...     # 纯函数；带 mapper_version
     def locate_fulltext(self, v: VersionView, ctx: LocateCtx) -> list[FulltextOption]: ...
     def probes(self, spec: SourceSpec, instance: ConnectorInstance | None) -> list[ProbeSpec]: ...
@@ -248,7 +248,8 @@ class RecipeProvider(Protocol):          # kind: recipe_provider；exec_side 恒
 # 设计伪代码 —— 平台侧 runner；HTTP 完全交给网关；每页数据与游标同事务落库
 def run(task, c: PlatformConnector, gw, policy, sink, clock) -> TaskOutcome:
     decision = policy.decide(task)                                   # 判定 ①
-    if not decision.allowed: return TaskOutcome(status="denied", error_class="policy_denied", ...)
+    if not decision.allowed:                                         # needs_confirmation 单独成类，进 O4 队列（§7）
+        return TaskOutcome(status="denied", error_class="needs_confirmation" if decision.needs_confirmation else "policy_denied", ...)
     ctx = PlanCtx(now=clock.frozen(), instance=..., scd=..., mode_caps=decision.caps)
     exec_ctx = ExecCtx(task.task_id, decision.decision_id, traffic_class_of(task.lane), ref(c), task.plan_key)
     gen, step = c.plan(task, ctx), None
@@ -260,7 +261,9 @@ def run(task, c: PlatformConnector, gw, policy, sink, clock) -> TaskOutcome:
             gen.close(); return TaskOutcome(status=outcome_of(resp.error_class),   # 按 §7 矩阵：budget_exhausted 为 partial，其余 stopped
                                             error_class=resp.error_class, committed=sink.last(task), ...)
         try: page = c.parse(resp, ParseCtx(ctx.now, endpoint_of(req), ctx.instance))
-        except ParseError: sink.quarantine(task, resp); step = Step(resp, None); continue
+        except ParseError as e:                                      # 类别随 Step 回送，plan() 据此处理 cursor_expired 重启
+            if e.error_class == "parse": sink.quarantine(task, resp)
+            step = Step(resp, None, e.error_class); continue
         sink.commit_page(task, page)   # 同事务：source_record upsert + CursorEnvelope 按 rev 比较交换；失败整页回滚
         step = Step(resp, page)
 ```
