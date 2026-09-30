@@ -69,11 +69,12 @@ class BulkSnapshot(PlatformConnector):
         verdict = self.manifest_gate(spec, prev=cur)          # 纯函数，§2.1；prev 为已提交游标（含 parts_done、part_offsets，可判是否整版完成）
         if verdict.noop: return completed()
         if not verdict.ok: return stopped(verdict.error_class, verdict.reason)
+        same_release = cur is not None and cur.release_id == spec.release_id   # 换版则 parts_done、part_offsets 从空开始
         for f in spec.files:
-            if cur and f.file_id in cur.parts_done: continue  # 已完成文件跳过；未完成文件由 runner 按 part_offsets 续切
+            if same_release and f.file_id in cur.parts_done: continue   # 只在同一 release 内跳过已完成文件；未完成文件由 runner 按 part_offsets 续切
             step = yield stream_request(f)                    # stream=True；Range 续传由网关写，连接器不写 Range
             if step.page is None: return stop_at_last_safe_point(step)
-        return completed(next_cursor=release_done(spec))    # runner 只在 ImportLedger 对账（§2.2）通过后提交此终局游标，否则 stopped/integrity
+        return completed(next_cursor=release_done(spec), reconcile_spec=spec)   # runner 调 reconcile(ledger, spec) 通过后才提交终局游标，否则 stopped/integrity
     def discover(self, release_id, ctx) -> Generator[RequestSpec, Step, SnapshotSpec | None]: ...
         # Zenodo 托管的不用 zenodo.org/api（robots 禁）
     def manifest_gate(self, spec: SnapshotSpec, prev: SnapshotReleaseCursor | None) -> GateVerdict: ...   # 纯函数，§2.1

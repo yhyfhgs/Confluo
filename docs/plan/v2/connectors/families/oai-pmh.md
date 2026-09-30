@@ -117,21 +117,19 @@ def fix_until(response_date, now, inst):
 ```python
 # 设计伪代码 —— 在场对账；Operation = enumerate，scope_key = "oai:<instance>:<set|*>:reconcile"
 def _reconcile(self, task, ctx):
-    restarts = 0
+    # 一个任务只跑一遍：遇 cursor_expired 即以 stopped 结束，由调度器用新任务重跑 ≤2 次（与收割循环同上限）。
+    # sink 按 task_id 暂存本遍的在场记录，只有 completed 的任务才生效，其余任务结束时整批丢弃，无须遍次标识。
     req = list_identifiers(ctx.instance, set_=set_of(task.scope_key))   # 不带 from：整段
     while req is not None:
         step = yield req
         if step.page is None:
-            if step.error_class == "cursor_expired" and restarts < 2:     # 同收割循环：整段重启 ≤2 次
-                restarts += 1                                    # presence 载荷带 attempt=restarts；sink 只认与完成结果 (task_id, TaskOutcome.restarts) 相同遍次的在场记录
-                req = list_identifiers(ctx.instance, set_=set_of(task.scope_key)); continue
-            return stop_at_last_safe_point(step)                 # 被截断：不参与删除判定
+            return stop_at_last_safe_point(step)                 # 被截断或令牌过期：本遍不参与删除判定
         token = step.page.signals.continuation
         req = resume(ctx.instance, token) if token else None
     return completed()                                       # 只有 completed 计为完整对账
 # parse 在对账模式下只产出 header 形态的 RawRecord(kind="presence")（契约 §3 已收录）；
 #   commit_page 只写在场表、不动 source_record 的载荷；header 带 status="deleted" 的直接出 tombstone。
-# 完整对账 = TaskOutcome.completed 的任务里 attempt == outcome.restarts 的那一遍；更早遍次的在场记录在任务结束时丢弃
+# 完整对账 = status=completed 的对账任务；未完成任务暂存的在场记录在其结束时丢弃
 # ingestor 侧 tombstone_by_absence(scope)：本地有、连续 absent_passes_to_tombstone 次完整对账都缺席的 source_key
 #   → RawRecord(kind="tombstone")，只置 deleted_upstream，不删 Work；撤稿与更正仍走 status_claims。
 ```

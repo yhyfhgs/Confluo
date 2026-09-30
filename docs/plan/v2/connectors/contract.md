@@ -212,6 +212,7 @@ class TaskOutcome:
     status: Literal["completed", "partial", "stopped", "denied", "failed"]   # partial = 按预算在安全点停下，不算错
     error_class: ErrorClass | None = None; reason: str | None = None; committed: CursorEnvelope | None = None
     next_cursor: Cursor | None = None    # 生成器可在终局带回游标（无分页的 feed 等），runner 原子落库后再返回
+    reconcile_spec: SnapshotSpec | None = None   # 仅 snapshot_import：runner 以此与 ImportLedger 调族对账器，通过才提交终局游标
     pages: int = 0; records: int = 0; requests: int = 0; restarts: int = 0; cost_usd: Decimal = Decimal(0)   # 计数由 runner 账本覆盖（§5）
 
 @dataclass(frozen=True)
@@ -305,7 +306,7 @@ def _drive(task, c, gw, sink, clock, ctx, exec_ctx, rollout) -> TaskOutcome:
         except StopIteration as done:                                # 状态取生成器，计数与 cost_usd 取 runner 与网关账本
             out = done.value
             if out.next_cursor is not None:
-                if task.operation == "snapshot_import" and not sink.reconcile_ok(task, out.next_cursor):   # 文件级与 release 级对账（bulk-snapshot §2.2）
+                if task.operation == "snapshot_import" and not c.reconcile(sink.ledger(task), out.reconcile_spec).ok:   # 族对账器（bulk-snapshot §2.2），纯函数
                     return stop(TaskOutcome(status="stopped", error_class="integrity", reason="reconcile_failed"))
                 sink.commit_cursor(task, out.next_cursor)    # 终局游标（如 feed 的 guid_set、ETag）按 rev 比较交换落库
             return acct.finalize(replace(out, committed=sink.last(task)), gw.ledger(exec_ctx))
