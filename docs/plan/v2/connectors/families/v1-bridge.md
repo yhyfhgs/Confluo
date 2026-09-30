@@ -137,12 +137,12 @@ def run_bridge(task, c, egress, sink, clock, ctx: PlanCtx, exec_ctx: ExecCtx, ro
         for venue in m.v1.venues_for(task.scope_key):
             for issue in adapter.discover_timeline(venue, since=since):
                 if issue_date(issue) >= stop_at: continue
-                if task.operation == "enumerate" and cur and issue_key(issue) in cur.completed:   # window_set（按期键，见未决 11）
+                if task.operation == "enumerate" and cur and covered(cur.completed, issue_interval(issue)):   # 期按出版日期映射为 [from, until) 区间（契约 §6 window_set）
                     continue
                 if acct.exhausted(): raise BridgeStop("budget_exhausted", "task_budget")   # 页边界查 max_pages 与 deadline
                 stubs = list(adapter.enumerate_issue(venue, issue))
                 page = Page(records=tuple(to_raw(s, m, until, "harvest") for s in stubs),
-                            next_cursor=after_issue(task, issue),  # enumerate：期键入 window_set；increment：None
+                            next_cursor=after_issue(task, issue),  # enumerate：该期区间并入 window_set.completed；increment：None
                             signals=shim.drain())
                 sink.commit_page(task, page); acct.count_page(page)
     except BridgeStop as s:  # 结果按契约 §7：budget_exhausted、超 deadline 的 rate_limited 为 partial，其余 stopped
@@ -154,7 +154,7 @@ def run_bridge(task, c, egress, sink, clock, ctx: PlanCtx, exec_ctx: ExecCtx, ro
     return finish(TaskOutcome(status="completed"))
 ```
 
-游标：`enumerate` 用 `window_set`（已完成的 `IssueRef` 键；契约 §6 的 `window_set` 以日期区间记 `completed`，按期键记属扩展，见未决 11），每期完成即安全提交；`increment` 用 `date_watermark`，整段完成后推进到 `until`；期内崩溃整期重跑，重复由 `(source_id, source_key)` 去重吸收。v1 的月桶、年桶、卷号表经纯函数 `migrate_cursor` 转换。
+游标：`enumerate` 用 `window_set`（每期按出版日期映射为区间记入 `completed`，见未决 11），每期完成即安全提交；`increment` 用 `date_watermark`，整段完成后推进到 `until`；期内崩溃整期重跑，重复由 `(source_id, source_key)` 去重吸收。v1 的月桶、年桶、卷号表经纯函数 `migrate_cursor` 转换。
 
 ### 2.3 `PaperStub` → `NormRecord` 适配层
 
@@ -536,7 +536,7 @@ v1 行数与 fixture 数取自第一阶段 C 调研 §2.2（`archive/v1` 代码�
 8. `ssrn_crossref` 不加载 v1 代码（长稿 D-051 第 3 条）与 AC-V1.15"只排除 SSRN 全文模式"的措辞待统一。
 9. `pc_agent` 模式是否保留（长稿 §14.1 让 `user_side_only` 过渡期以 `pc_agent` 运行，本文与契约改为 `replay_only`）；PMLR 改用 feed 发现、arXiv 平台侧不用查询 API 与长稿不同，列入名录复勘。
 10. 同一 `connector_id` 的 0.x 桥接版与 1.0.0 移植版：本文按"MAJOR 升级、桥接版退役"处理，与契约 §14、§17"bridge 转 CLX、id 永不复用"的衔接待契约确认（同 aggregator-api U-3）。
-11. `window_set` 按期键（`IssueRef`）记完成单元，契约 §6 只有日期区间；须补"期键"形态，或改用 `seq`（卷号）与 `repo_commit`（ACL）。
+11. `window_set` 进度：已改为把每期按出版日期映射成 `[from, until)` 区间记入契约 §6 的 `completed`，不另立期键形态；同一日期区间内有多期的 venue（如同日多卷）须由 `issue_interval()` 取到秒级或改用 `seq`，移植时按目标族定。
 12. v1 读时钟处的 CT-01 测法（夹具替换而非抛错）待一致性文档确认；不获确认则桥接补丁改读注入时钟。
 13. [实施计划](../implementation-plan.md)口径待统一：其 CN-6 记 `repec_redif`、`unpaywall_api` 在 W2 直接写成快照或族实例（本文为平台侧桥接）。
 14. 卡片小节标签本文已统一为 `**1 身份**：` 形式（原 `1. **身份**：` 编号列表）；按[卡片模板](../connector-card-template.md)，V0 起以 `card render` 的输出为准；§6 的三级标题只写 connector_id，分组用粗体行。

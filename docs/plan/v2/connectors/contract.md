@@ -224,6 +224,7 @@ class EgressEnvelope:                    # runner 生成，连接器不可见；
     ctx: ExecCtx; source_id: str; channel: str; operation: Operation
     rollout: Literal["shadow", "canary", "full"]; request: RequestSpec
     deadline: datetime                   # 任务剩余截止时间，网关对流式下载按此中止并保留已下字节供续传
+    max_attempts: int                    # 本任务剩余请求额度与单请求 3 次取小，网关内部重试不得超过（预算测试覆盖）
 
 @dataclass(frozen=True)
 class AccessDecision:                    # 策略引擎产物，只由网关与 runner 读
@@ -312,7 +313,8 @@ def _drive(task, c, gw, sink, clock, ctx, exec_ctx, rollout) -> TaskOutcome:
             return acct.finalize(replace(out, committed=sink.last(task)), gw.ledger(exec_ctx))
         if acct.exhausted():                              # max_requests / max_pages / deadline：在页边界停
             return stop(TaskOutcome(status="partial", error_class="budget_exhausted", ...))
-        resp = gw.execute(EgressEnvelope(exec_ctx, task.source_id, task.channel, task.operation, rollout, req, deadline=task.budget.deadline))   # 判定 ②
+        resp = gw.execute(EgressEnvelope(exec_ctx, task.source_id, task.channel, task.operation, rollout, req,
+                                         deadline=task.budget.deadline, max_attempts=acct.remaining_attempts()))   # 判定 ②
         acct.count_request(resp)                                     # 每次尝试都计数，含 gone、失败与 304
         if resp.error_class == "gone" and task.operation in ("lookup", "search", "probe"):
             step = Step(resp, None, "gone"); continue                # 逐项标记未命中，plan() 继续其余请求（§7）
