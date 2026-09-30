@@ -285,10 +285,13 @@ def run(task, c: PlatformConnector, gw, policy, sink, clock) -> TaskOutcome:
         return outcome
 
 def _drive(task, c, gw, sink, ctx, exec_ctx) -> TaskOutcome:
-    gen, step = c.plan(task, ctx), None
+    gen, step, acct = c.plan(task, ctx), None, RunnerAccount(task.budget)   # 请求、页、记录计数与截止时间归 runner
     while True:
         try: req = gen.send(step) if step else next(gen)
-        except StopIteration as done: return done.value             # 零网络任务在此直接返回
+        except StopIteration as done:                                # 状态取生成器，计数与 cost_usd 取 runner 与网关账本
+            return acct.finalize(done.value, gw.ledger(exec_ctx))
+        if acct.exhausted(clock.now()):                              # max_requests / max_pages / deadline：在页边界停
+            gen.close(); return acct.finalize(TaskOutcome(status="partial", error_class="budget_exhausted", committed=sink.last(task), ...), gw.ledger(exec_ctx))
         resp = gw.execute(EgressEnvelope(exec_ctx, task.source_id, task.channel, task.operation, rollout, req))   # 判定 ②
         if resp.error_class == "gone" and task.operation in ("lookup", "search", "probe"):
             step = Step(resp, None, "gone"); continue                # 逐项标记未命中，plan() 继续其余请求（§7）
@@ -296,7 +299,7 @@ def _drive(task, c, gw, sink, ctx, exec_ctx) -> TaskOutcome:
             gen.close(); return TaskOutcome(status=outcome_of(resp.error_class),   # 按 §7 矩阵：budget_exhausted 为 partial，其余 stopped
                                             error_class=resp.error_class, reason=resp.subcode, committed=sink.last(task), ...)
         if req.stream:                                               # 流式：按记录边界切块，逐块 parse_chunk 并按块提交（见下文"流式导入"）
-            for chunk in split_chunks(resp.blob, resumed_from=sink.last(task)):
+            for chunk in split_chunks(resp.blob, resumed_from=sink.last(task)):   # 从 part_offsets 记录的偏移续切
                 sink.commit_page(task, c.parse_chunk(chunk, ParseCtx(ctx.now, endpoint_of(req), ctx.instance)))
             step = Step(resp, None); continue                        # ParseError 处理同下（此处从略）
         try: page = c.parse(resp, ParseCtx(ctx.now, endpoint_of(req), ctx.instance))
@@ -307,7 +310,7 @@ def _drive(task, c, gw, sink, ctx, exec_ctx) -> TaskOutcome:
                     gen.close(); return TaskOutcome(status="stopped", error_class="parse", committed=sink.last(task), ...)
             step = Step(resp, None, e.error_class); continue         # 可恢复类（如 cursor_expired）回送 plan() 处理重启
         sink.commit_page(task, page)   # 同事务：source_record upsert + CursorEnvelope 按 rev 比较交换；失败整页回滚
-        step = Step(resp, page)
+        acct.count(resp, page); step = Step(resp, page)
 ```
 
 **流式导入**（`snapshot_import`）：`plan()` 对大文件发 `stream=True` 的请求，收到的 `Step.resp.blob` 由 runner 按记录边界切成 `SnapshotChunk`，逐块调用纯函数 `parse_chunk(chunk, ctx) -> Page` 并按块提交（游标 `snapshot_release.parts_done` 记到块），连接器不读文件、不开网络；族内其余类型（`SnapshotSpec`、`ImportLedger` 等）见 [bulk-snapshot](families/bulk-snapshot.md)。
@@ -324,7 +327,7 @@ def _drive(task, c, gw, sink, ctx, exec_ctx) -> TaskOutcome:
 | `oai_datestamp` | 同上 + `set, metadata_prefix` | arXiv、PMC、DSpace/EPrints/Invenio 实例 | 整段 ListRecords 完成后推进到 `until`（取 `responseDate`） |
 | `guid_set` | `guids: frozenset[str], window_started_at` | RSS/Atom（ECB、BIS、JMLR） | 每次完整 feed 读取 |
 | `seq` | `key, value, probe_ahead` | PMLR 卷号、NeurIPS 年页 | 单个序号完成 |
-| `snapshot_release` | `release_id, checksum, parts_done[]` | OpenAlex 季度快照、DROPS dblp | 每个分片完成 |
+| `snapshot_release` | `release_id, checksum, parts_done[], part_offsets{file_id: record_offset}` | OpenAlex 季度快照、DROPS dblp | 每个块（未完成文件记 `part_offsets`，整文件完成后移入 `parts_done`） |
 | `repo_commit` | `repo, commit_sha, path` | ACL Anthology 数据仓库 | 单个 commit |
 | `window_set` | `completed[(from, until)], pending[(from, until)]` | 回填、`late_path` 对账 | 单个窗口完成 |
 

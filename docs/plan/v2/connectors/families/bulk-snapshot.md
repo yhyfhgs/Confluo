@@ -99,7 +99,7 @@ class BulkSnapshot(PlatformConnector):
 
 ### 2.4 断点续传与游标
 
-- `Cursor.kind = snapshot_release`，字段按契约 `{release_id, checksum, parts_done[]}`，每个分片（文件）完成即推进；超大分片可加可选的 `part_offset{part_id, record_offset}`（本批补充）；增量文件序列用 `seq`（PubMed updatefile 编号），HF 数据集用 `repo_commit`。
+- `Cursor.kind = snapshot_release`，字段按契约 `{release_id, checksum, parts_done[], part_offsets{file_id: record_offset}}`：每块提交即推进未完成文件的 `part_offsets`，整文件完成后移入 `parts_done`，崩溃后从块偏移续切；增量文件序列用 `seq`（PubMed updatefile 编号），HF 数据集用 `repo_commit`。
 - 文件不可变、切块确定，因此声明 `ordered_by: file_offset`（配乱序反例 fixture）后可按块提交；运行开始固定 `release_id`，校验和变化或上游换版即放弃本次、从新版重开。
 - 下载中断：网关按 Range 续传，每次尝试在 FetchLog 写一行；单请求 ≤3 次尝试（契约 `transient` 默认）仍失败即停在已提交文件。
 
