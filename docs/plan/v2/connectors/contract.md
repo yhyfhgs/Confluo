@@ -205,6 +205,7 @@ class ConnectorTask:                     # 无 user_id；plan_key 只作缓存�
 class TaskOutcome:
     status: Literal["completed", "partial", "stopped", "denied", "failed"]   # partial = 按预算在安全点停下，不算错
     error_class: ErrorClass | None; reason: str | None; committed: CursorEnvelope | None
+    next_cursor: Cursor | None = None    # 生成器可在终局带回游标（无分页的 feed 等），runner 原子落库后再返回
     pages: int; records: int; requests: int; restarts: int; cost_usd: Decimal
 
 @dataclass(frozen=True)
@@ -286,31 +287,42 @@ def run(task, c: PlatformConnector, gw, policy, sink, clock) -> TaskOutcome:
 
 def _drive(task, c, gw, sink, ctx, exec_ctx) -> TaskOutcome:
     gen, step, acct = c.plan(task, ctx), None, RunnerAccount(task.budget)   # 请求、页、记录计数与截止时间归 runner
+    def stop(outcome):                                               # 所有非正常结束都经这里：关生成器、按 runner 账本汇总
+        gen.close(); return acct.finalize(replace(outcome, committed=sink.last(task)), gw.ledger(exec_ctx))
     while True:
         try: req = gen.send(step) if step else next(gen)
         except StopIteration as done:                                # 状态取生成器，计数与 cost_usd 取 runner 与网关账本
-            return acct.finalize(done.value, gw.ledger(exec_ctx))
+            out = done.value
+            if out.next_cursor is not None: sink.commit_cursor(task, out.next_cursor)   # 终局游标（如 feed 的 guid_set、ETag）按 rev 比较交换落库
+            return acct.finalize(replace(out, committed=sink.last(task)), gw.ledger(exec_ctx))
         if acct.exhausted(clock.now()):                              # max_requests / max_pages / deadline：在页边界停
-            gen.close(); return acct.finalize(TaskOutcome(status="partial", error_class="budget_exhausted", committed=sink.last(task), ...), gw.ledger(exec_ctx))
+            return stop(TaskOutcome(status="partial", error_class="budget_exhausted", ...))
         resp = gw.execute(EgressEnvelope(exec_ctx, task.source_id, task.channel, task.operation, rollout, req))   # 判定 ②
+        acct.count_request(resp)                                     # 每次尝试都计数，含 gone、失败与 304
         if resp.error_class == "gone" and task.operation in ("lookup", "search", "probe"):
             step = Step(resp, None, "gone"); continue                # 逐项标记未命中，plan() 继续其余请求（§7）
         if resp.terminal:                                            # challenge / policy_denied / budget_exhausted / disabled …
-            gen.close(); return TaskOutcome(status=outcome_of(resp.error_class),   # 按 §7 矩阵：budget_exhausted 为 partial，其余 stopped
-                                            error_class=resp.error_class, reason=resp.subcode, committed=sink.last(task), ...)
-        if req.stream:                                               # 流式：按记录边界切块，逐块 parse_chunk 并按块提交（见下文"流式导入"）
+            return stop(TaskOutcome(status=outcome_of(resp.error_class),   # 按 §7 矩阵：budget_exhausted 为 partial，其余 stopped
+                                    error_class=resp.error_class, reason=resp.subcode, ...))
+        pctx = ParseCtx(ctx.now, endpoint_of(req), ctx.instance)
+        if req.stream:                                               # 流式：按记录边界切块，逐块 parse_chunk、按块提交、按块查预算
             for chunk in split_chunks(resp.blob, resumed_from=sink.last(task)):   # 从 part_offsets 记录的偏移续切
-                sink.commit_page(task, c.parse_chunk(chunk, ParseCtx(ctx.now, endpoint_of(req), ctx.instance)))
-            step = Step(resp, None); continue                        # ParseError 处理同下（此处从略）
-        try: page = c.parse(resp, ParseCtx(ctx.now, endpoint_of(req), ctx.instance))
+                if acct.exhausted(clock.now()):
+                    return stop(TaskOutcome(status="partial", error_class="budget_exhausted", ...))
+                try: page = c.parse_chunk(chunk, pctx)
+                except ParseError as e:
+                    sink.quarantine(task, resp); return stop(TaskOutcome(status="stopped", error_class=e.error_class, ...))
+                sink.commit_page(task, page); acct.count_page(page)
+            step = Step(resp, None); continue
+        try: page = c.parse(resp, pctx)
         except ParseError as e:
             if e.error_class == "parse":                             # 隔离该页；只有 lookup/search/probe 可继续，其余停在安全点（§7）
                 sink.quarantine(task, resp)
                 if task.operation not in ("lookup", "search", "probe"):
-                    gen.close(); return TaskOutcome(status="stopped", error_class="parse", committed=sink.last(task), ...)
+                    return stop(TaskOutcome(status="stopped", error_class="parse", ...))
             step = Step(resp, None, e.error_class); continue         # 可恢复类（如 cursor_expired）回送 plan() 处理重启
         sink.commit_page(task, page)   # 同事务：source_record upsert + CursorEnvelope 按 rev 比较交换；失败整页回滚
-        acct.count(resp, page); step = Step(resp, page)
+        acct.count_page(page); step = Step(resp, page)
 ```
 
 **流式导入**（`snapshot_import`）：`plan()` 对大文件发 `stream=True` 的请求，收到的 `Step.resp.blob` 由 runner 按记录边界切成 `SnapshotChunk`，逐块调用纯函数 `parse_chunk(chunk, ctx) -> Page` 并按块提交（游标 `snapshot_release.parts_done` 记到块），连接器不读文件、不开网络；族内其余类型（`SnapshotSpec`、`ImportLedger` 等）见 [bulk-snapshot](families/bulk-snapshot.md)。
