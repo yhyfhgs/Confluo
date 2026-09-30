@@ -69,7 +69,7 @@ class ReconcilePolicy:
 class OaiPmh(PlatformConnector):
     def plan(self, task: ConnectorTask, ctx: PlanCtx) -> Generator[RequestSpec, Step, TaskOutcome]:
         inst = ctx.instance
-        if task.plan_key == "reconcile":
+        if task.payload.mode == "reconcile":          # 模式来自 EnumerateInput，plan_key 只作缓存与审计键
             return (yield from self._reconcile(task, ctx))
         frm, sset = window_start(task.cursor, inst), set_of(task.scope_key)   # 水位 − overlap；set 取自 scope_key
         req_until = frozen_until(task, inst)           # send_until=False 时为 None（不带 until）
@@ -191,7 +191,7 @@ fixture 按长稿 §15.1 四类录制，只经 staging 网关；元数据 CC0 �
 
 | Operation | metadata | latest | fulltext | 说明 |
 |---|---|---|---|---|
-| `enumerate` | ✓ | — | — | 回填窗口 + 在场对账（`plan_key=reconcile`） |
+| `enumerate` | ✓ | — | — | 回填窗口 + 在场对账（`EnumerateInput.mode=reconcile`） |
 | `increment` | ✓ | ✓ | — | 按 WatchKey 或实例 set 的日常增量 |
 | `lookup` | ✓ | — | — | `GetRecord` 按需单篇，只对声明了 identifier 规则的实例 |
 | `search` | — | — | — | 不声明；OAI 无关键词检索 |

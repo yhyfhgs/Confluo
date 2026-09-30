@@ -182,7 +182,7 @@ class LookupInput: identifiers: tuple[Identifier, ...]          # 04 联邦 LOOK
 @dataclass(frozen=True)
 class SearchInput: query: PushdownQuery; limit: int               # 只含 SCD 声明可下推的谓词（aggregator_api §2.2）
 @dataclass(frozen=True)
-class EnumerateInput: window: tuple[datetime, datetime]           # [from, until)，回填与对账窗口
+class EnumerateInput: window: tuple[datetime, datetime]; mode: Literal["harvest", "reconcile"] = "harvest"   # [from, until)；reconcile = 在场对账
 @dataclass(frozen=True)
 class SnapshotInput: release_id: str; union_filter: UnionFilter   # 兴趣并集过滤（05）
 @dataclass(frozen=True)
@@ -288,6 +288,8 @@ def _drive(task, c, gw, sink, ctx, exec_ctx) -> TaskOutcome:
         try: req = gen.send(step) if step else next(gen)
         except StopIteration as done: return done.value             # 零网络任务在此直接返回
         resp = gw.execute(EgressEnvelope(exec_ctx, task.source_id, task.channel, task.operation, rollout, req))   # 判定 ②
+        if resp.error_class == "gone" and task.operation in ("lookup", "search", "probe"):
+            step = Step(resp, None, "gone"); continue                # 逐项标记未命中，plan() 继续其余请求（§7）
         if resp.terminal:                                            # challenge / policy_denied / budget_exhausted / disabled …
             gen.close(); return TaskOutcome(status=outcome_of(resp.error_class),   # 按 §7 矩阵：budget_exhausted 为 partial，其余 stopped
                                             error_class=resp.error_class, reason=resp.subcode, committed=sink.last(task), ...)

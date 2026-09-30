@@ -90,9 +90,9 @@ PlatformConnector 全部必过；RecipeProvider 适用 CT-01、02、03、05、08
 
 | rule_id | 断言 | 手段与所需 fixture |
 |---|---|---|
-| CT-01 ★ 零 I/O | `plan`、`parse`、`normalize`、`describe` 不碰 socket、系统时钟、环境变量、文件、随机源；包内不导入 HTTP、浏览器自动化、TLS 指纹、验证码类库 | 沙箱把入口换成抛错；依赖禁表 |
-| CT-02 确定性 | 同一 fixture、同一 `ctx.now` 跑两次，RequestSpec 序列与 NormRecord 逐字节相同；`idempotency_key`、`payload_sha256` 稳定，`volatile_fields` 不入哈希 | 全部 fixture 双跑 |
-| CT-03 ★ 用户无关 | 不同用户上下文下 RequestSpec 序列相同；`ConnectorTask` 无 `user_id` | 两个合成用户上下文对跑 |
+| CT-01 ★ 零 I/O | `plan`、`parse`、`normalize`、`describe`（RecipeProvider 为 `recipes`、`locate_fulltext`）不碰 socket、系统时钟、环境变量、文件、随机源；包内不导入 HTTP、浏览器自动化、TLS 指纹、验证码类库 | 沙箱把入口换成抛错；依赖禁表 |
+| CT-02 确定性 | 同一 fixture、同一 `ctx.now` 跑两次，RequestSpec 序列与 NormRecord（RecipeProvider 为 `FulltextRecipe` 与 `FulltextOption`）逐字节相同；`idempotency_key`、`payload_sha256` 稳定，`volatile_fields` 不入哈希 | 全部 fixture 双跑 |
+| CT-03 ★ 用户无关 | 不同用户上下文下 RequestSpec 序列相同，RecipeProvider 的 `recipes`、`locate_fulltext` 输出相同；`ConnectorTask` 无 `user_id` | 两个合成用户上下文对跑 |
 | CT-04 游标属性 | 页内页间乱序、每个 Step 边界注入崩溃、每页注入令牌过期：并集等于真值，已提交游标不越过未落库数据；`cursor_expired` 重启 ≤2 次后 stopped；`stale_decision` 与预算耗尽停在页边界；远未来游标零记录、不崩；`bounds` 开闭边界日各有样例 | 属性测试 + 乱序、过期、边界 fixture |
 | CT-05 矩阵覆盖 | `endpoints[].status_overrides` 每行、`Expectation` 七个字段的每个分支各至少一个 fixture；可能产出的每个 `error_class` 都有触发路径 | fixture `covers` 与清单求差为空 |
 | CT-06 黄金覆盖 | 黄金覆盖每个 `identifiers_emitted` 方案、每种权利类、tombstone 与撤稿；许可、权利、版本、关系字段带 `basis`；mapper 不直接给 `shareable` 等 HC-07 字段 | 逐字段比对 |
