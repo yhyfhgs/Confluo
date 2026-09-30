@@ -77,9 +77,9 @@ class BulkSnapshot(PlatformConnector):
     def discover(self, release_id, ctx) -> Generator[RequestSpec, Step, SnapshotSpec | None]: ...
         # Zenodo 托管的不用 zenodo.org/api（robots 禁）
     def manifest_gate(self, spec: SnapshotSpec, prev_checksum: bytes | None) -> GateVerdict: ...   # 纯函数，§2.1
-    def subset_filter(self, union: UnionFilter) -> SubsetFilter: ...   # 纯函数，把契约 SnapshotInput.union_filter 编译为本源可判键
+    def subset_filter(self, union: UnionFilter) -> SubsetFilter: ...   # 纯函数，把契约 SnapshotInput.union_filter 编译为本源可判键；runner 调用后放进 ParseCtx.subset
     def parse_chunk(self, chunk: SnapshotChunk, ctx: ParseCtx) -> Page: ...
-        # runner 按记录边界切块喂入；连接器不读文件、不开网络；单条坏记录由本函数跳过并计入 PageSignals.n_quarantined，
+        # runner 按记录边界切块喂入；只产出命中 ctx.subset 的记录（未命中计 filtered_out）；连接器不读文件、不开网络；单条坏记录由本函数跳过并计入 PageSignals.n_quarantined，
         # 整块结构不符才抛 ParseError（runner 停在上一个已提交块）
     def reconcile(self, ledger: ImportLedger, spec: SnapshotSpec) -> ReconcileReport: ...  # §2.2；ImportLedger 由 runner/ingestor 维护，不进连接器输入
 ```

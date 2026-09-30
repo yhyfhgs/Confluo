@@ -144,6 +144,9 @@ class RequestSpec:
     url: str; params: Mapping[str, str]; headers: Mapping[AllowedHeader, str]
     auth: AuthRef | None; expect: Expectation; idempotency_key: str   # key 由 SDK 计算
     stream: bool = False                 # 大文件：网关流式落冷存储、自写 Range 续传，Response.body 为空、只回 blob
+    body: bytes | None = None            # 仅 method=POST 且清单声明该端点可 POST（如 pubmed_eutils 批量、s2 /paper/batch）；
+    body_type: Literal["json", "form"] | None = None   # SDK 规范化编码（JSON 键排序）后计入 idempotency_key；≤64 KiB；
+                                        # 不得含凭证或占位符（凭证只经 AuthRef 由网关注入）；FetchLog 只记 body 的 sha256 与长度
     # 刻意没有：user_agent、cookies、robots_*、traffic_class、decision
 
 @dataclass(frozen=True)
@@ -232,6 +235,7 @@ class AccessDecision:                    # 策略引擎产物，只由网关与 
 
 class PlanCtx:  now: datetime; instance: ConnectorInstance | None; scd: Mapping[str, SCD]; mode_caps: ModeCaps
 class ParseCtx: now: datetime; endpoint: EndpointDecl; instance: ConnectorInstance | None
+                subset: SubsetFilter | None = None   # 仅 snapshot_import：runner 以 c.subset_filter(task.payload.union_filter) 预编译后注入
 class MapCtx:   now: datetime; granularity_table: Mapping; license_alias: Mapping; doi_family: Mapping
                 mapper_config: Mapping           # 清单中该 mapper 的静态配置（如 v1 桥接的 stage_default、meta_keep），不含凭证
 class LocateCtx: now: datetime; instance: ConnectorInstance | None; mode_caps: ModeCaps   # locate_fulltext 专用，同样纯函数
@@ -311,7 +315,8 @@ def _drive(task, c, gw, sink, clock, ctx, exec_ctx, rollout) -> TaskOutcome:
         if resp.terminal:                                            # challenge / policy_denied / budget_exhausted / disabled …
             return stop(TaskOutcome(status=outcome_of(resp.error_class),   # 按 §7 矩阵：budget_exhausted 为 partial，其余 stopped
                                     error_class=resp.error_class, reason=resp.reason, ...))
-        pctx = ParseCtx(ctx.now, endpoint_of(req), ctx.instance)
+        pctx = ParseCtx(ctx.now, endpoint_of(req), ctx.instance,
+                        subset=c.subset_filter(task.payload.union_filter) if task.operation == "snapshot_import" else None)
         if req.stream:                                               # 流式：按记录边界切块，逐块 parse_chunk、按块提交、按块查预算
             for chunk in split_chunks(resp.blob, resumed_from=sink.last(task)):   # 从 part_offsets 记录的偏移续切
                 if acct.exhausted():

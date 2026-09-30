@@ -72,7 +72,8 @@ class EgressShim:
         spec = RequestSpec(endpoint_id=ep.endpoint_id, request_class=ep.request_class, method=method,
                            url=strip_query(url), params=checked_params(url, ep),  # 剥 identity_param 哨兵，拒 personal_params
                            headers={"Accept": accept} if accept else {},  # 只放 AllowedHeader
-                           auth=ep.auth, expect=ep.expect, idempotency_key=sdk_key(url, body))
+                           auth=ep.auth, expect=ep.expect, idempotency_key=sdk_key(url, body),
+                           body=encode_body(body), body_type="json" if body is not None else None)   # 请求体经契约 RequestSpec.body 转交网关
         if self.account.exhausted():  # 与通用执行器同一账本：请求前查 max_requests、deadline
             raise BridgeStop("budget_exhausted", "task_budget")
         resp = self.egress.execute(EgressEnvelope(ctx=self.ctx, rollout=self.rollout, request=spec, deadline=self.account.deadline, ...))  # robots、桶、挑战、FetchLog
