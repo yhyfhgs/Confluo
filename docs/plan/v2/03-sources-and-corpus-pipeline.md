@@ -2,7 +2,7 @@
 title: 来源接入与语料流水线
 status: draft
 owner: opus5.5-primary
-updated: 2026-09-29
+updated: 2026-09-30
 ---
 
 # 03 · 来源接入与语料流水线
@@ -72,6 +72,7 @@ SCD（Source Capability Descriptor）按端点说明"能怎样查、代价多少
   - `official_tdm_api`：用户本人 key 的出版商全文或 TDM API（Elsevier、Wiley、Springer Nature 等）；user。
   - `site_special`：有官方 API 或结构化页面的专站，含 robots 允许、结构稳定、无挑战门的 OA 论文集静态页（PMLR、CVF 等）；platform。
   - `v1_bridge`：包装复用 v1 的 20 个生产 adapter（部分移植、转用户侧或废止在线路径）；platform 或用户侧 pc-agent。
+- **接口与逐族规范**：连接器接口契约 v1、一致性与测试规范、各族的实例字段与族一致性套件，以及每个连接器的卡片，见 [connectors/](connectors/README.md)（[契约](connectors/contract.md)、[一致性与测试](connectors/conformance-and-testing.md)、[九族规范](connectors/README.md#文档地图)）；它们细化本节，不改本节结论。
 
 ## 策略引擎与漂移探针
 
@@ -176,6 +177,7 @@ SCD（Source Capability Descriptor）按端点说明"能怎样查、代价多少
 - 没有官方通道、又被 robots 或 WAF 禁止的站点不写抓取型连接器，登记为 `link-only`、`metadata-only` 或 `user-import-only`。
 - 合规、技术、上线三道评审门，合规字段须第二人复核。
 - 用户提交的新来源登记进部署方审核队列；通过前不向新来源的任何主机发请求，连 robots.txt 也不取。
+- 三道评审门与 SOP D 的交付物在 [一致性与测试](connectors/conformance-and-testing.md) 中细化为一致性等级 CL0–CL3 的进入门（合规门对应 CL0 出口，技术门对应 CL1→CL2，上线门对应 CL2→CL3），接口按 [契约](connectors/contract.md)，各族零代码实例的字段与测试见 [九族规范](connectors/README.md#文档地图)。
 
 ## 怎么验收
 

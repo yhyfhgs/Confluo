@@ -2,7 +2,7 @@
 title: 术语表（Glossary）
 status: draft
 owner: opus5.5-primary
-updated: 2026-09-28
+updated: 2026-09-30
 ---
 
 # 术语表
@@ -20,6 +20,24 @@ updated: 2026-09-28
 | SCD | Source Capability Descriptor：可下推谓词、排序键、增量游标、成本模型与礼貌参数；是路由器的唯一输入 |
 | ConnectorFamily | v2 的 adapter 抽象，共九族（含 `bulk_snapshot`，以及复用 v1 adapter 的 `v1_bridge`）；每个 connector 声明 `exec_side ∈ {platform, user}` |
 | Egress Gateway（出站网关） | 平台侧唯一的对外出口，执行 robots、五元组令牌桶限速、配额与审计 |
+| ConnectorContract v1（连接器接口契约） | 连接器与执行器、网关之间的冻结协议：三层声明、核心类型、判定点、游标、错误分类、映射与版本规则；定义见[契约](plan/v2/connectors/contract.md)（D-074 草案） |
+| ConnectorManifest / ConnectorInstance | 连接器级清单 `registry/connectors/<connector_id>.yaml`（族、`exec_side`、`impl`、端点、游标、映射版本、fixture、探针、一致性等级、owner；不含运行态）/ 族实例清单 `registry/instances/<family>/<instance>.yaml`（base URL、OAI 参数、特例旗标）；与 SourceSpec 合称三层声明，合规证据只在 SourceSpec |
+| PlatformConnector / RecipeProvider | 连接器的两种协议：平台侧的 `plan/parse/normalize/describe/probes`，由平台 worker 加载；用户侧只产出声明式配方 FulltextRecipe 的数据，没有 `plan()` |
+| RequestSpec / Step | 连接器声明的一次请求（端点、上游请求类、参数、白名单头、`AuthRef`、`Expectation`），刻意不含 UA、Cookie、robots 字段 / 执行器回送给 `plan` 生成器的"响应 + 已解析页"，非合法结果只回送响应 |
+| CursorEnvelope | 持久化游标的外壳 `{scope_key, cursor, schema, rev}`；游标分七种 kind（`date_watermark`、`oai_datestamp`、`guid_set`、`seq`、`snapshot_release`、`repo_commit`、`window_set`），只在安全提交点随本页数据同一事务推进 |
+| NormRecord | `normalize` 从一条原始记录映射出的规范化记录，只输出声明，许可、权利、版本、关系四类字段带依据（`basis`）；许可取原串加 `license_alias` 归一码，权利与共享字段由共享函数 `classify_rights()` 计算、mapper 不得直接给出；不确定即 `unknown`，未知即不共享 |
+| EffectiveStatus | 连接器健康（healthy、degraded、suspended、disabled、retired）与策略模式合成的状态，是路由、"来源"页、来源状态通知与运维总览的唯一状态来源 |
+| traffic_class / request_class | 平台内流量类别（`background_batch`、`on_demand`），由执行器按任务 lane 盖章、连接器不可设置 / 上游的限速池类（如 Crossref 单条与列表），即 02 的"上游请求类"，用于五元组令牌桶；05 长稿 `ops.fetch_log.request_class` 列现存的是流量类别，改名 `traffic_class` 待拍板 |
+| 一致性等级 CL0–CL3 / CLX | 连接器的上线证明：CL0 登记（清单、卡片、证据齐全，第二人合规复核）、CL1 离线一致、CL2 灰度（staging 真实运行）、CL3 生产、CLX 退役；每级有进入门与保持条件，失效自动下调，同时是策略上限。见[一致性与测试](plan/v2/connectors/conformance-and-testing.md)（D-075 草案） |
+| CL1 待命 | 受书面确认、传输方式或 ADR 闸门阻塞的连接器做到 CL1、通道保持 deny 或 link_only，在里程碑出口按待命达标计；闸门解除后再进 CL2 计天 |
+| error_class | 连接器执行结果的错误分类，契约 v1 共 15 类（如 `transient`、`rate_limited`、`challenge`、`gone`、`parse`、`cursor_expired`），每类只有一个判定者，见 [契约 §7](plan/v2/connectors/contract.md#7-错误矩阵) |
+| 评审门 G1 / G2 / G3 | 连接器上线的三道评审：G1 合规（CL0 出口，含第二人合规复核）、G2 技术（CL1→CL2）、G3 上线（CL2→CL3），见 [一致性与测试](plan/v2/connectors/conformance-and-testing.md) |
+| QueryRecipe（P-13） | 拟议的用户侧元数据查询配方（本人 token 查询，如 OpenReview、NASA ADS、ORCID）；契约 v1 未收录，相关连接器停在 CL0，待拍板 P-13 |
+| 四类 fixture | 每个连接器与实例必备的回放样本：正常页、空页或 200 空体、限流或错误、边界（末页、令牌过期、删除、版本变化）；只经 staging 网关录制并脱敏，受版权正文不入库 |
+| 族一致性套件 | 按"实例 × fixture"参数化的族级测试，新增实例不写新测试，引擎改动时全实例回放 |
+| 连接器卡片（connector card） | 每个连接器一张的 13 节说明（身份、通道、上游事实、请求、游标、映射、SCD、合规、全文、测试、探针、运维、已知坑），多数节由清单生成；模板见[卡片模板](plan/v2/connectors/connector-card-template.md) |
+| impl 代码阶梯 | 连接器实现方式从低到高 `instance < declarative < mapper < custom_plan < v1_bridge`，默认取最低可行级，上调须写理由 |
+| 波次 W0–W4 | 连接器实施批次：W0（V0）契约与三个参考连接器，W1、W2（V1）P0 平台侧、快照与 v1 桥接，W3（V3、V5 两批）用户侧通道与 P1，W4（V5 以后）P2 与升为"支持"的登记来源按需升级；用户侧通道的波次记作 W3u、W4u（依赖 V3 的浏览器扩展或 pc-agent，[矩阵](catalog/connector-matrix.md)按来源行标注）；见[实施计划](plan/v2/connectors/implementation-plan.md) |
 | TSRG | Topic–Source Routing Graph，主题-来源路由图；以 OpenAlex 四级主题树为骨架，统一服务查询路由、收割调度、兴趣建模与论文→读者反向推送 |
 | Query AST / 频道（Channel） | 统一查询语法树，支持五种意图（LOOKUP、SEARCH、SIMILAR、LATEST、EXPAND）；用户保存的查询称为频道，是 v1 Subscription 的 v2 形态 |
 | WatchKey / Percolator / FeedInbox | 多用户共享、带引用计数的收割键 / 新论文入库后反向匹配全部频道与兴趣 / 每个用户的待推送收件箱 |

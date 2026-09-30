@@ -2,7 +2,7 @@
 title: v2 方案总览
 status: draft
 owner: opus5.5-primary
-updated: 2026-09-29
+updated: 2026-09-30
 ---
 
 # Confluo v2 方案总览
@@ -89,7 +89,10 @@ updated: 2026-09-29
 - **用户之声调研与 demo 可用性测试（5–8 人 × 3 个学科）何时做**：建议在 V1 之前。
 - **社科是否扩展到社会学、政治学、教育学**：默认 v2.0 不含，只覆盖经济、金融、商业、管理；列为补充调研缺口，将来走同一接入机制。
 - **评级标签怎么用**：默认把公开名单（CCF、ICORE、UTD24、Nature Index、科协 T 级、卓越、CSSCI 等）内置为 venue 的展示与过滤标签；ABDC、FT50、VHB 在许可确认前只接受用户导入，AJG、JCR、中科院分区表只接受用户自带；评级不进默认排序。见[评级体系](../../catalog/venue-rankings.md)。
-- **34 条 ADR 草案**（D-040…D-073）：逐条确认是 V0 的第一项工作，见 [ADR 登记](../decision-log.md)。D-072（来源七类分层）是 2026-09-27 新增的，见[来源分层](../../catalog/source-taxonomy.md)；D-073（支持分级）是 2026-09-29 新增的，见[来源分层](../../catalog/source-taxonomy.md#支持分级)与 [venue 名录](../../catalog/venues/README.md#支持分级)。
+- **连接器接口与上线门**：默认按 [ConnectorContract v1](connectors/contract.md) 冻结连接器接口（D-074），用一致性等级 CL0–CL3 管上线、保持与自动降级（D-075），这是 V0 注册表与三个参考连接器的前提；CL2 在生产限 `on_demand` 还是 deny、v1 桥接是否在 V2 出口前全部移植或退役，待你定。共 12 项，见[连接器工作总览](connectors/README.md#待你拍板)。
+- **来源名录复勘**：默认从严。NBER 条款 2026-08-01 起禁止未经许可的自动访问，nber.org 零请求，元数据改经 Crossref 与 RePEc；ORCID 平台侧只用年度 CC0 文件；RePEc、HAL 建议补非商用门控 ⚑COMM；"支持"却没有连接器的 5 行降为登记或补连接器；登记来源不运行任何连接器。本批只提建议，未改名录。
+- **05 数据表增补**：连接器契约需要 `ops.fetch_log.request_class` 改名 `traffic_class` 并按契约增列（`inputs_epoch`、`params_digest` 等），`ops.policy_snapshot` 带 `engine_version`、`inputs_epoch`，`ops.watch_key` 加 `rev` 并补按 `scope_key` 的进度表，`mapper_version` 存为 `"<mapper_id>@<n>"`；未改 05，待你定，影响 V0 迁移脚本。
+- **37 条 ADR 草案**（D-040…D-076）：逐条确认是 V0 的第一项工作，见 [ADR 登记](../decision-log.md)。D-072（来源七类分层）是 2026-09-27 新增的，见[来源分层](../../catalog/source-taxonomy.md)；D-073（支持分级）是 2026-09-29 新增的，见[来源分层](../../catalog/source-taxonomy.md#支持分级)与 [venue 名录](../../catalog/venues/README.md#支持分级)；D-074…D-076（连接器契约、一致性等级、接口增量 UI）是 2026-09-30 新增的，见[连接器工作总览](connectors/README.md)。
 
 ## 待法务与外部确认
 
@@ -114,7 +117,9 @@ updated: 2026-09-29
 | [07 前端交互与视觉](07-frontend-interaction.md) | 三件套、手势、卡片信息、动效、可访问性、性能 |
 | [08 合规、隐私与安全](08-compliance-security-privacy.md) | HC-01…HC-32、许可闸、robots 政策、隐私、LLM、威胁 |
 | [09 路线图与里程碑](09-roadmap-and-milestones.md) | V0–V7、决策门、风险、组织方式、v1 迁移 |
+| [连接器 connectors/](connectors/README.md) | 连接器接口契约 v1、一致性等级与测试、卡片模板、九族规范、实施计划（W0–W4）、接口增量 UI；逐源对应见[来源 × 连接器矩阵](../../catalog/connector-matrix.md) |
 | [交互 demo](demo/paper-feed-demo.html) | 可操作的卡片流与视觉案例；在线版 <https://claude.ai/artifact/YYZiiZjCVVeTzbESeFxqQr> |
+| [连接器 UI demo](demo/connector-ui-demo.html) | 接口相关增量 UI：来源、我的连接、可得性说明、取回状态与运维控制台（数据为示意） |
 
 来源与期刊会议的查阅文档：[来源分层与收集现状](../../catalog/source-taxonomy.md)、[支持名录](../../catalog/source-directory.md)、[venue 名录](../../catalog/venues/README.md)、[评级体系](../../catalog/venue-rankings.md)。
 

@@ -2,7 +2,7 @@
 title: 架构决策记录（ADR）
 status: approved
 owner: opus5.5-primary
-updated: 2026-09-29
+updated: 2026-09-30
 ---
 
 # 架构决策记录（ADR）
@@ -10,9 +10,9 @@ updated: 2026-09-29
 > 编号 D-NNN 单调递增，永不复用。推翻旧决策时新增一条并注明 `supersedes: D-XXX`，旧条目标注 `superseded-by`。
 > 状态：`accepted`（生效）、`proposed`（待定）、`superseded`（被取代）。
 
-## v2 决策草案（D-040…D-073，proposed）
+## v2 决策草案（D-040…D-076，proposed）
 
-这 34 条都等你逐条确认，这是 V0 的第一张任务卡。每条确认后，按本日志格式补全文并改为 `accepted`，同时在下面的 v1 索引里给被取代或修订的条目标注 `superseded-by` 或 `revised-by`（限定"在 v2 中"）。D-072 于 2026-09-27 补入，要点与依据见[来源分层](../catalog/source-taxonomy.md)；D-073 于 2026-09-29 补入，见[来源分层](../catalog/source-taxonomy.md#支持分级)与 [venue 名录](../catalog/venues/README.md#支持分级)；实现期的新决策从 D-074 起编号。
+这 37 条都等你逐条确认，这是 V0 的第一张任务卡。每条确认后，按本日志格式补全文并改为 `accepted`，同时在下面的 v1 索引里给被取代或修订的条目标注 `superseded-by` 或 `revised-by`（限定"在 v2 中"）。D-072 于 2026-09-27 补入，要点与依据见[来源分层](../catalog/source-taxonomy.md)；D-073 于 2026-09-29 补入，见[来源分层](../catalog/source-taxonomy.md#支持分级)与 [venue 名录](../catalog/venues/README.md#支持分级)；D-074…D-076 于 2026-09-30 补入，依据见[连接器工作总览](v2/connectors/README.md)；实现期的新决策从 D-077 起编号。
 
 草案全文（背景、理由、影响与验收映射）：`git show v2-drafts:docs/plan/v2/adr-proposals.md`
 
@@ -52,12 +52,15 @@ updated: 2026-09-29
 | D-071 | GROBID 启用 `teiCoordinates=figure`，只对许可闸放行的共享 OA 全文定位关键图 | 修订 D-033 |
 | D-072 | 来源分七类：元层 M1 出版与托管主体、M2 标识与注册，一级 L1a 期刊与会议、L1b 预印本与工作论文、L1c 长尾一级产出，二级 L2a 文献库与学科仓储、L2b 检索引擎与聚合项目；每个来源一个主类加兼角色，取代 L1/L2 七种类型；Source 与 Venue 仍分开建模 | —（修订 D-046 草案中的来源类型枚举） |
 | D-073 | 在七类之上加支持分级：来源分支持、登记、不接入，venue 分核心、登记；M2、L2a、L2b 的非排除来源全部支持，M1、L1a、L1b 只支持 P0/P1 与承接核心 venue 的行；核心 venue 按硬性标签、组内评级配额、中文刊上限与人工补选初选；长尾登记，按季度问卷、关注数与学科调研升级 | —（补充 D-072；不改 v2 状态语义）
+| D-074 | 冻结连接器接口契约 ConnectorContract v1：`PlatformConnector` 与 `RecipeProvider` 两种协议，`plan` 生成器回送 `Step`，纯函数注入上下文；ConnectorManifest 与 SourceSpec、ConnectorInstance 分离，合规证据只在 SourceSpec；contract、connector、mapper 三个版本号，`scd_version` 归 contract 管；七种类型化游标与安全提交点；`error_class` 15 类（长稿 13 类加 `cursor_expired`、`disabled`）各一判定者；策略双判定 `engine_version + inputs_epoch` 取代全局 `policy_version`；`request_class` 保留上游池义、新增 `traffic_class`；平台不向端侧下发代码；v1_bridge 过渡条款：桥接期 v1 adapter 经网关垫片发请求（仍全部经网关、受策略判定与审计），不满足声明式 plan，限 V2 出口前移植到对应族或退役（用户侧部分的 v1 代码只以 `replay_only` 作离线对拍基准，同样 V2 出口退役，其配方在 W3 另写） | —（补充 D-046、D-055；细化 D-053、D-054 的类型约束；不改 03、08 结论） |
+| D-075 | 连接器一致性等级 CL0–CL3/CLX，附进入门与保持条件，失效自动降、晋级只经 PR；CL 作策略上限（CL0、CL1 在生产为 deny，CL3 不设限）；12 条通用契约测试与族套件参数化；四类 fixture 只经 staging 网关录制、脱敏、不入库受版权全文；DoD 与三道评审门，第二人合规复核前移到 CL0 出口；与 `v2_status`、`support_tier` 对应 | —（补充 D-046、D-073；细化 03 SOP 三道门） |
+| D-076 | 接口相关增量 UI：用户面"来源"（三通道可得性加 EffectiveStatus）、"我的连接"（凭证只在浏览器扩展或 pc-agent 中录入、测试与解密，PWA 不收凭证、只显示状态）、可得性说明与取回回执（不暗示绕过）；运维面连接器总览、详情、策略与漂移、证据复核队列、灰度与急停、预算、来源申请审核（通过前零请求）；降级透明，恢复双人 | —（补充 D-041、D-053、D-054；依赖 D-041 接受后 07 转 approved） |
 
 **裁决顺序**（草案附录的建议）：
 
-- 首批在 V0 裁决：D-040…D-044、D-046、D-047、D-049、D-053、D-055、D-072、D-073（注册表 schema 依赖它们）。它们阻塞设计转 approved 或 V1 开工：D-041 是 07 前端交互转 approved 的前提，D-049 是 V1 收割与 V0 书面确认发函的依据。
+- 首批在 V0 裁决：D-040…D-044、D-046、D-047、D-049、D-053、D-055、D-072…D-075（注册表 schema 依赖它们，连接器契约冻结也依赖 D-074、D-075）。它们阻塞设计转 approved 或 V1 开工：D-041 是 07 前端交互转 approved 的前提，D-049 是 V1 收割与 V0 书面确认发函的依据。
 - 次批在 V1 前裁决：D-045、D-048、D-050…D-052、D-054、D-056、D-066、D-070、D-071，影响 V1 的来源接入、enrich 与审计。
-- 其余在承接的里程碑开工前裁决：V2 前 D-058…D-060；V3 前 D-057、D-062、D-067…D-069；V4 前 D-061、D-063、D-064；V6 前 D-065。
+- 其余在承接的里程碑开工前裁决：V2 前 D-058…D-060；V3 前 D-057、D-062、D-067…D-069、D-076（管理员控制台与用户侧取回界面依赖它）；V4 前 D-061、D-063、D-064；V6 前 D-065。
 - 草案请用户特别确认 6 处取舍，其中 4 处已有主 agent 裁决，表中按裁决写：D-043 在条款中用自然语言声明 TDM（文本与数据挖掘）保留的来源，其摘要同样排除；D-049 的 NCBI 与其他冲突主机一样，按需单篇以登记例外附表为前提，书面确认通道遇 ToS 变化 24 小时回退；D-053 personal 本机部署把私有全文交第三方 API，须同时有单独同意、来源条款允许与零保留条款；D-059 EXPAND 列为第五意图。仍待定的是 D-064 的 k 初值（V4 开工前）与 D-067 的注销、备份时限（待法务）。
 
 ## v1 决策索引（D-001…D-039）
