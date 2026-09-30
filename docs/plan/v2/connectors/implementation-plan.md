@@ -50,7 +50,7 @@ updated: 2026-09-30
 - 目标：导入底座快照，把 v1 平台侧 adapter 包进契约，补齐 P0 替补链。
 - 范围（16 个）：bulk_snapshot `crossref_annual_file`、`openalex_snapshot`、`pmc_s3`、`europe_pmc_bulk`、`pubmed_baseline`、`zbmath_kg_dump`、`dblp_drops_snapshot`、`repec_redif`；桥接 `acl_anthology_xml`、`aaai_ojs_oai`、`pmlr_volumes`、`cvf_open_access_pages`、`neurips_proceedings_pages`、`openalex_api`、`ssrn_crossref`、`unpaywall_api`。
 - 前置：W0 出口；V1-T4 余项（桥接垫片）；`repec_redif` 先扩 ReDIF handle 映射，其 rsync/FTP 经网关的传输方式待拍板（见 v1-bridge 族）；`openalex_api` 接美元预算（V1-T18）。
-- 出口：16 个最晚 V1 第 5 周达 CL1；无闸门的 14 个在 V1 出口达 CL3；`openalex_snapshot` 完成兴趣并集子集导入（09 的 V1 出口条件）；`europe_pmc_bulk`、`pubmed_baseline` 停在 CL1 待命；每个桥接写明 `v1.destiny` 与 `sunset_by`（≤ V2 出口）。
+- 出口：16 个最晚 V1 第 5 周达 CL1；无闸门的 12 个在 V1 出口达 CL3；`crossref_annual_file`（S3 请求方付费）、`repec_redif`（rsync/FTP）在 bulk-snapshot 待拍板 1 通过前停在 CL1 待命；`openalex_snapshot` 完成兴趣并集子集导入（09 的 V1 出口条件）；`europe_pmc_bulk`、`pubmed_baseline` 停在 CL1 待命；每个桥接写明 `v1.destiny` 与 `sunset_by`（≤ V2 出口）。
 - 估算：21.0 人日，另 CN-8 在 V1 8.5 人日。快照导入受发布节奏与磁盘约束，一条泳道串行；桥接卡互不依赖，可全并行。
 
 ### W3 用户侧与 P1（V3 批次一，V5 批次二）

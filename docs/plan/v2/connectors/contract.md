@@ -170,9 +170,15 @@ class Step: resp: Response; page: Page | None; error_class: str | None = None   
 class CursorEnvelope: scope_key: str; cursor: Cursor; schema: int; rev: int   # kind 见 §6
 
 @dataclass(frozen=True)
-class ConnectorTask:                     # 无 user_id；联邦只带 plan_key
+class LookupInput: identifiers: tuple[Identifier, ...]          # 04 联邦 LOOKUP 的标识符批
+@dataclass(frozen=True)
+class SearchInput: query: PushdownQuery; limit: int               # 只含 SCD 声明可下推的谓词（aggregator_api §2.2）
+
+@dataclass(frozen=True)
+class ConnectorTask:                     # 无 user_id；plan_key 只作缓存与审计键
     task_id: str; operation: Operation; source_id: str; channel: str; scope_key: str
     cursor: CursorEnvelope | None
+    payload: LookupInput | SearchInput | None   # lookup 带 identifiers，search 带 04 编译好的 PushdownQuery；其余 operation 为 None，plan() 只从这里取输入、不做隐藏 I/O
     decision_ref: DecisionRef            # {decision_id, engine_version, inputs_epoch}
     budget: TaskBudget                   # {max_requests, max_pages, deadline}
     lane: Literal["interactive", "harvest", "enrich"]; plan_key: str | None
