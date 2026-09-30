@@ -310,6 +310,8 @@ def _drive(task, c, gw, sink, ctx, exec_ctx) -> TaskOutcome:
             for chunk in split_chunks(resp.blob, resumed_from=sink.last(task)):   # 从 part_offsets 记录的偏移续切
                 if acct.exhausted(clock.now()):
                     return stop(TaskOutcome(status="partial", error_class="budget_exhausted", ...))
+                if (v := gw.revalidate(exec_ctx)) is not None:       # 块边界复核判定 ②（inputs_epoch、engine_version、kill switch 等），不发网络请求
+                    return stop(TaskOutcome(status=outcome_of(v.error_class), error_class=v.error_class, reason=v.subcode, ...))
                 try: page = c.parse_chunk(chunk, pctx)
                 except ParseError as e:
                     sink.quarantine(task, resp); return stop(TaskOutcome(status="stopped", error_class=e.error_class, ...))

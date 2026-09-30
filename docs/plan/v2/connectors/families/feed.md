@@ -74,6 +74,8 @@ class Feed(PlatformConnector):
                          reason="feed_window_overflow" if overflow else None)   # new 计入 records 统计
 
     def parse(self, resp, ctx) -> Page:                      # ParseCtx 不含游标：整窗全部产出，重复由 upsert 吸收
+        if resp.status == 304:                                # 条件请求未变：合法空页，不进 XML 解析
+            return Page(records=(), next_cursor=None, signals=PageSignals.legit_empty_page())
         items = parse_feed(resp.body, ctx.instance.format)    # 禁外部实体；RDF/RSS2/Atom 三套解析器
         if ctx.instance.role == "signal":
             recs = [signal_projection(it) for it in items]    # 只留 {key, doi, url}；标题与描述不进载荷、不进哈希

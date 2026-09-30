@@ -106,10 +106,14 @@ def fix_until(response_date, now, inst):
 ```python
 # 设计伪代码 —— 在场对账；Operation = enumerate，scope_key = "oai:<instance>:<set|*>:reconcile"
 def _reconcile(self, task, ctx):
+    restarts = 0
     req = list_identifiers(ctx.instance, set_=set_of(task.scope_key))   # 不带 from：整段
     while req is not None:
         step = yield req
         if step.page is None:
+            if step.error_class == "cursor_expired" and restarts < 2:     # 同收割循环：整段重启 ≤2 次
+                restarts += 1                                    # 在场记录按 (task_id, restarts) 记遍次，未完成的遍次不参与判定
+                req = list_identifiers(ctx.instance, set_=set_of(task.scope_key)); continue
             return stop_at_last_safe_point(step)                 # 被截断：不参与删除判定
         token = step.page.signals.continuation
         req = resume(ctx.instance, token) if token else None
