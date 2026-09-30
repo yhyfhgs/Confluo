@@ -178,7 +178,7 @@ ConnectorInstance 本族字段：`venues[]`（站内会议代码 → venue_id）
 | `tmlr_list` | tmlr（1） | P0 | W1 | platform | 1 | — | ⚑ACCT 仅约束 OpenReview 详情 | CL3 |
 | `aps_harvest` | aps（1） | P0 | W1（OA 集） | platform | 2 | — | ⚑LIC 仅全量 | CL3 |
 | `biorxiv_api` | biorxiv、medrxiv（2） | P0 | W1 | platform | 2 | — | ⚑DRIFT | CL3 |
-| `osf_api` | psyarxiv（1） | P0 | W1，确认前不实现 | platform | 2 | — | ⚑ROBOTS 书面确认 | 确认前 CL0 |
+| `osf_api` | psyarxiv（1） | P0 | W1，确认前只用合成 fixture | platform | 2 | — | ⚑ROBOTS 书面确认 | 确认前 CL1 待命（未决 13） |
 | `aea_fulltext_user` | aea_journals（1） | P0 | W3 | user | 1 | aea | V3 | CL1 回放 → V2 出口 CLX；用户侧通道随承接配方在 V3 出口达 CL3（矩阵记此值） |
 | `econsoc_fulltext` | econsoc_journals（1） | P0 | W3，只做用户侧 | mixed | 1 | econsoc | V3 | CL1 回放 → V2 出口 CLX；用户侧通道随承接配方在 V3 出口达 CL3（矩阵记此值） |
 | `nber_site` | nber_wp、nber_conferences（2） | P0 | 暂停（平台侧与用户侧），取得 NBER 书面许可前不排波次（待拍板） | mixed | 1.5 | nber | NBER 书面许可；法务 | CL0（暂停） |
@@ -227,7 +227,7 @@ ConnectorInstance 本族字段：`venues[]`（站内会议代码 → venue_id）
 | 节 | 内容 |
 |---|---|
 | 1 身份 | impl v1_bridge → custom_plan；serves `acl_anthology` 全部 venue（v1 只注册 EMNLP） |
-| 2 通道与操作 | metadata、latest：`enumerate`、`increment`（commit 差集）、`lookup`（Anthology ID 或 DOI，本地 join 零网络）、`probe`；fulltext：`locate_fulltext` |
+| 2 通道与操作 | metadata、latest：`enumerate`、`increment`（commit 差集）、`probe`；不声明 `lookup`：按 Anthology ID 或 DOI 查找由 identify 在本地底座 join（零网络，契约 `plan()` 不产出无响应的记录）；fulltext：`locate_fulltext` |
 | 3 上游接口事实 | 数据在 GitHub `data/xml` 与 `data/json/people.json`，官方途径为 `acl-anthology` 包 [https://aclanthology.org/faq/api/, 2026-09-30]；包 1.3.3 [https://pypi.org/project/acl-anthology, 2026-09-30]；`data/xml` 最近提交 2026-09-29 [https://github.com/acl-org/acl-anthology, 2026-09-30]；`anthology+abstracts.bib.gz` 约 42 MB [https://aclanthology.org/anthology+abstracts.bib.gz, 2026-09-30]；robots 404 [https://aclanthology.org/robots.txt, 2026-09-30]；`paper` 可含 `revision`、`erratum`、`retracted`、`removed` [https://github.com/acl-org/acl-anthology/blob/master/data/xml/schema.rnc, 2026-09-30]；2016 年起 CC BY 4.0，此前 CC BY-NC-SA 3.0 [https://aclanthology.org/faq/api/, 2026-09-30] |
 | 4 请求声明 | `repo_head`（日 1 次）、`repo_fetch`（request_class `bulk_transfer`，未决 2）、`bib_gz`（HEAD + `If-Modified-Since`，探针用）；XML 根 `collection`；`self_rate` 5 s、日顶 50 |
 | 5 游标与增量 | `repo_commit{repo, commit_sha, path: data/xml}`；运行固定目标 SHA，逐卷解析，全部提交后推进；卷文件删除（排除改名）→ 该卷 tombstone |
@@ -489,7 +489,7 @@ ConnectorInstance 本族字段：`venues[]`（站内会议代码 → venue_id）
 - 被 parse 的端点都有 StructureContract 与四类 fixture；FS-SS-01…12 与 CT-01…12 在无网沙箱全过。
 - 无 Crawl-delay、无文档限额的主机都有 `self_rate`；`status_overrides` 每行有 fixture，挑战类回放为 `challenge`、重试 0。
 - 与 03、08、D-049、D-052、D-053 一致：OpenReview 平台侧无端点；FS-SS-12 所列主机（nber.org 各主机、dblp.org、确认前的 api.osf.io 与 api.elifesciences.org 等）不在任何 `allowed_hosts`；未声明许可的站点不产出 `oa_link`；本族连接器不产出 `user_fetch`。
-- 波次与 [implementation-plan](../implementation-plan.md) 一致（`nber_site` 除外：本文按暂停口径不排，见未决 6）：W1 6 个、W2 4 个、W3 11 个（含 `openreview_api`、`aea_fulltext_user`、`econsoc_fulltext` 的用户侧 W3u）、不排 3 个，撤销 2 个、暂停 2 个（`nber_site`、`nber_conference_pages`，均 CL0）。
+- 波次与 [implementation-plan](../implementation-plan.md) 一致（`nber_site` 两处都按暂停口径不排，只留预算）：W1 6 个、W2 4 个、W3 11 个（含 `openreview_api`、`aea_fulltext_user`、`econsoc_fulltext` 的用户侧 W3u）、不排 3 个，撤销 2 个、暂停 2 个（`nber_site`、`nber_conference_pages`，均 CL0）。
 
 ## 未决事项
 
@@ -498,7 +498,7 @@ ConnectorInstance 本族字段：`venues[]`（站内会议代码 → venue_id）
 3. strict 枚举的记录级隔离与契约"increment 遇非合法结果停在安全点"的关系：本文按"页合法、单条隔离、7 天后按 DOI 重查"写，须契约评审认可。
 4. 用户侧元数据查询（OpenReview 本人 token）不在 FulltextRecipe 步骤枚举内：与 [contract](../contract.md#待拍板) 待拍板 P-13（`QueryRecipe`）一并定；契约 v1 不新增协议，拍板前用户侧元数据查询停在 CL0，OpenReview 只给 `open_in_tab`。
 5. OpenReview 停用期是否允许匿名 `active_venues` 日 1 次探针；默认不允许。
-6. NBER：`nber_site`、`nber_conference_pages` 平台侧与用户侧一律暂停（CL0），取得 NBER 书面许可前不排波次（待拍板）；用户侧扩展单篇取回是否与 T&C 冲突另待法务，此前只给 `open_in_tab`。implementation-plan 的 CN-7 仍把 `nber_site` 列入 W3u 用户侧 11 个，待其按暂停口径改。
+6. NBER：`nber_site`、`nber_conference_pages` 平台侧与用户侧一律暂停（CL0），取得 NBER 书面许可前不排波次（待拍板）；用户侧扩展单篇取回是否与 T&C 冲突另待法务，此前只给 `open_in_tab`。
 7. `cambridge_core_user`、`ieee_xplore_user` 已撤销（待拍板确认 `link_only`；矩阵、implementation-plan 同步）；`cambridge_core_user` 的卡片只在 platform-family，本文不再有其标题；Cambridge 日后是否以 platform-family 用户侧配方恢复待定（其 robots 被挑战，按 RFC 9309 视为全禁）。
 8. `aea_fulltext_user` 全文去向：并入 `atypon_user`，还是 `link_only`；[platform-family](platform-family.md) 目前没有 pubs.aeaweb.org 实例行，并入前须补。
 9. APS Harvest OA 集与期刊站 ToS 第 5 条的关系是否须书面确认；全量 Harvest 属用户授权（长稿、official-tdm-api）还是平台许可（F3），两说待核。

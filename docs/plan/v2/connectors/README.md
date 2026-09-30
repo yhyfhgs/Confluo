@@ -105,17 +105,17 @@ updated: 2026-09-30
 - **文档**：本目录与矩阵的 frontmatter 齐全，相对链接无断链，[INDEX](../../../INDEX.md) 已登记；各篇命名与 [contract](contract.md) 一致（15 个 `error_class`、CL0–CL3/CLX、W0–W4 与用户侧 W3u/W4u、卡片 13 节）。
 - **评审**：你确认 D-074…D-076 与上面的待拍板项后，contract 与 conformance-and-testing 转 review、approved，才作为 V0 的实现依据。
 - **V0 出口**：注册表 13 条 lint 与 6 条连接器 lint 阻断合并；三个参考连接器（`crossref_delegated`、`arxiv_oai`、`europe_pmc_rest`）连同前置件 `crossref_rest`、`oai_pmh` 达 CL1，并经 staging 网关各跑通一次。
-- **V1、V3、V5 出口**：`v2-P0` 平台侧通道达 CL3（V1），受书面确认等闸门的以"CL1 且通道为 deny 或 link_only"计待命达标；用户侧通道达 CL3（V3），具名禁止 AI 爬虫的站点在法务结论前只给"在出版社打开"；P1 两批分别在 V3、V5 出口达 CL3。逐项出口条件见 [implementation-plan](implementation-plan.md#里程碑对应表) 与 [conformance-and-testing](conformance-and-testing.md)。
+- **V1、V3、V5 出口**：`v2-P0` 平台侧通道达 CL3（V1），受书面确认、传输方式或 ADR 闸门的以"CL1 且通道为 deny 或 link_only"计待命达标（`zbmath_open_api` 确认前 CL0）；用户侧通道达 CL3（V3；待 P-13 的停 CL0，`nber_site` 暂停），具名禁止 AI 爬虫的站点在法务结论前只给"在出版社打开"；P1 两批分别在 V3、V5 出口达 CL3。逐项出口条件见 [implementation-plan](implementation-plan.md#里程碑对应表) 与 [conformance-and-testing](conformance-and-testing.md)。
 
 ## 未决事项
 
 - 连接器清单：第一阶段 89 个（族核心 4、新写 65、v1 桥接 20），[矩阵](../../../catalog/connector-matrix.md)与实施计划撤销 `ieee_xplore_user`（HC-27、lint 12）与 `cambridge_core_user`（全文改外链）后在册 87 个，再暂停 `nber_site`、`nber_conference_pages`，余 85 个（80 个排入 W0–W4，5 个只服务登记来源、停在 CL0；用户侧通道的波次记作 W3u/W4u）；`nasa_ads_api`、`orcid_api`、`lens_api`、`alphaxiv_mcp` 与 `openreview_api` 用户侧保留波次占位但在契约 v1 停在 CL0（P-13）。`cambridge_core_user` 日后是否以 platform_family 用户侧配方恢复，待拍板；按裁定其卡片只留在 [platform-family](families/platform-family.md#cambridge_core_user)（写明撤销、建议 `link_only`），[site-special](families/site-special.md) 总表只留一行指向，`ieee_xplore_user` 在 site-special 只留墓碑说明。
 - P1 时点：框架原定 `v2-P1` 在 V2–V3 达 CL3，实施计划、矩阵与 [conformance-and-testing](conformance-and-testing.md) 已按 09 改为 V3、V5 两批，请评审时确认。
-- 篇幅：[contract](contract.md) 约 45KB，[connector-ui](connector-ui.md) 与 [conformance-and-testing](conformance-and-testing.md) 略超设计类 ≤25KB 目标，[site-special](families/site-special.md) 等族文档与矩阵超出 45KB 上限；本轮接受，各篇"未决事项"注明实现期拆附录，不删规则。
+- 篇幅：[contract](contract.md) 约 55KB，也超出 45KB 上限，[connector-ui](connector-ui.md) 与 [conformance-and-testing](conformance-and-testing.md) 略超设计类 ≤25KB 目标，[site-special](families/site-special.md) 等族文档与矩阵超出 45KB 上限；本轮接受，各篇"未决事项"注明实现期拆附录，不删规则。
 - 人日、维护点数、staging 天数多为估计，未核，实现期校准。
 - 上游事实两说并列之处（Crossref 分池日期、`/members` 路由归哪个池）待核，未择一。
 - 本批不改支持名录、05 与 08；需要改动的都在"待你拍板"。
-- 本批文档尚未提交；你评审后按团队流程开 PR。
+- 本批文档经 PR 合入 main，状态仍为 draft，待你逐篇评审。
 
 ---
 

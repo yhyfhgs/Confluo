@@ -134,7 +134,8 @@ class Expectation:
     content_types: tuple[str, ...]; min_bytes: int = 1; root: str | None = None
     empty: Literal["error", "legit"] = "error"                # 空结果是端点事实还是错误
     fake_success: tuple[tuple[str, ErrorClass], ...] = ()     # ("Rate exceeded.", "rate_limited")
-    legit_status: frozenset[int] = frozenset({200})           # LOOKUP 端点可为 {200, 404}
+    legit_status: frozenset[int] = frozenset({200})           # LOOKUP 端点可为 {200, 404}；带条件头的端点可含 304
+                                                              # 304 是无体合法响应：网关不做 content_types、min_bytes、empty、fake_success 检查
     magic: bytes | None = None                                # 用户侧配方复用（%PDF）
 
 @dataclass(frozen=True)
@@ -148,8 +149,9 @@ class RequestSpec:
 @dataclass(frozen=True)
 class Response:                          # 网关产物；已过挑战、空体、伪成功检测
     status: int; headers: Mapping[str, str]; body: bytes; final_url: str; final_host: str
-    fetched_at: datetime; cache_hit: bool; attempt: int; terminal: bool; error_class: ErrorClass | None; reason: str | None
-    blob: BlobRef | None                 # 仅 stream=True：网关已校验字节数与 sha256，不符即 integrity 终止
+    fetched_at: datetime; cache_hit: bool; attempt: int; terminal: bool
+    error_class: ErrorClass | None; reason: str | None   # reason 放 §7 子码（如 stale_decision、cooldown）
+    blob: BlobRef | None = None          # 仅 stream=True：网关已校验字节数与 sha256，不符即 integrity 终止
 
 @dataclass(frozen=True)
 class BlobRef: uri: str; sha256: bytes; bytes: int; expected_sha256: bytes | None   # 冷存储对象，连接器不可直接读
@@ -161,6 +163,7 @@ class PageSignals:
     n_records: int; total_hint: int | None; legit_empty: bool; not_found: tuple[str, ...]
     continuation: str | None; continuation_expires_at: datetime | None   # 令牌只在运行内使用
     rate_headers: Mapping[str, str]; deprecation: str | None; response_date: datetime | None
+    n_quarantined: int = 0               # 本页或本块内被逐条跳过的坏记录数（bulk 隔离率对账用）
 
 @dataclass(frozen=True)
 class RawRecord:
@@ -172,7 +175,7 @@ class RawRecord:
 @dataclass(frozen=True)
 class Page: records: tuple[RawRecord, ...]; next_cursor: Cursor | None; signals: PageSignals
 @dataclass(frozen=True)
-class Step: resp: Response; page: Page | None; error_class: str | None = None   # page 为 None = 非合法结果，只能在安全点结束；error_class 为 parse 判定的类（如 cursor_expired）
+class Step: resp: Response; page: Page | None; error_class: ErrorClass | None = None   # page 为 None = 非合法结果，只能在安全点结束；error_class 为 parse 判定的类（如 cursor_expired）
 @dataclass(frozen=True)
 class CursorEnvelope: scope_key: str; cursor: Cursor; schema: int; rev: int   # kind 见 §6
 
@@ -204,9 +207,9 @@ class ConnectorTask:                     # 无 user_id；plan_key 只作缓存�
 @dataclass(frozen=True)
 class TaskOutcome:
     status: Literal["completed", "partial", "stopped", "denied", "failed"]   # partial = 按预算在安全点停下，不算错
-    error_class: ErrorClass | None; reason: str | None; committed: CursorEnvelope | None
+    error_class: ErrorClass | None = None; reason: str | None = None; committed: CursorEnvelope | None = None
     next_cursor: Cursor | None = None    # 生成器可在终局带回游标（无分页的 feed 等），runner 原子落库后再返回
-    pages: int; records: int; requests: int; restarts: int; cost_usd: Decimal
+    pages: int = 0; records: int = 0; requests: int = 0; restarts: int = 0; cost_usd: Decimal = Decimal(0)   # 计数由 runner 账本覆盖（§5）
 
 @dataclass(frozen=True)
 class ExecCtx:
@@ -230,9 +233,11 @@ class AccessDecision:                    # 策略引擎产物，只由网关与 
 class PlanCtx:  now: datetime; instance: ConnectorInstance | None; scd: Mapping[str, SCD]; mode_caps: ModeCaps
 class ParseCtx: now: datetime; endpoint: EndpointDecl; instance: ConnectorInstance | None
 class MapCtx:   now: datetime; granularity_table: Mapping; license_alias: Mapping; doi_family: Mapping
+                mapper_config: Mapping           # 清单中该 mapper 的静态配置（如 v1 桥接的 stage_default、meta_keep），不含凭证
+class LocateCtx: now: datetime; instance: ConnectorInstance | None; mode_caps: ModeCaps   # locate_fulltext 专用，同样纯函数
 ```
 
-`SCD`、`ProbeSpec`、`FulltextOption`、`FulltextRecipe`、`EffectiveStatus` 见 §9–§13；`NormRecord` 字段以 05 `corpus.norm_record` 与长稿 §10.6 为准，本文只约束映射规则（§8）。
+`SCD`、`ProbeSpec`、`FulltextOption`、`FulltextRecipe`、`EffectiveStatus` 见 §9–§13；`Identifier`、`PushdownQuery` 见 [aggregator_api](families/aggregator-api.md) §2.2，`UnionFilter` 与 `TaskBudget`、`DecisionRef` 的存储见 05，`ModeCaps` 与 `Mode` 见 08 的策略引擎；`NormRecord` 字段以 05 `corpus.norm_record` 与长稿 §10.6 为准，本文只约束映射规则（§8）。
 
 ## 4. Operation 与策略判定点
 
@@ -281,13 +286,14 @@ def run(task, c: PlatformConnector, gw, policy, sink, clock) -> TaskOutcome:
             return TaskOutcome(status="denied", error_class="needs_confirmation" if decision.needs_confirmation else "policy_denied", ...)
         ctx = PlanCtx(now=clock.frozen(), instance=..., scd=..., mode_caps=decision.caps)
         exec_ctx = ExecCtx(task.task_id, decision.decision_id, traffic_class_of(task.lane), ref(c), task.plan_key)
-        outcome = _drive(task, c, gw, sink, ctx, exec_ctx)
+        drive = run_bridge if c.manifest.impl == "v1_bridge" else _drive   # 桥接运行器见 v1-bridge 族 §2.2，出口语义相同
+        outcome = drive(task, c, gw, sink, clock, ctx, exec_ctx, rollout_of(c, task))   # rollout 取连接器灰度状态（O5）
         if outcome.reason == "stale_decision" and not readmitted:    # inputs_epoch 或 engine_version 变了：从已提交游标重新准入
             readmitted, task = True, replace(task, cursor=sink.last(task)); continue
         return outcome
 
-def _drive(task, c, gw, sink, ctx, exec_ctx) -> TaskOutcome:
-    gen, step, acct = c.plan(task, ctx), None, RunnerAccount(task.budget)   # 请求、页、记录计数与截止时间归 runner
+def _drive(task, c, gw, sink, clock, ctx, exec_ctx, rollout) -> TaskOutcome:
+    gen, step, acct = c.plan(task, ctx), None, RunnerAccount(task.budget, clock)   # 请求、页、记录计数与截止时间归 runner，时钟注入
     def stop(outcome):                                               # 所有非正常结束都经这里：关生成器、按 runner 账本汇总
         gen.close(); return acct.finalize(replace(outcome, committed=sink.last(task)), gw.ledger(exec_ctx))
     while True:
@@ -296,7 +302,7 @@ def _drive(task, c, gw, sink, ctx, exec_ctx) -> TaskOutcome:
             out = done.value
             if out.next_cursor is not None: sink.commit_cursor(task, out.next_cursor)   # 终局游标（如 feed 的 guid_set、ETag）按 rev 比较交换落库
             return acct.finalize(replace(out, committed=sink.last(task)), gw.ledger(exec_ctx))
-        if acct.exhausted(clock.now()):                              # max_requests / max_pages / deadline：在页边界停
+        if acct.exhausted():                              # max_requests / max_pages / deadline：在页边界停
             return stop(TaskOutcome(status="partial", error_class="budget_exhausted", ...))
         resp = gw.execute(EgressEnvelope(exec_ctx, task.source_id, task.channel, task.operation, rollout, req, deadline=task.budget.deadline))   # 判定 ②
         acct.count_request(resp)                                     # 每次尝试都计数，含 gone、失败与 304
@@ -304,19 +310,20 @@ def _drive(task, c, gw, sink, ctx, exec_ctx) -> TaskOutcome:
             step = Step(resp, None, "gone"); continue                # 逐项标记未命中，plan() 继续其余请求（§7）
         if resp.terminal:                                            # challenge / policy_denied / budget_exhausted / disabled …
             return stop(TaskOutcome(status=outcome_of(resp.error_class),   # 按 §7 矩阵：budget_exhausted 为 partial，其余 stopped
-                                    error_class=resp.error_class, reason=resp.subcode, ...))
+                                    error_class=resp.error_class, reason=resp.reason, ...))
         pctx = ParseCtx(ctx.now, endpoint_of(req), ctx.instance)
         if req.stream:                                               # 流式：按记录边界切块，逐块 parse_chunk、按块提交、按块查预算
             for chunk in split_chunks(resp.blob, resumed_from=sink.last(task)):   # 从 part_offsets 记录的偏移续切
-                if acct.exhausted(clock.now()):
+                if acct.exhausted():
                     return stop(TaskOutcome(status="partial", error_class="budget_exhausted", ...))
-                if (v := gw.revalidate(exec_ctx)) is not None:       # 块边界复核判定 ②（inputs_epoch、engine_version、kill switch 等），不发网络请求
-                    return stop(TaskOutcome(status=outcome_of(v.error_class), error_class=v.error_class, reason=v.subcode, ...))
+                if (v := gw.revalidate(exec_ctx)) is not None:       # 块边界复核判定 ②，返回同 Response 的 (error_class, reason)；不发网络请求
+                    return stop(TaskOutcome(status=outcome_of(v.error_class), error_class=v.error_class, reason=v.reason, ...))
                 try: page = c.parse_chunk(chunk, pctx)
                 except ParseError as e:
                     sink.quarantine(task, resp); return stop(TaskOutcome(status="stopped", error_class=e.error_class, ...))
                 sink.commit_page(task, page); acct.count_page(page)
-            step = Step(resp, None); continue
+            step = Step(resp, Page(records=(), next_cursor=None, signals=PageSignals.streamed(resp.blob)))   # 记录已按块提交：回送合法空页，plan() 继续下一个文件
+            continue
         try: page = c.parse(resp, pctx)
         except ParseError as e:
             if e.error_class == "parse":                             # 隔离该页；只有 lookup/search/probe 可继续，其余停在安全点（§7）
@@ -531,12 +538,12 @@ class FulltextOption:
 - `health=suspended` 的 SLI 阈值（触发 `disabled` 的边界）待 CL3 runbook 定义；本文只定语义。
 - 用户侧元数据查询配方（aggregator-api 族提议的 `QueryRecipe`，U-1）：契约 v1 不新增协议，`RecipeProvider` 只产 `FulltextRecipe`；`nasa_ads_api`、`lens_api`、`alphaxiv_mcp`、`orcid_api` 与 `openreview_api` 的用户侧（本人 token 查询，D-052）在 v1 停在 CL0，实施计划只保留波次占位，是否在 v1.x 增加 `QueryRecipe` 列为待拍板 P-13。
 - 回执聚合：按配方版本聚合用户侧回执（即使 ≥`k_cf`）与 08"回执不进任何跨用户统计"冲突，v1 不做；如需要，须新 ADR 并经 08 评审。
-- 族文档提议、契约 v1 尚未收录的扩展（V0 统一裁定）：oai-pmh 的 `RawRecord.kind=presence` 与 presence 表；bulk-snapshot 的平台侧 `integrity` 判定者（网关核字节与校验和、runner 核记录数）、`RequestSpec.stream` 与 `BlobRef`、`request_class=bulk_object`、`snapshot_release` 游标的 `part_offset`；aggregator-api 的 `config` 子码 `terms_gate`、`plan_required` 与 `budget.unit=token`。
+- 已收录进本文的族提议：`RawRecord.kind=presence`（§3）、`RequestSpec.stream`、`Response.blob`、`BlobRef`、`SnapshotChunk`（§3、§5）、平台侧 `integrity` 由网关判字节与校验和（§7）、`snapshot_release.part_offsets`（§6）、`guid_set` 的条件请求字段（§6）、`IncrementInput.mode`（§3）、304 规则（§3 `Expectation`）。仍待 V0 裁定：05 的在场表存放、bulk 记录数对账的归类、`request_class=bulk_object`；aggregator-api 的 `config` 子码 `terms_gate`、`plan_required` 与 `budget.unit=token`；feed 的 `on_gap` 替补对账触发与调度提示（`TaskOutcome` 目前不带调度提示）。
 - 族核心连接器的 `impl` 记法：`crossref_delegated` 记 `custom_plan`（引擎级），`oai_pmh`、`feed` 记 `instance`；V0 统一为"族核心记引擎自身的级别、实例记 `instance`"。
 - §2 的 `europe_pmc_rest` 清单示例与族卡片在 `connector_version`、`source_key_rule`、`late_path` 上有出入，实现以族卡片为准。
 - 责任方维度的取值是本文裁量：`auth_expired`、`disabled`、`budget_exhausted` 记 config，`no_entitlement` 记 policy，待评审确认。
 - InvenioRDM 令牌过期返回 HTTP 422（F2）：由网关 `status_overrides` 还是 `parse` 判 `cursor_expired`，须保持单一判定者，W0 定。
 - `LocateCtx` 与 `VersionView` 的字段未在本文定义，待 W0 与 03 身份模型对齐。
-- 篇幅约 45 KB，超出设计类 ≤25 KB 目标；本轮只合并明显重复，实现期把类型定义（§3）与字段表（§2 清单字段、§6 游标表、§7 错误矩阵）拆为附录，不删规则。
+- 篇幅约 55 KB，超出设计类 ≤25 KB 目标与 45 KB 上限；本轮只合并明显重复，实现期把类型定义（§3）与字段表（§2 清单字段、§6 游标表、§7 错误矩阵）拆为附录，不删规则。
 
 更细的材料：`git show v2-drafts:docs/plan/v2/03-sources-and-corpus-pipeline.md`（§5、§10.2–10.8、§12.4、§13、§15）；[README](README.md)；[实施计划](implementation-plan.md)。

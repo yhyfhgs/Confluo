@@ -38,12 +38,22 @@ class AggregatorApi(PlatformConnector):
                      ) -> Generator[RequestSpec, Step, TaskOutcome]: ...   # 按清单 batch 装箱；逐项隔离
     def query(self, q: PushdownQuery, ctx: PlanCtx
               ) -> Generator[RequestSpec, Step, TaskOutcome]: ...          # q 已由 04 按 SCD 放宽
-    def window(self, w: DateWindow, ctx: PlanCtx
+    def window(self, w: tuple[datetime, datetime], ctx: PlanCtx
                ) -> Generator[RequestSpec, Step, TaskOutcome]: ...         # 逼近 result_cap 时二分拆窗
     def estimate_cost(self, endpoint_id: str, n_requests: int) -> CostEstimate: ...  # 纯函数
+
+    def plan(self, task, ctx):                                             # 只从 payload 与游标取输入（契约 §3）
+        match task.operation:
+            case "lookup":    return (yield from self.batch_lookup(list(task.payload.identifiers), ctx))
+            case "search":    return (yield from self.query(task.payload.query, ctx))
+            case "enumerate": return (yield from self.window(task.payload.window, ctx))
+            case "increment":                                              # 水位 − overlap 到运行开始固定的 until
+                cur = task.cursor.cursor if task.cursor else None
+                return (yield from self.window((increment_start(cur, ctx), ctx.now), ctx))   # 完成后返回 next_cursor=until
+            case "probe":     return (yield from self._probe(task.payload.probe, ctx))
 ```
 
-`plan()` 按 operation 分派；连接器不算预算余量，账本不足时网关不发请求、回送 `budget_exhausted`，连接器在页边界结束。`estimate_cost` 进 SCD 的 `cost` 块，供 [04 路由](../../04-retrieval-and-routing.md#路由选哪些源)使用。
+`plan()` 如上分派，清单未声明的 operation 由加载期 lint 拒绝；连接器不算预算余量，账本不足时网关不发请求、回送 `budget_exhausted`，连接器在页边界结束。`estimate_cost` 进 SCD 的 `cost` 块，供 [04 路由](../../04-retrieval-and-routing.md#路由选哪些源)使用。
 
 ### 2.2 PushdownQuery
 
@@ -137,7 +147,7 @@ class RateLimitState:
 |---|---|---|---|
 | openalex | 429 且体含 "Plan upgrade required"（付费过滤） | `config`（`plan_required`，不重试） | 实测 [https://api.openalex.org/works?filter=from_created_date:2026-09-28, 2026-09-30] |
 | openalex | 429 且 `remaining-usd` ≤0；402 | `budget_exhausted` | [https://help.openalex.org/api-reference/authentication, 2026-09-30]；402 为 v1 所见，未核，核实并有 fixture 前不登记 |
-| s2 | 无 key 时 404 | runner 见 `AuthRef` 缺失即 `config`，不发请求 | v1 教训 L15、L21 |
+| s2 | 无 key 时 404 | 加载期 lint 拒绝缺 `AuthRef` 的实例（`config`，契约 §7 判定者），不发请求 | v1 教训 L15、L21 |
 | unpaywall | 404；422 | 404 进 `legit_status`、产出 `PageSignals.not_found`（非 error_class）；422（缺 email）为 `config` | §5.1；422 为长稿实测 |
 | zbmath_open | 307 到条款页或返回 HTML | `config`（`terms_gate`），不自动"同意" | 实测 [https://api.zbmath.org/, 2026-09-30] |
 | scoap3_repo | 出现 401 | 不设覆盖：匿名按契约默认 `challenge` 从严；启用伙伴 token（`auth: deployment/*`）后默认即 `config` | 伙伴页称须注册 token [https://repo.scoap3.org/partners, 2026-09-30]；401 未实测 |
@@ -194,7 +204,7 @@ endpoints:
 | FS-AGG-07 下推 | `native` 谓词必进请求，`none` 永不出现 | 由 SCD 生成的查询 |
 | FS-AGG-08 身份与凭证 | 请求与 fixture 无身份参数值、key、邮箱 | 全部 |
 | FS-AGG-09 同源 | `same_origin_as` 在许可投票中只算一票 | 同 DOI 的两源样本 |
-| FS-AGG-10 静默零 | 工作日日窗命中 0：该页不给 `next_cursor`（水位不动），由 `canary_query` 判 `empty_body/count_drop` 并告警，连接器不自判错误类 | 工作日零命中样本 |
+| FS-AGG-10 静默零 | 工作日日窗命中 0：`plan()` 以 `status=stopped`、`reason=silent_zero`、`next_cursor=None` 结束，窗口不算完成、水位不动；由 `canary_query` 判 `empty_body/count_drop` 并告警 | 工作日零命中样本 |
 
 ## 5. 连接器清单总表
 
@@ -258,7 +268,7 @@ P2 事实出处（2026-09-30 核对）：[wikidata](https://www.mediawiki.org/wi
 
 **3 上游接口事实**：`search` 实测 `version` 6.9，`FIRST_IDATE:2026-09-29` 命中 1,785；长稿的修订增量 `INDEX_DATE:[…]` 命中 0 且不报错 [https://www.ebi.ac.uk/europepmc/webservices/rest/search, 2026-09-30]。`pageSize` ≤1,000（二手）；无认证；限速数值未公布（未核），无限速头。robots `Crawl-Delay: 10`、不禁 REST [https://www.ebi.ac.uk/robots.txt, 2026-09-30]；文档页对抓取 403；bulk 主机 robots 全禁（归 `europe_pmc_bulk`）。
 
-**4 请求声明**：`europe_pmc.search`（rest，`www.ebi.ac.uk`）；令牌桶全平台最小间隔 10 s；账户 `epmc.requests`；`rate_dialect: none`；Expectation JSON、root `resultList`，空结果只在游标末页合法。
+**4 请求声明**：`europe_pmc.search`（rest，`www.ebi.ac.uk`）；令牌桶全平台最小间隔 10 s；账户 `epmc.requests`；`rate_dialect: none`；Expectation JSON、root `resultList`、`empty = legit`（空页合法；工作日整窗零命中由 FS-AGG-10 与探针处理）。
 
 **5 游标与增量**：`date_watermark`，`FIRST_IDATE`，粒度日，`overlap` P2D，`window_max` P1D，`lag_bound` 未核，`until` 固定为 UTC 昨日；`late_path` 先取 `weekly_index_backfill`（每周回看 14 天），bulk 获确认后改 `snapshot_reconcile`（契约示例取后者）；`cursorMark` 只进 `continuation`；删除无通知；撤稿看 `pubTypeList`（取值未核）。
 
@@ -272,7 +282,7 @@ P2 事实出处（2026-09-30 核对）：[wikidata](https://www.mediawiki.org/wi
 
 **10 测试**：首页、末页空结果、撤稿记录、工作日零命中负例；黄金 MED、PMC、PPR；FS-AGG-01、FS-AGG-10；`cursorMark` 失效重启后并集不变。
 
-**11 探针与替补**：`epmc.structure`、`epmc.silent_zero`、`epmc.robots`、周命中 `count`；静默零即停推水位。替补 `crossref_delegated` → `openalex_api` → `pubmed_eutils`（确认后）。
+**11 探针与替补**：`epmc.structure`、`epmc.silent_zero`、`epmc.robots`、周命中 `count`；静默零即以 `stopped` 结束、水位不动。替补 `crossref_delegated` → `openalex_api` → `pubmed_eutils`（确认后）。
 
 **12 运维**：新鲜度 ≤48 h；SLO `p0_latest`；告警：零命中、`version` 变化、首次 429。
 

@@ -52,15 +52,14 @@ updated: 2026-09-30
 
 ```python
 # 设计伪代码 —— EgressShim：实现 v1 HttpClient 的方法签名，内部调用 02 的 EgressClient
-TERMINAL = {"challenge", "policy_denied", "needs_confirmation", "budget_exhausted",
-            "disabled", "config"}  # 永不交还 v1 处置；auth_expired 只在用户侧判定
 
 class BridgeStop(BaseException):  # 不继承 Exception，v1 的 except Exception 吞不掉
     error_class: str; reason: str
 
 class EgressShim:
-    def __init__(self, manifest, egress: EgressClient, ctx: ExecCtx, op: str): ...
-    def get_text(self, url, *, accept=None) -> str: return self._call("GET", url, accept).text
+    def __init__(self, manifest, egress: EgressClient, ctx: ExecCtx, rollout, op: str, account: RunnerAccount): ...
+    def get_text(self, url, *, accept=None) -> str:   # 契约 Response 只有 bytes：按 Content-Type charset 解码，缺省 UTF-8（与 v1 HttpClient 一致）
+        resp = self._call("GET", url, accept); return resp.body.decode(charset_of(resp.headers) or "utf-8", errors="replace")
     def get_bytes(self, url, *, accept=None) -> bytes: return self._call("GET", url, accept).body
     def post_json(self, url, *, json_body, accept="application/json") -> bytes: ...  # 只许清单声明 method=POST 的端点
     def post_multipart(self, *a, **kw): raise BridgeStop("config", "multipart_not_bridged")
@@ -74,18 +73,21 @@ class EgressShim:
                            url=strip_query(url), params=checked_params(url, ep),  # 剥 identity_param 哨兵，拒 personal_params
                            headers={"Accept": accept} if accept else {},  # 只放 AllowedHeader
                            auth=ep.auth, expect=ep.expect, idempotency_key=sdk_key(url, body))
-        resp = self.egress.execute(EgressEnvelope(ctx=self.ctx, request=spec, ...))  # robots、桶、挑战、FetchLog
-        self.signals.append(resp.signals)  # 补回 v1 拿不到的限速头与 response_date
-        if resp.error_class in TERMINAL or (resp.error_class and self.op not in ("lookup", "probe")):
-            raise BridgeStop(resp.error_class, resp.reason)  # 非 lookup/probe（含 snapshot_import）即停在安全点（契约 §5）
-        if resp.error_class:  # 仅 lookup、probe：按 v1 类抛出，让 v1 逐项隔离
-            raise CrawlerError(V1_CLASS[resp.error_class], resp.reason, status_code=resp.status)
+        if self.account.exhausted():  # 与通用执行器同一账本：请求前查 max_requests、deadline
+            raise BridgeStop("budget_exhausted", "task_budget")
+        resp = self.egress.execute(EgressEnvelope(ctx=self.ctx, rollout=self.rollout, request=spec, deadline=self.account.deadline, ...))  # robots、桶、挑战、FetchLog
+        self.account.count_request(resp)
+        self.signals.append(signals_from_headers(resp.headers))  # 从响应头派生 PageSignals（限速头、Date），补回 v1 拿不到的信息；drain() 时合并
+        if resp.error_class == "gone" and self.op in ("lookup", "probe"):   # 与 _drive 一致：只有 gone 可逐项隔离
+            raise CrawlerError(V1_CLASS["gone"], resp.reason, status_code=resp.status)   # v1 按 NOT_FOUND 跳过该项
+        if resp.terminal or resp.error_class:   # 其余一律停在安全点（契约 §5、§7；transient 已由网关重试耗尽）
+            raise BridgeStop(resp.error_class, resp.reason)
         return resp
 ```
 
 要点：
 
-- **分类以网关为准**：v1 把无特征 403 记 `NO_ENTITLEMENT`（S-c），契约要求不明 403 从严记 `challenge`，除非 `status_overrides` 凭证据声明；v1 类只在 lookup、probe 中驱动逐项隔离，其余操作遇非合法结果停在最后安全点（契约 §5、§7），合法空（如 acl raw 404）由 `expect.legit_status` 声明；`TaskOutcome` 与 FetchLog 只记 v2 类。
+- **分类以网关为准**：v1 把无特征 403 记 `NO_ENTITLEMENT`（S-c），契约要求不明 403 从严记 `challenge`，除非 `status_overrides` 凭证据声明；只有 lookup、probe 中的 `gone` 交还 v1 逐项隔离，其余错误与其余操作一律停在最后安全点（契约 §5、§7），合法空（如 acl raw 404）由 `expect.legit_status` 声明；`TaskOutcome` 与 FetchLog 只记 v2 类。
 - **凭证不进 v1 代码**：`set_api_key`、`set_email` 只收哨兵值（v1 只用它们判断"是否已配置"）；真实 key 按 `AuthRef(deployment/*)`、部署联系邮箱按 `identity_param`（[aggregator-api.md](aggregator-api.md) 的提议）由网关注入，垫片先剥掉 v1 拼进 URL 的哨兵值；专属 token client 与 `CookieSupplierConsumer` 在平台模式不调用。
 - **不双重限速**：v1 `RateLimiter` 换空实现；`default_rate` 只作上限证据，与 SourceSpec 取更严者进网关令牌桶。
 - **断开惰性自建 client**（L17）：worker 不设 v1 的环境变量（v1 为 `PAPER_CRAWLER_CONTACT_EMAIL`；v2 部署联系邮箱由网关注入，变量名 `CONFLUO_CONTACT_EMAIL` 待 V0 定）；垫片注入前的联网调用由网络隔离拒绝，套件断言零次。
@@ -106,36 +108,49 @@ class EgressShim:
 
 ```python
 # 设计伪代码 —— 桥接运行器（只在 impl=v1_bridge 且 v1.mode=platform 时由平台 worker 加载）
-def run_bridge(task, ctx: PlanCtx, m, adapter, sink, egress) -> TaskOutcome:   # 准入与 ctx 构造同契约 §5 run()
-    acct = RunnerAccount(task.budget)   # 与通用执行器同一账本：垫片每次请求前查 max_requests 与 deadline，超限抛 BridgeStop(budget_exhausted)
-    shim = EgressShim(m, egress, ExecCtx.from_task(task), task.operation, account=acct)
+def run_bridge(task, c, egress, sink, clock, ctx: PlanCtx, exec_ctx: ExecCtx, rollout) -> TaskOutcome:   # 签名同契约 _drive
+    m, adapter = c.manifest, c.v1_adapter
+    # 由契约 §5 run() 在准入后代替 _drive 调用：exec_ctx 带本次判定的 decision_id，stale_decision 时 run() 重新准入再调
+    acct = RunnerAccount(task.budget, clock)   # 与通用执行器同一账本：垫片每次请求前查 max_requests 与 deadline
+    shim = EgressShim(m, egress, exec_ctx, rollout, task.operation, account=acct)
     bind_v1(adapter, http=shim, rate_limiter=NoopLimiter(), email=SENTINEL, api_key=SENTINEL)
     until = ctx.now  # 运行开始由 PlanCtx 冻结
     cur = task.cursor.cursor if task.cursor else None   # CursorEnvelope 内的类型化游标（契约 §6）
+    def finish(outcome):                                # 所有出口按 runner 账本汇总（契约 §5）
+        return acct.finalize(replace(outcome, committed=sink.last(task)), egress.ledger(exec_ctx))
     try:
-        if task.operation == "lookup":  # openalex_api、unpaywall_api、repec_redif：v1 类错误已由 v1 逐项隔离
+        if task.operation == "lookup":  # openalex_api、unpaywall_api、repec_redif：v1 仅对 gone 逐项隔离
             stubs = adapter.enrich_batch(task.payload.identifiers)  # LookupInput；unpaywall 调 v1 resolve 路径，见 §2.2
-            sink.commit_page(task, Page(records=[to_raw(s, m, until, "federated") for s in stubs],
-                                         next_cursor=None, signals=shim.drain()))
-            return TaskOutcome.completed()
-        # snapshot_import（repec_redif，v1 无 timeline 能力）不进本循环：下载由 bulk_snapshot 引擎经网关流式完成，v1 parse.py 作 mapper
+            page = Page(records=tuple(to_raw(s, m, until, "federated") for s in stubs), next_cursor=None, signals=shim.drain())
+            sink.commit_page(task, page); acct.count_page(page)
+            return finish(TaskOutcome(status="completed"))
+        if task.operation == "probe":   # healthcheck 重审后的端点（§2.2 表）
+            return finish(run_v1_healthcheck(adapter, task.payload.probe, shim))
+        if task.operation not in ("enumerate", "increment"):   # snapshot_import 由 bulk_snapshot 引擎承担（v1 parse.py 作 mapper），search 不声明
+            return finish(TaskOutcome(status="stopped", error_class="config", reason="operation_not_bridged"))
+        if task.operation == "enumerate":
+            since, stop_at = task.payload.window        # EnumerateInput.window
+        else:
+            if cur is None: return finish(TaskOutcome(status="stopped", error_class="config", reason="increment_without_cursor"))
+            since, stop_at = cur.value - cur.overlap, until   # date_watermark 自带 overlap（契约 §6）
         for venue in m.v1.venues_for(task.scope_key):
-            since = None if task.operation == "enumerate" else cur.value - m.overlap   # date_watermark
             for issue in adapter.discover_timeline(venue, since=since):
+                if issue_date(issue) >= stop_at: continue
                 if task.operation == "enumerate" and cur and issue_key(issue) in cur.completed:   # window_set（按期键，见未决 11）
                     continue
-                if acct.exhausted(clock.now()): raise BridgeStop("budget_exhausted")   # 页边界查 max_pages 与 deadline
+                if acct.exhausted(): raise BridgeStop("budget_exhausted", "task_budget")   # 页边界查 max_pages 与 deadline
                 stubs = list(adapter.enumerate_issue(venue, issue))
-                sink.commit_page(task, Page(records=[to_raw(s, m, until, "harvest") for s in stubs],
-                                             next_cursor=after_issue(task, issue),  # enumerate：期键入 window_set；increment：None
-                                             signals=shim.drain()))
-                acct.count_page_n(len(stubs))
+                page = Page(records=tuple(to_raw(s, m, until, "harvest") for s in stubs),
+                            next_cursor=after_issue(task, issue),  # enumerate：期键入 window_set；increment：None
+                            signals=shim.drain())
+                sink.commit_page(task, page); acct.count_page(page)
     except BridgeStop as s:  # 结果按契约 §7：budget_exhausted、超 deadline 的 rate_limited 为 partial，其余 stopped
-        return TaskOutcome(status=outcome_of(s.error_class), error_class=s.error_class,
-                           committed=sink.last_committed(task))
+        return finish(TaskOutcome(status=outcome_of(s.error_class), error_class=s.error_class, reason=s.reason))   # reason 保留 stale_decision，供 run() 重新准入
     except CrawlerError as e:  # v1 未处理的错误：停在最后安全点
-        return TaskOutcome.failed(V2_CLASS[e.error_class], committed=sink.last_committed(task))
-    return TaskOutcome.completed(advance_to=until)  # increment 的水位只在整段完成后推进
+        return finish(TaskOutcome(status="failed", error_class=V2_CLASS[e.error_class], reason=str(e)))
+    if task.operation == "increment":   # 水位只在整段完成后推进，原子落库（同 _drive 的终局游标）
+        sink.commit_cursor(task, replace(cur, value=until))
+    return finish(TaskOutcome(status="completed"))
 ```
 
 游标：`enumerate` 用 `window_set`（已完成的 `IssueRef` 键；契约 §6 的 `window_set` 以日期区间记 `completed`，按期键记属扩展，见未决 11），每期完成即安全提交；`increment` 用 `date_watermark`，整段完成后推进到 `until`；期内崩溃整期重跑，重复由 `(source_id, source_key)` 去重吸收。v1 的月桶、年桶、卷号表经纯函数 `migrate_cursor` 转换。
@@ -155,10 +170,10 @@ def normalize_v1stub(raw, ctx: MapCtx) -> NormRecord:
     return NormRecord(
         identifiers=[(SCHEME[k], normalize_id(k, v)) for k, v in s["identifiers"]],  # 粒度查标识符注册表
         title=s["title"], authors=s["authors"], year=s["year"], pub_date=s["pub_date"], abstract=s["abstract"],
-        version_claim=VersionClaim(stage=ctx.instance.v1.stage_default, seq=meta_int(s, "version"),
+        version_claim=VersionClaim(stage=ctx.mapper_config["stage_default"], seq=meta_int(s, "version"),
                                    basis="paperstub.meta.version"),
         license=license_claim(meta(s, "license"), basis="paperstub.meta.license"),  # 缺失即 unknown
-        extra={k: v for k, v in s["meta"] if k in ctx.instance.v1.meta_keep})
+        extra={k: v for k, v in s["meta"] if k in ctx.mapper_config["meta_keep"]})   # 清单 v1 段经 MapCtx.mapper_config 注入
     # 摘要权利与 rights_class、shareable 等由共享 classify_rights() 计算，适配层不给（契约"映射契约"）
 ```
 
@@ -190,7 +205,7 @@ v1:
   meta_keep: [pdf_url, track]
   expected_diffs: []
   legacy_fixtures: v1:tests/fixtures/cvf/  # provenance=v1_import
-  exemptions: [declarative_plan]  # 唯一豁免；同步记入 conformance.rules 的 exempt{reason, approved_by}
+  # 不写 exempt："声明式 plan"不适用由 CI 按 impl: v1_bridge 推导（契约 §17；一致性规范对不适用规则写 exempt 算 lint 错误）
 endpoints:
   - {endpoint_id: cvf.list_page, request_class: html_page, method: GET,
      path_template: "/{id}", hosts_touched: [openaccess.thecvf.com],  # 占位符只用契约 §15 词表
@@ -223,7 +238,7 @@ endpoints:
 
 ### 4.3 桥接期豁免与满足方式
 
-唯一豁免是"声明式 plan"（契约 §17）；纯函数纪律（CT-01 红线）与 fixture 政策在[一致性文档](../conformance-and-testing.md)中不可豁免，桥接只改满足方式。
+唯一豁免是"声明式 plan"（契约 §17），由 CI 按 `impl: v1_bridge` 推导为不适用，清单不写 `exempt`；纯函数纪律（CT-01 红线）与 fixture 政策在[一致性文档](../conformance-and-testing.md)中不可豁免，桥接只改满足方式。
 
 | 规则（契约） | 桥接情形 | 处置 |
 |---|---|---|
@@ -241,7 +256,7 @@ endpoints:
 |---|---|
 | W0（V0） | fixture 转换器与回放传输（B5）就位；`arxiv_oai`、`crossref_rest`（及依赖它的 `crossref_delegated`）按参考连接器直接移植，v1 回放只作 oracle |
 | V1 前半（[实施计划](../implementation-plan.md) V1-T4 余项） | 垫片与运行器、B1–B4、B6、B7 就位，先于 W2 桥接卡 |
-| W2（V1 后半） | 7 个平台侧桥接经 staging 达 CL2（P0 连续 ≥14 天），V1 出口达 CL3；其余清单回放通过，满足 AC-V1.15（除 dblp 在线通道、SSRN，口径见未决 8） |
+| W2（V1 后半） | 7 个平台侧桥接经 staging 达 CL2（P0 连续 ≥14 天），V1 出口达 CL3（`repec_redif` 待传输方式拍板，之前停在 CL1，同实施计划 W2）；其余清单回放与 AC-V1.15 口径二选一，见实施计划未决（AC-V1.15 口径） |
 | V2 期间 | 7 个平台侧桥接移植并过 B8（实施计划 CN-6）；用户侧 5 个的 v1 fixture 转入配方 fixture 集 |
 | V2 出口 | 全部 v1_bridge 版本退役；`sunset_by` 过期未移植者自动降 `cl_effective` 到 CL2 并开移植卡（CL2 生产口径见契约待拍板 P-4） |
 
@@ -265,8 +280,8 @@ v1 行数与 fixture 数取自第一阶段 C 调研 §2.2（`archive/v1` 代码�
 | `dblp_drops_snapshot` | 1 | P0（快照形态） | W2 | platform | snapshot_rewrite / 不加载 → `bulk_snapshot` | 2 | 663 / 11（不接入） | 流式导入；新 ADR 解除 D-037 出列（D-050） | CL0 / CL3 |
 | `openreview_api` | 1 | P0 ⚑ACCT | 平台侧停用；用户侧 W3u（token 只在端侧） | mixed | paused → `site_special` | 1.5 | 1182 / 18 | 书面确认 | CL0 / 待定（用户侧随 P-13） |
 | `nber_site` | 2 | P0 | 暂停（平台侧与用户侧），许可前不排波次（待拍板） | mixed | paused → 拆分 | 1.5 | 992 / 8 | NBER 书面许可 | CL0（暂停）/ CLX |
-| `aea_fulltext_user` | 1 | P0 | W3 | user | user_side → `atypon_user` 实例（建议） | 1 | 349 / 6 | 扩展 | CL1 / CLX |
-| `econsoc_fulltext` | 1 | P0 | W3 | mixed | user_side → 拆分 | 1 | 1075 / 5 | oai_pmh 引擎、扩展 | CL1 / CLX |
+| `aea_fulltext_user` | 1 | P0 | W3u | user | user_side → `atypon_user` 实例（建议） | 1 | 349 / 6 | 扩展 | CL1 / CLX（通道随承接配方 CL3） |
+| `econsoc_fulltext` | 1 | P0 | W3u | mixed | user_side → 拆分 | 1 | 1075 / 5 | oai_pmh 引擎、扩展 | CL1 / CLX（通道随承接配方 CL3） |
 | `elsevier_tdm` | 1 | P0 ⚑COMM | W3 | user | user_side → `official_tdm_api` | 1.5 | 527 / 5 | pc-agent | CL1 / CL3（V3） |
 | `wiley_tdm` | 1 | P0 ⚑COMM | W3 | user | 同上 | 1.5 | 403 / 4 | pc-agent | CL1 / CL3（V3） |
 | `silverchair_user` | 5 | P0 | W3 | user | user_side → `platform_family` | 1.5 | 743 / 4 | 扩展 | CL1 / CL3（V3） |
@@ -505,7 +520,7 @@ v1 行数与 fixture 数取自第一阶段 C 调研 §2.2（`archive/v1` 代码�
 
 - 20 个 connector_id 都有卡片（本文 7 张，目标族 13 张），与 E 清单一一对应，各写明 `destiny`、`port_target`、`sunset_by`。
 - B1–B8 与 §4.1 适用项在离线 CI 全绿；AC-V1.15（除 dblp 在线通道、SSRN 外全部经桥接通过契约测试）以 B6 报告为证据。
-- 7 个平台侧桥接 V1 出口达 CL3；V2 出口全部 `impl: v1_bridge` 版本退役（并入族实例或拆分的 id 为 `CLX`），移植件过 B8。
+- 7 个平台侧桥接 V1 出口达 CL3（`repec_redif` 待传输方式拍板除外）；V2 出口全部 `impl: v1_bridge` 版本退役（并入族实例或拆分的 id 为 `CLX`），移植件过 B8。
 - 静态检查：平台模式清单无 `fetch_asset` 路径、无 cookie 与用户凭证绑定，`allowed_hosts` 不含 `export.arxiv.org`、`dblp.org`、nber.org 各主机；`replay_only` 清单 `auth` 为 `null`、不进网关白名单；`conformance.rules` 中 `exempt` 只出现 `declarative_plan`。
 
 ## 未决事项
@@ -522,7 +537,7 @@ v1 行数与 fixture 数取自第一阶段 C 调研 §2.2（`archive/v1` 代码�
 10. 同一 `connector_id` 的 0.x 桥接版与 1.0.0 移植版：本文按"MAJOR 升级、桥接版退役"处理，与契约 §14、§17"bridge 转 CLX、id 永不复用"的衔接待契约确认（同 aggregator-api U-3）。
 11. `window_set` 按期键（`IssueRef`）记完成单元，契约 §6 只有日期区间；须补"期键"形态，或改用 `seq`（卷号）与 `repo_commit`（ACL）。
 12. v1 读时钟处的 CT-01 测法（夹具替换而非抛错）待一致性文档确认；不获确认则桥接补丁改读注入时钟。
-13. [实施计划](../implementation-plan.md)口径待统一：其 CN-6 记 `repec_redif`、`unpaywall_api` 在 W2 直接写成快照或族实例（本文为平台侧桥接）；其 CN-7 仍把 `nber_site` 列入 W3u 用户侧 11 个（1.5 人日暂列），本文按暂停口径不排波次。
+13. [实施计划](../implementation-plan.md)口径待统一：其 CN-6 记 `repec_redif`、`unpaywall_api` 在 W2 直接写成快照或族实例（本文为平台侧桥接）。
 14. 卡片小节标签本文已统一为 `**1 身份**：` 形式（原 `1. **身份**：` 编号列表）；按[卡片模板](../connector-card-template.md)，V0 起以 `card render` 的输出为准；§6 的三级标题只写 connector_id，分组用粗体行。
 
 更细的材料：`git show v2-drafts:docs/plan/v2/03-sources-and-corpus-pipeline.md`（§5.3–5.4 `V1Bridge`、§14.1–14.2 去向与模块复用、§15.1 fixture 复用）；v1 协议与代码见 `git show v1-final:src/paper_crawler/adapter.py` 与 `src/paper_crawler/adapters/`；归档说明见 [docs/archive.md](../../../../archive.md)；通用协议见 [契约](../contract.md)，里程碑见 [09](../../09-roadmap-and-milestones.md#v1-语料底座与-p0-来源)。

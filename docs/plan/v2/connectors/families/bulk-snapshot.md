@@ -7,16 +7,16 @@ updated: 2026-09-30
 
 # 批量快照族：`bulk_snapshot`
 
-本文回答：官方快照、年度或月度文件、周更数据集与 dump 怎样安全、可续、可对账地导入本地底座；族引擎在契约之上多了什么，16 个本族连接器的上游事实、游标、合规与测试要点。结论：本族统一为"发现 → manifest 闸 → 经网关流式下载并校验 → 按兴趣并集子集导入 → 逐文件计数对账 → 删除日志 → 提交"七步，游标按 release 与文件粒度断点续传；P0 六个（`openalex_snapshot`、`crossref_annual_file`、`pmc_s3`、`zbmath_kg_dump` 可先行，`pubmed_baseline`、`europe_pmc_bulk` 在书面确认前停在 CL1 且只用合成 fixture），P1 七个写紧凑卡，P2 三个按需补卡；DROPS dblp 与 RePEc ReDIF 的主卡在 v1-bridge，本文给出它们移植后的本族形态。
+本文回答：官方快照、年度或月度文件、周更数据集与 dump 怎样安全、可续、可对账地导入本地底座；族引擎在契约之上多了什么，16 个本族连接器的上游事实、游标、合规与测试要点。结论：本族统一为"发现 → manifest 闸 → 经网关流式下载并校验 → 按兴趣并集子集导入 → 逐文件计数对账 → 删除日志 → 提交"七步，游标按 release 与文件粒度断点续传；P0 六个（`openalex_snapshot`、`pmc_s3`、`zbmath_kg_dump` 可先行；`crossref_annual_file` 待传输方式拍板、`pubmed_baseline`、`europe_pmc_bulk` 待书面确认，之前停在 CL1 且只用合成 fixture），P1 七个写紧凑卡，P2 三个按需补卡；DROPS dblp 与 RePEc ReDIF 的主卡在 v1-bridge，本文给出它们移植后的本族形态。
 
 ## 要点
 
 - 本族连接器不发 HTTP：发现请求与文件下载都经出站网关（流式模式、不进 TTL 缓存、断点续传由网关做）；bulk 主机自己的 robots 另判（`host_robots_required = True`；bulk 主机 robots 全禁即 `needs_confirmation`，见长稿 `git show v2-drafts:docs/plan/v2/08-compliance-security-privacy.md` §4.2 R6）。通用协议见 [连接器接口契约 v1](../contract.md)。
 - **manifest 闸**：release 未通过版本、完整性、主机、许可、规模、结构、容量与预算七项检查（MG-1…MG-7），不下载数据文件；robots 由网关逐请求判定。
-- **逐文件计数对账**：字节、校验和、记录数与上游声明一致，导入 + 过滤 + 隔离 = 解析总数；不一致归 `integrity`（平台侧判定者待契约补充），重下一次仍不一致即停。
+- **逐文件计数对账**：字节、校验和、记录数与上游声明一致，导入 + 过滤 + 隔离 = 解析总数；字节与校验和不一致由网关判 `integrity`（契约 §7），记录数不一致由对账停机；重下一次仍不一致即停。
 - **删除日志**：只有上游删除日志或确定性整版键差集产出 tombstone，只置 `deleted_upstream`，不删 Work；撤稿走 `status_claims`。
 - **兴趣并集子集导入**：按 [03 本地底座](../../03-sources-and-corpus-pipeline.md#语料流水线与-enrich) 只导入命中子集；语料只记 `interest_union_version`。
-- **断点续传**：游标 `snapshot_release` 按契约记 `release_id、checksum、parts_done[]`，超大分片另记可选的分片内偏移；release 在运行开始时固定，上游中途换版即放弃重开，不混用两版。
+- **断点续传**：游标 `snapshot_release` 按契约记 `release_id、checksum、parts_done[]、part_offsets{}`，按块提交、按块续传；release 在运行开始时固定，上游中途换版即放弃重开，不混用两版。
 - **非 HTTP 传输**（rsync、FTP、BitTorrent）与 S3 请求方付费签名不在现有网关能力内，列入待拍板；默认只用 HTTPS 通道。
 
 ## 1. 本族回答什么、适用边界
@@ -59,16 +59,29 @@ class SnapshotSpec:
 
 class BulkSnapshot(PlatformConnector):
     host_robots_required = True
-    def discover(self, task, ctx: PlanCtx) -> Generator[RequestSpec, Step, SnapshotSpec | None]: ...
-        # 小请求：manifest、DataCite DOI 列表、S3 LIST、目录清单；Zenodo 托管的不用 zenodo.org/api（robots 禁）
-    def manifest_gate(self, spec: SnapshotSpec, prev: SnapshotSpec | None, ctx) -> GateVerdict: ...   # 纯函数，§2.1
-    def fetch_plan(self, spec: SnapshotSpec, ledger: ImportLedger) -> Iterator[RequestSpec]: ...
-        # 每个未校验文件一个流式请求（RequestSpec.stream = True）；网关落冷存储并返回 BlobRef{uri, sha256, bytes}
-        # 断点续传的 Range 由网关写，连接器不写 Range（AllowedHeader 白名单不变）
-    def subset_filter(self, union: InterestUnionView) -> SubsetFilter: ...   # 纯函数
+    def plan(self, task, ctx: PlanCtx) -> Generator[RequestSpec, Step, TaskOutcome]:
+        if task.operation == "probe":                         # ProbeInput：只发 manifest、LIST 等发现请求
+            return (yield from self._probe(task.payload.probe, ctx))
+        inp: SnapshotInput = task.payload                     # snapshot_import：release_id 与 union_filter 只从这里取
+        cur = task.cursor.cursor if task.cursor else None     # snapshot_release{release_id, checksum, parts_done, part_offsets}
+        spec = yield from self.discover(inp.release_id, ctx)  # 小请求：manifest、DataCite DOI 列表、S3 LIST、目录清单
+        if spec is None: return stopped("config", "release_not_found")
+        verdict = self.manifest_gate(spec, prev_checksum=cur.checksum if cur else None)   # 纯函数，§2.1；上一版只以游标 checksum 比较
+        if verdict.noop: return completed()
+        if not verdict.ok: return stopped(verdict.error_class, verdict.reason)
+        for f in spec.files:
+            if cur and f.file_id in cur.parts_done: continue  # 已完成文件跳过；未完成文件由 runner 按 part_offsets 续切
+            step = yield stream_request(f)                    # stream=True；Range 续传由网关写，连接器不写 Range
+            if step.page is None: return stop_at_last_safe_point(step)
+        return completed(next_cursor=release_done(spec))
+    def discover(self, release_id, ctx) -> Generator[RequestSpec, Step, SnapshotSpec | None]: ...
+        # Zenodo 托管的不用 zenodo.org/api（robots 禁）
+    def manifest_gate(self, spec: SnapshotSpec, prev_checksum: bytes | None) -> GateVerdict: ...   # 纯函数，§2.1
+    def subset_filter(self, union: UnionFilter) -> SubsetFilter: ...   # 纯函数，把契约 SnapshotInput.union_filter 编译为本源可判键
     def parse_chunk(self, chunk: SnapshotChunk, ctx: ParseCtx) -> Page: ...
-        # runner 按记录边界把 BlobRef 切成确定性块（file_id, offset, n）喂入；连接器不读文件、不开网络
-    def reconcile(self, ledger: ImportLedger, spec: SnapshotSpec) -> ReconcileReport: ...  # §2.2
+        # runner 按记录边界切块喂入；连接器不读文件、不开网络；单条坏记录由本函数跳过并计入 PageSignals.n_quarantined，
+        # 整块结构不符才抛 ParseError（runner 停在上一个已提交块）
+    def reconcile(self, ledger: ImportLedger, spec: SnapshotSpec) -> ReconcileReport: ...  # §2.2；ImportLedger 由 runner/ingestor 维护，不进连接器输入
 ```
 
 ### 2.1 manifest 闸（`manifest_gate`，七项全过才下载数据文件）
@@ -76,19 +89,19 @@ class BulkSnapshot(PlatformConnector):
 | 项 | 检查 | 不过时 |
 |---|---|---|
 | MG-1 版本 | `release_id` 新于已提交版；相同即空操作 | `completed`（空操作） |
-| MG-2 完整 | 每个数据文件有 URL；上游提供字节数、校验和、记录数的，全部齐 | `integrity`，停 |
-| MG-3 主机 | 全部文件主机 ∈ `allowed_hosts` | 不生成请求，记 `config/undeclared_host`（robots 与决策仍由网关逐请求判定） |
+| MG-2 完整 | 每个数据文件有 URL；上游提供字节数、校验和、记录数的，全部齐 | 闸返回不通过（`GateVerdict`），不下载；下载后的字节与校验和由网关判 `integrity`（契约 §7） |
+| MG-3 主机 | 全部文件主机 ∈ `allowed_hosts` | 闸不生成请求；若仍有未声明主机的请求，由网关路由判 `config/undeclared_host`（契约 §7 的判定者） |
 | MG-4 许可 | 许可声明与上一版哈希一致 | 停在门前，交策略引擎重判（可能为 `needs_confirmation`）；变严自动降级，变宽只提"待评审" |
 | MG-5 规模 | 总记录数、总字节与上一版比，骤降超阈值（建议 10%，未核） | 由发现后立即运行的 `count` 探针判定 `empty_body/count_drop`，停并告警 |
-| MG-6 结构 | 抽样文件头与字段集合指纹匹配 mapper 期望 | `parse`，停（结构探针同时告警） |
+| MG-6 结构 | 抽样文件头与字段集合指纹匹配 mapper 期望 | 闸不通过、结构探针告警；下载后不符由 `parse_chunk` 抛 ParseError 判 `parse` |
 | MG-7 容量 | 冷存储余量、请求方付费预算足够 | 配额账本判定 `budget_exhausted`，停 |
 
 ### 2.2 逐文件计数对账与删除日志
 
 - `ImportLedger` 每文件一行：`file_id、bytes_expected/actual、checksum_ok、records_declared、records_parsed、imported、filtered_out、quarantined、tombstones、committed_at`（本批新增，落 05 ops 域）。
-- 文件级：字节与校验和一致；有声明记录数的须 `records_parsed == records_declared`；`imported + filtered_out + quarantined == records_parsed`；隔离率超阈值（建议 0.01%，未核）归 `parse`。
+- 文件级：字节与校验和一致；有声明记录数的须 `records_parsed == records_declared`；`imported + filtered_out + quarantined == records_parsed`；各块 `PageSignals.n_quarantined` 之和的隔离率超阈值（建议 0.01%，未核）即停并告警（归 `parse`）。
 - release 级：各文件之和等于 `expected_total`（有则比）；对账报告进 `ops.harvest_run`，O2 可见。
-- 删除：只认两类证据——上游删除日志（OpenAlex `deleted_ids.csv.gz`、PubMed `DeleteCitation`、S2 diffs 的删除文件）与确定性整版键差集（dblp key、RePEc handle，须连续两版缺失才产出 tombstone）；年度全量文件（DataCite、ORCID、Crossref）的缺失只记 `absent_in_release` 观测，不产出 tombstone。
+- 删除：只认两类证据——上游删除日志（OpenAlex `deleted_ids.csv.gz`、PubMed `DeleteCitation`、S2 diffs 的删除文件）与确定性整版键差集（dblp key、RePEc handle：导入时产出契约 `RawRecord(kind="presence")`，由 sink 累计缺席，连续两版缺失才产出 tombstone，连接器不读上一版键集）；年度全量文件（DataCite、ORCID、Crossref）的缺失只记 `absent_in_release` 观测，不产出 tombstone。
 
 ### 2.3 兴趣并集子集导入
 
@@ -144,7 +157,7 @@ fixture 用"截断样本"：manifest 全文加每个文件的前若干条记录�
 | connector_id | 来源 | 最高优先级 | 波次 | exec_side | 代码量级（E 粗估） | v1 复用 | 前置依赖 | 当前 / 目标 CL |
 |---|---|---|---|---|---|---|---|---|
 | [`openalex_snapshot`](#openalex_snapshot) | `openalex` | v2-P0 | W2 | platform | 2 人日 | — | 冷存储容量（05） | 未建 / CL3（V1） |
-| [`crossref_annual_file`](#crossref_annual_file) | `crossref` | v2-P0 | W2 | platform | 2 | — | 传输方式待拍板 | 未建 / CL3（V1） |
+| [`crossref_annual_file`](#crossref_annual_file) | `crossref` | v2-P0 | W2 | platform | 2 | — | 传输方式待拍板 1（S3 请求方付费） | 未建 / CL1（待拍板 1 通过后 CL3） |
 | [`pmc_s3`](#pmc_s3) | `pmc` | v2-P0 | W2 | platform | 2 | — | 许可闸 | 未建 / CL3（V1） |
 | [`pubmed_baseline`](#pubmed_baseline) | `pubmed` | v2-P0 | W2 | platform | 2 | — | ⚑ROBOTS：NCBI 书面确认 + D-049 附表 | 未建 / CL1（确认后 CL3） |
 | [`europe_pmc_bulk`](#europe_pmc_bulk) | `europe_pmc` | v2-P0 | W2 | platform | 2 | — | ⚑ROBOTS（仅 bulk）：EBI 书面确认 | 未建 / CL1（确认后 CL3） |

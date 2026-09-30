@@ -58,7 +58,7 @@ class OaiQuirk(Enum):
     HTTPS_CONTINUATION = 2        # Identify 声明 http、实际 https（Numdam）：续页强制用 base_url
     OFF_PEAK_BULK = 3             # PMC：美东工作日 05–21 时单任务 ≤100 次请求，超出在安全点 partial
     NO_OAI_DC = 4                 # 不提供规范要求的 oai_dc（INSPIRE 候选实例）
-# 状态码语义（InvenioRDM 过期回 422）不做 quirk，按契约写进实例端点的 status_overrides
+# 状态码语义（InvenioRDM 过期回 422）不做 quirk；拟写进实例端点的 status_overrides，判定者待 W0 定（契约未决）
 
 @dataclass(frozen=True)
 class ReconcilePolicy:
@@ -69,10 +69,18 @@ class ReconcilePolicy:
 class OaiPmh(PlatformConnector):
     def plan(self, task: ConnectorTask, ctx: PlanCtx) -> Generator[RequestSpec, Step, TaskOutcome]:
         inst = ctx.instance
+        if task.operation == "lookup":                 # LookupInput：逐个 GetRecord；idDoesNotExist 走 not_found，逐项隔离
+            return (yield from self._get_records(task.payload.identifiers, ctx))
+        if task.operation == "probe":                  # ProbeInput：只发 Identify、ListMetadataFormats、ListSets 等自描述请求
+            return (yield from self._probe(task.payload.probe, ctx))
         if task.operation == "enumerate" and task.payload.mode == "reconcile":   # 模式来自 EnumerateInput，plan_key 只作缓存与审计键
             return (yield from self._reconcile(task, ctx))
-        frm, sset = window_start(task.cursor, inst), set_of(task.scope_key)   # 水位 − overlap；set 取自 scope_key
-        req_until = frozen_until(task, inst)           # send_until=False 时为 None（不带 until）
+        # 以下为 increment 与 enumerate(harvest)：enumerate 的窗口取 task.payload.window，increment 取游标水位
+        sset = set_of(task.scope_key)                  # set 取自 scope_key
+        if task.operation == "enumerate":              # 回填：EnumerateInput.window，始终带 until
+            frm, req_until = task.payload.window
+        else:                                          # increment：水位 − overlap；send_until=False 时不带 until
+            frm, req_until = window_start(task.cursor, inst), frozen_until(task, inst)
         until = req_until                              # 带 until 时推进到它，否则由 fix_until() 固定
         restarts = 0
         req = list_records(inst, frm, set_=sset, until=req_until)
@@ -87,9 +95,12 @@ class OaiPmh(PlatformConnector):
             until = until or fix_until(step.page.signals.response_date, ctx.now, inst)
             token = step.page.signals.continuation     # resumptionToken 只在内存中，不持久化
             req = resume(inst, token) if token else None   # 立即续取
+        if task.operation == "enumerate":              # 回填窗口记入 window_set，不动增量水位（契约 §4）
+            return completed(next_cursor=window_set_add(task.cursor, (frm, req_until)))
         return completed(next_cursor=oai_datestamp(until))  # 整段完成才推进
     # parse(resp, ctx)：信封核（移植 _oai.py）+ 按 metadata_prefix 注入的体层解析器；
-    #   header status="deleted" → RawRecord(kind="tombstone")；ordered_by_datestamp=False 时中间页 next_cursor=None
+    #   header status="deleted" → RawRecord(kind="tombstone")；parse 一律给 next_cursor=None（ParseCtx 不知本次固定的 until），
+    #   游标只由 plan() 的终局 next_cursor 推进；ordered_by_datestamp 只影响乱序断言
 
 def fix_until(response_date, now, inst):
     if OaiQuirk.RESPONSE_DATE_UNTRUSTED in inst.quirks or response_date is None:
@@ -99,7 +110,7 @@ def fix_until(response_date, now, inst):
     return truncate(min(response_date, now), inst.granularity)
 ```
 
-**信封错误映射**（沿用 v1 `_oai.py`，一处改口径）：`noRecordsMatch` → 合法空页（`PageSignals.legit_empty`）；`badArgument`、`badVerb`、`cannotDisseminateFormat`、`noSetHierarchy` → `config`；`idDoesNotExist` → `gone`（只在 `GetRecord`）；`badResumptionToken` → `cursor_expired`（v1 为 TRANSIENT；InvenioRDM 的 422 经实例 `status_overrides` 声明为同类）；未知错误码与根元素不符 → `parse`。HTTP 503 + `Retry-After`（OAI 规范的流控）与 429 → `rate_limited`；Zenodo 在 200 响应上也带 `retry-after: 60`，本族要求网关只在 429/503 上按 `Retry-After` 退避（列入未决）。网关挑战检测先于解析，命中即 `challenge`，正文不交 parse。
+**信封错误映射**（沿用 v1 `_oai.py`，一处改口径）：`noRecordsMatch` → 合法空页（`PageSignals.legit_empty`）；`badArgument`、`badVerb`、`cannotDisseminateFormat`、`noSetHierarchy` → parse 抛 ParseError，归类待契约定（parse 判 `config` 与契约 §7 判定者不符，见未决）；`idDoesNotExist` → 合法页 `PageSignals.not_found`（只在 `GetRecord`）；`badResumptionToken` → `cursor_expired`（v1 为 TRANSIENT；InvenioRDM 的 422 由网关 `status_overrides` 还是 parse 判，待 W0 定，见契约未决）；未知错误码与根元素不符 → `parse`。HTTP 503 + `Retry-After`（OAI 规范的流控）与 429 → `rate_limited`；Zenodo 在 200 响应上也带 `retry-after: 60`，本族要求网关只在 429/503 上按 `Retry-After` 退避（列入未决）。网关挑战检测先于解析，命中即 `challenge`，正文不交 parse。
 
 **在场对账**（`transient` 与 `no` 实例）：
 
@@ -147,7 +158,7 @@ def _reconcile(self, task, ctx):
 | `iacr` | `iacr_eprint` | `https://eprint.iacr.org/oai` | `oai_dc`（唯一） | second | persistent | 未核 | robots 已放宽为只禁 PDF 等；⚑ROBOTS 维持至评审，其间只 on_demand | metadata-only（P1）· W3 | [Identify](https://eprint.iacr.org/oai?verb=Identify) |
 | `econstor` | `econstor` | `https://www.econstor.eu/oai/request`（DSpace ≤6 旧路径） | `dim` 或 `mods`（待 fixture 定） | second | transient | DSpace 默认 100（未核） | robots 只禁检索浏览页；元数据 CC0（Identify） | P1 · W3 | [Identify](https://www.econstor.eu/oai/request?verb=Identify) |
 | `doaj_article` | `doaj` | `https://doaj.org/oai.article`（期刊 `/oai`） | `oai_doaj` | 未核 | 删除头自 2024-11（未核） | 未核 | 全路由 2 req/s；非付费用户更新滞后最长 30 天 | P1 · W3 | [DOAJ OAI](https://doaj.org/docs/oai-pmh/) |
-| `zenodo` | `zenodo` | `https://zenodo.org/oai2d` | `oai_datacite` | second | no | 约 2 分钟、50 条/页；422 经 `status_overrides` 归 `cursor_expired` | OAI 30/min、`X-RateLimit-*`；`/api` 被 robots 禁（Crawl-delay 10），`/oai2d` 允许 | P2 · W4（只按 community set） | [开发者文档](https://developers.zenodo.org/) |
+| `zenodo` | `zenodo` | `https://zenodo.org/oai2d` | `oai_datacite` | second | no | 约 2 分钟、50 条/页；422 归 `cursor_expired`（判定者待 W0 定） | OAI 30/min、`X-RateLimit-*`；`/api` 被 robots 禁（Crawl-delay 10），`/oai2d` 允许 | P2 · W4（只按 community set） | [开发者文档](https://developers.zenodo.org/) |
 | `hal` | `hal` | `https://api.archives-ouvertes.fr/oai/hal/` | 未核 | 未核 | 未核 | 未核 | robots 禁 `/oai/` → 书面确认前不启用；OAI 页写"不得商用" | P2 · W4（受阻） | [HAL OAI](https://api.archives-ouvertes.fr/docs/oai) |
 | `psycharchives` | `psycharchives` | `https://www.psycharchives.org/oai/request` | 未核 | second | transient | 未核 | Crawl-delay 2（长稿） | P2 · W4 | [Identify](https://www.psycharchives.org/oai/request?verb=Identify) |
 | `eudml` | `eudml` | `https://eudml.org/oai/OAIHandler` | — | — | — | — | Identify 与 robots 均 403 → 不启用，⚑RECHECK | P2 · W4（受阻；替补 `numdam` 的 `eudml-article2`） | [Identify](https://eudml.org/oai/OAIHandler?verb=Identify) |
@@ -163,7 +174,7 @@ def _reconcile(self, task, ctx):
 |---|---|---|
 | `FS-OAI-01` 信封同构 | 全部实例的信封解析共用一套代码，6 个错误码映射如 §2 | 每实例：Identify、一页 ListRecords、`noRecordsMatch` |
 | `FS-OAI-02` token 过期重启 | 每页注入 `badResumptionToken`（InvenioRDM 为 422）：从窗口起点重启 ≤2 次，并集等于真值，游标未越过末页 | 带 token 的中间页、过期响应 |
-| `FS-OAI-03` 安全提交点 | `ordered_by_datestamp=false` 时只有末页 `next_cursor` 非空；为 `true` 的实例附乱序反例并通过契约游标属性测试 | 末页（空 token 元素）、乱序反例 |
+| `FS-OAI-03` 安全提交点 | parse 各页 `next_cursor` 恒为空，游标只在整段完成后由 `plan()` 终局推进；`ordered_by_datestamp=true` 的实例附乱序反例并通过契约游标属性测试 | 末页（空 token 元素）、乱序反例 |
 | `FS-OAI-04` 粒度 | `from/until` 格式与实例 `granularity` 一致，day 实例不发时间部分 | 各粒度一页 |
 | `FS-OAI-05` 删除 | persistent：删除头 → tombstone；transient/no：对账产出在场集合，只在连续两次完整对账缺席后出 tombstone；不完整对账不出墓碑 | 删除头、对账两轮（一轮被截断） |
 | `FS-OAI-06` until 固定 | `responseDate` 滞后或超前 >1 小时时改用 ctx.now 并计 `oai_stale_response_date`；游标不回退 | arXiv Identify（带 CDN `age` 头） |
@@ -309,7 +320,7 @@ exec_side 全部 `platform`。
 - `RawRecord.kind = presence` 已入契约 §3；在场表（05 `ops` 域）须 05 确认，未确认前以 ingestor 旁路表实现。
 - 网关只在 429/503 上按 `Retry-After` 退避（Zenodo 200 也带该头）：本族对网关的要求，待契约或网关设计确认。
 - `until` 取值细化：契约 §6 写 `oai_datestamp` 推进到 `until`（取 `responseDate`）；本族加 `fix_until()`（CDN 缓存或偏差 >1 小时改取 ctx.now，记 `oai_stale_response_date`），须契约确认。卡片归属已与 [v1-bridge](v1-bridge.md) 对齐（该文只留桥接条款）。
-- 判定者：信封错误 `badArgument` 等→`config`、`idDoesNotExist`→`gone` 由 parse 判定，契约 §7 的判定者是 lint/网关；建议 `idDoesNotExist` 走 `PageSignals.not_found`，其余待契约补 parse。InvenioRDM 的 422 本文按实例 `status_overrides`（网关）归 `cursor_expired`，与契约 §7 判定者 `parse` 须择一，W0 定（契约未决事项）。
+- 判定者：`idDoesNotExist` 已改走 `PageSignals.not_found`；信封错误 `badArgument` 等由 parse 抛 ParseError，归 `parse` 还是 `config`（契约 §7 的 `config` 判定者是 lint/网关）待契约定。InvenioRDM 的 422 本文按实例 `status_overrides`（网关）归 `cursor_expired`，与契约 §7 判定者 `parse` 须择一，W0 定（契约未决事项）。
 - arXiv 令牌桶须跨出口 IP 合计：网关五元组对个别来源折叠出口 IP 维的声明方式（`budget.ceiling.scope = deployment`）待契约确认。
 - CC 许可 arXiv e-print 能否单篇进共享 OA 缓存（Identify dataPolicy 写明不允许全文收割）——建议默认只外链，列入待拍板。
 - 候选新实例（不在第一阶段清单，均待拍板，本批不改名录）：`ssoar`（`https://www.ssoar.info/OAIHandler/request`，transient，robots 404）可补"支持但无连接器"一行；`inspire_hep` 的 `https://inspirehep.net/api/oai2d`（`marcxml`、`oai_openaire`，no，无 `oai_dc`）作 `inspire_rest` 回填替补；IACR 的 ToSC、TCHES 两个 OJS 端点。

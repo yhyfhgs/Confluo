@@ -94,7 +94,7 @@ updated: 2026-09-30
 
 **9 全文**
 - FulltextOption：<oa_link|tdm_api|user_fetch|open_in_tab>（例：OA 子集给 oa_link，其余 open_in_tab）
-- FulltextRecipe 要点：<占位符只在 request.headers；allowed_host；limits> 或"无"（例：无）
+- FulltextRecipe 要点：<占位符只在 request.headers（确需 query 传 key 的标 secret_in_query 并经评审，契约 §11）；allowed_host；limits> 或"无"（例：无）
 
 **10 测试**
 - fixture：<四类与必备件的 fixture id>（例：core 首页、末页空结果、撤稿记录、工作日零命中负例）
@@ -177,7 +177,7 @@ updated: 2026-09-30
 5. §5 水位类游标的 `overlap`、`granularity`、`bounds`、`lag_bound`、`late_path`、`window_max` 齐全；游标编码变更配 `migrate_cursor` 或"重置 + 回填"。
 6. §6 权利默认 `unknown`；mapper 不直接给 `shareable`；Version 声明有 basis。
 7. §8 逐操作写出上限模式；闸门与[支持名录](../../../catalog/source-directory.md)一致；放宽类上游变化只写"待评审"，不自动放宽。
-8. §9 平台不代取受限全文；配方占位符只在 `request.headers`。
+8. §9 平台不代取受限全文；配方占位符只在 `request.headers`，标 `secret_in_query` 并经评审的除外（契约 §11）。
 9. §10 覆盖四类 fixture 与必备件；每条 `exempt` 有理由与批准人（[一致性规范](conformance-and-testing.md)）。
 10. §11 每条 `upstream_facts` 有探针；P0 有替补链。
 11. §12 P0 有两名维护人；`review_every` 已填。

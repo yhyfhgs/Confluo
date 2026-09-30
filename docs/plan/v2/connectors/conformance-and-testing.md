@@ -97,7 +97,7 @@ PlatformConnector 全部必过；RecipeProvider 适用 CT-01、02、03、05、08
 | CT-05 矩阵覆盖 | `endpoints[].status_overrides` 每行、`Expectation` 七个字段的每个分支各至少一个 fixture；可能产出的每个 `error_class` 都有触发路径 | fixture `covers` 与清单求差为空 |
 | CT-06 黄金覆盖 | 黄金覆盖每个 `identifiers_emitted` 方案、每种权利类、tombstone 与撤稿；许可、权利、版本、关系字段带 `basis`；mapper 不直接给 `shareable` 等 HC-07 字段 | 逐字段比对 |
 | CT-07 SCD 一致 | `describe()` 重生成差异为 0，`derived_from` 哈希匹配 | CI 重生成 |
-| CT-08 版本门 | 黄金变而 `mapper_version` 未升、游标 kind 或编码变而 MAJOR 未升，一律失败；MAJOR 游标变更须有以旧 CursorEnvelope 测过的 `migrate_cursor`，或声明"重置 + 回填窗口" | 与上一版清单、黄金对比 |
+| CT-08 版本门 | 黄金变而 `mapper_version` 未升、游标 kind 或编码变而 MAJOR 未升、RecipeProvider 的配方内容变而 `(recipe_id, version)` 未升，一律失败；MAJOR 游标变更须有以旧 CursorEnvelope 测过的 `migrate_cursor`，或声明"重置 + 回填窗口" | 与上一版清单、黄金对比 |
 | CT-09 有序声明 | 声明 `ordered_by` 须有 `ordered_fixture` 与乱序反例，回放按序检查；`Page.next_cursor` 只在安全提交点非空 | 有序件 + 反例 |
 | CT-10 ★ 边界纪律 | 请求头只含 `AllowedHeader`，无 UA、Cookie、Authorization、`personal_params`；`auth` 只有 `deployment/*`；请求主机与重定向落点 ⊆ `allowed_hosts`；robots 例外只来自 decision；挑战即终止、正文不交 `parse`、重试 0；伪成功与空体归类正确 | mock 网关双向断言（请求都被期望，期望都被命中） |
 | CT-11 黄金决策行 | 每个"来源 × 通道 × 操作"在策略引擎黄金决策表中有期望决定，含闸门与 `cap_conformance` | 长稿 §15.3 表驱动 |
@@ -253,7 +253,8 @@ redactions: []                # 空页无可替换；有记录页如 [body.abstr
 - **登记来源不复核、不降级**：细化 D-073，待拍板。
 - **`cap_conformance` 拒绝的记账**：沿用 `policy_denied` 还是另设子码（如 `policy_denied/conformance`），待与 contract 统一。
 - **本文补充**：G1 等待不计入 2 人日；G1 前只许取证据的自描述请求；带新主机的零代码实例同样过 G1；只有所部署版本回放变红才降级；fixture 来历值 `v1_import`。
-- **robots 403 口径**：长稿 §15.4 视 robots.txt 403 为全禁，RFC 9309 视 4xx 为无限制；对本 UA 返回 403 的主机（如 ScienceDirect）G1 暂从严，待与 contract §4 统一。
+- **robots 403 口径**：已按 contract §4 统一：robots.txt 4xx 视为无限制，被挑战（unreachable）视为全禁；对本 UA 返回带挑战特征 403 的主机（如 ScienceDirect）按被挑战处理。
+- **桥接的 CT-01 测法**：v1-bridge 族 §4.3 以替换时钟与环境读取、沙箱照样抛错来满足 CT-01（★），测法变化须本文 G2 评审确认。
 - **族套件编号**：各族已统一为 `FS-<族缩写>-NN`；platform-family 用 `FS-PF-H*`、`FS-PF-R*` 区分托管与仓储两半，V0 定稿时确认。
 - **非 CC0 元数据的 fixture** 从严换合成值，是否过严待法务意见。
 - **待 V0 校准**：覆盖率门禁、回放时长、交叉核验次数、发布阶段阈值与停留时长、在线测试变量名。长稿 §15.10 的 canary 查询统一称 `canary_query`。

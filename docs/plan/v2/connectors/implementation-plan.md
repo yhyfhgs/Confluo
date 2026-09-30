@@ -42,7 +42,7 @@ updated: 2026-09-30
 - 目标：P0 平台侧族引擎与高价值专用连接器达 CL1，尽早进入 staging 计天。
 - 范围（13 个）：`feed`；aggregator_api `inspire_rest`、`zbmath_open_api`、`dblp_sparql`、`hf_papers_api`、`pmc_bioc`、`pubmed_eutils`；site_special `biorxiv_api`（兼 medrxiv）、`aps_harvest`、`jmlr_volumes`、`tmlr_list`、`ijcai_proceedings_pages`、`osf_api`。另做 P0 零代码登记与配置（nature_portfolio、pnas 的 feed，medrxiv 复用 `biorxiv_api`）。
 - 前置：W0 出口；V1-T1 网关礼貌、V1-T2 策略接入、V1-T8 调度与游标。
-- 出口：12 个达 CL1，`zbmath_open_api` 在 FIZ 书面确认前录不到 fixture、停在 CL0；无闸门的 8 个在 V1 第 3 周前进入 CL2 计天，V1 出口达 CL3。`pubmed_eutils`、`osf_api` 与 `pmc_bioc` 的 E-utilities 部分受 ⚑ROBOTS，`dblp_sparql` 待 D-050 核验，都停在 CL1 待命，通道保持 deny 或 link_only；`aps_harvest` 只做 OA 子集。
+- 出口：12 个达 CL1，`zbmath_open_api` 在 FIZ 书面确认前录不到 fixture、停在 CL0；无闸门的 9 个（含 `pmc_bioc`，其卡片不声明 E-utilities）在 V1 第 3 周前进入 CL2 计天，V1 出口达 CL3。`pubmed_eutils`、`osf_api` 受 ⚑ROBOTS（以合成 fixture 做到 CL1，口径见 site-special 未决 13），`dblp_sparql` 待 D-050 核验，都停在 CL1 待命，通道保持 deny 或 link_only；`aps_harvest` 只做 OA 子集。
 - 估算：20.0 人日；按族分两条泳道，并行规则见分工与并行。
 
 ### W2 快照、桥接与其余 P0（V1 后半）
@@ -50,13 +50,13 @@ updated: 2026-09-30
 - 目标：导入底座快照，把 v1 平台侧 adapter 包进契约，补齐 P0 替补链。
 - 范围（16 个）：bulk_snapshot `crossref_annual_file`、`openalex_snapshot`、`pmc_s3`、`europe_pmc_bulk`、`pubmed_baseline`、`zbmath_kg_dump`、`dblp_drops_snapshot`、`repec_redif`；桥接 `acl_anthology_xml`、`aaai_ojs_oai`、`pmlr_volumes`、`cvf_open_access_pages`、`neurips_proceedings_pages`、`openalex_api`、`ssrn_crossref`、`unpaywall_api`。
 - 前置：W0 出口；V1-T4 余项（桥接垫片）；`repec_redif` 先扩 ReDIF handle 映射，其 rsync/FTP 经网关的传输方式待拍板（见 v1-bridge 族）；`openalex_api` 接美元预算（V1-T18）。
-- 出口：16 个最晚 V1 第 5 周达 CL1；无闸门的 12 个在 V1 出口达 CL3；`crossref_annual_file`（S3 请求方付费）、`repec_redif`（rsync/FTP）在 bulk-snapshot 待拍板 1 通过前停在 CL1 待命；`openalex_snapshot` 完成兴趣并集子集导入（09 的 V1 出口条件）；`europe_pmc_bulk`、`pubmed_baseline` 停在 CL1 待命；每个桥接写明 `v1.destiny` 与 `sunset_by`（≤ V2 出口）。
+- 出口：16 个最晚 V1 第 5 周达 CL1；无闸门的 11 个在 V1 出口达 CL3；`dblp_drops_snapshot` 待 D-050 解除 D-037 出列，之前停在 CL1 待命；`crossref_annual_file`（S3 请求方付费）、`repec_redif`（rsync/FTP）在 bulk-snapshot 待拍板 1 通过前停在 CL1 待命；`openalex_snapshot` 完成兴趣并集子集导入（09 的 V1 出口条件）；`europe_pmc_bulk`、`pubmed_baseline` 停在 CL1 待命；每个桥接写明 `v1.destiny` 与 `sunset_by`（≤ V2 出口）。
 - 估算：21.0 人日，另 CN-8 在 V1 8.5 人日。快照导入受发布节奏与磁盘约束，一条泳道串行；桥接卡互不依赖，可全并行。
 
 ### W3 用户侧与 P1（V3 批次一，V5 批次二）
 
 - 批次一（V3，24 个，35.5 人日；另 `nber_site` 预留 1.5）：
-  - 用户侧 CN-7（10 个，另 `nber_site` 预留，合计 16.5）：`atypon_user`、`silverchair_user`、`elsevier_tdm`、`wiley_tdm`、`springer_nature_api`、`aea_fulltext_user`、`econsoc_fulltext` 7 个 RecipeProvider 达 CL3；`openreview_api`（用户侧为本人 token 查询，D-052）、`nasa_ads_api`、`orcid_api` 是用户侧元数据查询，契约 v1 没有对应协议：只保留 W3u 占位、只做清单与卡片、停在 CL0，是否增加 `QueryRecipe` 待拍板 P-13。混合执行的只做用户侧部分。`nber_site` 按 [site-special 卡](families/site-special.md#nber_site)去向暂停；用户侧取回待法务与 NBER 许可，1.5 人日暂列，否决即转 CLX。
+  - 用户侧 CN-7（10 个，另 `nber_site` 预留，合计 16.5）：`atypon_user`、`silverchair_user`、`elsevier_tdm`、`wiley_tdm`、`springer_nature_api` 5 个 RecipeProvider 达 CL3；`aea_fulltext_user`、`econsoc_fulltext` 按 [site-special 卡](families/site-special.md)解散（桥接 V2 出口转 CLX），工作量用于把用户侧并入承接配方，其通道随承接配方达 CL3（矩阵按通道记 CL3）；`openreview_api`（用户侧为本人 token 查询，D-052）、`nasa_ads_api`、`orcid_api` 是用户侧元数据查询，契约 v1 没有对应协议：只保留 W3u 占位、只做清单与卡片、停在 CL0，是否增加 `QueryRecipe` 待拍板 P-13。混合执行的只做用户侧部分。`nber_site` 按 [site-special 卡](families/site-special.md#nber_site)去向暂停；用户侧取回待法务与 NBER 许可，1.5 人日暂列，否决即转 CLX。
   - P1 平台侧（V3-T15 扩大，14 个，20.5）：`worldbank_dr_api`、`econbiz_api`、`assa_program`、`opencitations_api`、`opencitations_dump`、`doaj_api`、`doaj_csv`、`datacite_rest`、`datacite_annual_file`、`ror_dump`、`s2_api`、`s2_datasets`、`core_api`、`orcid_public_data_file`；央行 feed 实例随行。
 - 批次二（V5，V5-T17 扩大，10 个，12.0）：`plos_search_api`、`elife_api`、`scoap3_api`、`pubtator3_api`、`icite_api`、`usenix_sessions`、`ecva_papers`、`pwc_archive_import`、`isca_archive_pages`、`pvldb_volumes`。
 - 前置：V3-T7 扩展、V3-T8 pc-agent、V3-T9 凭证库；用户侧 CL2 的合成检查口径经 08 认可（P-7）；法务对扩展代发单篇的结论；S2 key 与 CORE 许可。
@@ -163,7 +163,7 @@ updated: 2026-09-30
 | CN-5 | W2 的 8 个桥接 | 5.5 | V1-T4 | AC-V1.15 的平台侧部分（口径见未决事项）；v1 fixture 回放通过 |
 | CN-8 | CL3 晋级包：runbook（游标迁移、重置加回填、合规预案）、SLO 与告警、替补与急停演练、owner 与 backup_owner | 0.25/个 | CL2 | AC-V1.21；演练记录齐全 |
 | CN-6 | 桥接移植：`platform_bridge` 7 个中的 `acl_anthology_xml`、`pmlr_volumes`、`cvf_open_access_pages`、`neurips_proceedings_pages`、`openalex_api` 改为声明式 plan；`repec_redif`、`unpaywall_api` 随目标族在 W2 直接写成快照或声明式（不另计）；其余桥接在 W0、W2 已直接写成族实例或快照 | 2.5 | CN-5 | v1 fixture 与近 14 天样本 shadow 等价；桥接转 CLX |
-| CN-7 | W3 的 10 个用户侧连接器（7 个 RecipeProvider 与配方；`openreview_api` 用户侧、`nasa_ads_api`、`orcid_api` 待 P-13，只做清单与卡片）与 `nber_site` 预留 | 16.5 | V3-T7、T8、T9 | AC-V3.17…V3.19；配方对抗 fixture 全拒 |
+| CN-7 | W3 的 10 个用户侧连接器（5 个 RecipeProvider 达 CL3、2 个解散并入承接配方；`openreview_api` 用户侧、`nasa_ads_api`、`orcid_api` 待 P-13，只做清单与卡片）与 `nber_site` 预留 | 16.5 | V3-T7、T8、T9 | AC-V3.17…V3.19；配方对抗 fixture 全拒 |
 | V3-T10 | 运维台最小集：O7、O3 只读、O4、简版 O1；O5、O6 走 CLI | 6 | V3-T1 | AC-V3.24…V3.26 |
 | V3-T15 | 扩为 P1 批次一 14 个 | 20.5 | V1-T4 | 批次一 CL3 |
 | V5-T17 | 扩为 P1 批次二 10 个 | 12 | V1-T4 | 批次二 CL3 |
@@ -175,7 +175,7 @@ updated: 2026-09-30
 
 | 依赖 | 影响连接器 | 最晚时点 | 缺失时 |
 |---|---|---|---|
-| NCBI 书面确认 | `pubmed_eutils`、`pubmed_baseline`、`pmc_bioc` 的 E-utilities 部分（连带 `psb_proceedings`） | V1 第 3 周 | 元数据由 `europe_pmc_rest` 与 `crossref_delegated` 承接，PMC 走 `pmc_s3` 与 OAI |
+| NCBI 书面确认 | `pubmed_eutils`、`pubmed_baseline`（连带 `psb_proceedings`；`pmc_bioc` 不用 E-utilities，不受此闸） | V1 第 3 周 | 元数据由 `europe_pmc_rest` 与 `crossref_delegated` 承接，PMC 走 `pmc_s3` 与 OAI |
 | EBI 书面确认（bulk、用量） | `europe_pmc_bulk`；`europe_pmc_rest` 参与交互联邦 | V1 第 5 周 | bulk 不做；REST 只做后台日窗收割，检索完整性报告标缺源 |
 | OpenReview 服务账号（⚑ACCT） | `openreview_api` 平台侧、`tmlr_list` 详情补全 | V1 前 | 按 D-052 由 arXiv、dblp 快照与外链兜底 |
 | OSF 书面确认 | `osf_api` | V1 第 3 周 | 不做，PsyArXiv 只走 Crossref |
@@ -232,7 +232,7 @@ updated: 2026-09-30
 - **W0 放哪**：留在 V0（V0 增 22 人日，其中 15 自 V1 前移），或作为 V1 开头两周。建议留在 V0，顺带验证 V0-T9、T10 的骨架。
 - **人日差额**：155.75 对 68 人日。建议 SOP 口径作上限；P1、P2 泳道按长稿预算封顶，超出即削范围；W1 后按实测校准，09 数字等 V0 出口重估时再改。
 - **V1 出口口径**：框架要求 P0 平台侧全部 CL3；日历不够时，建议改为"元数据与最新论文主干 CL3，其余 CL2"，须用户确认。V1 对外无服务，CL3 的 G3 与 rollout 以哪个部署为"生产"，待与 [conformance-and-testing](conformance-and-testing.md) 统一。
-- **AC-V1.15 口径**：09 V1 与 AC-V1.15 要 20 个 v1 adapter 在 V1 过契约测试；本文 V1 只做平台侧 12 个（W0 2、W2 10），其余 8 个（转用户侧 5、暂停 2、`s2_api`）在 V3。二选一：V1 为这 8 个补只回放的桥接清单（约 2 人日，未核），或把 V1 口径改为 12 个。用户侧桥接的 `sunset_by` 在 v1-bridge 族记 V2 出口、在 platform-family 与 official-tdm-api 族记 V3 出口，待统一。
+- **AC-V1.15 口径**：09 V1 与 AC-V1.15 要 20 个 v1 adapter 在 V1 过契约测试；本文 V1 只做平台侧 12 个（W0 2、W2 10），其余 8 个（转用户侧 5、暂停 2、`s2_api`）在 V3。二选一：V1 为这 8 个补只回放的桥接清单（约 2 人日，未核），或把 V1 口径改为 12 个。用户侧桥接的 `sunset_by` 三族已统一为 V2 出口（platform-family PF-Q5）。
 - **P1 时点**：框架写 P1 在 V2–V3 达 CL3，09 写 V5 交付 P1 第二批；本文按 09 分两批。
 - **NBER**：零自动化后 `nber_wp`（v2-P0）的验收口径与 `nber_conferences`（v2-P1）的会议标签来源；`nber_site` 用户侧取回是否开工（等法务与 NBER 许可）；`nber_conference_pages` 暂停还是废止。
 - **混合连接器拆分**：契约分 PlatformConnector 与 RecipeProvider，`econsoc_fulltext`、`nber_site`、`openreview_api` 可能各拆两个 manifest，connector_id 由契约与矩阵统一定。

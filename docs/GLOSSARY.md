@@ -29,6 +29,10 @@ updated: 2026-09-30
 | EffectiveStatus | 连接器健康（healthy、degraded、suspended、disabled、retired）与策略模式合成的状态，是路由、"来源"页、来源状态通知与运维总览的唯一状态来源 |
 | traffic_class / request_class | 平台内流量类别（`background_batch`、`on_demand`），由执行器按任务 lane 盖章、连接器不可设置 / 上游的限速池类（如 Crossref 单条与列表），即 02 的"上游请求类"，用于五元组令牌桶；05 长稿 `ops.fetch_log.request_class` 列现存的是流量类别，改名 `traffic_class` 待拍板 |
 | 一致性等级 CL0–CL3 / CLX | 连接器的上线证明：CL0 登记（清单、卡片、证据齐全，第二人合规复核）、CL1 离线一致、CL2 灰度（staging 真实运行）、CL3 生产、CLX 退役；每级有进入门与保持条件，失效自动下调，同时是策略上限。见[一致性与测试](plan/v2/connectors/conformance-and-testing.md)（D-075 草案） |
+| CL1 待命 | 受书面确认、传输方式或 ADR 闸门阻塞的连接器做到 CL1、通道保持 deny 或 link_only，在里程碑出口按待命达标计；闸门解除后再进 CL2 计天 |
+| error_class | 连接器执行结果的错误分类，契约 v1 共 15 类（如 `transient`、`rate_limited`、`challenge`、`gone`、`parse`、`cursor_expired`），每类只有一个判定者，见 [契约 §7](plan/v2/connectors/contract.md#7-错误矩阵) |
+| 评审门 G1 / G2 / G3 | 连接器上线的三道评审：G1 合规（CL0 出口，含第二人合规复核）、G2 技术（CL1→CL2）、G3 上线（CL2→CL3），见 [一致性与测试](plan/v2/connectors/conformance-and-testing.md) |
+| QueryRecipe（P-13） | 拟议的用户侧元数据查询配方（本人 token 查询，如 OpenReview、NASA ADS、ORCID）；契约 v1 未收录，相关连接器停在 CL0，待拍板 P-13 |
 | 四类 fixture | 每个连接器与实例必备的回放样本：正常页、空页或 200 空体、限流或错误、边界（末页、令牌过期、删除、版本变化）；只经 staging 网关录制并脱敏，受版权正文不入库 |
 | 族一致性套件 | 按"实例 × fixture"参数化的族级测试，新增实例不写新测试，引擎改动时全实例回放 |
 | 连接器卡片（connector card） | 每个连接器一张的 13 节说明（身份、通道、上游事实、请求、游标、映射、SCD、合规、全文、测试、探针、运维、已知坑），多数节由清单生成；模板见[卡片模板](plan/v2/connectors/connector-card-template.md) |

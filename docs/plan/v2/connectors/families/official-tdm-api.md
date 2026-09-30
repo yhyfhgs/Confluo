@@ -88,8 +88,9 @@ class OfficialTdmApi(RecipeProvider):  # kind: recipe_provider；exec_side: user
     quota_headers: QuotaHeaderMap | None
     request_identity: IdentityRule
     user_secrets: list[UserSecretDecl]
-    status_overrides: dict[str, ErrorClass]  # "状态码[+头或体特征]" → error_class；每行一个合成 fixture 与一条证据；
-                                             # 契约 §2 的覆盖表按端点声明，本族按配方声明，属族内扩展
+    status_overrides: list[StatusOverride]   # 行形式同契约 §2 {status, error_class, reason, fact_ref, fixture}，另加 verified: bool；
+                                             # status 可带"+头或体特征"；verified=false（"未核"）的行 CI 不加载（FS-OT-03）；
+                                             # 契约 §2 的覆盖表按端点声明，本族按配方声明，属族内扩展；下文 YAML 为简写，"未核"注释即 verified=false
     artifact_policy: ArtifactPolicy
     def entitlement_recipe(self, v: VersionView) -> FulltextRecipe | None: ...  # 可选预检；只在本次显式取回中执行
     # locate_fulltext(v, ctx)：只产 tdm_api（带 recipe_ref）；open_in_tab 由平台候选排序恒附；无 plan()，平台不发请求
@@ -146,7 +147,7 @@ artifact_policy: {ownership: per_user_only, third_party_llm: forbidden,
 
 ## 4 族一致性套件
 
-通用契约测试见[一致性规范 §3](../conformance-and-testing.md#3-通用契约测试cl1)，RecipeProvider 适用 CT-03、05、08、10、12 与配方 schema、解释器对抗测试。本族另加（全部离线，用户侧 fixture 一律手写合成，不录真实全文；rule_id 按一致性规范的 `FS-<族缩写>-NN` 记法记为 `FS-OT-01`…`FS-OT-10`；`OT-Q*` 是本文未决事项编号，不是规则）：
+通用契约测试见[一致性规范 §3](../conformance-and-testing.md#3-通用契约测试cl1)，RecipeProvider 适用 CT-01、02、03、05、08、10、11、12（同一致性规范 §3）与配方 schema、解释器对抗测试。本族另加（全部离线，用户侧 fixture 一律手写合成，不录真实全文；rule_id 按一致性规范的 `FS-<族缩写>-NN` 记法记为 `FS-OT-01`…`FS-OT-10`；`OT-Q*` 是本文未决事项编号，不是规则）：
 
 | id | 断言 |
 |---|---|
@@ -165,9 +166,9 @@ artifact_policy: {ownership: per_user_only, third_party_llm: forbidden,
 
 | connector_id | 类型 | 服务来源 | 最高优先级 | 波次 | exec_side | 代码量级 | v1 复用 | 前置依赖 | CL 当前 → 目标 |
 |---|---|---|---|---|---|---|---|---|---|
-| [elsevier_tdm](#elsevier_tdm) | v1 桥接（建议直接写配方） | `elsevier_sd`（含 Cell Press） | v2-P0 ⚑COMM | W3 | user | declarative；粗估 1.5 人日（E 清单，未核） | v1 `elsevier_sd`：parse 172 行、entitlement 预检、限流经验、runbook | V3 pc-agent 与扩展；用户 key | — → CL3（V3 出口） |
-| [wiley_tdm](#wiley_tdm) | v1 桥接（建议直接写配方） | `wiley` | v2-P0 ⚑COMM | W3 | user | declarative；1.5 人日 | v1 `wiley`：parse 92 行、双窗口限速 | V3；用户 TDM token | — → CL3（V3 出口） |
-| [springer_nature_api](#springer_nature_api) | 新写 | `springer_link`（元数据 + 全文）、`nature_portfolio`（全文） | v2-P0 ⚑COMM | W3 | user（pc-agent） | mapper（配方 + Meta JSON → 私域题录，OT-Q9）；2 人日 | — | V3 pc-agent；用户 api_key；SN 条款证据补齐 | — → CL3（V3 出口） |
+| [elsevier_tdm](#elsevier_tdm) | v1 桥接（建议直接写配方） | `elsevier_sd`（含 Cell Press） | v2-P0 ⚑COMM | W3u | user | declarative；粗估 1.5 人日（E 清单，未核） | v1 `elsevier_sd`：parse 172 行、entitlement 预检、限流经验、runbook | V3 pc-agent 与扩展；用户 key | — → CL3（V3 出口） |
+| [wiley_tdm](#wiley_tdm) | v1 桥接（建议直接写配方） | `wiley` | v2-P0 ⚑COMM | W3u | user | declarative；1.5 人日 | v1 `wiley`：parse 92 行、双窗口限速 | V3；用户 TDM token | — → CL3（V3 出口） |
+| [springer_nature_api](#springer_nature_api) | 新写 | `springer_link`（元数据 + 全文）、`nature_portfolio`（全文） | v2-P0 ⚑COMM | W3u | user（pc-agent） | mapper（配方 + Meta JSON → 私域题录，OT-Q9）；2 人日 | — | V3 pc-agent；用户 api_key；SN 条款证据补齐 | — → CL3（V3 出口） |
 | `aps_harvest` | 主族 site_special | `aps` | v2-P0 ⚑LIC（仅全量） | 见 [site-special.md](site-special.md#aps_harvest) | platform（OA 集）；全量待定（OT-Q8） | 卡片在 site_special | — | ⚑LIC：全量许可取得前不签发 | 本族按需补卡 |
 
 `aps_harvest` 全量通道要点（未开通，仅供参照）：`harvest.aps.org` 的 `/v2/journals/articles` 与 `/{id}/accepted_fulltext`，认证为 Bearer token、APS 授权 IP 段或 CHORUS token 头，分页严格跟随 `Link` 头，文档未写限速 [https://harvest.aps.org/docs/harvest-api, 2026-09-30]；期刊站由 Cloudflare 与 429/503 控速 [https://journals.aps.org/robots.txt, 2026-09-30]。若按 OT-Q8 走用户 token，以 `{user_secret:aps.harvest_token}` 放头中、`executors: [pc_agent]`，按 FS-OT-01…FS-OT-10 执行。
@@ -176,7 +177,7 @@ artifact_policy: {ownership: per_user_only, third_party_llm: forbidden,
 
 ### elsevier_tdm
 
-**1 身份**：`elsevier_tdm`；族 `official_tdm_api`；`kind: recipe_provider`；`impl: declarative`；`contract_version: 1`；`connector_version: 0.1.0`（计划）；`lifecycle: active`（计划）；v1 来历：adapter `elsevier_sd`，去向 `user_side`、模式 `replay_only`（契约 §17 枚举，即 v1 代码只作离线对拍基准；[v1-bridge 记录](v1-bridge.md#6-连接器卡片)），v1_bridge 版 `sunset_by` V2 出口，配方 V3 出口达 CL3（OT-Q1）；本清单 `impl: declarative`，不带契约 §2 只属 `impl: v1_bridge` 的 `v1` 字段；CL 当前 —（尚无清单），目标 CL3（V3 出口）；owner、backup_owner 待指派（P0 两人）；服务 `elsevier_sd`，venue 范围是其名下期刊（venue 名录核心 42 行、登记 72 行，据 E 清单）；波次 W3。
+**1 身份**：`elsevier_tdm`；族 `official_tdm_api`；`kind: recipe_provider`；`impl: declarative`；`contract_version: 1`；`connector_version: 1.0.0`（计划；0.x 已由 v1_bridge 版占用，移植即 MAJOR）；`lifecycle: active`（计划）；v1 来历：adapter `elsevier_sd`，去向 `user_side`、模式 `replay_only`（契约 §17 枚举，即 v1 代码只作离线对拍基准；[v1-bridge 记录](v1-bridge.md#6-连接器卡片)），v1_bridge 版 `sunset_by` V2 出口，配方 V3 出口达 CL3（OT-Q1）；本清单 `impl: declarative`，不带契约 §2 只属 `impl: v1_bridge` 的 `v1` 字段；CL 当前 —（尚无清单），目标 CL3（V3 出口）；owner、backup_owner 待指派（P0 两人）；服务 `elsevier_sd`，venue 范围是其名下期刊（venue 名录核心 42 行、登记 72 行，据 E 清单）；波次 W3。
 
 **2 通道与操作**：
 
@@ -277,7 +278,7 @@ on_challenge: stop_then_open_in_tab
 
 ### wiley_tdm
 
-**1 身份**：`wiley_tdm`；族 `official_tdm_api`；`kind: recipe_provider`；`impl: declarative`；`contract_version: 1`；`connector_version: 0.1.0`（计划）；`lifecycle: active`（计划）；v1 来历：adapter `wiley`，去向 `user_side`，v1_bridge 版 `sunset_by` V2 出口、配方 V3 出口达 CL3（写法同 `elsevier_tdm`，清单不带 `v1` 字段；[v1-bridge 记录](v1-bridge.md#6-连接器卡片)）；CL 当前 —，目标 CL3（V3 出口）；owner、backup_owner 待指派；服务 `wiley`（含 Wiley-VCH 与学会子域）；波次 W3。
+**1 身份**：`wiley_tdm`；族 `official_tdm_api`；`kind: recipe_provider`；`impl: declarative`；`contract_version: 1`；`connector_version: 1.0.0`（计划；0.x 已由 v1_bridge 版占用，移植即 MAJOR）；`lifecycle: active`（计划）；v1 来历：adapter `wiley`，去向 `user_side`，v1_bridge 版 `sunset_by` V2 出口、配方 V3 出口达 CL3（写法同 `elsevier_tdm`，清单不带 `v1` 字段；[v1-bridge 记录](v1-bridge.md#6-连接器卡片)）；CL 当前 —，目标 CL3（V3 出口）；owner、backup_owner 待指派；服务 `wiley`（含 Wiley-VCH 与学会子域）；波次 W3。
 
 **2 通道与操作**：
 
@@ -467,7 +468,7 @@ on_challenge: stop_then_open_in_tab
 ## 怎么验收
 
 - **CL0**：三个清单、本卡、SourceSpec 证据齐全；lint 通过；第二人合规复核在 CL0 出口完成（重点：⚑COMM、`artifact_policy`、`user_secrets` 的执行器限制）。
-- **CL1**：适用于 RecipeProvider 的 CT-03、05、08、10、12，配方 schema 与解释器对抗测试，FS-OT-01…FS-OT-10 全过；`status_overrides` 生效行都有证据与 fixture，候选行未加载。
+- **CL1**：适用于 RecipeProvider 的 CT-01、02、03、05、08、10、11、12，配方 schema 与解释器对抗测试，FS-OT-01…FS-OT-10 全过；`status_overrides` 生效行都有证据与 fixture，候选行未加载。
 - **CL2**：维护者本人凭证合成检查通过（口径待 08 认可，契约 P-7）：真实状态码与头与 `status_overrides` 一致、零凭证外泄、零白名单外主机；平台侧探针 staging 连续 ≥14 天全绿。
 - **CL3（V3 出口）**：取回意图、配方与回执中没有凭证与内容；配方解释器对抗测试全拒；用户侧护栏成立；回执不进跨用户统计（[09 V3](../../09-roadmap-and-milestones.md#v3-多用户平台)、[08 HC](../../08-compliance-security-privacy.md#合规硬约束hc)）。
 

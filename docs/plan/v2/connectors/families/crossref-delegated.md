@@ -64,7 +64,8 @@ class CrossrefDelegated(PlatformConnector):
                             inst: DelegatedInstance) -> list[Delegation]: ...
         # 纯函数；同一 ISSN 被两个 venue 声明时 lint 失败（见 §3 lint 补充）；ISSN 历代变更全部展开
     def plan(self, task: ConnectorTask, ctx: PlanCtx) -> Generator[RequestSpec, Step, TaskOutcome]: ...
-        # task.operation ∈ {enumerate, increment, probe}；task.scope_key = delegation_id
+        # task.operation ∈ {enumerate, increment, probe}；scope_key = delegation_id，或按 IncrementInput.mode 为 delegation_id#backfill / #corrections
+        # corrections 的"上次"取该 scope 的 window_set 中 max(completed.until)
         # enumerate：窗口按月切（window_max = 1 月），每窗 cursor=* 深翻，窗口末页才给 next_cursor
         # increment：from-created-date = cursor.value − overlap(3d)，until 在首个请求前固定为 ctx.now 的日期
         # backfill（每周，increment 且 IncrementInput.mode = "weekly_backfill"）：from-index-date = 上周起点，
@@ -232,7 +233,7 @@ DOI 粒度不在实例里声明：按契约由注册表粒度表的 `doi_family`
 - `hosts_touched = allowed_hosts = {api.crossref.org}`；`auth: null`（mailto 身份由网关写进 UA）；`select` 固定字段集以减小响应；`volatile_fields`：`indexed`、`is-referenced-by-count`、`reference-count`、`score`，不入 `payload_sha256`。
 - 令牌桶五元组：(`crossref`, `api.crossref.org`, `single`|`array`, 部署 mailto 身份, 出口 IP)，全平台集中限速，与 `crossref_rest`、`ssrn_crossref` 共用。
 - `Expectation`：`content_types = [application/json]`；`root = message.items`；`min_bytes` ≈ 100；`empty = legit`（`status=ok` 且 `total-results=0`）；`fake_success` 不设（`status≠ok` 的 200 体未见实例，未核；若出现由 `parse()` 抛 ParseError，`parse` 只有一个判定者）；`legit_status = [200]`。`status_overrides`（每行配 fixture）：429 → `rate_limited`；400 `validation-failure` → `config`；401 → `config`；403 → `challenge`（文档化为人工封禁，冷却 24 小时并告警）；5xx → `transient`。
-- `budget`：`account: crossref_polite`，`unit: request`，`ceiling` 取响应头实时值，`planned_daily` 在 V0 实测后填（未核）。
+- `budget`：`account: crossref.mailto`（与 `crossref_rest` 共用，见 aggregator-api），`unit: request`，`ceiling` 按书面分池数值（single polite 10/s、array polite 3/s，见 §4 事实与出处）带 evidence，响应头实时值只用于网关退避，`planned_daily` 在 V0 实测后填（未核）。
 
 **5 游标与增量**：`Cursor.kind = date_watermark`，`scope_key = delegation_id`；`ordered_by: created`（须 `ordered_fixture` 含乱序反例，验证前只在窗口末页提交）；`overlap: 3d`；`granularity: day`（更细粒度未核）；`bounds: [from, until]`（Crossref 日期过滤两端含，未核）；`lag_bound`: 未核（L 初值 30 天）；`late_path: weekly_index_backfill`，L 之外由 `crossref_annual_file` 与 OpenAlex 快照对账；`window_max: 1 月`。运行开始固定 `until`，完成后推进到 `until`；deep cursor 过期 → `cursor_expired`，从本窗起点重启 ≤2 次，超次 `stopped` 并告警"切小窗口"；策略失效或预算耗尽在页边界停。本族不产出 tombstone；撤稿、撤回、更正经 `corrections` 任务写 `status_claims`。游标编码变更须配 `migrate_cursor` 或"重置 + 回填窗口"。
 
@@ -273,7 +274,7 @@ DOI 粒度不在实例里声明：按契约由注册表粒度表的 `doi_family`
 - **待拍板 2**：NBER 零自动化后，`nber_wp` 最新通道改由本族 `10.3386` 的 created 水位承担，RePEc `nbr:nberwo` 作补充；影响 v2-P0 验收口径（NBER 条款 2026-08-01 起禁止未经许可的自动访问与数据挖掘）。
 - **待拍板 3**：`ssrn_crossref` 桥接期结束后直接降为本族 `ssrn` 实例（来源清单调研建议），桥接只保留迁移测试。
 - **待核**：分池生效日期、`/members` 归池、cursor 过期时间、polite 池头部、`update-type` 取值、L 与补漏预算（全部在 V0 实测）。
-- **待契约确认**：`weekly_backfill`、`corrections` 已改由契约 `IncrementInput.mode` 区分；其 `window_set` 游标须落 05 按 `scope_key` 的进度表（契约待拍板 P-3）。
+- **待拍板 P-3**：`weekly_backfill`、`corrections` 已由契约 `IncrementInput.mode` 区分；其 `window_set` 游标须落 05 按 `scope_key` 的进度表（契约待拍板 P-3）。
 - **新增字段待在 [契约](../contract.md) 中确认**：`family_params.upstream_bucket`、`family_params.plus_token`、post_filter `version_suffix_rule` 与 `ssrn_abstract_id`、实例字段 `version_stage_default`、`abstract_expected`、`lag_bound_days`。
 
 更细的材料：`git show v2-drafts:docs/plan/v2/03-sources-and-corpus-pipeline.md`（§5.3–5.4 族表与专有接口、§10.4 最新论文增量、§14.1 v1 去向）；[03 连接器九族](../../03-sources-and-corpus-pipeline.md#连接器九族与执行位置)；[支持名录](../../../../catalog/source-directory.md)。

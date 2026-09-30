@@ -61,6 +61,8 @@ class FeedInstance:                       # registry/instances/feed/<instance>.y
 class Feed(PlatformConnector):
     def plan(self, task, ctx) -> Generator[RequestSpec, Step, TaskOutcome]:
         inst = ctx.instance
+        if task.operation == "probe":                         # ProbeInput：结构、计数探针，不提交记录与游标
+            return (yield from self._probe(task.payload.probe, ctx))
         cur = task.cursor.cursor if task.cursor else GuidSet.empty()   # guid_set；首轮为空
         step = yield fetch(inst, if_none_match=cur.etag, if_modified_since=cur.last_modified)
         if step.page is None:
@@ -71,11 +73,11 @@ class Feed(PlatformConnector):
         new = keys - cur.guids                                # IdSetDiff（v1 语义）：新键只用于计数与溢出判定
         overflow = bool(cur.guids) and not (keys & cur.guids)
         return completed(next_cursor=cur.merge(keys, etag=..., last_modified=..., now=ctx.now),
-                         reason="feed_window_overflow" if overflow else None)   # new 计入 records 统计
+                         reason="feed_window_overflow" if overflow else None)   # 计数由 runner 账本给出；新键数只用于溢出判定
 
     def parse(self, resp, ctx) -> Page:                      # ParseCtx 不含游标：整窗全部产出，重复由 upsert 吸收
         if resp.status == 304:                                # 条件请求未变：合法空页，不进 XML 解析
-            return Page(records=(), next_cursor=None, signals=PageSignals.legit_empty_page())
+            return Page(records=(), next_cursor=None, signals=PageSignals.legit_empty_page())   # SDK 构造器：legit_empty=True、n_records=0
         items = parse_feed(resp.body, ctx.instance.format)    # 禁外部实体；RDF/RSS2/Atom 三套解析器
         if ctx.instance.role == "signal":
             recs = [signal_projection(it) for it in items]    # 只留 {key, doi, url}；标题与描述不进载荷、不进哈希
@@ -93,7 +95,7 @@ class Feed(PlatformConnector):
 
 **ConnectorInstance**（`registry/instances/feed/<instance>.yaml`）：必填 `instance_id`、`source_id`、`url`、`format`、`profile`、`role`、`id_field`、`robots_allow`、`poll_every`；`role=metadata` 必填 `on_gap` 与 SourceSpec 中的"官方 WP feed 例外"登记；`signal_target=bump_increment` 必填目标 WatchKey 范围。实例只能选 §2 的封闭 `profile`；profile 外的怪癖升级为引擎改动或 `site_special`。
 
-**ConnectorManifest 的本族字段**：每来源一个端点，`endpoint_id` 按契约写 `<source_id>.feed`（如 `ecb_wp.feed`；同源多实例共用，路径 `{instance.base_url}` 取实例 `url`，如 Nature 逐刊、Fed 四个 feed；profile 或 Expectation 不同时才加后缀），`method=GET`、无 `paginator`、`cursor.kind=guid_set`、`request_class=feed`；`hosts_touched` 由实例 URL 主机生成并经 lint 校验；`Expectation`：`content_types ∈ {application/rss+xml, application/rdf+xml, application/atom+xml, application/xml, text/xml}`，`root` 按实例 `format` 取 `rss`、`rdf:RDF` 或 `feed`，`min_bytes = 200`，`empty = error`（零条目按计数骤降处理），`legit_status = [200, 304]`；304 按 HTTP 语义无正文，不做 `min_bytes`、`empty` 检查，parse 产 `legit_empty` 空页（契约 Expectation 未写 304，列入未决）；返回 HTML（如 HighWire RSS 302 到登录页）先过网关挑战检测，否则归 `parse`。`mappers[]`：`feed_signal`、`jmlr_rss`、`ecb_rss`、`cb_rss`，各带 `mapper_version`。
+**ConnectorManifest 的本族字段**：每来源一个端点，`endpoint_id` 按契约写 `<source_id>.feed`（如 `ecb_wp.feed`；同源多实例共用，路径 `{instance.base_url}` 取实例 `url`，如 Nature 逐刊、Fed 四个 feed；profile 或 Expectation 不同时才加后缀），`method=GET`、无 `paginator`、`cursor.kind=guid_set`、`request_class=feed`；`hosts_touched` 由实例 URL 主机生成并经 lint 校验；`Expectation`：`content_types ∈ {application/rss+xml, application/rdf+xml, application/atom+xml, application/xml, text/xml}`，`root` 按实例 `format` 取 `rss`、`rdf:RDF` 或 `feed`，`min_bytes = 200`，`empty = error`（零条目按计数骤降处理），`legit_status = [200, 304]`；304 按 HTTP 语义无正文，不做 `min_bytes`、`empty` 检查，parse 产 `legit_empty` 空页（契约 §3 `Expectation.legit_status` 已写明 304 规则）；返回 HTML（如 HighWire RSS 302 到登录页）先过网关挑战检测，否则归 `parse`。`mappers[]`：`feed_signal`、`jmlr_rss`、`ecb_rss`、`cb_rss`，各带 `mapper_version`。
 
 **实例清单**（事实 [URL, 2026-09-30] 实测，除非标"长稿"或"未核"）：
 
@@ -126,7 +128,7 @@ class Feed(PlatformConnector):
 |---|---|---|
 | `FS-FEED-01` 三种格式 | RSS 1.0 RDF、RSS 2.0、Atom 与 PRISM、dc、cb 命名空间解析一致 | 每 profile 一份原文 |
 | `FS-FEED-02` IdSetDiff 恰一次 | 随机轮询时刻、窗口重叠与不重叠混排：每个键在语料中恰好一条记录，新键计数与真值一致；淘汰不造成重复 | 两次相邻轮询 |
-| `FS-FEED-03` 窗口溢出 | 前后两次无交集 → `reason = feed_window_overflow`，游标照常推进，告警与对账任务由 runner 发出 | 构造的无交集两轮 |
+| `FS-FEED-03` 窗口溢出 | 前后两次无交集 → `reason = feed_window_overflow`，游标照常推进；告警与按实例 `on_gap` 发替补对账由调度器据 `reason` 触发（契约扩展提案，见未决） | 构造的无交集两轮 |
 | `FS-FEED-04` 滚出不是删除 | 条目从窗口消失不产 tombstone | 前后两轮 |
 | `FS-FEED-05` 信号投影 | signal 角色的 RawRecord 载荷只含 `{key, doi, url}`；标题、描述、`content:encoded` 不进载荷与哈希 | Nature、PNAS 原文 |
 | `FS-FEED-06` 条件请求 | 游标带 ETag/Last-Modified 时发条件头；304 为合法空页，只更新 `last_poll_at` | 304 响应 |
@@ -211,8 +213,8 @@ exec_side 全部 `platform`。
 ## 未决事项
 
 - 信号记录的 Work 桩在元数据到达前不交 percolate：需 04 与 05 认可存放与判定位置。
-- 304 与 Expectation：条件请求依赖"304 无正文、不做 `min_bytes`/`empty` 检查、parse 产 `legit_empty`"，须写进契约 §3。
 - R15"robots 明确允许"本族按求值允许解释（JMLR、Fed 为 robots 404）；JMLR 作 metadata 依赖此解释，须合规评审（G1）确认。
+- `feed_window_overflow` 后按 `on_gap` 发替补对账：契约 runner 不做此事，拟由调度器消费 `TaskOutcome.reason` 触发，须契约与 04 调度确认。
 - `TaskOutcome` 的"调度提示"（`bump_increment`、PMLR 新卷触发）是本族对契约的补充提案；确认前 Fed、IACR 的信号实例不启用，PMLR 由 `pmlr_volumes` 自行轮询 `feed.xml`。
 - NBER：是否发函 `subs@nber.org` 申请 RSS 与周更文件许可；许可前 `nber_wp` 验收改为"Crossref + RePEc"（已列入 [README](../README.md) 待拍板）。
 - Fed feed 是否升为 metadata 角色；ECB、BIS 摘要能否展示须许可或法务结论；ECB DOI 10.2866 是否作为标识符输出。

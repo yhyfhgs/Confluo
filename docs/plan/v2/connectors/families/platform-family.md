@@ -150,11 +150,12 @@ oai:
   base_url: https://www.econstor.eu/oai/request  # DSpace 6 旧路径，不套 7+ 默认 /server/oai/request
                                                  # [https://www.econstor.eu/oai/request?verb=Identify, 2026-09-30]
   metadata_prefix: dim  # oai_dc 缺 JEL；映射待录 fixture 后定
-  granularity: seconds
+  granularity: second  # 取值同 OaiInstance.granularity
   deleted_record: transient
-  page_size: 100  # 族默认（xoai.xml），本实例未核
+  page_size_hint: 100  # 族默认（xoai.xml），本实例未核
   token_ttl_s: null  # 未核
-quirks: [reconcile_list_identifiers]
+  reconcile: {every: P7D, via: self}  # deleted_record=transient 必填（oai-pmh ReconcilePolicy）
+  quirks: []  # 旧路径已由 base_url 显式覆盖，不需旗标
 ```
 
 **族默认值与指纹特征**（repository 默认值是建议，实例须以 `Identify` 校验）：
@@ -169,7 +170,7 @@ quirks: [reconcile_list_identifiers]
 | `invenio_rdm` | repository | `/oai2d` | 实例可调（Zenodo 50） | `no`（须 `ListIdentifiers` 对账） | 默认 1 分钟，过期 422 | `oai_datacite` 格式、`X-RateLimit-*` 头 | [https://inveniordm.docs.cern.ch/reference/oai_pmh/, 2026-09-30] |
 | `ojs` | repository | `/index.php/<journal>/oai` | 100（`oai_max_records`） | `persistent`（AAAI）、`no`（TE [https://econtheory.org/ojs/index.php/te/oai?verb=Identify, 2026-09-30]） | 未核 | `Identify` 的 PKP toolkit 版本；set 为栏目 id、逐年变化 | [https://raw.githubusercontent.com/pkp/ojs/main/config.TEMPLATE.inc.php, 2026-09-30]；[https://ojs.aaai.org/index.php/AAAI/oai?verb=Identify, 2026-09-30] |
 
-**ConnectorManifest 的族特有字段**（托管 RecipeProvider）：`kind: recipe_provider`、`exec_side: user`、`impl: declarative`（配方是数据；实例 `impl: instance`）、`recipes[{recipe_id, version, method: user_fetch, applies_to, executors: [extension|pc_agent], limits}]`、`ai_ua_list_ref`、`fingerprint_features_ref`。v1 来历（`silverchair_user` 源自 `oup_silverchair`）只记在卡片 §1 与 [v1-bridge](v1-bridge.md)：契约 §2 的 `v1{adapter, destiny, sunset_by}` 只属 `impl: v1_bridge` 清单；PF-Q5 不获采纳、保留桥接期时，同一 `connector_id` 的清单在桥接期取 `impl: v1_bridge` 并带该字段，移植后改为 `declarative`。仓储模块不出清单，它的 quirk 旗标登记在 `oai_pmh` 引擎：`legacy_dspace_path`、`reconcile_list_identifiers`、`token_expired_422`、`set_names_rotate`（OJS）、`retry_after_on_200`（Zenodo 的 200 响应也带 `retry-after: 60`，[https://zenodo.org/oai2d?verb=Identify, 2026-09-30]，见 F2）。
+**ConnectorManifest 的族特有字段**（托管 RecipeProvider）：`kind: recipe_provider`、`exec_side: user`、`impl: declarative`（配方是数据；实例 `impl: instance`）、`recipes[{recipe_id, version, method: user_fetch, applies_to, executors: [extension|pc_agent], limits}]`、`ai_ua_list_ref`、`fingerprint_features_ref`。v1 来历（`silverchair_user` 源自 `oup_silverchair`）只记在卡片 §1 与 [v1-bridge](v1-bridge.md)：契约 §2 的 `v1{adapter, destiny, sunset_by}` 只属 `impl: v1_bridge` 清单；PF-Q5 不获采纳、保留桥接期时，同一 `connector_id` 的清单在桥接期取 `impl: v1_bridge` 并带该字段，移植后改为 `declarative`。仓储模块不出清单，差异按 `oai_pmh` 的 `OaiInstance` 字段表达：旧 DSpace 路径用 `base_url`，在场对账用 `reconcile`，InvenioRDM 422 用端点覆盖表（判定者待 W0 定）；OJS set 名轮换与 Zenodo 200 响应带 `retry-after: 60`（[https://zenodo.org/oai2d?verb=Identify, 2026-09-30]，见 F2）拟作新 `OaiQuirk` 旗标，须在 oai-pmh 族登记并配 fixture，列入未决。
 
 ## 4 族一致性套件
 
@@ -186,7 +187,7 @@ quirks: [reconcile_list_identifiers]
 | FS-PF-H7 | hosted | `feed_rule()` 对父路径被禁的 eTOC（`/action/showFeed`）只在 robots 显式 Allow 时返回规则（PNAS、Science、SIAM 返回；INFORMS 返回 None）；未被禁的 feed 路径（Wiley `/feed/`、T&F `/feed/rss/`）按求值放行（与 [feed](feed.md#feed) 的 R15 解释一致） |
 | FS-PF-R1 | repository | 每实例录 `Identify`、`ListMetadataFormats`、`ListSets`、一页 `ListRecords`、一页带 token 续页、一条 deleted 头（若有）、一个错误响应（F2 §6 最小集） |
 | FS-PF-R2 | repository | 实例值覆盖族默认；`granularity`、`deletedRecord`、`earliestDatestamp` 与 `Identify` 不符即 `config` 失败 |
-| FS-PF-R3 | repository | InvenioRDM 422 与 `badResumptionToken` 均归 `cursor_expired`，从本次运行窗口起点重启 ≤2 次 |
+| FS-PF-R3 | repository | InvenioRDM 422（判定者待 W0 定）与 `badResumptionToken` 均归 `cursor_expired`，从本次运行窗口起点重启 ≤2 次 |
 | FS-PF-R4 | repository | 删除：`persistent` 直接产 tombstone；`transient`、`no` 经周期 `ListIdentifiers` 对账产 tombstone（属性测试） |
 | FS-PF-R5 | repository | `X-RateLimit-*` 只作令牌桶输入，不判错误；200 上的 `retry-after`（Zenodo）忽略，`Retry-After` 只在 429/503 上生效（F2） |
 
@@ -194,8 +195,8 @@ quirks: [reconcile_list_identifiers]
 
 | connector_id / 模块 | 类型 | 服务来源 | 最高优先级 | 波次 | exec_side | 代码量级 | v1 复用 | 前置依赖 | CL 当前 → 目标 |
 |---|---|---|---|---|---|---|---|---|---|
-| [atypon_user](#atypon_user) | 族核心 RecipeProvider | 7：`wiley`、`tandf_online`、`sage_journals`、`uchicago_journals`、`siam`、`informs_pubsonline`、`aom_journals` | v2-P0 | W3 | user | declarative + 7 实例；粗估 2 人日（E 清单，未核） | `ChallengeDetector` 特征库；v1 wiley 页面兜底知识 | V3 扩展与 pc-agent；LQ-19 | — → CL3（V3 出口） |
-| [silverchair_user](#silverchair_user) | 桥接 → RecipeProvider | 5：`oup_academic`、`aip`、`aaa_pubs`、`geoscienceworld`、`misq` | v2-P0 | W3 | user | declarative + 5 实例；1.5 人日 | v1 `oup_silverchair`：parse 123 行、四态判定、`CookieSession`/`SSOFlow`（入 pc-agent） | V3 | — → CL3（V3 出口） |
+| [atypon_user](#atypon_user) | 族核心 RecipeProvider | 7：`wiley`、`tandf_online`、`sage_journals`、`uchicago_journals`、`siam`、`informs_pubsonline`、`aom_journals` | v2-P0 | W3u | user | declarative + 7 实例；粗估 2 人日（E 清单，未核） | `ChallengeDetector` 特征库；v1 wiley 页面兜底知识 | V3 扩展与 pc-agent；LQ-19 | — → CL3（V3 出口） |
+| [silverchair_user](#silverchair_user) | 桥接 → RecipeProvider | 5：`oup_academic`、`aip`、`aaa_pubs`、`geoscienceworld`、`misq` | v2-P0 | W3u+W4u | user | declarative + 5 实例；1.5 人日 | v1 `oup_silverchair`：parse 123 行、四态判定、`CookieSession`/`SSOFlow`（入 pc-agent） | V3 | — → CL3（V3 出口） |
 | [cambridge_core_user](#cambridge_core_user) | RecipeProvider（撤销；由 site_special 移入） | 1：`cambridge_core` | v2-P1 | 撤销（待拍板确认 link_only） | user | — | — | 待拍板 PF-Q6 | — → 不建 |
 | `highwire` 模块 | 族模块（只指纹） | 0（`cshl_press` 全文经 PMC） | — | — | — | 指纹特征 | — | — | 按需补卡 |
 | `dspace` 模块 | 实例模板 | `econstor`、`psycharchives` | 随实例 | 随 oai_pmh | platform | instance（SOP B） | v1 `_oai.py` | oai_pmh 引擎（W1） | 随实例，卡片在 [oai-pmh.md](oai-pmh.md#oai_pmh) |
