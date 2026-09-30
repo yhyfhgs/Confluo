@@ -42,7 +42,7 @@ updated: 2026-09-30
 - 目标：P0 平台侧族引擎与高价值专用连接器达 CL1，尽早进入 staging 计天。
 - 范围（13 个）：`feed`；aggregator_api `inspire_rest`、`zbmath_open_api`、`dblp_sparql`、`hf_papers_api`、`pmc_bioc`、`pubmed_eutils`；site_special `biorxiv_api`（兼 medrxiv）、`aps_harvest`、`jmlr_volumes`、`tmlr_list`、`ijcai_proceedings_pages`、`osf_api`。另做 P0 零代码登记与配置（nature_portfolio、pnas 的 feed，medrxiv 复用 `biorxiv_api`）。
 - 前置：W0 出口；V1-T1 网关礼貌、V1-T2 策略接入、V1-T8 调度与游标。
-- 出口：13 个达 CL1；无闸门的 9 个在 V1 第 3 周前进入 CL2 计天，V1 出口达 CL3。`pubmed_eutils`、`osf_api` 与 `pmc_bioc` 的 E-utilities 部分受 ⚑ROBOTS，`dblp_sparql` 待 D-050 核验，都停在 CL1 待命，通道保持 deny 或 link_only；`aps_harvest` 只做 OA 子集。
+- 出口：12 个达 CL1，`zbmath_open_api` 在 FIZ 书面确认前录不到 fixture、停在 CL0；无闸门的 8 个在 V1 第 3 周前进入 CL2 计天，V1 出口达 CL3。`pubmed_eutils`、`osf_api` 与 `pmc_bioc` 的 E-utilities 部分受 ⚑ROBOTS，`dblp_sparql` 待 D-050 核验，都停在 CL1 待命，通道保持 deny 或 link_only；`aps_harvest` 只做 OA 子集。
 - 估算：20.0 人日；按族分两条泳道，并行规则见分工与并行。
 
 ### W2 快照、桥接与其余 P0（V1 后半）
@@ -55,7 +55,7 @@ updated: 2026-09-30
 
 ### W3 用户侧与 P1（V3 批次一，V5 批次二）
 
-- 批次一（V3，25 个，37.0 人日）：
+- 批次一（V3，24 个，35.5 人日；另 `nber_site` 预留 1.5）：
   - 用户侧 CN-7（10 个，另 `nber_site` 预留，合计 16.5）：`atypon_user`、`silverchair_user`、`elsevier_tdm`、`wiley_tdm`、`springer_nature_api`、`aea_fulltext_user`、`econsoc_fulltext` 7 个 RecipeProvider 达 CL3；`openreview_api`（用户侧为本人 token 查询，D-052）、`nasa_ads_api`、`orcid_api` 是用户侧元数据查询，契约 v1 没有对应协议：只保留 W3u 占位、只做清单与卡片、停在 CL0，是否增加 `QueryRecipe` 待拍板 P-13。混合执行的只做用户侧部分。`nber_site` 按 [site-special 卡](families/site-special.md#nber_site)去向暂停；用户侧取回待法务与 NBER 许可，1.5 人日暂列，否决即转 CLX。
   - P1 平台侧（V3-T15 扩大，14 个，20.5）：`worldbank_dr_api`、`econbiz_api`、`assa_program`、`opencitations_api`、`opencitations_dump`、`doaj_api`、`doaj_csv`、`datacite_rest`、`datacite_annual_file`、`ror_dump`、`s2_api`、`s2_datasets`、`core_api`、`orcid_public_data_file`；央行 feed 实例随行。
 - 批次二（V5，V5-T17 扩大，10 个，12.0）：`plos_search_api`、`elife_api`、`scoap3_api`、`pubtator3_api`、`icite_api`、`usenix_sessions`、`ecva_papers`、`pwc_archive_import`、`isca_archive_pages`、`pvldb_volumes`。
@@ -179,6 +179,7 @@ updated: 2026-09-30
 | EBI 书面确认（bulk、用量） | `europe_pmc_bulk`；`europe_pmc_rest` 参与交互联邦 | V1 第 5 周 | bulk 不做；REST 只做后台日窗收割，检索完整性报告标缺源 |
 | OpenReview 服务账号（⚑ACCT） | `openreview_api` 平台侧、`tmlr_list` 详情补全 | V1 前 | 按 D-052 由 arXiv、dblp 快照与外链兜底 |
 | OSF 书面确认 | `osf_api` | V1 第 3 周 | 不做，PsyArXiv 只走 Crossref |
+| FIZ 书面确认（⚑SA ⚑COMM） | `zbmath_open_api` | V1 第 3 周 | 停在 CL0，数学元数据由 `zbmath_kg_dump` 与 Crossref 承担 |
 | CORE 许可（⚑LIC ⚑COMM） | `core_api` | V3 | 不启用；OA 定位由 OpenAlex 与 Unpaywall 承担 |
 | NBER 许可 | `nber_site` 平台侧、`nber_conference_pages`、周更元数据文件 | V1 前 | 元数据经 Crossref 10.3386 与 RePEc `nbr:nberwo`；会议标签人工维护，经 PR 进注册表 |
 | APS Harvest 全量许可（⚑LIC） | `aps_harvest` 全量 | V1 出口 | 只做 OA 子集加 Crossref |

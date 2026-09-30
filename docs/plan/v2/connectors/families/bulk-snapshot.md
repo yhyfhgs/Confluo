@@ -476,6 +476,6 @@ fixture 用"截断样本"：manifest 全文加每个文件的前若干条记录�
 - **待拍板 2**：`europe_pmc_bulk` 是否保留（`pmc_s3` 已覆盖 PMC OA 子集）。
 - **待拍板 3**：ORCID 年度 CC0 文件通道是否解除 ⚑COMM；RePEc 是否补 ⚑COMM（RePEc 声明 "Non-commercial use assumed"）。
 - **需 05 增补**：`ImportLedger` 与按 `scope_key` 的快照进度表、冷存储保留期（契约待拍板 P-3）。
-- **新增类型与字段待在 [契约](../contract.md) 中确认**：`SnapshotSpec`、`SnapshotFile`、`SnapshotChunk`、`BlobRef`、`ImportLedger`、`GateVerdict`、`SubsetFilter`、`ReconcileReport`；`RequestSpec.stream`；Manifest `snapshot.*`；`request_class: bulk_object`；`integrity` 的平台侧判定者（契约只列用户侧执行器；本族需网关判字节与校验和、runner 判记录数）；观测值 `absent_in_release`；受 robots 阻塞主机只用 `fixture_policy.recorded_via: handwritten_synthetic`（写明原因）能否达 CL1，待一致性文档确认。
+- **流式原语已入 [契约](../contract.md) §3、§5**：`RequestSpec.stream`、`Response.blob`、`BlobRef`、`SnapshotChunk`、`parse_chunk` 与平台侧 `integrity` 判定者（网关）。**其余待在契约中确认**：`SnapshotSpec`、`SnapshotFile`、`ImportLedger`、`GateVerdict`、`SubsetFilter`、`ReconcileReport`；Manifest `snapshot.*`；`request_class: bulk_object`；runner 判记录数的归类；观测值 `absent_in_release`；受 robots 阻塞主机只用 `fixture_policy.recorded_via: handwritten_synthetic`（写明原因）能否达 CL1，待一致性文档确认。
 
 更细的材料：`git show v2-drafts:docs/plan/v2/03-sources-and-corpus-pipeline.md`（§5.3–5.4 族表与专有接口、§10.5 本地底座与兴趣并集伪代码、§7.9 新写 connector 汇总、§14.1 v1 去向）；[03 语料流水线](../../03-sources-and-corpus-pipeline.md#语料流水线与-enrich)；[支持名录](../../../../catalog/source-directory.md)。

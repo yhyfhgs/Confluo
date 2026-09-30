@@ -142,12 +142,19 @@ class RequestSpec:
     endpoint_id: str; request_class: str; method: Literal["GET", "HEAD", "POST"]
     url: str; params: Mapping[str, str]; headers: Mapping[AllowedHeader, str]
     auth: AuthRef | None; expect: Expectation; idempotency_key: str   # key 由 SDK 计算
+    stream: bool = False                 # 大文件：网关流式落冷存储、自写 Range 续传，Response.body 为空、只回 blob
     # 刻意没有：user_agent、cookies、robots_*、traffic_class、decision
 
 @dataclass(frozen=True)
 class Response:                          # 网关产物；已过挑战、空体、伪成功检测
     status: int; headers: Mapping[str, str]; body: bytes; final_url: str; final_host: str
     fetched_at: datetime; cache_hit: bool; attempt: int; terminal: bool; error_class: ErrorClass | None; reason: str | None
+    blob: BlobRef | None                 # 仅 stream=True：网关已校验字节数与 sha256，不符即 integrity 终止
+
+@dataclass(frozen=True)
+class BlobRef: uri: str; sha256: bytes; bytes: int; expected_sha256: bytes | None   # 冷存储对象，连接器不可直接读
+@dataclass(frozen=True)
+class SnapshotChunk: blob: BlobRef; file_id: str; offset: int; n: int; data: bytes   # runner 按记录边界确定性切块后喂给 parse_chunk()
 
 @dataclass(frozen=True)
 class PageSignals:
@@ -292,6 +299,8 @@ def _drive(task, c, gw, sink, ctx, exec_ctx) -> TaskOutcome:
         step = Step(resp, page)
 ```
 
+**流式导入**（`snapshot_import`）：`plan()` 对大文件发 `stream=True` 的请求，收到的 `Step.resp.blob` 由 runner 按记录边界切成 `SnapshotChunk`，逐块调用纯函数 `parse_chunk(chunk, ctx) -> Page` 并按块提交（游标 `snapshot_release.parts_done` 记到块），连接器不读文件、不开网络；族内其余类型（`SnapshotSpec`、`ImportLedger` 等）见 [bulk-snapshot](families/bulk-snapshot.md)。
+
 规则：生成器不持久化，崩溃或超时后从已提交的 `CursorEnvelope` 重新 `plan()`；`plan/parse/normalize/describe` 纯函数，冻结的 `ctx.now`、实例、SCD、模式上限经 `PlanCtx/ParseCtx/MapCtx` 注入，`idempotency_key`、`payload_sha256` 由 SDK 计算；连接器只能追加有类型的 `PageSignals`，不能改 `EgressEnvelope`；非合法结果（`Step.page is None`）时 `increment/enumerate/snapshot_import` 一律停在最后安全点，只有 `lookup/search/probe` 可逐项隔离后继续；同一 `scope_key` 同一时刻只有一个任务在跑（长稿 §10.3 的同键串行）。
 
 ## 6. 游标
@@ -327,7 +336,7 @@ def _drive(task, c, gw, sink, ctx, exec_ctx) -> TaskOutcome:
 | `challenge` | 网关；用户侧执行器用同一判定库（HC-29） | 0；正文不交 parse | stopped（终止） | 请求主机与最终落点主机都冷却 24h；告警 | upstream |
 | `gone` | 网关（404/410） | 0 | lookup 逐项标记；列表端点 stopped | 列表端点记漂移 | upstream |
 | `parse` | `parse` 抛 ParseError | 0 | stopped，隔离该页 | 结构探针标红；连续 3 次（初值）端点降级 | code |
-| `integrity` | 用户侧执行器 | 重下 1 次 | 回执 `error` | 配方健康只来自维护者合成检查（P-7）与用户自愿工单 | upstream |
+| `integrity` | 用户侧执行器；平台侧流式下载由网关（字节数与校验和） | 重下 1 次 | 回执 `error` | 配方健康只来自维护者合成检查（P-7）与用户自愿工单 | upstream |
 | `auth_expired` | 用户侧执行器 | 0 | 回执 `error` | U2 提示重新授权 | config |
 | `no_entitlement` | 用户侧执行器 | 0 | 回执 `no_entitlement` | 原因码 `needs_entitlement` | policy |
 | `config` | 加载期 lint / 网关路由 | 0 | 不入队；运行中命中即 stopped | 阻断发布；告警 | config |
