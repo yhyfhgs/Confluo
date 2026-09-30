@@ -106,26 +106,30 @@ class EgressShim:
 
 ```python
 # 设计伪代码 —— 桥接运行器（只在 impl=v1_bridge 且 v1.mode=platform 时由平台 worker 加载）
-def run_bridge(task, m, adapter, sink, egress) -> TaskOutcome:
-    shim = EgressShim(m, egress, ExecCtx.from_task(task), task.operation)
+def run_bridge(task, ctx: PlanCtx, m, adapter, sink, egress) -> TaskOutcome:   # 准入与 ctx 构造同契约 §5 run()
+    acct = RunnerAccount(task.budget)   # 与通用执行器同一账本：垫片每次请求前查 max_requests 与 deadline，超限抛 BridgeStop(budget_exhausted)
+    shim = EgressShim(m, egress, ExecCtx.from_task(task), task.operation, account=acct)
     bind_v1(adapter, http=shim, rate_limiter=NoopLimiter(), email=SENTINEL, api_key=SENTINEL)
-    until = task.frozen_now  # 运行开始固定
+    until = ctx.now  # 运行开始由 PlanCtx 冻结
+    cur = task.cursor.cursor if task.cursor else None   # CursorEnvelope 内的类型化游标（契约 §6）
     try:
         if task.operation == "lookup":  # openalex_api、unpaywall_api、repec_redif：v1 类错误已由 v1 逐项隔离
-            stubs = adapter.enrich_batch(task.identifiers)  # unpaywall 调 v1 resolve 路径，见 §2.2
+            stubs = adapter.enrich_batch(task.payload.identifiers)  # LookupInput；unpaywall 调 v1 resolve 路径，见 §2.2
             sink.commit_page(task, Page(records=[to_raw(s, m, until, "federated") for s in stubs],
                                          next_cursor=None, signals=shim.drain()))
             return TaskOutcome.completed()
         # snapshot_import（repec_redif，v1 无 timeline 能力）不进本循环：下载由 bulk_snapshot 引擎经网关流式完成，v1 parse.py 作 mapper
         for venue in m.v1.venues_for(task.scope_key):
-            since = None if task.operation == "enumerate" else task.cursor.watermark - m.overlap
+            since = None if task.operation == "enumerate" else cur.value - m.overlap   # date_watermark
             for issue in adapter.discover_timeline(venue, since=since):
-                if task.operation == "enumerate" and issue_key(issue) in task.cursor.window_set:
+                if task.operation == "enumerate" and cur and issue_key(issue) in cur.completed:   # window_set（按期键，见未决 11）
                     continue
+                if acct.exhausted(clock.now()): raise BridgeStop("budget_exhausted")   # 页边界查 max_pages 与 deadline
                 stubs = list(adapter.enumerate_issue(venue, issue))
                 sink.commit_page(task, Page(records=[to_raw(s, m, until, "harvest") for s in stubs],
                                              next_cursor=after_issue(task, issue),  # enumerate：期键入 window_set；increment：None
                                              signals=shim.drain()))
+                acct.count_page_n(len(stubs))
     except BridgeStop as s:  # 结果按契约 §7：budget_exhausted、超 deadline 的 rate_limited 为 partial，其余 stopped
         return TaskOutcome(status=outcome_of(s.error_class), error_class=s.error_class,
                            committed=sink.last_committed(task))
