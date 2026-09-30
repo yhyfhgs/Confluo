@@ -83,7 +83,7 @@ class Feed(PlatformConnector):
     # 单页任务：commit_page 同事务 upsert（载荷哈希不变即无变化），整窗完成后 runner 写 plan 返回的游标
 ```
 
-**游标 `guid_set`**：契约字段 `guids`、`window_started_at`；本族补充 `first_seen_at`（逐键，供淘汰）、`etag`、`last_modified`、`last_poll_at`、`last_window_n`（补充字段须契约确认）。容量上限 `max(4 × window_hint, 500)` 个键，淘汰 `first_seen_at` 超过 180 天的键（设计值）；淘汰只影响溢出判定，重复记录由 `(source_id, source_key)` upsert 与 identify 的 DOI 去重吸收。键规范化：DOI 小写；URL 统一 https、小写主机、去 `utm_*` 参数与尾部斜杠。
+**游标 `guid_set`**：契约字段 `guids`、`window_started_at`、`first_seen_at`（逐键，供淘汰）、`etag`、`last_modified`、`last_poll_at`、`last_window_n`（契约 §6 已收录）。容量上限 `max(4 × window_hint, 500)` 个键，淘汰 `first_seen_at` 超过 180 天的键（设计值）；淘汰只影响溢出判定，重复记录由 `(source_id, source_key)` upsert 与 identify 的 DOI 去重吸收。键规范化：DOI 小写；URL 统一 https、小写主机、去 `utm_*` 参数与尾部斜杠。
 
 **信号记录**：`RawRecord(kind="upsert", channel="latest", payload={key, doi, url})`；normalize 只输出标识符与 `first_seen_at`；SourceSpec 在该通道声明不展示，`classify_rights()` 据此给出不可展示。identify 为新 DOI 建 Work 桩，enrich 经 Crossref `works/{doi}` 单条查询补全；在出现可展示的元数据来源之前，Work 桩不交 percolate（本条需 04/05 认可，见未决事项）。`signal_target = bump_increment`（无 DOI 的 feed）需要在 `TaskOutcome` 上加"调度提示"，属本族对契约的补充提案，确认前这类实例不启用。
 

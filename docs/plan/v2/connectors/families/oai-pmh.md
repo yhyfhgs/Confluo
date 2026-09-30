@@ -114,7 +114,7 @@ def _reconcile(self, task, ctx):
         token = step.page.signals.continuation
         req = resume(ctx.instance, token) if token else None
     return completed()                                       # 只有 completed 计为完整对账
-# parse 在对账模式下只产出 header 形态的 RawRecord(kind="presence")（本族对契约 RawRecord.kind 的补充提案）；
+# parse 在对账模式下只产出 header 形态的 RawRecord(kind="presence")（契约 §3 已收录）；
 #   commit_page 只写在场表、不动 source_record 的载荷；header 带 status="deleted" 的直接出 tombstone。
 # ingestor 侧 tombstone_by_absence(scope)：本地有、连续 absent_passes_to_tombstone 次完整对账都缺席的 source_key
 #   → RawRecord(kind="tombstone")，只置 deleted_upstream，不删 Work；撤稿与更正仍走 status_claims。
@@ -302,7 +302,7 @@ exec_side 全部 `platform`。
 
 ## 未决事项
 
-- `RawRecord.kind = presence` 与在场表（05 `ops` 域）是本族补充提案，须契约与 05 确认；未确认前以 ingestor 旁路表实现。
+- `RawRecord.kind = presence` 已入契约 §3；在场表（05 `ops` 域）须 05 确认，未确认前以 ingestor 旁路表实现。
 - 网关只在 429/503 上按 `Retry-After` 退避（Zenodo 200 也带该头）：本族对网关的要求，待契约或网关设计确认。
 - `until` 取值细化：契约 §6 写 `oai_datestamp` 推进到 `until`（取 `responseDate`）；本族加 `fix_until()`（CDN 缓存或偏差 >1 小时改取 ctx.now，记 `oai_stale_response_date`），须契约确认。卡片归属已与 [v1-bridge](v1-bridge.md) 对齐（该文只留桥接条款）。
 - 判定者：信封错误 `badArgument` 等→`config`、`idDoesNotExist`→`gone` 由 parse 判定，契约 §7 的判定者是 lint/网关；建议 `idDoesNotExist` 走 `PageSignals.not_found`，其余待契约补 parse。InvenioRDM 的 422 本文按实例 `status_overrides`（网关）归 `cursor_expired`，与契约 §7 判定者 `parse` 须择一，W0 定（契约未决事项）。

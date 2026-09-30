@@ -164,7 +164,7 @@ class PageSignals:
 
 @dataclass(frozen=True)
 class RawRecord:
-    source_id: str; source_key: str; kind: Literal["upsert", "tombstone"]
+    source_id: str; source_key: str; kind: Literal["upsert", "tombstone", "presence"]   # presence 只用于在场对账：sink 写在场表、累计缺席计数，连续缺席达阈值才产出 tombstone
     channel: Literal["metadata", "latest"]; provenance: Literal["harvest", "snapshot", "federated"]
     endpoint_id: str; payload: bytes | Mapping; payload_sha256: bytes; fetched_at: datetime
     order_value: str | None              # 游标字段取值，供有序性断言
@@ -216,6 +216,7 @@ class ExecCtx:
 class EgressEnvelope:                    # runner 生成，连接器不可见；指标、审计、急停、预算都按信封计
     ctx: ExecCtx; source_id: str; channel: str; operation: Operation
     rollout: Literal["shadow", "canary", "full"]; request: RequestSpec
+    deadline: datetime                   # 任务剩余截止时间，网关对流式下载按此中止并保留已下字节供续传
 
 @dataclass(frozen=True)
 class AccessDecision:                    # 策略引擎产物，只由网关与 runner 读
@@ -297,7 +298,7 @@ def _drive(task, c, gw, sink, ctx, exec_ctx) -> TaskOutcome:
             return acct.finalize(replace(out, committed=sink.last(task)), gw.ledger(exec_ctx))
         if acct.exhausted(clock.now()):                              # max_requests / max_pages / deadline：在页边界停
             return stop(TaskOutcome(status="partial", error_class="budget_exhausted", ...))
-        resp = gw.execute(EgressEnvelope(exec_ctx, task.source_id, task.channel, task.operation, rollout, req))   # 判定 ②
+        resp = gw.execute(EgressEnvelope(exec_ctx, task.source_id, task.channel, task.operation, rollout, req, deadline=task.budget.deadline))   # 判定 ②
         acct.count_request(resp)                                     # 每次尝试都计数，含 gone、失败与 304
         if resp.error_class == "gone" and task.operation in ("lookup", "search", "probe"):
             step = Step(resp, None, "gone"); continue                # 逐项标记未命中，plan() 继续其余请求（§7）
@@ -337,7 +338,7 @@ def _drive(task, c, gw, sink, ctx, exec_ctx) -> TaskOutcome:
 |---|---|---|---|
 | `date_watermark` | `field, value, granularity ∈ day|second, overlap, until_fixed` | Crossref `created`、EPMC `FIRST_IDATE`、INSPIRE | 有序端点逐页；无序端点整窗完成 |
 | `oai_datestamp` | 同上 + `set, metadata_prefix` | arXiv、PMC、DSpace/EPrints/Invenio 实例 | 整段 ListRecords 完成后推进到 `until`（取 `responseDate`） |
-| `guid_set` | `guids: frozenset[str], window_started_at` | RSS/Atom（ECB、BIS、JMLR） | 每次完整 feed 读取 |
+| `guid_set` | `guids: frozenset[str], window_started_at, first_seen_at{guid: datetime}, etag, last_modified, last_poll_at, last_window_n` | RSS/Atom（ECB、BIS、JMLR） | 每次完整 feed 读取 |
 | `seq` | `key, value, probe_ahead` | PMLR 卷号、NeurIPS 年页 | 单个序号完成 |
 | `snapshot_release` | `release_id, checksum, parts_done[], part_offsets{file_id: record_offset}` | OpenAlex 季度快照、DROPS dblp | 每个块（未完成文件记 `part_offsets`，整文件完成后移入 `parts_done`） |
 | `repo_commit` | `repo, commit_sha, path` | ACL Anthology 数据仓库 | 单个 commit |
