@@ -67,9 +67,9 @@ class CrossrefDelegated(PlatformConnector):
         # task.operation ∈ {enumerate, increment, probe}；task.scope_key = delegation_id
         # enumerate：窗口按月切（window_max = 1 月），每窗 cursor=* 深翻，窗口末页才给 next_cursor
         # increment：from-created-date = cursor.value − overlap(3d)，until 在首个请求前固定为 ctx.now 的日期
-        # backfill（每周，task.plan_key = "weekly_backfill"）：from-index-date = 上周起点，
+        # backfill（每周，increment 且 IncrementInput.mode = "weekly_backfill"）：from-index-date = 上周起点，
         #   且 from-created-date ≥ ctx.now − L（L 初值 30 天，未核）；结果按 DOI 去重吸收
-        # corrections（每周，plan_key = "corrections"）：同一路由端点加 update-type:retraction
+        # corrections（每周，IncrementInput.mode = "corrections"）：同一路由端点加 update-type:retraction
         #   与 from-update-date，不打全局列表池
     def parse(self, resp: Response, ctx: ParseCtx) -> Page: ...
         # 解析 message.items；把 x-api-pool、x-rate-limit-limit/interval、x-concurrency-limit 放进 PageSignals.rate_headers
@@ -78,7 +78,7 @@ class CrossrefDelegated(PlatformConnector):
 
 ### 2.2 四类任务的请求形状
 
-| plan_key | 过滤 | 排序与分页 | 频率 | 提交规则 |
+| 任务（operation / mode） | 过滤 | 排序与分页 | 频率 | 提交规则 |
 |---|---|---|---|---|
 | `increment`（默认） | `from-created-date:{cursor−3d}`、`until-created-date:{until}`，加 `type_filter` | `sort=created&order=asc`，`cursor=*`，`rows=1000` | 按 WatchKey 调度，P0 venue ≥ 每日 | 窗口末页提交；`ordered_by: created` 经乱序反例 fixture 验证后才允许页级提交 |
 | `weekly_backfill` | `from-index-date:{上周一}` 且 `from-created-date:{now−L}` | 同上 | 每周一次 | 独立 `scope_key`（`<delegation_id>#backfill`）的 `window_set` 游标，逐窗提交；不推进 `increment` 的 `date_watermark` |
@@ -273,7 +273,7 @@ DOI 粒度不在实例里声明：按契约由注册表粒度表的 `doi_family`
 - **待拍板 2**：NBER 零自动化后，`nber_wp` 最新通道改由本族 `10.3386` 的 created 水位承担，RePEc `nbr:nberwo` 作补充；影响 v2-P0 验收口径（NBER 条款 2026-08-01 起禁止未经许可的自动访问与数据挖掘）。
 - **待拍板 3**：`ssrn_crossref` 桥接期结束后直接降为本族 `ssrn` 实例（来源清单调研建议），桥接只保留迁移测试。
 - **待核**：分池生效日期、`/members` 归池、cursor 过期时间、polite 池头部、`update-type` 取值、L 与补漏预算（全部在 V0 实测）。
-- **待契约确认**：`weekly_backfill`、`corrections` 以 `ConnectorTask.plan_key` 区分（契约注释只写联邦用），其 `window_set` 游标须落 05 按 `scope_key` 的进度表（契约待拍板 P-3）。
+- **待契约确认**：`weekly_backfill`、`corrections` 已改由契约 `IncrementInput.mode` 区分；其 `window_set` 游标须落 05 按 `scope_key` 的进度表（契约待拍板 P-3）。
 - **新增字段待在 [契约](../contract.md) 中确认**：`family_params.upstream_bucket`、`family_params.plus_token`、post_filter `version_suffix_rule` 与 `ssrn_abstract_id`、实例字段 `version_stage_default`、`abstract_expected`、`lag_bound_days`。
 
 更细的材料：`git show v2-drafts:docs/plan/v2/03-sources-and-corpus-pipeline.md`（§5.3–5.4 族表与专有接口、§10.4 最新论文增量、§14.1 v1 去向）；[03 连接器九族](../../03-sources-and-corpus-pipeline.md#连接器九族与执行位置)；[支持名录](../../../../catalog/source-directory.md)。

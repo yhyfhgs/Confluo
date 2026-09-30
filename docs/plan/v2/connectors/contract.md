@@ -176,13 +176,15 @@ class Step: resp: Response; page: Page | None; error_class: str | None = None   
 @dataclass(frozen=True)
 class CursorEnvelope: scope_key: str; cursor: Cursor; schema: int; rev: int   # kind 见 §6
 
-OperationInput = LookupInput | SearchInput | EnumerateInput | SnapshotInput | ProbeInput   # 各类型定义紧随其后
+OperationInput = LookupInput | SearchInput | EnumerateInput | IncrementInput | SnapshotInput | ProbeInput   # 各类型定义紧随其后
 @dataclass(frozen=True)
 class LookupInput: identifiers: tuple[Identifier, ...]          # 04 联邦 LOOKUP 的标识符批
 @dataclass(frozen=True)
 class SearchInput: query: PushdownQuery; limit: int               # 只含 SCD 声明可下推的谓词（aggregator_api §2.2）
 @dataclass(frozen=True)
 class EnumerateInput: window: tuple[datetime, datetime]; mode: Literal["harvest", "reconcile"] = "harvest"   # [from, until)；reconcile = 在场对账
+@dataclass(frozen=True)
+class IncrementInput: mode: str = "normal"   # 族内维护模式（如 crossref 的 weekly_backfill、corrections），取值由族文档枚举并经清单 lint
 @dataclass(frozen=True)
 class SnapshotInput: release_id: str; union_filter: UnionFilter   # 兴趣并集过滤（05）
 @dataclass(frozen=True)
@@ -193,7 +195,7 @@ class ConnectorTask:                     # 无 user_id；plan_key 只作缓存�
     task_id: str; operation: Operation; source_id: str; channel: str; scope_key: str
     cursor: CursorEnvelope | None
     payload: OperationInput | None      # 按 operation 取对应类型：lookup→LookupInput、search→SearchInput、enumerate→EnumerateInput、
-                                        # snapshot_import→SnapshotInput、probe→ProbeInput；increment 只用 cursor，为 None；
+                                        # snapshot_import→SnapshotInput、probe→ProbeInput；increment 为 IncrementInput 或 None（None 即 normal）；
                                         # locate_fulltext 不经 plan()，由 locate_fulltext(VersionView) 直接取输入。plan() 只从这里取输入、不做隐藏 I/O
     decision_ref: DecisionRef            # {decision_id, engine_version, inputs_epoch}
     budget: TaskBudget                   # {max_requests, max_pages, deadline}
@@ -293,10 +295,17 @@ def _drive(task, c, gw, sink, ctx, exec_ctx) -> TaskOutcome:
         if resp.terminal:                                            # challenge / policy_denied / budget_exhausted / disabled …
             gen.close(); return TaskOutcome(status=outcome_of(resp.error_class),   # 按 §7 矩阵：budget_exhausted 为 partial，其余 stopped
                                             error_class=resp.error_class, reason=resp.subcode, committed=sink.last(task), ...)
+        if req.stream:                                               # 流式：按记录边界切块，逐块 parse_chunk 并按块提交（见下文"流式导入"）
+            for chunk in split_chunks(resp.blob, resumed_from=sink.last(task)):
+                sink.commit_page(task, c.parse_chunk(chunk, ParseCtx(ctx.now, endpoint_of(req), ctx.instance)))
+            step = Step(resp, None); continue                        # ParseError 处理同下（此处从略）
         try: page = c.parse(resp, ParseCtx(ctx.now, endpoint_of(req), ctx.instance))
-        except ParseError as e:                                      # 类别随 Step 回送，plan() 据此处理 cursor_expired 重启
-            if e.error_class == "parse": sink.quarantine(task, resp)
-            step = Step(resp, None, e.error_class); continue
+        except ParseError as e:
+            if e.error_class == "parse":                             # 隔离该页；只有 lookup/search/probe 可继续，其余停在安全点（§7）
+                sink.quarantine(task, resp)
+                if task.operation not in ("lookup", "search", "probe"):
+                    gen.close(); return TaskOutcome(status="stopped", error_class="parse", committed=sink.last(task), ...)
+            step = Step(resp, None, e.error_class); continue         # 可恢复类（如 cursor_expired）回送 plan() 处理重启
         sink.commit_page(task, page)   # 同事务：source_record upsert + CursorEnvelope 按 rev 比较交换；失败整页回滚
         step = Step(resp, page)
 ```

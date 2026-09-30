@@ -69,7 +69,7 @@ class ReconcilePolicy:
 class OaiPmh(PlatformConnector):
     def plan(self, task: ConnectorTask, ctx: PlanCtx) -> Generator[RequestSpec, Step, TaskOutcome]:
         inst = ctx.instance
-        if task.payload.mode == "reconcile":          # 模式来自 EnumerateInput，plan_key 只作缓存与审计键
+        if task.operation == "enumerate" and task.payload.mode == "reconcile":   # 模式来自 EnumerateInput，plan_key 只作缓存与审计键
             return (yield from self._reconcile(task, ctx))
         frm, sset = window_start(task.cursor, inst), set_of(task.scope_key)   # 水位 − overlap；set 取自 scope_key
         req_until = frozen_until(task, inst)           # send_until=False 时为 None（不带 until）
