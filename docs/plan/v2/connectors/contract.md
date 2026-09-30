@@ -304,7 +304,10 @@ def _drive(task, c, gw, sink, clock, ctx, exec_ctx, rollout) -> TaskOutcome:
         try: req = gen.send(step) if step else next(gen)
         except StopIteration as done:                                # 状态取生成器，计数与 cost_usd 取 runner 与网关账本
             out = done.value
-            if out.next_cursor is not None: sink.commit_cursor(task, out.next_cursor)   # 终局游标（如 feed 的 guid_set、ETag）按 rev 比较交换落库
+            if out.next_cursor is not None:
+                if task.operation == "snapshot_import" and not sink.reconcile_ok(task, out.next_cursor):   # 文件级与 release 级对账（bulk-snapshot §2.2）
+                    return stop(TaskOutcome(status="stopped", error_class="integrity", reason="reconcile_failed"))
+                sink.commit_cursor(task, out.next_cursor)    # 终局游标（如 feed 的 guid_set、ETag）按 rev 比较交换落库
             return acct.finalize(replace(out, committed=sink.last(task)), gw.ledger(exec_ctx))
         if acct.exhausted():                              # max_requests / max_pages / deadline：在页边界停
             return stop(TaskOutcome(status="partial", error_class="budget_exhausted", ...))
@@ -444,7 +447,7 @@ class FulltextOption:
 
 | 约束 | 规则 |
 |---|---|
-| 步骤 | 封闭枚举 `request`、`resolve`、`entitlement_probe`、`download`、`expect`、`extract_link`；schema `additionalProperties: false` |
+| 步骤 | 封闭枚举 `request`、`resolve`、`entitlement_probe`、`download`、`expect`、`extract_link`；schema `additionalProperties: false`；各步字段的规范 schema 为 `registry/schema/fulltext_recipe.schema.json`（带标签联合），由 V0 产出，契约冻结前必须完成，W3 配方与 CT-05、CT-10 共用（见未决） |
 | 凭证占位符 | `{user_secret:<name>}` 只许出现在 `request.headers`，该步 `allowed_host` 是字面量 HTTPS 主机；确需 query 传 key 的须标 `secret_in_query` 并经评审 |
 | `expect`、`limits` | 复用 `Expectation`（含 `magic`）；`limits` 只能比 08 更严（间隔 ≥6 s、日 ≤200） |
 | `on_challenge` | 固定常量 `stop_then_open_in_tab` |
@@ -540,6 +543,7 @@ class FulltextOption:
 - `PlanCtx.mode_caps` 的具体字段（每任务请求上限、并发、时段）待实施计划 W0 与 02 舱壁份额对齐。
 - `Response.headers` 白名单（哪些上游头对连接器可见）待网关详设；本文只要求不含 Set-Cookie 与凭证回显。
 - `ProbeSpec.expectation` 的 schema 按探针类分别定义，归一致性文档。
+- `FulltextRecipe` 的完整步骤 schema（请求体、重定向、凭证位置、主机绑定、期望）尚未成文：D-074 冻结前由 V0 写出 `fulltext_recipe.schema.json` 并附对抗 fixture，未完成则契约不冻结。
 - `health=suspended` 的 SLI 阈值（触发 `disabled` 的边界）待 CL3 runbook 定义；本文只定语义。
 - 用户侧元数据查询配方（aggregator-api 族提议的 `QueryRecipe`，U-1）：契约 v1 不新增协议，`RecipeProvider` 只产 `FulltextRecipe`；`nasa_ads_api`、`lens_api`、`alphaxiv_mcp`、`orcid_api` 与 `openreview_api` 的用户侧（本人 token 查询，D-052）在 v1 停在 CL0，实施计划只保留波次占位，是否在 v1.x 增加 `QueryRecipe` 列为待拍板 P-13。
 - 回执聚合：按配方版本聚合用户侧回执（即使 ≥`k_cf`）与 08"回执不进任何跨用户统计"冲突，v1 不做；如需要，须新 ADR 并经 08 评审。

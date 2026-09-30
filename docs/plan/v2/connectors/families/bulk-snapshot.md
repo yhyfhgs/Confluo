@@ -66,17 +66,17 @@ class BulkSnapshot(PlatformConnector):
         cur = task.cursor.cursor if task.cursor else None     # snapshot_release{release_id, checksum, parts_done, part_offsets}
         spec = yield from self.discover(inp.release_id, ctx)  # 小请求：manifest、DataCite DOI 列表、S3 LIST、目录清单
         if spec is None: return stopped("config", "release_not_found")
-        verdict = self.manifest_gate(spec, prev_checksum=cur.checksum if cur else None)   # 纯函数，§2.1；上一版只以游标 checksum 比较
+        verdict = self.manifest_gate(spec, prev=cur)          # 纯函数，§2.1；prev 为已提交游标（含 parts_done、part_offsets，可判是否整版完成）
         if verdict.noop: return completed()
         if not verdict.ok: return stopped(verdict.error_class, verdict.reason)
         for f in spec.files:
             if cur and f.file_id in cur.parts_done: continue  # 已完成文件跳过；未完成文件由 runner 按 part_offsets 续切
             step = yield stream_request(f)                    # stream=True；Range 续传由网关写，连接器不写 Range
             if step.page is None: return stop_at_last_safe_point(step)
-        return completed(next_cursor=release_done(spec))
+        return completed(next_cursor=release_done(spec))    # runner 只在 ImportLedger 对账（§2.2）通过后提交此终局游标，否则 stopped/integrity
     def discover(self, release_id, ctx) -> Generator[RequestSpec, Step, SnapshotSpec | None]: ...
         # Zenodo 托管的不用 zenodo.org/api（robots 禁）
-    def manifest_gate(self, spec: SnapshotSpec, prev_checksum: bytes | None) -> GateVerdict: ...   # 纯函数，§2.1
+    def manifest_gate(self, spec: SnapshotSpec, prev: SnapshotReleaseCursor | None) -> GateVerdict: ...   # 纯函数，§2.1
     def subset_filter(self, union: UnionFilter) -> SubsetFilter: ...   # 纯函数，把契约 SnapshotInput.union_filter 编译为本源可判键；runner 调用后放进 ParseCtx.subset
     def parse_chunk(self, chunk: SnapshotChunk, ctx: ParseCtx) -> Page: ...
         # runner 按记录边界切块喂入；只产出命中 ctx.subset 的记录（未命中计 filtered_out）；连接器不读文件、不开网络；单条坏记录由本函数跳过并计入 PageSignals.n_quarantined，
@@ -88,7 +88,7 @@ class BulkSnapshot(PlatformConnector):
 
 | 项 | 检查 | 不过时 |
 |---|---|---|
-| MG-1 版本 | `release_id` 新于已提交版；相同即空操作 | `completed`（空操作） |
+| MG-1 版本 | `release_id` 新于已提交版；相同且 `parts_done` 覆盖全部文件、`part_offsets` 为空才算整版已提交 | 整版已提交即 `completed`（空操作）；同版未完成则续传 |
 | MG-2 完整 | 每个数据文件有 URL；上游提供字节数、校验和、记录数的，全部齐 | 闸返回不通过（`GateVerdict`），不下载；下载后的字节与校验和由网关判 `integrity`（契约 §7） |
 | MG-3 主机 | 全部文件主机 ∈ `allowed_hosts` | 闸不生成请求；若仍有未声明主机的请求，由网关路由判 `config/undeclared_host`（契约 §7 的判定者） |
 | MG-4 许可 | 许可声明与上一版哈希一致 | 停在门前，交策略引擎重判（可能为 `needs_confirmation`）；变严自动降级，变宽只提"待评审" |

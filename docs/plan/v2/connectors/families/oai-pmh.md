@@ -123,7 +123,7 @@ def _reconcile(self, task, ctx):
         step = yield req
         if step.page is None:
             if step.error_class == "cursor_expired" and restarts < 2:     # 同收割循环：整段重启 ≤2 次
-                restarts += 1                                    # 在场记录按 (task_id, restarts) 记遍次，未完成的遍次不参与判定
+                restarts += 1                                    # presence 载荷带 attempt=restarts；sink 只认与完成结果 (task_id, TaskOutcome.restarts) 相同遍次的在场记录
                 req = list_identifiers(ctx.instance, set_=set_of(task.scope_key)); continue
             return stop_at_last_safe_point(step)                 # 被截断：不参与删除判定
         token = step.page.signals.continuation
@@ -131,6 +131,7 @@ def _reconcile(self, task, ctx):
     return completed()                                       # 只有 completed 计为完整对账
 # parse 在对账模式下只产出 header 形态的 RawRecord(kind="presence")（契约 §3 已收录）；
 #   commit_page 只写在场表、不动 source_record 的载荷；header 带 status="deleted" 的直接出 tombstone。
+# 完整对账 = TaskOutcome.completed 的任务里 attempt == outcome.restarts 的那一遍；更早遍次的在场记录在任务结束时丢弃
 # ingestor 侧 tombstone_by_absence(scope)：本地有、连续 absent_passes_to_tombstone 次完整对账都缺席的 source_key
 #   → RawRecord(kind="tombstone")，只置 deleted_upstream，不删 Work；撤稿与更正仍走 status_claims。
 ```
