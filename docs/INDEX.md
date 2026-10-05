@@ -110,7 +110,7 @@
 | 日志 | 内容 |
 |---|---|
 | [2026-09-30-session-018.md](logs/2026-09-30-session-018.md) | 连接器标准化计划：接口契约、一致性等级、逐族规范、实施计划与接口增量 UI |
-| [2026-09-28-session-017.md](logs/2026-09-28-session-017.md) | 更名为 Confluo，迁入 ActionMesh AI 组织 |
+| [2026-09-28-session-017.md](logs/2026-09-28-session-017.md) | 更名为 Confluo，迁入团队组织（现名 Orbit Labs） |
 | [2026-09-27-session-014.md](logs/2026-09-27-session-014.md) | 精简 docs，清理仓库与分支 |
 | [2026-09-27-session-015.md](logs/2026-09-27-session-015.md) | 来源七类分层、评级体系与按学科的 venue 名录 |
 | [2026-09-28-session-016.md](logs/2026-09-28-session-016.md) | 推荐系统论文清单及 EconCS、博弈论与经济学增补（75篇） |
