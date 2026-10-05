@@ -2,16 +2,16 @@
 title: 项目进度跟踪
 status: approved
 owner: opus5.5-primary
-updated: 2026-09-30
+updated: 2026-10-05
 ---
 
 # 项目进度
 
 > "当前状态"的单一事实来源，每个工作 session 结束时更新。过程细节见 `docs/logs/`。
 
-## 现状（更新至 2026-09-30）
+## 现状（开发进度截至 2026-09-30；组织名称更新于 2026-10-05）
 
-- **项目名称与归属**：更名为 Confluo，仓库迁入 [Orbit Labs](https://github.com/Orbit-Labs-AI/Confluo)；过程见 [session-017](../logs/2026-09-28-session-017.md)。
+- **项目名称与归属**：项目现名 Confluo，所属组织于 2026-10-05 更名为 [Orbit Labs](https://github.com/Orbit-Labs-AI/Confluo)；过程见 [session-017](../logs/2026-09-28-session-017.md)。
 - **阶段**：v2 设计已完成，等你评审；main 上没有实现代码。
 - **main 上的文档**（都是精简版）：
   - [v2 方案总览](v2/README.md)与 01–09 九篇设计；
