@@ -11,7 +11,7 @@ updated: 2026-09-30
 
 ## 现状（更新至 2026-09-30）
 
-- **项目名称与归属**：更名为 Confluo，仓库迁入 [ActionMesh AI](https://github.com/ActionMesh-AI/Confluo)；过程见 [session-017](../logs/2026-09-28-session-017.md)。
+- **项目名称与归属**：更名为 Confluo，仓库迁入 [Orbit Labs](https://github.com/Orbit-Labs-AI/Confluo)；过程见 [session-017](../logs/2026-09-28-session-017.md)。
 - **阶段**：v2 设计已完成，等你评审；main 上没有实现代码。
 - **main 上的文档**（都是精简版）：
   - [v2 方案总览](v2/README.md)与 01–09 九篇设计；
