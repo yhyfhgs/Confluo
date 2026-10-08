@@ -61,12 +61,12 @@
 | [catalog/venue-rankings.md](catalog/venue-rankings.md) | 期刊会议评级体系（45 个）与评级标签词表 | draft |
 | [catalog/venues/README.md](catalog/venues/README.md) | 按学科的 venue 名录总览（866 个，核心 305）、支持分级与关联总图 | draft |
 | [catalog/source-support-catalog.xlsx](catalog/source-support-catalog.xlsx) | 支持名录 Excel：各学科 M、L1、L2 来源与 venue 的支持层级，合并单元格标隶属关系（由名录生成） | — |
-| [survey/README.md](survey/README.md) | 调研结论 | draft |
-| [survey/peer-review-content-ads-reading-list.md](survey/peer-review-content-ads-reading-list.md) | 同行评审、内容与广告推荐论文精选（75 篇；含 EconCS、博弈论与经济学增补、摘要、发表状态与链接；2026-09-28） | draft |
 | [plan/decision-log.md](plan/decision-log.md) | ADR 登记：v2 草案 D-040…D-076 与 v1 索引 | approved |
 | [GLOSSARY.md](GLOSSARY.md) | 术语速查 | draft |
 | [archive.md](archive.md) | 归档说明：v2 完整长稿与 v1 | approved |
 | [../AGENTS.md](../AGENTS.md) | AI 协作者规范 | — |
+
+调研结论与论文精选（同行评审、内容与广告推荐，75 篇）在 TeamHub 维护：[v2 调研结论](https://github.com/Orbit-Labs-AI/team-hub/blob/main/%E9%A1%B9%E7%9B%AE/Confluo/02-%E7%A0%94%E7%A9%B6/v2%E8%B0%83%E7%A0%94%E7%BB%93%E8%AE%BA.md)、[论文精选](https://github.com/Orbit-Labs-AI/team-hub/blob/main/%E9%A1%B9%E7%9B%AE/Confluo/02-%E7%A0%94%E7%A9%B6/%E5%90%8C%E8%A1%8C%E8%AF%84%E5%AE%A1%E3%80%81%E5%86%85%E5%AE%B9%E4%B8%8E%E5%B9%BF%E5%91%8A%E6%8E%A8%E8%8D%90%E8%AE%BA%E6%96%87%E7%B2%BE%E9%80%89.md)。
 
 ## venue 名录（catalog/venues/）
 

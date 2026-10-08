@@ -2,7 +2,7 @@
 title: 术语表（Glossary）
 status: draft
 owner: opus5.5-primary
-updated: 2026-09-30
+updated: 2026-10-09
 ---
 
 # 术语表
@@ -51,7 +51,7 @@ updated: 2026-09-30
 
 ## 推荐研究中的经济机制术语
 
-以下用于[推荐论文清单](survey/peer-review-content-ads-reading-list.md)的经济学增补，不构成新的已批准架构决策。
+以下用于[推荐论文清单](https://github.com/Orbit-Labs-AI/team-hub/blob/main/%E9%A1%B9%E7%9B%AE/Confluo/02-%E7%A0%94%E7%A9%B6/%E5%90%8C%E8%A1%8C%E8%AF%84%E5%AE%A1%E3%80%81%E5%86%85%E5%AE%B9%E4%B8%8E%E5%B9%BF%E5%91%8A%E6%8E%A8%E8%8D%90%E8%AE%BA%E6%96%87%E7%B2%BE%E9%80%89.md)（TeamHub）的经济学增补，不构成新的已批准架构决策。
 
 | 术语 | 含义 |
 |---|---|

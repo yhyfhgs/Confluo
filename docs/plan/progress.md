@@ -2,7 +2,7 @@
 title: 项目进度跟踪
 status: approved
 owner: opus5.5-primary
-updated: 2026-10-05
+updated: 2026-10-09
 ---
 
 # 项目进度
@@ -15,7 +15,7 @@ updated: 2026-10-05
 - **阶段**：v2 设计已完成，等你评审；main 上没有实现代码。
 - **main 上的文档**（都是精简版）：
   - [v2 方案总览](v2/README.md)与 01–09 九篇设计；
-  - [支持名录](../catalog/source-directory.md)（187 条）、[调研结论](../survey/README.md)、[ADR 登记](decision-log.md)（37 条草案待确认）；
+  - [支持名录](../catalog/source-directory.md)（187 条）、[调研结论](https://github.com/Orbit-Labs-AI/team-hub/blob/main/%E9%A1%B9%E7%9B%AE/Confluo/02-%E7%A0%94%E7%A9%B6/v2%E8%B0%83%E7%A0%94%E7%BB%93%E8%AE%BA.md)（TeamHub）、[ADR 登记](decision-log.md)（37 条草案待确认）；
   - 11 张配图与交互 demo。
 - **来源分层与 venue 名录**（2026-09-27 新增，draft）：[来源七类分层与现状总表](../catalog/source-taxonomy.md)、[候选来源](../catalog/source-candidates.md)（156 个）、[评级体系](../catalog/venue-rankings.md)（45 个）、[按学科的 venue 名录](../catalog/venues/README.md)（866 个）；支持名录按七类分节，ADR 草案增至 33 条（新增 D-072）。
 - **支持分级**（2026-09-29，draft）：来源分支持 134、登记 35、不接入 18，M2 与 L2 的非排除行全部支持；venue 分核心 305、登记 561，子领域由 141 个归并为 66 个；长尾靠问卷与用户关注逐步升级。汇总表见[支持名录 Excel](../catalog/source-support-catalog.xlsx)，ADR 草案增至 34 条（新增 D-073）。

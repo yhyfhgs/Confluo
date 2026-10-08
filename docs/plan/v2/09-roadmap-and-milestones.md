@@ -2,7 +2,7 @@
 title: v2 路线图与里程碑
 status: draft
 owner: opus5.5-primary
-updated: 2026-09-30
+updated: 2026-10-09
 ---
 
 # 09 · 路线图与里程碑
@@ -145,7 +145,7 @@ Must 全部在 V5 或更早完成。NFR-11、NFR-13、NFR-15、NFR-24 在 v2.0 �
 
 ## 补充调研排期
 
-结论写入 `docs/survey/supplements/`，主 agent 审阅后回写设计文档；已有结论见[调研总览](../../survey/README.md)。
+结论写入 TeamHub 的 `项目/Confluo/02-研究/`，主 agent 审阅后回写设计文档；已有结论见[调研结论](https://github.com/Orbit-Labs-AI/team-hub/blob/main/%E9%A1%B9%E7%9B%AE/Confluo/02-%E7%A0%94%E7%A9%B6/v2%E8%B0%83%E7%A0%94%E7%BB%93%E8%AE%BA.md)。
 
 - **高优先，在关键路径上**：用户之声（V0 第一轮、V5 第二轮）；书面确认（V0 发函、V1 起跟踪回复）；分学科表示质量（V1，阻塞表示选型与 V2 向量索引）；交互参数（V0 demo 埋点、V5 真机，阻塞批次默认值与动效参数定稿）；法务意见（V0 委托，按时点回收，只阻塞"放宽"，不阻塞从严实现）。
 - **中优先**：配额与费用（V1 仿真、V7 询价，作 DG-Q1、DG-Q3 的输入）；学术场景的行为价值参考值（V4 dogfood、V5 微问卷）；LLM 忠实度与本地吞吐（V1、V6）；出口 IP 对 WAF 的影响（V3 在校园网复测）；二手条款核验（对应来源接入前）；AI 标识与监管细则（V4 末至 V5 前，阻塞机器可读标识格式）。

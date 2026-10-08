@@ -2,7 +2,7 @@
 title: v2 方案总览
 status: draft
 owner: opus5.5-primary
-updated: 2026-09-30
+updated: 2026-10-09
 ---
 
 # Confluo v2 方案总览
@@ -21,7 +21,7 @@ updated: 2026-09-30
 | 检索、路由与多用户数据库 | 先收割、后联邦；统一 Query AST 支持五种意图；主题-来源路由图 TSRG 同时管路由、收割调度、兴趣挂点和反向推送；PostgreSQL 18 四个数据域，私有层全表 RLS | [04](04-retrieval-and-routing.md)、[05](05-data-platform.md) |
 | 推荐、反馈与双向匹配 | 行为价值模型打分，北极星是有价值阅读而非时长；R0 用每用户逻辑回归，反馈 2 秒内生效；新论文分级曝光；三层双向匹配，研究者匹配默认关闭 | [06](06-recommendation-and-matching.md) |
 | 卡片流前端 | 今日分拣卡叠、收藏库、详情面板三件套，一级入口只有今日、收藏、我；→ 想读、← 不感兴趣、↑ 跳过、↓ 撤回；每日默认 25 张，看完即止 | [07](07-frontend-interaction.md)、[demo](demo/paper-feed-demo.html) |
-| 开源与初创调研 | 14 个主题并行调研、逐篇对抗核验，结论逐条进入设计 | [调研结论](../../survey/README.md) |
+| 开源与初创调研 | 14 个主题并行调研、逐篇对抗核验，结论逐条进入设计 | [调研结论](https://github.com/Orbit-Labs-AI/team-hub/blob/main/%E9%A1%B9%E7%9B%AE/Confluo/02-%E7%A0%94%E7%A9%B6/v2%E8%B0%83%E7%A0%94%E7%BB%93%E8%AE%BA.md)（TeamHub） |
 
 需求的完整清单（FR-17…FR-87、NFR-9…NFR-27）与成功指标见 [01](01-vision-and-requirements.md)，合规硬约束 HC-01…HC-32 见 [08](08-compliance-security-privacy.md)。
 

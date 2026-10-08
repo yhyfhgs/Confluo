@@ -2,7 +2,7 @@
 title: 归档说明
 status: approved
 owner: opus5.5-primary
-updated: 2026-09-27
+updated: 2026-10-09
 ---
 
 # 归档说明
@@ -20,7 +20,7 @@ main 只放当前文档。旧内容都保存在下面两个位置，用 `git sho
 | `docs/plan/v2/adr-proposals.md` | ADR D-040…D-071 全文 | [decision-log](plan/decision-log.md) 的一行摘要 |
 | `docs/plan/v2/design-process-record.md` 及同名目录 | 设计过程记录与首轮 agent 返回 JSON | — |
 | `docs/catalog/source-directory.md` | 名录长稿：通道、限速、条款与证据列 | 同路径的精简版 |
-| `docs/survey/` | 14 个主题的调研全文、综合与原始数据 | [调研结论](survey/README.md) |
+| `docs/survey/` | 14 个主题的调研全文、综合与原始数据 | TeamHub 的[调研结论](https://github.com/Orbit-Labs-AI/team-hub/blob/main/%E9%A1%B9%E7%9B%AE/Confluo/02-%E7%A0%94%E7%A9%B6/v2%E8%B0%83%E7%A0%94%E7%BB%93%E8%AE%BA.md) |
 | `docs/logs/2026-09-27-session-011.md`…`013.md` | 设计阶段工作日志 | — |
 | `docs/archive-v1.md` | v1 全部路径的逐条索引 | 本页 v1 一节 |
 
