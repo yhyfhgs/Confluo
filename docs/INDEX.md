@@ -66,7 +66,7 @@
 | [archive.md](archive.md) | 归档说明：v2 完整长稿与 v1 | approved |
 | [../AGENTS.md](../AGENTS.md) | AI 协作者规范 | — |
 
-调研结论与论文精选（同行评审、内容与广告推荐，75 篇）在 TeamHub 维护：[v2 调研结论](https://github.com/Orbit-Labs-AI/team-hub/blob/main/%E9%A1%B9%E7%9B%AE/Confluo/02-%E7%A0%94%E7%A9%B6/v2%E8%B0%83%E7%A0%94%E7%BB%93%E8%AE%BA.md)、[论文精选](https://github.com/Orbit-Labs-AI/team-hub/blob/main/%E9%A1%B9%E7%9B%AE/Confluo/02-%E7%A0%94%E7%A9%B6/%E5%90%8C%E8%A1%8C%E8%AF%84%E5%AE%A1%E3%80%81%E5%86%85%E5%AE%B9%E4%B8%8E%E5%B9%BF%E5%91%8A%E6%8E%A8%E8%8D%90%E8%AE%BA%E6%96%87%E7%B2%BE%E9%80%89.md)。
+调研结论与论文精选（同行评审、内容与广告推荐，75 篇）在 TeamHub 维护：[v2 调研结论](https://github.com/Orbit-Labs-AI/team-hub/blob/main/%E9%A1%B9%E7%9B%AE/Confluo/03-%E7%A0%94%E7%A9%B6/v2%E8%B0%83%E7%A0%94%E7%BB%93%E8%AE%BA.md)、[论文精选](https://github.com/Orbit-Labs-AI/team-hub/blob/main/%E9%A1%B9%E7%9B%AE/Confluo/03-%E7%A0%94%E7%A9%B6/%E5%90%8C%E8%A1%8C%E8%AF%84%E5%AE%A1%E3%80%81%E5%86%85%E5%AE%B9%E4%B8%8E%E5%B9%BF%E5%91%8A%E6%8E%A8%E8%8D%90%E8%AE%BA%E6%96%87%E7%B2%BE%E9%80%89.md)。
 
 ## venue 名录（catalog/venues/）
 

@@ -11,7 +11,7 @@
 1. [v2 方案总览](docs/plan/v2/README.md)：一篇看完整个方案和需要你拍板的事。
 2. 按兴趣读分篇：[需求](docs/plan/v2/01-vision-and-requirements.md)、[架构](docs/plan/v2/02-architecture.md)、[来源](docs/plan/v2/03-sources-and-corpus-pipeline.md)、[检索](docs/plan/v2/04-retrieval-and-routing.md)、[数据](docs/plan/v2/05-data-platform.md)、[推荐](docs/plan/v2/06-recommendation-and-matching.md)、[前端](docs/plan/v2/07-frontend-interaction.md)、[合规](docs/plan/v2/08-compliance-security-privacy.md)、[路线图](docs/plan/v2/09-roadmap-and-milestones.md)。
 3. [交互 demo](docs/plan/v2/demo/paper-feed-demo.html)，也可以在线打开：<https://claude.ai/artifact/YYZiiZjCVVeTzbESeFxqQr>。
-4. 查阅用：[来源分层与收集现状](docs/catalog/source-taxonomy.md)、[支持名录](docs/catalog/source-directory.md)、[venue 名录](docs/catalog/venues/README.md)、[评级体系](docs/catalog/venue-rankings.md)、[调研结论](https://github.com/Orbit-Labs-AI/team-hub/blob/main/%E9%A1%B9%E7%9B%AE/Confluo/02-%E7%A0%94%E7%A9%B6/v2%E8%B0%83%E7%A0%94%E7%BB%93%E8%AE%BA.md)（TeamHub）、[ADR 登记](docs/plan/decision-log.md)、[术语表](docs/GLOSSARY.md)。
+4. 查阅用：[来源分层与收集现状](docs/catalog/source-taxonomy.md)、[支持名录](docs/catalog/source-directory.md)、[venue 名录](docs/catalog/venues/README.md)、[评级体系](docs/catalog/venue-rankings.md)、[调研结论](https://github.com/Orbit-Labs-AI/team-hub/blob/main/%E9%A1%B9%E7%9B%AE/Confluo/03-%E7%A0%94%E7%A9%B6/v2%E8%B0%83%E7%A0%94%E7%BB%93%E8%AE%BA.md)（TeamHub）、[ADR 登记](docs/plan/decision-log.md)、[术语表](docs/GLOSSARY.md)。
 
 全部文档清单见 [docs/INDEX.md](docs/INDEX.md)。
 
