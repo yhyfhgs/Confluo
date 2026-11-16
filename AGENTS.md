@@ -1,6 +1,6 @@
 # Confluo
 
-The project is owned by Orbit Labs: `https://github.com/Orbit-Labs-AI/Confluo` (formerly Paper Crawler). The local runtime directory is `.confluo/`, selected through `CONFLUO_HOME` (renamed from `.paper-crawler/` / `PAPER_CRAWLER_HOME` on 2026-09-29).
+The project is owned by Orbit Labs: `https://github.com/Orbit-Labs-AI/Confluo` (formerly Paper Crawler). The local runtime directory is `.confluo/`, selected through `CONFLUO_HOME` (the legacy name was `.paper-crawler/` / `PAPER_CRAWLER_HOME`).
 
 `AGENTS.md` is the shared instruction source. The repository is at the start of the v2 restart and has no implementation yet. `main` holds only current, condensed documents: the v2 plan, the source directory, a research summary and the interaction demo. Everything older lives in two archives; read them with `git show <ref>:<path>` or a separate worktree, and treat them as reference material, not as the current system:
 
@@ -39,6 +39,6 @@ Read `README.md`, `docs/INDEX.md`, `docs/plan/progress.md` and `docs/plan/v2/REA
 
 No build or test toolchain exists on `main` yet; V0 establishes it (Python 3.12+ backend, TypeScript PWA, PostgreSQL 18). Until then, validate documentation changes: frontmatter is present, relative links resolve, and `docs/INDEX.md` is updated. The v1 commands (`make check`, `uv run crawler`) apply only on `archive/v1`.
 
-Write Conventional Commits (`<type>(<scope>): <subject>` with an English lowercase imperative subject of at most 72 characters; the body may be Chinese) as defined in `docs/process/git-workflow.md` on `archive/v1`. Report the checks actually run. Delegation pays for bounded research that runs in parallel with the main work, or whose sources would otherwise fill the main context. Each subagent costs tokens and knows only its brief, so give it the question, the sources and an explicit output path, and choose its model by the task. The primary agent reviews the evidence and owns the final architecture and design decisions.
+Write Conventional Commits (`<type>(<scope>): <subject>` with an English lowercase imperative subject of at most 72 characters; the body may be Chinese) as defined in `docs/process/git-workflow.md` on `archive/v1`. Report the checks actually run.
 
 Task entry points: overview → `docs/plan/v2/README.md`; sources and connectors → `docs/plan/v2/03-sources-and-corpus-pipeline.md` and `docs/catalog/source-directory.md`; connector contract, families and waves → `docs/plan/v2/connectors/README.md` and `docs/catalog/connector-matrix.md`; source classes, venues and rankings → `docs/catalog/source-taxonomy.md`, `docs/catalog/venues/README.md` and `docs/catalog/venue-rankings.md`; retrieval and routing → `04`; data platform → `05`; recommendation and matching → `06`; frontend → `07` and `demo/`; compliance → `08`; milestones → `09` (task cards are in the full draft at `v2-drafts`).
