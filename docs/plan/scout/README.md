@@ -184,8 +184,9 @@ $CONFLUO_HOME/scout/            # 默认 <repo>/.confluo/scout，Git 忽略
 ## 实现状态（2026-11-19）
 
 - 代码在 `scout/`：后端 `server/src/confluo_scout/`（抓取层、7 个适配器、存储、嵌入、HopLoop、API、调度），前端 `web/`，venue 列表 `registry/venues.yaml`（19 个系列，默认开启 13 个、36 届）。
-- `make check`：ruff 通过；pytest 30 项全部通过（解析器回放、抓取层、存储合并、检索单元、内存 qdrant 上的端到端 HopLoop）；前端类型检查与构建通过。
-- 服务在 Colima 上以两个容器运行（`scout`、`qdrant`），网页 <http://127.0.0.1:8770>。首轮全量抓取由容器里的调度器执行，进度在"来源"页。
+- `make check`：ruff 通过；pytest 34 项全部通过（解析器回放、抓取层、存储合并、检索单元、内存 qdrant 上的端到端 HopLoop、备份恢复、加速服务回退、中断续爬）；前端类型检查与构建通过。
+- 服务在 Colima 上以两个容器运行（`scout`、`qdrant`），网页 <http://127.0.0.1:8770>；Colima 由 `brew services` 管理，开机自启，容器随之拉起。
+- 2026-11-19 03:00 的语料：已启用 36 届，论文 106,038 篇，有摘要 95,491 篇，审稿 182,648 条，概念 33,506 个，向量约 4.7 万篇（后台编码中）。首轮抓取仍在后台进行：ICLR 2027 在审投稿已收 4.2 万篇，另有 12 届 OpenReview 排队，CVF 与 ECCV 的逐篇摘要在补；OpenReview 受每小时 500 次的配额约束。
 
 ## 未决事项
 
