@@ -11,7 +11,7 @@ from dataclasses import dataclass, field
 from typing import ClassVar
 
 import numpy as np
-from rapidfuzz import process
+from rapidfuzz import fuzz, process
 from rapidfuzz.distance import Levenshtein
 
 from confluo_scout.concepts import Vocab, norm_concept
@@ -209,13 +209,14 @@ class KeywordPlanner:
                 continue
             z = self.bg.z(vecs[ci], np.asarray([s for _, s, _ in cand]))
             best = max(s for _, s, _ in cand)
-            # Near-ties go to the more common (canonical) spelling.
-            near = [(t, s, df, zz) for (t, s, df), zz in zip(cand, z, strict=True) if s >= best - 0.012 and zz >= 3.0]
-            near.sort(key=lambda x: (-(x[1] + 0.004 * math.log1p(x[2]))))
+            near = [(self._canonical(t, df), s, zz) for (t, s, df), zz in zip(cand, z, strict=True)
+                    if s >= best - 0.012 and zz >= 3.0]
+            # Near-ties go to the common spelling: author keywords contain typos ("reinforcment learning").
+            near.sort(key=lambda x: (-self._df(x[0]), -x[1]))
             kept: list[str] = []
-            for t, _s, _df, zz in near:
-                if any(Levenshtein.distance(t, k) <= 2 for k in kept):
-                    continue  # spelling variant of a more common term
+            for t, _s, zz in near:
+                if any(fuzz.ratio(t, k) >= 85 for k in kept):
+                    continue
                 kept.append(t)
                 out.append((t, 9.0 + float(zz) / 2, "translation", chunk))
                 if len(kept) == 2:
@@ -232,6 +233,15 @@ class KeywordPlanner:
     def _df(self, term: str) -> int:
         e = self.vocab.get(term)
         return int(e["df"]) if e else 0
+
+    def _canonical(self, term: str, df: int) -> str:
+        """Replace a rare near-identical spelling by the vocabulary's much more frequent form."""
+        if not hasattr(self, "_terms"):
+            self._terms = list(self.vocab.by_term)
+        hits = process.extract(term, self._terms, scorer=fuzz.ratio, score_cutoff=90, limit=5)
+        better = [(t, self.vocab.by_term[t]["df"]) for t, _score, _i in hits if t != term]
+        better = [x for x in better if x[1] >= 10 * max(1, df)]
+        return max(better, key=lambda x: x[1])[0] if better else term
 
     # ---- expansion --------------------------------------------------------------------------
 
