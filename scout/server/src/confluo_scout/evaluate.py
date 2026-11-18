@@ -1,7 +1,7 @@
 """Known-item evaluation: an author's TL;DR is the query, the paper itself is the target.
 
 Compares three configurations on the same queries: lexical only (exact mode with OR semantics),
-dense only (one round, no expansion) and full HopLoop. Reports recall@1/@10 and MRR@10.
+one hybrid round (BM25 + vectors, no expansion) and full HopLoop. Reports recall@1/@10 and MRR@10.
 No manual labels are needed, so the numbers are a proxy: they reward finding one specific paper,
 not the full set of relevant papers.
 """
@@ -37,7 +37,7 @@ def run(svc, n: int = 40) -> dict:
     configs = {
         "bm25_or": lambda q: engine.search({"q": " OR ".join(w for w in words(q) if w.lower() not in STOPWORDS),
                                             "mode": "exact", "limit": 10}),
-        "dense_1round": lambda q: engine.search({"q": q, "max_rounds": 1, "limit": 10}),
+        "hybrid_1round": lambda q: engine.search({"q": q, "max_rounds": 1, "limit": 10}),
         "hoploop": lambda q: engine.search({"q": q, "limit": 10}),
     }
     out: dict = {"queries": len(qs)}

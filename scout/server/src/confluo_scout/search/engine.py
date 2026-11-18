@@ -395,11 +395,14 @@ class SearchEngine:
         decay = _num(s.params, "hop_decay")
         rrf: dict[int, float] = defaultdict(float)
         for channel, rnd_l, ids in s.lists:
-            w = CHANNEL_WEIGHT[channel] * decay ** (rnd_l - 1)
+            # Expansion rounds widen recall; their lists count a quarter so they cannot outvote the
+            # original query's evidence (known-item test, 2026-11-19: full weight cut recall@1 0.85 -> 0.70).
+            w = CHANNEL_WEIGHT[channel] * (1.0 if rnd_l == 1 else 0.25 * decay ** (rnd_l - 1))
             for rank, i in enumerate(ids):
                 rrf[i] += w / (60 + rank + 1)
         cov = self._coverage(s)
-        wsum = sum(k.weight for k in s.keywords) or 1.0
+        original = [k for k in s.keywords if k.round == 1]
+        wsum = sum(k.weight for k in original) or 1.0
         ppr = s.graph.ppr()
 
         if not s.norm:
@@ -416,7 +419,7 @@ class SearchEngine:
         beta, gamma = _num(s.params, "beta"), _num(s.params, "gamma")
         rel: dict[int, float] = {}
         for i in pool:
-            kw_cov = sum(k.weight * cov[i].get(k.norm, 0.0) for k in s.keywords) / wsum
+            kw_cov = sum(k.weight * cov[i].get(k.norm, 0.0) for k in original) / wsum
             rel[i] = 0.30 * n_rrf[i] + 0.40 * n_cos[i] + 0.20 * kw_cov + 0.10 * n_ppr[i]
             s.scores[i] = {"rel": rel[i], "rrf": n_rrf[i], "cos": s.cos.get(i, 0.0), "coverage": kw_cov,
                            "ppr": n_ppr[i], "kw_match": cov[i]}
