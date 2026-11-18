@@ -16,6 +16,7 @@ export function ResultCard({ r, fresh, onOpen }: Props) {
         <span className="venue">{r.venue}</span>
         {label && <span className={labelClass(r.decision_label, r.status)}>{label}</span>}
         {r.track && !/^(Long|Short) papers$/.test(r.track) && r.track !== label && <span className="track">{r.track}</span>}
+        {r.area_unified && <span className="track" title="统一领域（按论文向量归类）">{r.area_unified}</span>}
         {r.hop > 1 && (
           <span className="hop" title={`第 ${r.hop} 轮经扩展线索找到：${r.via.join("、")}`}>第 {r.hop} 跳</span>
         )}

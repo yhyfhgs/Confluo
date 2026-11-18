@@ -55,11 +55,12 @@ export function PaperDrawer({ result, onClose }: Props) {
               <h4>摘要</h4>
               <p className="abstract" dangerouslySetInnerHTML={{ __html: p.abstract ? markText(p.abstract, exact, near) : "摘要尚未抓取" }} />
             </section>
-            {(p.keywords.length > 0 || p.area_native) && (
+            {(p.keywords.length > 0 || p.area_native || p.area_unified_label) && (
               <section>
                 <h4>关键词与领域</h4>
                 <div className="chips">
-                  {p.area_native && <span className="chip chip-area">{p.area_native}</span>}
+                  {p.area_unified_label && <span className="chip chip-area" title="统一领域（按论文向量归类）">{p.area_unified_label}</span>}
+                  {p.area_native && <span className="chip chip-area" title="会议原生领域">{p.area_native}</span>}
                   {p.keywords.map((k) => <span key={k} className="chip">{k}</span>)}
                 </div>
               </section>

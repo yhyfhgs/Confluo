@@ -212,6 +212,9 @@ def create_app() -> FastAPI:
         p["year"] = ed["year"] if ed else None
         p["series"] = {"short": ed["short"], "name": ed["name"], "ratings": loads(ed["ratings"], [])} if ed else None
         p["edition_stats"] = dict(est) if est else None
+        from confluo_scout.areas import LABELS
+
+        p["area_unified_label"] = LABELS.get(row["area_unified"] or "")
         p["sources"] = sorted(k for k in (loads(row["sources"], {}) or {}) if not k.startswith("_"))
         p["reviews"] = [dict(r) | {"subscores": loads(r["subscores"], {})} for r in
                         svc.db.query("select review_key, rating, rating_raw, confidence, subscores, updated_at "

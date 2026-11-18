@@ -6,6 +6,7 @@ import logging
 import threading
 import time
 
+from confluo_scout.areas import classifier
 from confluo_scout.db import loads
 from confluo_scout.embed import document_text
 
@@ -45,12 +46,13 @@ class Indexer:
                 docs = [document_text(r["title"], texts_by_id.get(r["id"]), loads(r["keywords"], []) or [],
                                       r["area_native"]) for r in rows]
                 vecs = embedder.documents(docs)
+                areas = classifier(embedder).classify(vecs)
                 payloads = [{"edition": r["edition_id"], "series": r["series_id"], "year": r["year"],
                              "status": r["status"], "tier": r["tier"] or 0} for r in rows]
                 self.svc.vectors.upsert_papers([r["id"] for r in rows], vecs, payloads)
                 with db.tx() as con:
-                    con.executemany("update paper set embed_hash=? where id=?",
-                                    [(r["content_hash"], r["id"]) for r in rows])
+                    con.executemany("update paper set embed_hash=?, area_unified=? where id=?",
+                                    [(r["content_hash"], a, r["id"]) for r, (a, _s) in zip(rows, areas, strict=True)])
                 done += len(rows)
                 elapsed = max(1e-6, time.time() - t0)
                 self.progress.update(embedded=self.progress["embedded"] + len(rows), rate=round(done / elapsed, 1),

@@ -133,6 +133,7 @@ $CONFLUO_HOME/scout/            # 默认 <repo>/.confluo/scout，Git 忽略
 - `series`：会议或期刊系列，含简称、类型、评级标签（CCF、ICORE，取自 venue 名录）、平台。
 - `edition`：届次（`iclr-2027`），含年份、阶段（`in_review`、`decided`、`published`）、启用开关、来源、上次抓取、计数。
 - `paper`：一篇论文一行。字段包括主键 `uid`、届次、标题与规范化标题、作者、关键词、原生领域、统一领域、TL;DR、状态（`accepted`、`under_review`、`rejected`、`withdrawn`）、录用标签（Oral、Spotlight、Highlight、Poster、Findings 等）与等级数值、链接（forum、PDF、正式版、DOI）、来源键、摘要指针（代号、分片、行号）、内容哈希、嵌入哈希、审稿统计、质量分。
+- **领域划分**：原生领域保留在 `area_native`（OpenReview 的 primary area、AAAI 的技术分轨、IJCAI 的 section）；所有论文另有统一领域 `area_unified`，取自 23 类 AI 领域（大模型、视觉、生成模型、强化学习、可解释性、安全与对齐、AI for Science 等）。归类方法是零样本：论文文档向量与各领域描述向量取余弦最近者，嵌入时顺带完成，已有向量的论文由维护线程回填。检索语法 `area:可解释性` 与 `area:interpretability` 都会匹配。
 - `review`：一条审稿一行，只存数值：总分原值与数值、置信度、子分（soundness、presentation 等）和更新时间。不存审稿正文。
 - `paper_fts`：FTS5 contentless 表（`porter unicode61`），列为 title、keywords、abstract、authors、area，rowid 对齐 `paper.rowid`。
 - `concept`：概念词表（作者关键词、领域、标题短语、缩写全称），含文档频率与别名；向量在 qdrant `concepts`。

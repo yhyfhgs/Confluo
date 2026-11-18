@@ -46,6 +46,7 @@ export interface Result {
   tier: number | null;
   track: string | null;
   area: string | null;
+  area_unified: string | null;
   keywords: string[];
   tldr: string | null;
   snippet: string;
@@ -152,6 +153,7 @@ export interface PaperDetail {
   keywords: string[];
   area_native: string | null;
   area_secondary: string | null;
+  area_unified_label: string | null;
   tldr: string | null;
   status: string;
   decision_label: string | null;

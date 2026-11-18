@@ -18,6 +18,7 @@ from dataclasses import dataclass, field
 import numpy as np
 from qdrant_client import models as qm
 
+from confluo_scout.areas import LABELS as AREA_LABELS
 from confluo_scout.concepts import get_vocab
 from confluo_scout.db import loads
 from confluo_scout.records import VISIBLE_STATUSES
@@ -138,10 +139,14 @@ class SearchEngine:
                 restrict = ids if restrict is None else restrict & ids
         for area in pq.areas:
             ph = fts_phrase(area)
+            ids: set[int] = set()
             if ph:
-                ids = {r[0] for r in self.db.query("select rowid from paper_fts where paper_fts match ?",
-                                                   (f"area : {ph} OR keywords : {ph}",))}
-                restrict = ids if restrict is None else restrict & ids
+                ids |= {r[0] for r in self.db.query("select rowid from paper_fts where paper_fts match ?",
+                                                    (f"area : {ph} OR keywords : {ph}",))}
+            unified = [k for k, zh in AREA_LABELS.items() if area.lower() in (k, zh.lower()) or area in zh]
+            for key in unified:
+                ids |= {r[0] for r in self.db.query("select id from paper where area_unified=?", (key,))}
+            restrict = ids if restrict is None else restrict & ids
         return Scope(editions=eds, statuses=statuses, min_tier=pq.min_tier, restrict=restrict)
 
     # ---- recall primitives ------------------------------------------------------------------
@@ -203,7 +208,7 @@ class SearchEngine:
         for i in range(0, len(need), 500):
             chunk = need[i:i + 500]
             rows = self.db.query(
-                "select id, uid, edition_id, title, authors, keywords, area_native, area_secondary, status, "
+                "select id, uid, edition_id, title, authors, keywords, area_native, area_secondary, area_unified, status, "
                 "decision_label, tier, track, quality, review_stats, content_hash, forum_url, pdf_url, "
                 "proceedings_url, doi, abstract_gen, abstract_part, abstract_line, tldr from paper "
                 f"where id in ({','.join('?' * len(chunk))})", tuple(chunk))
@@ -523,7 +528,8 @@ class SearchEngine:
                 "rank": rank, "id": i, "uid": m["uid"], "title": hl.render(m["title"]), "title_plain": m["title"],
                 "authors": m["authors"], "venue": m["venue"], "series": m["series"], "year": m["year"],
                 "edition": m["edition_id"], "status": m["status"], "decision_label": m["decision_label"],
-                "tier": m["tier"], "track": m["track"], "area": m["area_native"], "keywords": m["keywords"][:8],
+                "tier": m["tier"], "track": m["track"], "area": m["area_native"],
+                "area_unified": AREA_LABELS.get(m["area_unified"] or "", None), "keywords": m["keywords"][:8],
                 "tldr": m.get("tldr"), "snippet": hl.render(abstract, window=70), "has_abstract": bool(abstract),
                 "review": m["review_stats"], "quality": round(sc.get("quality") or 0.0, 4),
                 "score": round(sc["score"], 4), "relevance": round(sc["rel"], 4),

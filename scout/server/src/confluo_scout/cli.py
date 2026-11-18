@@ -104,6 +104,14 @@ def cmd_embed_serve(args) -> int:
     return 0
 
 
+def cmd_areas(args) -> int:
+    from confluo_scout.areas import backfill
+
+    svc = _services()
+    print(json.dumps({"assigned": backfill(svc)}))
+    return 0
+
+
 def cmd_backup(args) -> int:
     from confluo_scout.scheduler import write_backup
 
@@ -152,6 +160,8 @@ def main(argv: list[str] | None = None) -> int:
     s.add_argument("--host", default="127.0.0.1")
     s.add_argument("--port", type=int, default=8790)
     s.set_defaults(func=cmd_embed_serve)
+    s = sub.add_parser("areas", help="assign unified areas to embedded papers")
+    s.set_defaults(func=cmd_areas)
     s = sub.add_parser("backup", help="write a consistent database backup to the data directory")
     s.set_defaults(func=cmd_backup)
     s = sub.add_parser("serve", help="run the HTTP service")

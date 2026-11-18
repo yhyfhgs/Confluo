@@ -157,6 +157,12 @@ class Scheduler:
         self.stop.wait(120)
         while not self.stop.is_set():
             now = time.time()
+            try:
+                from confluo_scout.areas import backfill
+
+                backfill(self.svc, embedder=self.svc.bg_embedder)
+            except Exception as exc:
+                log.warning("area backfill failed: %s", exc)
             n_papers = int(self.svc.db.scalar("select count(*) from paper where embed_hash is not null") or 0)
             if now - self.last_maintenance["concepts"] > 6 * 3600 and n_papers != self.papers_at_concepts and n_papers:
                 try:
