@@ -79,10 +79,22 @@ class Settings:
     scheduler_enabled: bool
     embed_enabled: bool
     log_level: str
+    db_override: Path | None = None
+    embed_url: str | None = None
 
     @property
     def db_path(self) -> Path:
-        return self.data_dir / "db" / "scout.sqlite"
+        """The live database. In the container it sits on a Docker volume (`SCOUT_DB_PATH`), because a
+        host process that opens a WAL database through the virtiofs mount can corrupt it. A host run
+        from the checkout gets its own copy (`scout-host.sqlite`, seeded from the newest backup)."""
+        if self.db_override:
+            return self.db_override
+        name = "scout-host.sqlite" if _repo_root() is not None else "scout.sqlite"
+        return self.data_dir / "db" / name
+
+    @property
+    def backups_dir(self) -> Path:
+        return self.data_dir / "db" / "backups"
 
     @property
     def abstracts_dir(self) -> Path:
@@ -105,8 +117,8 @@ class Settings:
         return self.data_dir / "qdrant" / "snapshots"
 
     def ensure_dirs(self) -> None:
-        for p in (self.db_path.parent, self.abstracts_dir, self.cache_dir, self.logs_dir, self.state_dir,
-                  self.snapshots_dir):
+        for p in (self.db_path.parent, self.backups_dir, self.abstracts_dir, self.cache_dir, self.logs_dir,
+                  self.state_dir, self.snapshots_dir):
             p.mkdir(parents=True, exist_ok=True)
 
 
@@ -164,6 +176,8 @@ def get_settings() -> Settings:
         scheduler_enabled=_env_bool("SCOUT_SCHEDULER", True),
         embed_enabled=_env_bool("SCOUT_EMBED", True),
         log_level=os.environ.get("SCOUT_LOG_LEVEL", "INFO"),
+        db_override=Path(os.environ["SCOUT_DB_PATH"]) if os.environ.get("SCOUT_DB_PATH") else None,
+        embed_url=os.environ.get("SCOUT_EMBED_URL") or None,
     )
 
 

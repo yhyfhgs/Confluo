@@ -69,6 +69,10 @@ def create_app() -> FastAPI:
         def warm() -> None:
             try:
                 _ = svc.vectors
+                if svc.restored_from:
+                    from confluo_scout.reconcile import reconcile_after_restore
+
+                    reconcile_after_restore(svc)
                 _ = svc.embedder
                 _ = svc.decider
             except Exception as exc:
@@ -83,6 +87,12 @@ def create_app() -> FastAPI:
         yield
         if svc.scheduler:
             svc.scheduler.shutdown()
+            try:
+                from confluo_scout.scheduler import write_backup
+
+                write_backup(svc)  # a fresh consistent copy on every orderly stop
+            except Exception as exc:
+                log.warning("backup on shutdown failed: %s", exc)
 
     app = FastAPI(title="Confluo Scout", version=__version__, lifespan=lifespan)
     app.state.svc = svc
@@ -100,6 +110,7 @@ def create_app() -> FastAPI:
             out["vectors"] = f"error: {exc}"
         out["model"] = ({"device": svc._embedder.device, "params_m": svc._embedder.params_m}
                         if svc._embedder is not None else "loading")
+        out["restored_from"] = svc.restored_from
         out["decision"] = svc._decider.status() if svc._decider is not None else "loading"
         out["scheduler"] = "on" if svc.scheduler else ("off" if not svc.settings.scheduler_enabled else "starting")
         out["status"] = "ok" if out["db"] == "ok" else "degraded"

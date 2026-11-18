@@ -1,5 +1,5 @@
 # Confluo Scout. Run from this directory: make <target>
-.PHONY: up down restart logs ps check test lint web dev-qdrant dev-api dev-web embed-host crawl search snapshot
+.PHONY: up down restart logs ps check test lint web dev-qdrant dev-api dev-web embed-serve backup crawl search snapshot
 
 COMPOSE = docker compose
 DEV = docker compose -f compose.yaml -f compose.dev.yaml
@@ -33,17 +33,17 @@ web:
 dev-qdrant:    ## qdrant with its port on 127.0.0.1:6333 for host-side development
 	$(DEV) up -d qdrant
 
-dev-api:       ## API on the host (MPS), no background jobs; web dev server proxies to it
+dev-api:       ## API on the host (MPS) against its own copy of the newest backup, no background jobs
 	cd server && SCOUT_SCHEDULER=0 uv run scout serve --port 8771
 
 dev-web:
 	cd web && pnpm dev
 
-embed-host:    ## bulk embedding on the host GPU (MPS) while the container is stopped
-	$(COMPOSE) stop scout
-	$(DEV) up -d qdrant
-	cd server && uv run scout embed
-	$(COMPOSE) up -d scout
+embed-serve:   ## optional host GPU accelerator on 127.0.0.1:8790; the container falls back to CPU without it
+	cd server && uv run scout embed-serve --port 8790
+
+backup:        ## consistent copy of the live database into ../.confluo/scout/db/backups
+	$(COMPOSE) exec scout scout backup
 
 crawl:         ## make crawl EDITION=iclr-2027
 	$(COMPOSE) exec scout scout crawl $(EDITION)

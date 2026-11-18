@@ -75,3 +75,91 @@ class Embedder:
 
     def terms(self, texts: list[str], batch_size: int = 128) -> np.ndarray:
         return self._encode([TERM_PROMPT + t for t in texts], batch_size)
+
+
+class RemoteEmbedder:
+    """Client of `scout embed-serve` (a host process with GPU access). Only vectors cross the wire."""
+
+    def __init__(self, url: str, purpose: str, timeout: float = 120.0):
+        import httpx
+
+        self.url = url.rstrip("/")
+        self.purpose = purpose
+        self.client = httpx.Client(timeout=timeout)
+        self.dim = DIM
+        self.device = "remote"
+        self.params_m = 271.0
+
+    def _call(self, kind: str, texts: list[str]) -> np.ndarray:
+        import base64
+
+        if not texts:
+            return np.zeros((0, self.dim), dtype=np.float32)
+        r = self.client.post(f"{self.url}/embed", json={"kind": kind, "purpose": self.purpose, "texts": texts})
+        r.raise_for_status()
+        d = r.json()
+        vecs = np.frombuffer(base64.b64decode(d["vectors"]), dtype=np.float32).reshape(len(texts), d["dim"])
+        return vecs.copy()
+
+    def documents(self, texts: list[str], batch_size: int = 32) -> np.ndarray:
+        return self._call("documents", texts)
+
+    def queries(self, texts: list[str]) -> np.ndarray:
+        return self._call("queries", texts)
+
+    def terms(self, texts: list[str], batch_size: int = 128) -> np.ndarray:
+        return self._call("terms", texts)
+
+    def healthy(self) -> bool:
+        try:
+            return self.client.get(f"{self.url}/health", timeout=2.0).status_code == 200
+        except Exception:
+            return False
+
+
+class HybridEmbedder:
+    """Use the host accelerator when it answers; otherwise the local CPU model (loaded on first need)."""
+
+    def __init__(self, settings: Settings, purpose: str):
+        self.settings = settings
+        self.remote = RemoteEmbedder(settings.embed_url or "", purpose)
+        self._local: Embedder | None = None
+        self._lock = threading.Lock()
+        self._remote_ok_until = 0.0
+        self._remote_down_until = 0.0
+        self.dim = DIM
+
+    @property
+    def device(self) -> str:
+        return "remote" if time.time() < self._remote_ok_until else (self._local.device if self._local else "cpu")
+
+    @property
+    def params_m(self) -> float:
+        return 271.0
+
+    def _local_model(self) -> Embedder:
+        with self._lock:
+            if self._local is None:
+                self._local = Embedder(self.settings)
+            return self._local
+
+    def _run(self, kind: str, texts: list[str]) -> np.ndarray:
+        now = time.time()
+        if now >= self._remote_down_until:
+            try:
+                out = getattr(self.remote, kind)(texts)
+                self._remote_ok_until = time.time() + 60
+                return out
+            except Exception as exc:
+                self._remote_down_until = time.time() + 60
+                log.info("embedding accelerator unavailable (%s); using the local model", type(exc).__name__)
+        return getattr(self._local_model(), kind)(texts)
+
+    def documents(self, texts: list[str], batch_size: int = 32) -> np.ndarray:
+        return self._run("documents", texts)
+
+    def queries(self, texts: list[str]) -> np.ndarray:
+        return self._run("queries", texts)
+
+    def terms(self, texts: list[str], batch_size: int = 128) -> np.ndarray:
+        return self._run("terms", texts)

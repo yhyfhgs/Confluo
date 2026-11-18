@@ -96,6 +96,22 @@ def cmd_eval(args) -> int:
     return 0
 
 
+def cmd_embed_serve(args) -> int:
+    import uvicorn
+
+    uvicorn.run("confluo_scout.embed_server:create_app", factory=True, host=args.host, port=args.port,
+                log_level="warning")
+    return 0
+
+
+def cmd_backup(args) -> int:
+    from confluo_scout.scheduler import write_backup
+
+    svc = _services()
+    print(write_backup(svc))
+    return 0
+
+
 def cmd_serve(args) -> int:
     import uvicorn
 
@@ -132,6 +148,12 @@ def main(argv: list[str] | None = None) -> int:
     s = sub.add_parser("eval", help="known-item evaluation (TL;DR as query)")
     s.add_argument("--n", type=int, default=40)
     s.set_defaults(func=cmd_eval)
+    s = sub.add_parser("embed-serve", help="host-side embedding accelerator (GPU)")
+    s.add_argument("--host", default="127.0.0.1")
+    s.add_argument("--port", type=int, default=8790)
+    s.set_defaults(func=cmd_embed_serve)
+    s = sub.add_parser("backup", help="write a consistent database backup to the data directory")
+    s.set_defaults(func=cmd_backup)
     s = sub.add_parser("serve", help="run the HTTP service")
     s.add_argument("--host", default="127.0.0.1")
     s.add_argument("--port", type=int, default=8770)

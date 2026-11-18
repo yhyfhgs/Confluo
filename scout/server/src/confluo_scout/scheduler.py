@@ -13,6 +13,23 @@ from confluo_scout.db import loads, utcnow
 log = logging.getLogger("scout.scheduler")
 
 FAMILIES = ("openreview", "cvf", "ecva", "acl", "pmlr", "aaai", "ijcai")
+BACKUP_EVERY = 6 * 3600
+KEEP_BACKUPS = 4
+
+
+def write_backup(svc) -> str:
+    """A consistent online copy of the live database in the data directory (newest 4 kept)."""
+    stamp = datetime.now(UTC).strftime("%Y%m%d-%H%M")
+    folder = svc.settings.backups_dir
+    dest = folder / f"scout-{stamp}.sqlite"
+    svc.db.backup_to(dest)
+    for leftover in folder.glob("*.tmp"):
+        leftover.unlink(missing_ok=True)
+    backups = sorted(folder.glob("scout-*.sqlite"), key=lambda p: p.stat().st_mtime)
+    for old in backups[:-KEEP_BACKUPS]:
+        old.unlink(missing_ok=True)
+    log.info("database backup written: %s", dest.name)
+    return dest.name
 
 
 class Scheduler:
@@ -23,7 +40,7 @@ class Scheduler:
         self.running: dict[str, str | None] = dict.fromkeys(FAMILIES)
         self.cv = threading.Condition()
         self.threads: list[threading.Thread] = []
-        self.last_maintenance = {"concepts": 0.0, "daily": 0.0}
+        self.last_maintenance = {"concepts": 0.0, "daily": 0.0, "backup": 0.0}
         self.papers_at_concepts = -1
         from confluo_scout.indexer import Indexer
 
@@ -150,23 +167,18 @@ class Scheduler:
                 except Exception as exc:
                     log.warning("concept rebuild failed: %s", exc)
                 self.last_maintenance["concepts"] = now
+            if now - self.last_maintenance["backup"] > BACKUP_EVERY:
+                try:
+                    write_backup(self.svc)
+                except Exception as exc:
+                    log.warning("database backup failed: %s", exc)
+                self.last_maintenance["backup"] = now
             if now - self.last_maintenance["daily"] > 24 * 3600:
                 self._daily()
                 self.last_maintenance["daily"] = now
             self.stop.wait(600)
 
     def _daily(self) -> None:
-        settings = self.svc.settings
-        stamp = datetime.now(UTC).strftime("%Y%m%d")
-        try:
-            dest = settings.db_path.parent / "backups" / f"scout-{stamp}.sqlite"
-            self.svc.db.backup_to(dest)
-            backups = sorted(dest.parent.glob("scout-*.sqlite"))
-            for old in backups[:-3]:
-                old.unlink(missing_ok=True)
-            log.info("database backup written to %s", dest.name)
-        except Exception as exc:
-            log.warning("database backup failed: %s", exc)
         try:
             self.svc.vectors.snapshot()
         except Exception as exc:

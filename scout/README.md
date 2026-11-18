@@ -18,7 +18,8 @@ make down    # 停止（数据保留）
 
 ## 数据与凭证
 
-- 数据目录 `../.confluo/scout/`（Git 忽略）：`db/scout.sqlite`（元数据、审稿分、FTS5）、`abstracts/`（每届次一代 zstd 分片）、`qdrant/snapshots/`、`models/`、`cache/http/`、`logs/`。qdrant 的工作数据在 Docker 命名卷 `confluo-scout_qdrant-storage`，空卷启动时从最新快照恢复。
+- 数据目录 `../.confluo/scout/`（Git 忽略）：`db/backups/`（库的一致性副本，每 6 小时与停机时，保留 4 份）、`abstracts/`（每届次一代 zstd 分片）、`qdrant/snapshots/`、`models/`、`cache/http/`、`logs/`。
+- 在用的库在 Docker 卷 `confluo-scout_scout-db`，qdrant 的工作数据在 `confluo-scout_qdrant-storage`；卷为空时启动会从最新副本恢复并自动对账。**不要从宿主机打开在用的库**（2026-11-19 曾因此损坏过一次）；查看数据用网页、API 或复制一份备份。
 - 凭证读 `../.confluo/config.toml`（只读挂载）：
   - `[auth.openreview]` 的 `username`、`password`：OpenReview 匿名访问已被挑战页拦截，Scout 用你本人的账号，token 只在内存里。
   - `[auth.gemini] api_key`：Gemini Decisions API（`gemini-decision-1`）。没有 key 时检索用本地评分，界面会标明。
@@ -31,9 +32,11 @@ make dev-qdrant   # qdrant 端口开到 127.0.0.1:6333
 make dev-api      # 宿主机上跑 API（MPS），不启后台任务
 make dev-web      # Vite 开发服务器，/api 代理到 8771
 make check        # ruff、pytest、前端类型检查与构建
+make embed-serve  # 可选：宿主机 GPU 加速服务（127.0.0.1:8790），容器自动使用，不在时退回 CPU
+make backup       # 立即写一份库备份
 ```
 
-宿主机与容器不要同时写同一个 SQLite：`make embed-host` 会先停掉容器里的 scout，再用宿主机 GPU 批量向量化，完成后重启。
+宿主机上运行的 `scout` 命令使用自己的库副本 `db/scout-host.sqlite`（从最新备份生成），与容器里在用的库互不影响。
 
 ## 命令行
 

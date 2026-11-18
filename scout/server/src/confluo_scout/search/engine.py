@@ -378,8 +378,12 @@ class SearchEngine:
         return cov
 
     def _score(self, s: Session, rnd: int, decider) -> int:
+        self._load_meta(s, list(s.pool))
+        unknown = {i for i in s.pool if i not in s.meta}  # e.g. vectors of rows that no longer exist
+        if unknown:
+            s.pool -= unknown
+            s.lists = [(c, r, [i for i in ids if i not in unknown]) for c, r, ids in s.lists]
         pool = list(s.pool)
-        self._load_meta(s, pool)
         missing = [i for i in pool if i not in s.cos]
         for i in range(0, len(missing), 1000):
             s.cos.update(self._cos_for(s.qvec, missing[i:i + 1000]))
@@ -428,12 +432,13 @@ class SearchEngine:
         g = gamma if decider.remote else 0.0
         for i in pool:
             j = s.judgments.get(i)
-            dec = j.value if j else rel[i]
-            dec_star = (j.confidence * dec + (1 - j.confidence) * rel[i]) if j else rel[i]
+            remote = j is not None and j.source != "local"  # local fallbacks are shown, not weighted
+            dec = j.value if remote else rel[i]
+            dec_star = (j.confidence * dec + (1 - j.confidence) * rel[i]) if remote else rel[i]
             q = s.meta[i]["quality"]
             q = 0.5 if q is None else q
             score = (1 - beta) * ((1 - g) * rel[i] + g * dec_star) + beta * q
-            s.scores[i].update(dec=dec_star if j else None, quality=q, score=score)
+            s.scores[i].update(dec=dec_star if remote else None, quality=q, score=score)
         return len(todo)
 
     @staticmethod

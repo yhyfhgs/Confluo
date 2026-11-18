@@ -1,9 +1,12 @@
 # Confluo Scout: local AI-venue paper search.
 #   make up      build and start (web UI at http://127.0.0.1:8770)
 # Data lives in ../.confluo/scout (override with SCOUT_DATA); secrets come read-only from
-# ../.confluo/config.toml (override with SCOUT_SECRETS). Qdrant's live storage is a named
-# volume (virtiofs bind mounts are FUSE, which Qdrant flags as unsafe); its snapshots are
-# written into the data directory.
+# ../.confluo/config.toml (override with SCOUT_SECRETS). The live SQLite database and Qdrant's
+# storage are named volumes inside the VM: a host process that opens a WAL database through the
+# virtiofs mount can corrupt it (it happened on 2026-11-19), and Qdrant flags FUSE mounts as
+# unsafe. Consistent copies land in the data directory: database backups every 6 hours and on
+# stop (db/backups/), Qdrant snapshots daily (qdrant/snapshots/). An empty volume is restored
+# from the newest copy on start.
 name: confluo-scout
 
 services:
@@ -33,8 +36,14 @@ services:
         condition: service_healthy
     ports:
       - "127.0.0.1:8770:8000"
+    stop_grace_period: 60s
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     environment:
       SCOUT_DATA: /data
+      SCOUT_DB_PATH: /var/lib/scout/scout.sqlite
+      # Optional accelerator on the host (make embed-serve); without it the container embeds on CPU.
+      SCOUT_EMBED_URL: http://host.docker.internal:8790
       SCOUT_SECRETS: /secrets/config.toml
       SCOUT_REGISTRY: /app/registry/venues.yaml
       SCOUT_WEB_DIST: /app/web/dist
@@ -45,6 +54,7 @@ services:
       TRANSFORMERS_OFFLINE: "1"
       TOKENIZERS_PARALLELISM: "false"
     volumes:
+      - scout-db:/var/lib/scout
       - ${SCOUT_DATA:-../.confluo/scout}:/data
       - ${SCOUT_SECRETS:-../.confluo/config.toml}:/secrets/config.toml:ro
     healthcheck:
@@ -56,3 +66,4 @@ services:
 
 volumes:
   qdrant-storage:
+  scout-db:

@@ -80,7 +80,7 @@ class CVFAdapter:
             yield Batch([], {"listed": False}, note=f"{conf}{year}: not on CVF Open Access yet")
             return
         entries = parse_list(r.text)
-        ensure(len(entries) >= 50, f"CVF {conf}{year}: only {len(entries)} entries on the list page")
+        ensure(len(entries) >= int(src.get("min_entries", 50)), f"CVF {conf}{year}: only {len(entries)} entries on the list page")
         ensure(sum(1 for e in entries if e["authors"]) >= 0.9 * len(entries), "CVF list: authors missing")
 
         def record(e: dict, abstract: str | None = None, pdf: str | None = None) -> PaperRecord:
@@ -97,9 +97,11 @@ class CVFAdapter:
         idx = state.get("idx", 0)
         pending: list[PaperRecord] = []
         misses = 0
+        next_idx = idx
         for i in range(idx, len(entries)):
             if ctx.stopped():
                 break
+            next_idx = i + 1
             e = entries[i]
             if ctx.has_abstract(norm_title(e["title"])):
                 continue
@@ -115,6 +117,10 @@ class CVFAdapter:
                 yield Batch(pending, {"listed": True, "idx": i + 1}, phase="published",
                             note=f"{conf}{year}: abstracts {i + 1}/{len(entries)}")
                 pending = []
+        if ctx.stopped():
+            # Interrupted: keep the real position so the next run resumes instead of skipping the rest.
+            yield Batch(pending, {"listed": True, "idx": max(0, next_idx - 1)}, phase="published", note="stopped")
+            return
         yield Batch(pending, {"listed": True, "idx": len(entries)}, phase="published",
                     note=f"{conf}{year}: abstracts done")
 

@@ -19,6 +19,24 @@ from confluo_scout.store import Store
 log = logging.getLogger("scout")
 
 
+def restore_if_missing(settings: Settings) -> str | None:
+    """Start from the newest backup when the live database is absent (new volume, lost volume)."""
+    import shutil
+
+    db = settings.db_path
+    if db.exists():
+        return None
+    backups = sorted(settings.backups_dir.glob("scout-*.sqlite"), key=lambda p: p.stat().st_mtime)
+    if not backups:
+        return None
+    db.parent.mkdir(parents=True, exist_ok=True)
+    tmp = db.with_suffix(".restore")
+    shutil.copyfile(backups[-1], tmp)
+    tmp.replace(db)
+    logging.getLogger("scout").warning("live database missing; restored from %s", backups[-1].name)
+    return backups[-1].name
+
+
 def setup_logging(settings: Settings) -> None:
     root = logging.getLogger()
     if getattr(root, "_scout_configured", False):
@@ -74,6 +92,7 @@ class Services:
         self.settings.ensure_dirs()
         setup_logging(self.settings)
         self.secrets = get_secrets()
+        self.restored_from = restore_if_missing(self.settings)
         self.db = Database(self.settings.db_path)
         self.abstracts = AbstractStore(self.settings.abstracts_dir)
         self.store = Store(self.db, self.abstracts)
@@ -95,13 +114,18 @@ class Services:
     def spec_by_id(self) -> dict:
         return {s.id: s for s in self.specs}
 
+    def _make_embedder(self, purpose: str):
+        from confluo_scout.embed import Embedder, HybridEmbedder
+
+        if self.settings.embed_url:
+            return HybridEmbedder(self.settings, purpose=purpose)
+        return Embedder(self.settings)
+
     @property
     def embedder(self):
         with self._lock:
             if self._embedder is None:
-                from confluo_scout.embed import Embedder
-
-                self._embedder = Embedder(self.settings)
+                self._embedder = self._make_embedder("interactive")
             return self._embedder
 
     @property
@@ -109,9 +133,7 @@ class Services:
         """A second model instance for background indexing, so searches never wait for a batch."""
         with self._lock:
             if self._bg_embedder is None:
-                from confluo_scout.embed import Embedder
-
-                self._bg_embedder = Embedder(self.settings)
+                self._bg_embedder = self._make_embedder("bulk")
             return self._bg_embedder
 
     @property

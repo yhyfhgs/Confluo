@@ -12,7 +12,7 @@ updated: 2026-11-19
 ## 要点
 
 - **一个本地小服务**：浏览器 → `scout` 容器（FastAPI：API、检索引擎、爬虫与索引调度、嵌入模型、静态前端）+ `qdrant` 容器（向量库）。Docker 运行时用 Colima。
-- **数据都在 Confluo 里**：`$CONFLUO_HOME/scout/`，默认是仓库根的 `.confluo/scout/`，位于内置盘的 Data 卷，整目录被 Git 忽略。
+- **数据都在 Confluo 里**：`$CONFLUO_HOME/scout/`，默认是仓库根的 `.confluo/scout/`，位于内置盘的 Data 卷，整目录被 Git 忽略。正在使用的 SQLite 库和 Qdrant 存储放在虚拟机内的 Docker 卷里（宿主机碰不到），它们的一致性副本（每 6 小时、停机时的库备份，每天的向量快照）写回这个目录；卷为空时自动从最新副本恢复。
 - **存储三件套**：元数据与 BM25 倒排在 SQLite（FTS5）；摘要按届次分片、zstd 压缩；向量在 Qdrant。
 - **嵌入模型**：EmbeddingGemma 2（`google/embeddinggemma-2`，2026-10-06 发布，Apache-2.0）。下载完整的 740M 版本；摘要是文本，编码时只加载 270M 文本子模型，两者共用同一个 768 维向量空间。
 - **决策模型**：Gemini Decision 1（`gemini-decision-1`，Decisions API，2026-11-11 发布）。它和 TypeSafe 的 Jev 同属 "System One" 判别模型：一次前向给出 yes/no、多选和分级评分的校准概率，不生成文本。它负责相关度分级、多关键词覆盖与逻辑延伸判断；没配 key 时退回本地评分，界面标明。
@@ -93,7 +93,9 @@ flowchart LR
 
 单进程承载 API、调度与爬虫，SQLite 只被这一个进程写，避免跨进程文件锁依赖 virtiofs 的锁语义；CPU 密集的嵌入在独立线程里运行。
 
-容器里的 PyTorch 用不上 Apple 芯片的矩阵加速单元，CPU 编码约每秒 4–6 篇（2026-11-19 实测，512 tokens），宿主机 MPS 约每秒 24 篇。日常增量由容器完成；首轮或大批量（如新一届 ICLR 的全部投稿）用 `make embed-host`：先停容器，在宿主机上编码，再启动容器。两边不能同时写同一个 SQLite。
+容器里的 PyTorch 用不上 Apple 芯片的矩阵加速单元，CPU 编码约每秒 4–6 篇（2026-11-19 实测，512 tokens）。宿主机上可选运行一个只算向量的加速服务（`make embed-serve`，MPS，只监听 127.0.0.1:8790）；容器经 `host.docker.internal` 调用它，实测后台编码升到每秒约 16 篇。服务不在时，容器自动退回本机 CPU。加速服务不读写任何数据。
+
+**事故与对策（2026-11-19）**：库文件最初放在 virtiofs 绑定挂载上。容器写库期间，宿主机用 `sqlite3` 只读查询了同一个文件；宿主机连接关闭时把自己当作最后一个连接，做了 WAL 检查点并删除了 WAL，库文件头被清零。处理：从 02:11 的在线备份恢复，按断点续爬，对齐摘要指针与向量。对策：在用的库移入 Docker 卷，宿主机无法再碰到它；备份频率提到每 6 小时，并在停机时补一份；容器启动时如果卷为空，就从最新备份恢复并自动对账。
 
 ## 部署
 
@@ -103,13 +105,17 @@ flowchart LR
 - **凭证**：OpenReview 沿用 `config.toml` 的 `[auth.openreview]`；Gemini 读 `[auth.gemini] api_key` 或环境变量 `GEMINI_API_KEY`。凭证只在内存中使用，不写日志，不进数据库。
 - **端口**：只绑 `127.0.0.1:8770`；qdrant 不对宿主暴露。
 - **开机自启**：`brew services start colima`，再由 compose 的重启策略拉起服务。
-- **命令**：在 `scout/` 下执行 `make up`、`make down`、`make logs`、`make check`。
+- **命令**：在 `scout/` 下执行 `make up`、`make down`、`make logs`、`make check`、`make backup`、`make embed-serve`。
+- **规则**：不要从宿主机打开在用的库；要查看数据，用网页、API，或复制一份 `db/backups/` 里的备份。
 
 ## 数据布局
 
 ```text
+docker volume scout-db          # 在用的 SQLite（容器内 /var/lib/scout/scout.sqlite）
+docker volume qdrant-storage    # Qdrant 在用存储
 $CONFLUO_HOME/scout/            # 默认 <repo>/.confluo/scout，Git 忽略
-├── db/scout.sqlite             # 元数据、审稿分、FTS5、任务、概念、决策缓存
+├── db/backups/scout-*.sqlite   # 库的一致性副本：每 6 小时与停机时，保留最近 4 份
+├── db/scout-host.sqlite        # 仅宿主机开发时使用的私有副本（从最新备份生成）
 ├── abstracts/<edition>/        # 例：iclr-2026/
 │   ├── manifest.json           # 当前代号、分片清单、条数、sha256
 │   └── g0003/part-00000.jsonl.zst
