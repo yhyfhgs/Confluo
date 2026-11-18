@@ -1,0 +1,141 @@
+{
+ "notes": [
+  {
+   "id": "AbC123",
+   "forum": "AbC123",
+   "invitations": [
+    "ICLR.cc/2026/Conference/-/Submission"
+   ],
+   "tmdate": 1767225600000,
+   "content": {
+    "title": {
+     "value": "Calibrating Verbalized Confidence with Self-Generated Distractors"
+    },
+    "authors": {
+     "value": [
+      "Ada Lovelace",
+      "Alan Turing"
+     ]
+    },
+    "keywords": {
+     "value": [
+      "calibration",
+      "large language models"
+     ]
+    },
+    "abstract": {
+     "value": "We study verbalized confidence of LLMs and propose distractors."
+    },
+    "primary_area": {
+     "value": "foundation or frontier models, including LLMs"
+    },
+    "TLDR": {
+     "value": "Distractors improve calibration."
+    },
+    "venue": {
+     "value": "ICLR 2026 Oral"
+    },
+    "venueid": {
+     "value": "ICLR.cc/2026/Conference"
+    },
+    "pdf": {
+     "value": "/pdf/abc.pdf"
+    }
+   },
+   "details": {
+    "replies": [
+     {
+      "id": "R1",
+      "invitations": [
+       "ICLR.cc/2026/Conference/Submission1/-/Official_Review"
+      ],
+      "tmdate": 1767225600000,
+      "content": {
+       "rating": {
+        "value": "8"
+       },
+       "confidence": {
+        "value": "4"
+       },
+       "soundness": {
+        "value": "3"
+       },
+       "presentation": {
+        "value": "3"
+       },
+       "contribution": {
+        "value": "4"
+       },
+       "summary": {
+        "value": "1. The paper is good."
+       },
+       "flag_for_ethics_review": {
+        "value": [
+         "No ethics review needed."
+        ]
+       },
+       "code_of_conduct": {
+        "value": "Yes"
+       }
+      }
+     },
+     {
+      "id": "R2",
+      "invitations": [
+       "ICLR.cc/2026/Conference/Submission1/-/Official_Review"
+      ],
+      "tmdate": 1767225600000,
+      "content": {
+       "rating": {
+        "value": "6: marginally above the acceptance threshold"
+       },
+       "confidence": {
+        "value": "3: fairly confident"
+       }
+      }
+     },
+     {
+      "id": "D1",
+      "invitations": [
+       "ICLR.cc/2026/Conference/Submission1/-/Decision"
+      ],
+      "content": {
+       "decision": {
+        "value": "Accept (Oral)"
+       }
+      }
+     }
+    ]
+   }
+  },
+  {
+   "id": "XyZ789",
+   "forum": "XyZ789",
+   "invitations": [
+    "ICLR.cc/2026/Conference/-/Submission"
+   ],
+   "content": {
+    "title": {
+     "value": "A Rejected Paper"
+    },
+    "authors": {
+     "value": [
+      "Someone"
+     ]
+    },
+    "abstract": {
+     "value": "Nothing to see."
+    },
+    "venue": {
+     "value": "Submitted to ICLR 2026"
+    },
+    "venueid": {
+     "value": "ICLR.cc/2026/Conference/Rejected_Submission"
+    }
+   },
+   "details": {
+    "replies": []
+   }
+  }
+ ]
+}

@@ -1,0 +1,58 @@
+# Confluo Scout: local AI-venue paper search.
+#   make up      build and start (web UI at http://127.0.0.1:8770)
+# Data lives in ../.confluo/scout (override with SCOUT_DATA); secrets come read-only from
+# ../.confluo/config.toml (override with SCOUT_SECRETS). Qdrant's live storage is a named
+# volume (virtiofs bind mounts are FUSE, which Qdrant flags as unsafe); its snapshots are
+# written into the data directory.
+name: confluo-scout
+
+services:
+  qdrant:
+    image: qdrant/qdrant:v1.20.2
+    restart: unless-stopped
+    environment:
+      QDRANT__TELEMETRY_DISABLED: "true"
+      QDRANT__SERVICE__MAX_REQUEST_SIZE_MB: "128"
+    volumes:
+      - qdrant-storage:/qdrant/storage
+      - ${SCOUT_DATA:-../.confluo/scout}/qdrant/snapshots:/qdrant/snapshots
+    healthcheck:
+      test: ["CMD-SHELL", "bash -c ':> /dev/tcp/127.0.0.1/6333' || exit 1"]
+      interval: 10s
+      timeout: 3s
+      retries: 12
+
+  scout:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: confluo-scout:latest
+    restart: unless-stopped
+    depends_on:
+      qdrant:
+        condition: service_healthy
+    ports:
+      - "127.0.0.1:8770:8000"
+    environment:
+      SCOUT_DATA: /data
+      SCOUT_SECRETS: /secrets/config.toml
+      SCOUT_REGISTRY: /app/registry/venues.yaml
+      SCOUT_WEB_DIST: /app/web/dist
+      QDRANT_URL: http://qdrant:6333
+      SCOUT_DEVICE: cpu
+      SCOUT_TORCH_THREADS: "8"
+      HF_HUB_OFFLINE: "1"
+      TRANSFORMERS_OFFLINE: "1"
+      TOKENIZERS_PARALLELISM: "false"
+    volumes:
+      - ${SCOUT_DATA:-../.confluo/scout}:/data
+      - ${SCOUT_SECRETS:-../.confluo/config.toml}:/secrets/config.toml:ro
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/api/health', timeout=5)"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 120s
+
+volumes:
+  qdrant-storage:

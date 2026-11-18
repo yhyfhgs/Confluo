@@ -1,0 +1,6 @@
+# Development override: expose Qdrant on localhost so `uv run scout ...` on the host can use it.
+#   docker compose -f compose.yaml -f compose.dev.yaml up -d qdrant
+services:
+  qdrant:
+    ports:
+      - "127.0.0.1:6333:6333"

@@ -1,0 +1,270 @@
+# Confluo Scout venue registry (AI conferences and journals).
+#
+# Static knowledge per series: which platform serves which years, platform parameters and
+# rating tags (from docs/catalog/venues/computer-science-ai.md). The runtime state of each
+# edition (enabled, phase, counts, last crawl) lives in SQLite; discovery adds new editions
+# automatically and the "Sources" page toggles them.
+#
+# `years` lists the editions Scout knows about; `enabled_years` the ones crawled and searched
+# by default. Source entries may restrict themselves with `years`.
+# OpenReview group templates use {year}; `extra_groups` are further tracks merged into the
+# same edition. `scope: accepted` crawls accepted papers only (`content.venueid=<group>`);
+# editions still in review crawl all active submissions automatically.
+
+version: 1
+
+series:
+  - id: iclr
+    short: ICLR
+    name: International Conference on Learning Representations
+    kind: conference
+    area: Machine learning
+    ratings: [CCF-A, ICORE-A*, CAAI-A]
+    homepage: https://iclr.cc
+    years: [2023, 2024, 2025, 2026, 2027]
+    enabled_years: [2024, 2025, 2026, 2027]
+    sources:
+      - adapter: openreview
+        group: "ICLR.cc/{year}/Conference"
+        api_v1_years: [2023]
+
+  - id: neurips
+    short: NeurIPS
+    name: Conference on Neural Information Processing Systems
+    kind: conference
+    area: Machine learning
+    ratings: [CCF-A, ICORE-A*, CAAI-A]
+    homepage: https://neurips.cc
+    years: [2023, 2024, 2025, 2026]
+    enabled_years: [2024, 2025, 2026]
+    sources:
+      - adapter: openreview
+        group: "NeurIPS.cc/{year}/Conference"
+        extra_groups:
+          - {group: "NeurIPS.cc/2023/Track/Datasets_and_Benchmarks", track: "Datasets and Benchmarks", years: [2023]}
+          - {group: "NeurIPS.cc/{year}/Datasets_and_Benchmarks_Track", track: "Datasets and Benchmarks", years: [2024, 2025]}
+          - {group: "NeurIPS.cc/{year}/Evaluations_and_Datasets_Track", track: "Evaluations and Datasets", years: [2026]}
+          - {group: "NeurIPS.cc/{year}/Position_Paper_Track", track: "Position", years: [2025, 2026]}
+
+  - id: icml
+    short: ICML
+    name: International Conference on Machine Learning
+    kind: conference
+    area: Machine learning
+    ratings: [CCF-A, ICORE-A*, CAAI-A]
+    homepage: https://icml.cc
+    years: [2023, 2024, 2025, 2026]
+    enabled_years: [2024, 2025, 2026]
+    sources:
+      - adapter: openreview
+        group: "ICML.cc/{year}/Conference"
+        extra_groups:
+          - {group: "ICML.cc/{year}/Position_Paper_Track", track: "Position", years: [2025, 2026]}
+      - adapter: pmlr
+        feed_label: ICML
+        volumes: {2023: 202, 2024: 235, 2025: 267, 2026: 306}
+
+  - id: cvpr
+    short: CVPR
+    name: IEEE/CVF Conference on Computer Vision and Pattern Recognition
+    kind: conference
+    area: Computer vision
+    ratings: [CCF-A, ICORE-A*, CAAI-A]
+    homepage: https://cvpr.thecvf.com
+    years: [2023, 2024, 2025, 2026]
+    enabled_years: [2024, 2025, 2026]
+    sources:
+      - adapter: openreview
+        group: "thecvf.com/CVPR/{year}/Conference"
+        years: [2026]
+        scope: accepted
+      - adapter: cvf
+        conf: CVPR
+      - adapter: cvf_accepted
+        host: cvpr.thecvf.com
+        years: [2023, 2024, 2025]
+
+  - id: iccv
+    short: ICCV
+    name: IEEE/CVF International Conference on Computer Vision
+    kind: conference
+    area: Computer vision
+    ratings: [CCF-A, ICORE-A*, CAAI-A]
+    homepage: https://iccv.thecvf.com
+    years: [2023, 2025]
+    enabled_years: [2025]
+    sources:
+      - adapter: cvf
+        conf: ICCV
+      - adapter: cvf_accepted
+        host: iccv.thecvf.com
+
+  - id: eccv
+    short: ECCV
+    name: European Conference on Computer Vision
+    kind: conference
+    area: Computer vision
+    ratings: [CCF-B, ICORE-A*, CAAI-A]
+    homepage: https://www.ecva.net
+    years: [2022, 2024, 2026]
+    enabled_years: [2024, 2026]
+    sources:
+      - adapter: ecva
+
+  - id: wacv
+    short: WACV
+    name: IEEE/CVF Winter Conference on Applications of Computer Vision
+    kind: conference
+    area: Computer vision
+    ratings: [ICORE-A, CAAI-B]
+    homepage: https://wacv.thecvf.com
+    years: [2024, 2025, 2026]
+    enabled_years: []
+    sources:
+      - adapter: cvf
+        conf: WACV
+
+  - id: acl
+    short: ACL
+    name: Annual Meeting of the Association for Computational Linguistics
+    kind: conference
+    area: Natural language processing
+    ratings: [CCF-A, ICORE-A*, CAAI-A]
+    homepage: https://aclanthology.org
+    years: [2023, 2024, 2025, 2026]
+    enabled_years: [2024, 2025, 2026]
+    sources:
+      - adapter: acl
+        event: acl
+
+  - id: emnlp
+    short: EMNLP
+    name: Conference on Empirical Methods in Natural Language Processing
+    kind: conference
+    area: Natural language processing
+    ratings: [CCF-B, ICORE-A*, CAAI-A]
+    homepage: https://aclanthology.org
+    years: [2023, 2024, 2025, 2026]
+    enabled_years: [2024, 2025, 2026]
+    sources:
+      - adapter: acl
+        event: emnlp
+
+  - id: naacl
+    short: NAACL
+    name: Annual Conference of the North American Chapter of the ACL
+    kind: conference
+    area: Natural language processing
+    ratings: [CCF-B, ICORE-A, CAAI-B]
+    homepage: https://aclanthology.org
+    years: [2024, 2025]
+    enabled_years: [2024, 2025]
+    sources:
+      - adapter: acl
+        event: naacl
+
+  - id: eacl
+    short: EACL
+    name: Conference of the European Chapter of the ACL
+    kind: conference
+    area: Natural language processing
+    ratings: [ICORE-A, CAAI-C]
+    homepage: https://aclanthology.org
+    years: [2024, 2026]
+    enabled_years: []
+    sources:
+      - adapter: acl
+        event: eacl
+
+  - id: aaai
+    short: AAAI
+    name: AAAI Conference on Artificial Intelligence
+    kind: conference
+    area: Artificial intelligence
+    ratings: [CCF-A, ICORE-A*, CAAI-A]
+    homepage: https://aaai.org
+    years: [2024, 2025, 2026]
+    enabled_years: [2024, 2025, 2026]
+    sources:
+      - adapter: aaai
+        # AAAI-24 is volume 38, AAAI-25 volume 39, AAAI-26 volume 40.
+        volume_offset: 1986
+
+  - id: ijcai
+    short: IJCAI
+    name: International Joint Conference on Artificial Intelligence
+    kind: conference
+    area: Artificial intelligence
+    ratings: [CCF-B, ICORE-A*, CAAI-A]
+    homepage: https://www.ijcai.org
+    years: [2024, 2025, 2026]
+    enabled_years: [2024, 2025, 2026]
+    sources:
+      - adapter: ijcai
+
+  - id: colm
+    short: COLM
+    name: Conference on Language Modeling
+    kind: conference
+    area: Natural language processing
+    ratings: []
+    homepage: https://colmweb.org
+    years: [2024, 2025, 2026]
+    enabled_years: [2024, 2025, 2026]
+    sources:
+      - adapter: openreview
+        group: "colmweb.org/COLM/{year}/Conference"
+
+  - id: corl
+    short: CoRL
+    name: Conference on Robot Learning
+    kind: conference
+    area: Robotics
+    ratings: [CAAI-C]
+    homepage: https://www.corl.org
+    years: [2023, 2024, 2025, 2026]
+    enabled_years: [2024, 2025, 2026]
+    sources:
+      - adapter: openreview
+        group: "robot-learning.org/CoRL/{year}/Conference"
+      - adapter: pmlr
+        feed_label: CoRL
+
+  - id: aistats
+    short: AISTATS
+    name: International Conference on Artificial Intelligence and Statistics
+    kind: conference
+    area: Machine learning
+    ratings: [CCF-C, ICORE-A, CAAI-B]
+    homepage: https://aistats.org
+    years: [2025, 2026]
+    enabled_years: []
+    sources:
+      - adapter: pmlr
+        feed_label: AISTATS
+
+  - id: uai
+    short: UAI
+    name: Conference on Uncertainty in Artificial Intelligence
+    kind: conference
+    area: Machine learning
+    ratings: [CCF-B, ICORE-A, CAAI-A]
+    homepage: https://www.auai.org
+    years: [2025, 2026]
+    enabled_years: []
+    sources:
+      - adapter: pmlr
+        feed_label: UAI
+
+  - id: colt
+    short: COLT
+    name: Annual Conference on Learning Theory
+    kind: conference
+    area: Learning theory
+    ratings: [CCF-B, ICORE-A*, CAAI-A]
+    homepage: https://learningtheory.org
+    years: [2025, 2026]
+    enabled_years: []
+    sources:
+      - adapter: pmlr
+        feed_label: COLT

@@ -1,0 +1,131 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<?xml-stylesheet type="text/xsl" href="https://ojs.aaai.org/lib/pkp/xml/oai2.xsl" ?>
+<OAI-PMH xmlns="http://www.openarchives.org/OAI/2.0/"
+	xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+	xsi:schemaLocation="http://www.openarchives.org/OAI/2.0/
+		http://www.openarchives.org/OAI/2.0/OAI-PMH.xsd">
+	<responseDate>2026-11-18T16:44:33Z</responseDate>
+	<request verb="ListRecords" metadataPrefix="oai_dc" set="AAAI" from="2026-03-01">https://ojs.aaai.org/index.php/AAAI/oai</request>
+	<ListRecords>
+		<record>
+			<header>
+				<identifier>oai:ojs.aaai.org:article/36958</identifier>
+				<datestamp>2026-03-17T16:07:01Z</datestamp>
+				<setSpec>AAAI:AI26-2</setSpec>
+			</header>
+			<metadata>
+<oai_dc:dc
+	xmlns:oai_dc="http://www.openarchives.org/OAI/2.0/oai_dc/"
+	xmlns:dc="http://purl.org/dc/elements/1.1/"
+	xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+	xsi:schemaLocation="http://www.openarchives.org/OAI/2.0/oai_dc/
+	http://www.openarchives.org/OAI/2.0/oai_dc.xsd">
+	<dc:title xml:lang="en-US">Resource Efficient Sleep Staging via Multi-Level Masking and Prompt Learning</dc:title>
+	<dc:creator>Ai, Lejun</dc:creator>
+	<dc:creator>Li, Yulong</dc:creator>
+	<dc:creator>Yi, Haodong</dc:creator>
+	<dc:creator>Xie, Jixuan</dc:creator>
+	<dc:creator>Wang, Yue</dc:creator>
+	<dc:creator>Liu, Jia</dc:creator>
+	<dc:creator>Chen, Min</dc:creator>
+	<dc:creator>Wang, Rui</dc:creator>
+	<dc:description xml:lang="en-US">Automatic sleep staging plays a vital role in assessing sleep quality and diagnosing sleep disorders. Most existing methods rely heavily on long and continuous EEG recordings, which poses significant challenges for data acquisition in resource-constrained systems, such as wearable or home-based monitoring systems. In this paper, we propose the task of resource-efficient sleep staging, which aims to reduce the amount of signal collected per sleep epoch while maintaining reliable classification performance. To solve this task, we adopt the masking and prompt learning strategy and propose a novel framework called Mask-Aware Sleep Staging (MASS). Specifically, we design a multi-level masking strategy to promote effective feature modeling under partial and irregular observations. To mitigate the loss of contextual information introduced by masking, we further propose a hierarchical prompt learning mechanism that aggregates unmasked data into a global prompt, serving as a semantic anchor for guiding both patch-level and epoch-level feature modeling. MASS is evalutaed on four datasets, demonstrating state-of-the-art performance, especially when the amount of data is very limited. This result highlights its potential for efficient and scalable deployment in real-world low-resource sleep monitoring environments.</dc:description>
+	<dc:publisher xml:lang="en-US">Association for the Advancement of Artificial Intelligence</dc:publisher>
+	<dc:date>2026-03-17</dc:date>
+	<dc:type>info:eu-repo/semantics/article</dc:type>
+	<dc:type>info:eu-repo/semantics/publishedVersion</dc:type>
+	<dc:format>application/pdf</dc:format>
+	<dc:identifier>https://ojs.aaai.org/index.php/AAAI/article/view/36958</dc:identifier>
+	<dc:identifier>10.1609/aaai.v40i1.36958</dc:identifier>
+	<dc:source xml:lang="en-US">Proceedings of the AAAI Conference on Artificial Intelligence; Vol. 40 No. 1: AAAI-26 Technical Tracks 1; 3-11</dc:source>
+	<dc:source>2374-3468</dc:source>
+	<dc:source>2159-5399</dc:source>
+	<dc:language>eng</dc:language>
+	<dc:relation>https://ojs.aaai.org/index.php/AAAI/article/view/36958/40920</dc:relation>
+	<dc:rights xml:lang="en-US">Copyright (c) 2026 Association for the Advancement of Artificial Intelligence</dc:rights>
+</oai_dc:dc>
+			</metadata>
+		</record>
+<record>
+			<header>
+				<identifier>oai:ojs.aaai.org:article/36959</identifier>
+				<datestamp>2026-03-18T05:09:25Z</datestamp>
+				<setSpec>AAAI:AI26-2</setSpec>
+			</header>
+			<metadata>
+<oai_dc:dc
+	xmlns:oai_dc="http://www.openarchives.org/OAI/2.0/oai_dc/"
+	xmlns:dc="http://purl.org/dc/elements/1.1/"
+	xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+	xsi:schemaLocation="http://www.openarchives.org/OAI/2.0/oai_dc/
+	http://www.openarchives.org/OAI/2.0/oai_dc.xsd">
+	<dc:title xml:lang="en-US">AutoMalDesc: Large-Scale Script Analysis for Cyber Threat Research</dc:title>
+	<dc:creator>Apostu, Alexandru-Mihai</dc:creator>
+	<dc:creator>Preda, Andrei</dc:creator>
+	<dc:creator>Damir, Alexandra Daniela</dc:creator>
+	<dc:creator>Bolocan, Diana</dc:creator>
+	<dc:creator>Ionescu, Radu Tudor</dc:creator>
+	<dc:creator>Croitoru, Ioana</dc:creator>
+	<dc:creator>Gaman, Mihaela</dc:creator>
+	<dc:description xml:lang="en-US">Generating thorough natural language explanations for threat detections remains an open problem in cybersecurity research, despite significant advances in automated malware detection systems. In this work, we present AutoMalDesc, an automated static analysis summarization framework that, following initial training on a small set of expert-curated examples, operates independently at scale. This approach leverages an iterative self-paced learning pipeline to progressively enhance output quality through synthetic data generation and validation cycles, eliminating the need for extensive manual data annotation. Evaluation across 3,600 diverse samples in five scripting languages demonstrates statistically significant improvements between iterations, showing consistent gains in both summary quality and classification accuracy. Our comprehensive validation approach combines quantitative metrics based on established malware labels with qualitative assessment from both human experts and LLM-based judges, confirming both technical precision and linguistic coherence of generated summaries. To facilitate reproducibility and advance research in this domain, we publish our complete dataset of more than 100K script samples, including annotated seed (900) and test (3.6K) datasets, along with our methodology and evaluation framework.</dc:description>
+	<dc:publisher xml:lang="en-US">Association for the Advancement of Artificial Intelligence</dc:publisher>
+	<dc:date>2026-03-14</dc:date>
+	<dc:type>info:eu-repo/semantics/article</dc:type>
+	<dc:type>info:eu-repo/semantics/publishedVersion</dc:type>
+	<dc:format>application/pdf</dc:format>
+	<dc:identifier>https://ojs.aaai.org/index.php/AAAI/article/view/36959</dc:identifier>
+	<dc:identifier>10.1609/aaai.v40i1.36959</dc:identifier>
+	<dc:source xml:lang="en-US">Proceedings of the AAAI Conference on Artificial Intelligence; Vol. 40 No. 1: AAAI-26 Technical Tracks 1; 12-20</dc:source>
+	<dc:source>2374-3468</dc:source>
+	<dc:source>2159-5399</dc:source>
+	<dc:language>eng</dc:language>
+	<dc:relation>https://ojs.aaai.org/index.php/AAAI/article/view/36959/40921</dc:relation>
+	<dc:relation>https://ojs.aaai.org/index.php/AAAI/article/view/36959/49541</dc:relation>
+	<dc:rights xml:lang="en-US">Copyright (c) 2026 Association for the Advancement of Artificial Intelligence</dc:rights>
+</oai_dc:dc>
+			</metadata>
+		</record>
+<record>
+			<header>
+				<identifier>oai:ojs.aaai.org:article/17687</identifier>
+				<datestamp>2026-03-06T10:31:58Z</datestamp>
+				<setSpec>AAAI:NLP-III</setSpec>
+			</header>
+			<metadata>
+<oai_dc:dc
+	xmlns:oai_dc="http://www.openarchives.org/OAI/2.0/oai_dc/"
+	xmlns:dc="http://purl.org/dc/elements/1.1/"
+	xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+	xsi:schemaLocation="http://www.openarchives.org/OAI/2.0/oai_dc/
+	http://www.openarchives.org/OAI/2.0/oai_dc.xsd">
+	<dc:title xml:lang="en-US">RETRACTED: Multi-modal Graph Fusion for Named Entity Recognition with Targeted Visual Guidance</dc:title>
+	<dc:creator>Zhang, Dong</dc:creator>
+	<dc:creator>Wei, Suzhong</dc:creator>
+	<dc:creator>Li, Shoushan</dc:creator>
+	<dc:creator>Wu, Hanqian</dc:creator>
+	<dc:creator>Zhu, Qiaoming</dc:creator>
+	<dc:creator>Zhou, Guodong</dc:creator>
+	<dc:subject xml:lang="en-US">Information Extraction</dc:subject>
+	<dc:description xml:lang="en-US">Multi-modal named entity recognition (MNER) aims to discover named entities in free text and classify them into pre-defined types with images. However, dominant MNER models do not fully exploit fine-grained semantic correspondences between semantic units of different modalities, which have the potential to refine multi-modal representation learning. To deal with this issue, we propose a unified multi-modal graph fusion (UMGF) approach for MNER. Specifically, we first represent the input sentence and image using a unified multi-modal graph, which captures various semantic relationships between multi-modal semantic units (words and visual objects). Then, we stack multiple graph-based multi-modal fusion layers that iteratively perform semantic interactions to learn node representations. Finally, we achieve an attention-based multi-modal representation for each word and perform entity labeling with a CRF decoder. Experimentation on the two benchmark datasets demonstrates the superiority of our MNER model.Editorial NotesThis article, which was published in Proceedings of the Thirty-Fifth AAAI Conference on Artificial Intelligence (AAAI 2021), has been retracted by agreement between the authors and AAAI.</dc:description>
+	<dc:publisher xml:lang="en-US">Association for the Advancement of Artificial Intelligence</dc:publisher>
+	<dc:date>2021-05-18</dc:date>
+	<dc:type>info:eu-repo/semantics/article</dc:type>
+	<dc:type>info:eu-repo/semantics/publishedVersion</dc:type>
+	<dc:type xml:lang="en-US">Peer-reviewed Article</dc:type>
+	<dc:format>application/pdf</dc:format>
+	<dc:identifier>https://ojs.aaai.org/index.php/AAAI/article/view/17687</dc:identifier>
+	<dc:identifier>10.1609/aaai.v35i16.17687</dc:identifier>
+	<dc:source xml:lang="en-US">Proceedings of the AAAI Conference on Artificial Intelligence; Vol. 35 No. 16: AAAI-21 Technical Tracks 16; 14347-14355</dc:source>
+	<dc:source>2374-3468</dc:source>
+	<dc:source>2159-5399</dc:source>
+	<dc:language>eng</dc:language>
+	<dc:relation>https://ojs.aaai.org/index.php/AAAI/article/view/17687/17494</dc:relation>
+	<dc:rights xml:lang="en-US">Copyright (c) 2021 Association for the Advancement of Artificial Intelligence</dc:rights>
+</oai_dc:dc>
+			</metadata>
+		</record>
+<resumptionToken expirationDate="2026-11-19T16:44:33Z"
+			completeListSize="4922"
+			cursor="0">c09050a32e2b0eb6fb289db9f5098f53</resumptionToken>
+</ListRecords>
+</OAI-PMH>

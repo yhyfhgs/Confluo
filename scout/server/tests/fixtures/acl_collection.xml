@@ -1,0 +1,63 @@
+<?xml version='1.0' encoding='UTF-8'?>
+<collection id="2025.acl">
+  <volume id="long" ingest-date="2025-07-14" type="proceedings">
+    <!-- https://aclanthology.org/2025.acl-long/ -->
+    <meta>
+      <booktitle>Proceedings of the 63rd Annual Meeting of the <fixed-case>A</fixed-case>ssociation for <fixed-case>C</fixed-case>omputational <fixed-case>L</fixed-case>inguistics (Volume 1: Long Papers)</booktitle>
+      <editor><first>Wanxiang</first><last>Che</last></editor>
+      <editor><first>Joyce</first><last>Nabende</last></editor>
+      <editor><first>Ekaterina</first><last>Shutova</last></editor>
+      <editor><first>Mohammad Taher</first><last>Pilehvar</last></editor>
+      <publisher>Association for Computational Linguistics</publisher>
+      <address>Vienna, Austria</address>
+      <month>July</month>
+      <year>2025</year>
+      <venue>acl</venue>
+      <isbn>979-8-89176-251-0</isbn>
+      <doi>10.18653/v1/2025.acl-long</doi>
+    </meta>
+<paper id="1">
+      <!-- https://aclanthology.org/2025.acl-long.1/ -->
+      <title><fixed-case>E</fixed-case>com<fixed-case>S</fixed-case>cript<fixed-case>B</fixed-case>ench: A Multi-task Benchmark for <fixed-case>E</fixed-case>-commerce Script Planning via Step-wise Intention-Driven Product Association</title>
+      <author id="weiqi-wang" orcid="0000-0002-1617-9805" openreview="~Weiqi_Wang1"><first>Weiqi</first><last>Wang</last><affiliation>The Hong Kong University of Science and Technology</affiliation></author>
+      <author id="limeng-cui" orcid="0000-0002-5222-3690" openreview="~Limeng_Cui1"><first>Limeng</first><last>Cui</last><affiliation>Amazon</affiliation></author>
+      <author id="xin-liu" orcid="0000-0001-9610-9526" openreview="~Xin_Liu9"><first>Xin</first><last>Liu</last><affiliation>Amazon</affiliation></author>
+      <author openreview="~Sreyashi_Nag1"><first>Sreyashi</first><last>Nag</last><affiliation>Amazon</affiliation></author>
+      <author id="wenju-xu" orcid="0000-0003-2740-0357" openreview="~Wenju_Xu1"><first>Wenju</first><last>Xu</last><affiliation>Amazon</affiliation></author>
+      <author id="chen-luo" orcid="0000-0001-5339-5817" openreview="~Chen_Luo3"><first>Chen</first><last>Luo</last><affiliation>Amazon</affiliation></author>
+      <author id="sheikh-muhammad-sarwar" orcid="0000-0003-4820-9201" openreview="~Sheikh_Muhammad_Sarwar1"><first>Sheikh Muhammad</first><last>Sarwar</last></author>
+      <author id="yang-li-2904" orcid="0009-0000-4269-2904" openreview="~Yang_Li80"><first>Yang</first><last>Li</last></author>
+      <author id="hansu-gu" orcid="0000-0002-1426-3210" openreview="~Hansu_Gu1"><first>Hansu</first><last>Gu</last><affiliation>Amazon</affiliation></author>
+      <author id="hui-liu-6413" orcid="0009-0008-9032-6413" openreview="~Hui_Liu3"><first>Hui</first><last>Liu</last><affiliation>Amazon</affiliation></author>
+      <author openreview="~Changlong_Yu1"><first>Changlong</first><last>Yu</last><affiliation>Department of Computer Science and Engineering, The Hong Kong University of Science and Technology</affiliation></author>
+      <author id="jiaxin-bai" orcid="0000-0002-8985-6467" openreview="~Jiaxin_Bai1"><first>Jiaxin</first><last>Bai</last><affiliation>The Hong Kong University of Science and Technology</affiliation></author>
+      <author id="yifan-gao" orcid="0000-0002-1881-4577" openreview="~Yifan_Gao1"><first>Yifan</first><last>Gao</last><affiliation>Amazon</affiliation></author>
+      <author id="haiyang-zhang-029x" orcid="0009-0003-6790-029X" openreview="~Haiyang_Zhang4"><first>Haiyang</first><last>Zhang</last><affiliation>Amazon</affiliation></author>
+      <author id="qi-he" orcid="0000-0001-5257-6843" openreview="~Qi_He5"><first>Qi</first><last>He</last><affiliation>Amazon</affiliation></author>
+      <author id="shuiwang-ji" orcid="0000-0002-4205-4563" openreview="~Shuiwang_Ji1"><first>Shuiwang</first><last>Ji</last><affiliation>Texas A&amp;M University</affiliation></author>
+      <author id="yangqiu-song" orcid="0000-0002-7818-6090" openreview="~Yangqiu_Song1"><first>Yangqiu</first><last>Song</last><affiliation>Hong Kong University of Science and Technology</affiliation></author>
+      <pages>1-22</pages>
+      <abstract>Goal-oriented script planning, or the ability to devise coherent sequences of actions toward specific goals, is commonly employed by humans to plan for typical activities. In e-commerce, customers increasingly seek LLM-based assistants to generate scripts and recommend products at each step, thereby facilitating convenient and efficient shopping experiences. However, this capability remains underexplored due to several challenges, including the inability of LLMs to simultaneously conduct script planning and product retrieval, difficulties in matching products caused by semantic discrepancies between planned actions and search queries, and a lack of methods and benchmark data for evaluation. In this paper, we step forward by formally defining the task of E-commerce Script Planning (EcomScript) as three sequential subtasks. We propose a novel framework that enables the scalable generation of product-enriched scripts by associating products with each step based on the semantic similarity between the actions and their purchase intentions. By applying our framework to real-world e-commerce data, we construct the very first large-scale EcomScript dataset, EcomScriptBench, which includes 605,229 scripts sourced from 2.4 million products. Human annotations are then conducted to provide gold labels for a sampled subset, forming an evaluation benchmark. Extensive experiments reveal that current (L)LMs face significant challenges with EcomScript tasks, even after fine-tuning, while injecting product purchase intentions improves their performance.</abstract>
+      <pdf hash="a77aa6a5"/>
+      <bibkey>wang-etal-2025-ecomscriptbench</bibkey>
+      <doi>10.18653/v1/2025.acl-long.1</doi>
+      <video href="2025.acl-long.1.mp4"/>
+    </paper>
+<paper id="2">
+      <!-- https://aclanthology.org/2025.acl-long.2/ -->
+      <title><fixed-case>G</fixed-case>raph<fixed-case>N</fixed-case>arrator: Generating Textual Explanations for Graph Neural Networks</title>
+      <author id="bo-pan" orcid="0009-0005-7501-7581" openreview="~Bo_Pan2"><first>Bo</first><last>Pan</last></author>
+      <author id="zhen-xiong" orcid="0009-0005-3923-3965" openreview="~Zhen_Xiong2"><first>Zhen</first><last>Xiong</last></author>
+      <author id="guanchen-wu" orcid="0009-0002-1295-5966" openreview="~Guanchen_Wu1"><first>Guanchen</first><last>Wu</last></author>
+      <author openreview="~Zheng_Zhang10"><first>Zheng</first><last>Zhang</last></author>
+      <author id="yifei-zhang" orcid="0009-0004-6136-733X" openreview="~Yifei_Zhang10"><first>Yifei</first><last>Zhang</last><affiliation>Emory University</affiliation></author>
+      <author id="yuntong-hu" orcid="0000-0003-3802-9039" openreview="~Yuntong_Hu1"><first>Yuntong</first><last>Hu</last><affiliation>Emory University</affiliation></author>
+      <author id="liang-zhao" orcid="0000-0002-2648-9989" openreview="~Liang_Zhao1"><first>Liang</first><last>Zhao</last><affiliation>Emory University</affiliation></author>
+      <pages>23-42</pages>
+      <abstract>Graph representation learning has garnered significant attention due to its broad applications in various domains, such as recommendation systems and social network analysis. Despite advancements in graph learning methods, challenges still remain in explainability when graphs are associated with semantic features. In this paper, we present GraphNarrator, the first method designed to generate natural language explanations for Graph Neural Networks. GraphNarrator employs a generative language model that maps input-output pairs to explanations reflecting the model’s decision-making process. To address the lack of ground truth explanations to train the model, we propose first generating pseudo-labels that capture the model’s decisions from saliency-based explanations, then using Expert Iteration to iteratively train the pseudo-label generator based on training objectives on explanation quality. The high-quality pseudo-labels are finally utilized to train an end-to-end explanation generator model. Extensive experiments are conducted to demonstrate the effectiveness of GraphNarrator in producing faithful, concise, and human-preferred natural language explanations.</abstract>
+      <pdf hash="cb020e86"/>
+      <bibkey>pan-etal-2025-graphnarrator</bibkey>
+      <doi>10.18653/v1/2025.acl-long.2</doi>
+    </paper>
+</volume>
+</collection>
