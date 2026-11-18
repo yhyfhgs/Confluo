@@ -2,7 +2,7 @@
 title: 项目进度跟踪
 status: approved
 owner: opus5.5-primary
-updated: 2026-10-05
+updated: 2026-11-19
 ---
 
 # 项目进度
@@ -11,6 +11,7 @@ updated: 2026-10-05
 
 ## 现状（开发进度截至 2026-09-30；组织名称更新于 2026-10-05）
 
+- **Scout**（2026-11-19，分支 `feat/scout-local-search`）：单用户、本机运行的 AI 会议论文检索服务（D-077 草案），代码在 `scout/`、设计在 [plan/scout/](scout/README.md)，已在本机 Docker（Colima）上运行，网页 <http://127.0.0.1:8770>。v2 平台的状态不受影响。
 - **项目名称与归属**：项目现名 Confluo，所属组织于 2026-10-05 更名为 [Orbit Labs](https://github.com/Orbit-Labs-AI/Confluo)；过程见 [session-017](../logs/2026-09-28-session-017.md)。
 - **阶段**：v2 设计已完成，等你评审；main 上没有实现代码。
 - **main 上的文档**（都是精简版）：

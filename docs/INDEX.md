@@ -28,6 +28,17 @@
 | [demo/promo-film.html](plan/v2/demo/promo-film.html) | 产品宣传片（约 88 秒动画，突出个性化推荐，演示上面这个 demo 的核心流程；内含分镜脚本） | — |
 | [demo/connector-ui-demo.html](plan/v2/demo/connector-ui-demo.html) | 接口相关增量 UI 的交互 demo：来源、我的连接、可得性说明、取回状态与运维控制台（数据为示意） | — |
 
+## Scout（plan/scout/）
+
+单用户、本机运行的 AI 会议论文检索服务（D-077 草案），代码在仓库根的 `scout/`。
+
+| 文档 | 内容 | status |
+|---|---|---|
+| [README.md](plan/scout/README.md) | 总览与架构：需求对照、部件、Docker 部署、数据布局、数据模型、API、前端、验收 | draft |
+| [sources.md](plan/scout/sources.md) | 来源与爬虫：venue 列表、7 个平台适配器与 2026-11-19 核实的上游事实、公共抓取层、调度 | draft |
+| [retrieval.md](plan/scout/retrieval.md) | 检索与排序：HopLoop 多跳收敛检索、打分公式、Gemini Decisions API、收敛判据、参数 | draft |
+| [../scout/README.md](../scout/README.md) | 运行与开发说明（命令、凭证、排障） | — |
+
 ## 连接器（plan/v2/connectors/）
 
 连接器接口契约 v1、一致性等级与测试、逐族规范、实施计划与接口增量 UI。先读 [README](plan/v2/connectors/README.md)。
@@ -109,6 +120,7 @@
 
 | 日志 | 内容 |
 |---|---|
+| [2026-11-19-session-019.md](logs/2026-11-19-session-019.md) | Scout：本地 AI 会议论文检索服务的调研、设计与实现 |
 | [2026-09-30-session-018.md](logs/2026-09-30-session-018.md) | 连接器标准化计划：接口契约、一致性等级、逐族规范、实施计划与接口增量 UI |
 | [2026-09-28-session-017.md](logs/2026-09-28-session-017.md) | 更名为 Confluo，迁入团队组织（现名 Orbit Labs） |
 | [2026-09-27-session-014.md](logs/2026-09-27-session-014.md) | 精简 docs，清理仓库与分支 |

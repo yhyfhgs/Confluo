@@ -12,6 +12,10 @@ updated: 2026-09-30
 
 | 术语 | 含义 |
 |---|---|
+| Scout | 仓库内的单用户 AI 会议论文检索服务（D-077 草案），设计见 [plan/scout/](plan/scout/README.md)；与 v2 平台互不依赖 |
+| HopLoop（多跳收敛检索） | Scout 的检索核心：关键词抽取 → BM25、同义模糊与向量召回 → 相关度、质量与决策模型排序 → 从前几篇抽新关键词再召回，直到前 n 名不变 |
+| 决策模型（System One） | 不生成文本、一次前向给出 yes/no、多选与分级评分校准概率的判别模型，如 Google 的 Gemini Decision 1（Decisions API）与 TypeSafe 的 Jev；Scout 用它评审候选论文 |
+| 摘要分片代（generation） | Scout 把一个届次的全部摘要写成一组 zstd 压缩的 JSONL 分片；每次抓取后整代重写、原子切换，论文按（代、片、行）指针读取 |
 | Source / Venue | 可对接的来源（出版商平台、预印本服务器、聚合器、仓储实例等）与期刊、会议或 WP 系列；两者分开建模 |
 | 来源七类（M1、M2、L1a–L1c、L2a–L2b） | 元层 M1 出版与托管主体、M2 标识与注册；一级 L1a 期刊与会议、L1b 预印本与工作论文、L1c 长尾一级产出；二级 L2a 文献库与学科仓储、L2b 检索引擎与聚合项目。取代旧的 L1/L2 七种类型，定义见 [来源分层](catalog/source-taxonomy.md) |
 | 兼角色（role） | 来源在主类之外承担的职能，如 Crossref 主类 M2、兼 L2b 元数据 API；CNKI 主类 L2a、兼 M1 网络首发 |

@@ -35,6 +35,10 @@ Read `README.md`, `docs/INDEX.md`, `docs/plan/progress.md` and `docs/plan/v2/REA
 - Keep credentials, cookies, sessions and downloaded PDFs in ignored local storage. Local runtime config/state lives in ignored `.confluo/`, selected through `CONFLUO_HOME`.
 - Protect both runtime homes with `-e .confluo -e .paper-crawler` whenever an authorized cleanup uses `git clean -x`; existing checkouts may still hold credentials and databases in the legacy `.paper-crawler/`, and this preserves them even when Git ignore rules are bypassed.
 
+## Scout (local AI-venue search service)
+
+`scout/` holds Confluo Scout, a single-user local service (D-077 draft; design in `docs/plan/scout/`): `scout/server/` (Python 3.13, uv, package `confluo_scout`), `scout/web/` (React 19 + Vite + TypeScript, pnpm), `scout/registry/venues.yaml` (venue list), `scout/compose.yaml` and `scout/Dockerfile` (services `scout` and `qdrant`). Its data lives in `$CONFLUO_HOME/scout/`; Qdrant's live storage is the Docker volume `confluo-scout_qdrant-storage`, with snapshots in the data directory. Commands run from `scout/`: `make up`, `make down`, `make logs`, `make check` (ruff, pytest, web typecheck and build), `make embed-host` (bulk embedding on the host GPU while the container is stopped). Never let a host process and the container write `scout.sqlite` at the same time. Scout does not establish the v2 layout of milestone V0.
+
 ## Commands and validation
 
 No build or test toolchain exists on `main` yet; V0 establishes it (Python 3.12+ backend, TypeScript PWA, PostgreSQL 18). Until then, validate documentation changes: frontmatter is present, relative links resolve, and `docs/INDEX.md` is updated. The v1 commands (`make check`, `uv run crawler`) apply only on `archive/v1`.
