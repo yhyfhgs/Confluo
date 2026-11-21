@@ -1,6 +1,6 @@
 # Confluo
 
-原名 Paper Crawler，现归属 [Orbit Labs](https://github.com/Orbit-Labs-AI)。项目仓库：[Orbit-Labs-AI/Confluo](https://github.com/Orbit-Labs-AI/Confluo)。
+原名 Paper Crawler，现为 `yhyfhgs` 的个人项目（2026-11-20 移出 Orbit Labs 组织）。项目仓库：[yhyfhgs/Confluo](https://github.com/yhyfhgs/Confluo)。
 
 面向研究者的跨学科论文发现平台。它从合法来源持续收割论文，用可解释、可学习的个性化推荐，把"今天值得看的论文"做成一叠有限的卡片，由用户滑动分拣。用户自己的机构权限只用于本人在用户侧取回全文。
 
