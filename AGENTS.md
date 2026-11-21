@@ -1,6 +1,6 @@
 # Confluo
 
-The project is owned by Orbit Labs: `https://github.com/Orbit-Labs-AI/Confluo` (formerly Paper Crawler). The local runtime directory is `.confluo/`, selected through `CONFLUO_HOME` (the legacy name was `.paper-crawler/` / `PAPER_CRAWLER_HOME`).
+Confluo (formerly Paper Crawler) is a personal project of `yhyfhgs`: `https://github.com/yhyfhgs/Confluo`. It left the Orbit Labs organization (`Orbit-Labs-AI`) on 2026-11-20, so the team's workspace rules and its TeamHub vault no longer apply here. The local runtime directory is `.confluo/`, selected through `CONFLUO_HOME` (the legacy name was `.paper-crawler/` / `PAPER_CRAWLER_HOME`).
 
 `AGENTS.md` is the shared instruction source. The repository is at the start of the v2 restart and has no implementation yet. `main` holds only current, condensed documents: the v2 plan, the source directory, a research summary and the interaction demo. Everything older lives in two archives; read them with `git show <ref>:<path>` or a separate worktree, and treat them as reference material, not as the current system:
 
@@ -9,13 +9,10 @@ The project is owned by Orbit Labs: `https://github.com/Orbit-Labs-AI/Confluo` (
 
 Read `README.md`, `docs/INDEX.md`, `docs/plan/progress.md` and `docs/plan/v2/README.md` first; `docs/archive.md` explains both archives.
 
-## Ownership and Orbit Labs workspace
+## Ownership and Git workflow
 
-- Primary owner: `yhyfhgs`. Refer to team members (owners, maintainers, authors and reviewers) only by GitHub login (for example `yhyfhgs`, `MistyHuang03`, `Alphainfix`), never by nickname or real name; external people such as paper authors and names in source material keep their original form. Confluo is the owner's core active project. In the workspace it is an optional repository: the owner clones and synchronizes it for development, and other members clone it only by choice. Reuse this checkout; preserve local changes, untracked configuration and archive refs.
-- Before workspace operations, read `../AGENTS.md`. For team collaboration, start at `../TeamHub/AGENTS.md`, the only agent entry point of the team vault; it names the guide for each task. Repository scope is defined by `../TeamHub/Tools/workspace.json`, and confirmed project roles by `../TeamHub/Memory/Team/team.md`. Standalone clones read the same files in the private repository [Orbit-Labs-AI/TeamHub](https://github.com/Orbit-Labs-AI/TeamHub/blob/main/AGENTS.md), whose `main` branch is the published version.
-- Git, PR and release operations follow the team's Git rules for product repositories in `../TeamHub/Guides/04-git-sync.md`: use a task branch and PR, preserve existing work, do not push directly to `main` or rewrite shared history, and validate the complete diff before merging. Archived v1 guidance permitting direct commits to `main` does not override the current workflow. Production releases require their own authorization.
-- The `collab` branch and Obsidian plugin workflow apply to TeamHub, not to this product repository. Product designs, source and detailed documentation remain here; TeamHub holds shared rules and navigation. Product implementation still requires the applicable approved design.
-- Synchronizing another repository does not confer maintenance authority. `dsh-whale` and `wechat-clawbot` are `Alphainfix` projects mirrored into the organization; `Margin` (the repository formerly named `homework-grading`) is maintained by `MistyHuang03`. Do not edit their files or submit changes as part of Confluo or routine workspace maintenance without explicit authorization for those projects.
+- Owner: `yhyfhgs`; Confluo is the owner's core active project. Refer to contributors (owners, maintainers, authors and reviewers) only by GitHub login, never by nickname or real name; external people such as paper authors and names in source material keep their original form. Reuse this checkout; preserve local changes, untracked configuration and archive refs.
+- Git, PR and release operations: use a task branch and a PR, preserve existing work, do not push directly to `main` or rewrite shared history, and validate the complete diff before merging. Archived v1 guidance permitting direct commits to `main` does not override this workflow. Production releases require their own authorization.
 
 ## Layout and design authority
 
